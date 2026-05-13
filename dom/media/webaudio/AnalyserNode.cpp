@@ -9,6 +9,7 @@
 #include "Tracing.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/AnalyserNodeBinding.h"
 #include "nsMathUtils.h"
 
@@ -221,6 +222,19 @@ void AnalyserNode::GetFloatFrequencyData(const Float32Array& aArray) {
       aData[i] = WebAudioUtils::ConvertLinearToDecibels(
           mOutputBuffer[i], -std::numeric_limits<float>::infinity());
     }
+
+    // Stealth: per-session noise on frequency data so floatFrequencyDataSum
+    // varies between sessions. Same Fibonacci hash as AudioDestinationNode.
+    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (seed > 0) {
+      float noiseScale = float((uint32_t(seed) % 2001u) + 500u) * 1.0e-4f;
+      for (size_t i = 0; i < length; ++i) {
+        uint32_t h = uint32_t(seed) ^ uint32_t(i) * 2654435761u;
+        h ^= (h >> 16); h *= 0x45d9f3bu; h ^= (h >> 16);
+        aData[i] += (float(int32_t(h & 0xFFFFu) - 0x8000) / float(0x8000))
+                    * noiseScale;
+      }
+    }
   });
 }
 
@@ -253,6 +267,19 @@ void AnalyserNode::GetFloatTimeDomainData(const Float32Array& aArray) {
     size_t length = std::min(aData.Length(), size_t(FftSize()));
 
     GetTimeDomainData(aData.Elements(), length);
+
+    // Stealth: per-session noise on time domain data so floatTimeDomainDataSum
+    // varies between sessions.
+    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (seed > 0) {
+      float noiseScale = float((uint32_t(seed) % 2001u) + 500u) * 1.0e-7f;
+      for (size_t i = 0; i < length; ++i) {
+        uint32_t h = uint32_t(seed) ^ (uint32_t(i) * 2246822519u);
+        h ^= (h >> 16); h *= 0x45d9f3bu; h ^= (h >> 16);
+        aData[i] += (float(int32_t(h & 0xFFFFu) - 0x8000) / float(0x8000))
+                    * noiseScale;
+      }
+    }
   });
 }
 

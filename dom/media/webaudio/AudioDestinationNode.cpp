@@ -13,6 +13,7 @@
 #include "MediaTrackGraph.h"
 #include "Tracing.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/AudioDestinationNodeBinding.h"
 #include "mozilla/dom/BaseAudioContextBinding.h"
 #include "mozilla/dom/OfflineAudioCompletionEvent.h"
@@ -119,6 +120,40 @@ class OfflineDestinationNodeEngine final : public AudioNodeEngine {
             for (uint32_t j = 0; j < duration; ++j) {
               outputData[j] = aInput.mVolume * inputBuffer[j];
             }
+          }
+        }
+      }
+      // Stealth: per-session audio noise from hw_seed.
+      // Only runs for OfflineAudioContext (OfflineDestinationNodeEngine is
+      // exclusive to offline rendering). Changes sampleSum and binsSample →
+      // different audio fingerprint per session.
+      //
+      // Constraints to avoid lie detection:
+      //   1. !aInput.IsNull() && i < inputChannelCount: skip silent channels
+      //      (noise on pure silence is physically impossible on real hardware).
+      //   2. mLength > 200: skip hasFakeAudio's OfflineAudioContext(1,100,44100)
+      //      which tests for non-zero silence → would set audioIsFake=true.
+      //   3. mWriteIndex + s >= 100: skip first 100 samples because CreepJS
+      //      checks bins.slice(0,100) sum for noise detection.
+      {
+        int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
+        if (seed > 0 && mLength > 200 && !aInput.IsNull() && i < inputChannelCount) {
+          // Scale: ~5e-7 — inaudible but enough to change float sums.
+          float noiseScale =
+              float((uint32_t(seed) % 2001u) + 500u) * 1.0e-9f;
+          for (uint32_t s = 0; s < duration; ++s) {
+            // Skip first 100 samples (CreepJS noise detection check).
+            if (mWriteIndex + s < 100) continue;
+            // Deterministic XOR-hash of (seed, channel, sample_position).
+            uint32_t h = uint32_t(seed);
+            h ^= i * 2654435761u;
+            h ^= (mWriteIndex + s) * 2246822519u;
+            h ^= (h >> 16);
+            h *= 0x45d9f3bu;
+            h ^= (h >> 16);
+            outputData[s] +=
+                (float(int32_t(h & 0xFFFFu) - 0x8000) / float(0x8000)) *
+                noiseScale;
           }
         }
       }

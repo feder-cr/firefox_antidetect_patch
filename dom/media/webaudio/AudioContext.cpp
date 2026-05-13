@@ -41,6 +41,9 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_zoom.h"
+
+
 #include "mozilla/dom/AnalyserNode.h"
 #include "mozilla/dom/AnalyserNodeBinding.h"
 #include "mozilla/dom/AudioBufferSourceNodeBinding.h"
@@ -552,6 +555,11 @@ double AudioContext::OutputLatency() {
   if (mIsShutDown) {
     return 0.0;
   }
+  // Stealth: outputLatency from pref set by Python at launch
+  {
+    int32_t latency_ms = mozilla::StaticPrefs::zoom_stealth_audio_output_latency_ms();
+    if (latency_ms > 0) return latency_ms / 1000.0;
+  }
   // When reduceFingerprinting is enabled, return a latency figure that is
   // fixed, but plausible for the platform.
   double latency_s = 0.0;
@@ -707,6 +715,11 @@ void AudioContext::UnregisterActiveNode(AudioNode* aNode) {
 }
 
 uint32_t AudioContext::MaxChannelCount() const {
+  // Stealth: maxChannelCount from pref set by Python at launch
+  {
+    int32_t ch = mozilla::StaticPrefs::zoom_stealth_audio_max_channel_count();
+    if (ch > 0) return (uint32_t)ch;
+  }
   if (mShouldResistFingerprinting) {
     return 2;
   }
