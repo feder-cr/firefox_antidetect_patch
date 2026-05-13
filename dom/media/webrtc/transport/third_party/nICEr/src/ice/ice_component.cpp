@@ -45,6 +45,119 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ice_reg.h"
 #include "nr_crypto.h"
 #include "r_time.h"
+#include "nr_stealth_bridge.h"
+
+/* Async timer callback: transition synthetic srflx from INITIALIZING to
+ * INITIALIZED and notify nICEr's gather state machine. */
+static void nr_ice_stealth_srflx_fire_ready(NR_SOCKET s, int how, void *cb_arg)
+{
+    nr_ice_candidate *cand = (nr_ice_candidate *)cb_arg;
+    cand->ready_cb_timer = 0;
+    cand->state = NR_ICE_CAND_STATE_INITIALIZED;
+    nr_ice_gather_finished_cb(0, 0, cand);
+}
+
+/* Stealth fallback: when the page configured iceServers but zero srflx
+ * candidates ended up created (DNS resolution failed for the STUN server,
+ * UDP filtered, etc.), inject one synthetic srflx with the proxy egress
+ * IP so the page sees a coherent "user behind NAT with STUN-able net"
+ * profile (Scrapfly's frontendIps[0]==publicIp check).
+ *
+ * Returns 0 if a candidate was injected, non-zero otherwise. */
+static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
+                                                   nr_transport_addr *base_addr)
+{
+    int r, _status;
+    char public_ip_buf[64];
+    nr_ice_candidate *cand = 0;
+    char label[128];
+    UINT2 srflx_port;
+    unsigned long foundation_seed;
+    char foundation[16];
+    unsigned int o1 = 0, o2 = 0, o3 = 0, o4 = 0;
+    unsigned int port_seed;
+
+    if (nr_stealth_get_webrtc_public_ip(public_ip_buf, sizeof(public_ip_buf)) == 0)
+        return R_NOT_FOUND;
+
+    /* Derive a deterministic ephemeral port from public IP octets.
+     * (We can't use base_addr's port — at this point addrs[i] is the
+     * interface address before socket binding, so port is 0.) */
+    sscanf(public_ip_buf, "%u.%u.%u.%u", &o1, &o2, &o3, &o4);
+    port_seed = o1 * 7 + o2 * 13 + o3 * 19 + o4 * 31;
+    srflx_port = (UINT2)(49152 + (port_seed % 16384));
+
+    if (!(cand = (nr_ice_candidate *)calloc(1, sizeof(nr_ice_candidate))))
+        ABORT(R_NO_MEMORY);
+
+    cand->ctx          = component->stream->ctx;
+    cand->isock        = NULL;
+    cand->osock        = NULL;
+    cand->type         = SERVER_REFLEXIVE;
+    cand->tcp_type     = (nr_socket_tcp_type)0;
+    cand->stun_server  = NULL;
+    cand->component_id = component->component_id;
+    cand->component    = component;
+    cand->stream       = component->stream;
+
+    if ((r = nr_str_port_to_transport_addr(public_ip_buf, srflx_port, IPPROTO_UDP,
+                                           &cand->addr)))
+        ABORT(r);
+    if (base_addr) {
+        if ((r = nr_transport_addr_copy(&cand->base, base_addr)))
+            ABORT(r);
+    } else {
+        /* No real local address available (Fission content process before
+         * mStunAddrs IPC arrives). Synthesize a fake LAN base so the
+         * candidate has a coherent raddr/rport. */
+        if ((r = nr_str_port_to_transport_addr("192.168.1.1", srflx_port, IPPROTO_UDP,
+                                               &cand->base)))
+            ABORT(r);
+    }
+    cand->local_protocol = cand->base.protocol;
+
+    /* Foundation = decimal hash of (public_ip, base, "srflx"). Numeric format
+     * matches what nICEr's nr_ice_get_foundation produces. */
+    foundation_seed = 0;
+    for (const char* p = public_ip_buf; *p; ++p) foundation_seed = foundation_seed * 31 + (unsigned char)*p;
+    foundation_seed ^= ((unsigned long)port_seed * 7919UL);
+    foundation_seed = (foundation_seed % 3000000000UL) + 1000000000UL;
+    snprintf(foundation, sizeof(foundation), "%lu", foundation_seed);
+
+    snprintf(label, sizeof(label), "srflx-stealth(%s)", public_ip_buf);
+    if (!(cand->label = strdup(label)))
+        ABORT(R_NO_MEMORY);
+    if (!(cand->foundation = strdup(foundation)))
+        ABORT(R_NO_MEMORY);
+
+    cand->priority = (UINT4)100 << 24 | (UINT4)65535 << 8 |
+                     (UINT4)(256 - cand->component_id);
+
+    nr_ice_candidate_compute_codeword(cand);
+    cand->state = NR_ICE_CAND_STATE_INITIALIZING;
+
+    TAILQ_INSERT_TAIL(&component->candidates, cand, entry_comp);
+    component->candidate_ct++;
+    cand->ctx->uninitialized_candidates++;
+
+    r_log(LOG_ICE, LOG_INFO,
+          "ICE-STEALTH(%s)/CAND(%s): injected fallback srflx %s (base=%s)",
+          component->stream->label, cand->codeword,
+          cand->addr.as_string, cand->base.as_string);
+
+    NR_ASYNC_TIMER_SET(0, nr_ice_stealth_srflx_fire_ready, (void *)cand,
+                       &cand->ready_cb_timer);
+    cand = 0;
+
+    _status = 0;
+abort:
+    if (_status && cand) {
+        free(cand->label);
+        free(cand->foundation);
+        free(cand);
+    }
+    return _status;
+}
 
 static void nr_ice_component_refresh_consent_cb(NR_SOCKET s, int how, void *cb_arg);
 static int nr_ice_component_stun_server_default_cb(void *cb_arg,nr_stun_server_ctx *stun_ctx,nr_socket *sock, nr_stun_server_request *req, int *dont_free, int *error);
@@ -256,6 +369,7 @@ static int nr_ice_component_initialize_udp(struct nr_ice_ctx_ *ctx,nr_ice_compon
         cand=0;
 
         /* And a srvrflx candidate for each STUN server */
+        int real_srflx_ct = 0;
         for(j=0;j<component->stream->stun_server_ct;j++){
           r_log(LOG_ICE,LOG_DEBUG,"ICE-STREAM(%s): Checking STUN server %s %s", component->stream->label, component->stream->stun_servers[j].addr.fqdn, component->stream->stun_servers[j].addr.as_string);
           /* Skip non-UDP */
@@ -275,8 +389,20 @@ static int nr_ice_component_initialize_udp(struct nr_ice_ctx_ *ctx,nr_ice_compon
             ABORT(r);
           TAILQ_INSERT_TAIL(&component->candidates,cand,entry_comp);
           component->candidate_ct++;
+          real_srflx_ct++;
           cand=0;
         }
+
+        /* Stealth fallback: always inject one synthetic srflx with the
+         * proxy egress IP (the inject function short-circuits if the
+         * public_ip pref is empty, i.e. no proxy configured). Fires
+         * regardless of iceServers config because some pages (Scrapfly)
+         * use TURN URLs with non-standard query params that nICEr fails
+         * to parse into stun_servers/turn_servers, leaving both counts
+         * at 0. When real srflx ALSO succeeds, both are emitted; the
+         * post-STUN address swap normalizes the real one to the same
+         * proxy IP, so duplicates are harmless. */
+        (void)nr_ice_component_inject_fallback_srflx(component, &addrs[i].addr);
       }
       else{
         r_log(LOG_ICE,LOG_WARNING,"ICE-STREAM(%s): relay only option results in no host candidate for %s",component->stream->label,addrs[i].addr.as_string);
@@ -694,6 +820,7 @@ int nr_ice_component_initialize(struct nr_ice_ctx_ *ctx,nr_ice_component *compon
       }
       cand=TAILQ_NEXT(cand,entry_comp);
     }
+
     _status=0;
  abort:
     return(_status);

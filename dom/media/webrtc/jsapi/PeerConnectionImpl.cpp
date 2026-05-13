@@ -32,6 +32,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/glean/DomMediaWebrtcMetrics.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsEffectiveTLDService.h"
@@ -4663,10 +4664,18 @@ void PeerConnectionImpl::EnsureIceGathering(bool aDefaultRouteOnly,
   // absence of previously provided STUN addresses, StartIceGathering will
   // attempt to gather them (as in non-e10s mode), and this will cause a
   // sandboxing exception in e10s mode.
+  //
+  // Exception: stealth mode always proceeds; nICEr will inject synthetic
+  // candidates from public_ip pref so gathering completes without probing
+  // the real network (handled in nr_ice_component_initialize addr_ct==0
+  // fallback).
   if (!mStunAddrs.Length() && XRE_IsContentProcess()) {
-    CSFLogInfo(LOGTAG, "%s: No STUN addresses returned from parent process",
-               __FUNCTION__);
-    return;
+    auto stealthHostIp = mozilla::StaticPrefs::zoom_stealth_webrtc_host_ip();
+    if ((*stealthHostIp).IsEmpty()) {
+      CSFLogInfo(LOGTAG, "%s: No STUN addresses returned from parent process",
+                 __FUNCTION__);
+      return;
+    }
   }
 
   mTransportHandler->StartIceGathering(aDefaultRouteOnly,

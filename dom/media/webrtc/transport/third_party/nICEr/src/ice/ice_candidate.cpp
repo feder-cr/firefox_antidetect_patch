@@ -59,6 +59,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "nr_socket_turn.h"
 #include "nr_socket.h"
 #include "nr_socket_multi_tcp.h"
+#include "nr_stealth_bridge.h"
 
 static int next_automatic_preference = 127;
 
@@ -944,6 +945,20 @@ static void nr_ice_srvrflx_stun_finished_cb(NR_SOCKET sock, int how, void *cb_ar
       case NR_STUN_CLIENT_STATE_DONE:
         /* Copy the address */
         nr_transport_addr_copy(&cand->addr, &cand->u.srvrflx.stun->results.stun_binding_response.mapped_addr);
+        /* Stealthfox WebRTC realism: when proxy egress IP is configured,
+         * replace the real public IP returned by STUN with the proxy IP so
+         * srflx.address matches the HTTP source IP (Scrapfly leak check
+         * frontendIps[0]==publicIp). The mapped port from real NAT mapping
+         * is preserved — we only swap the IP. */
+        {
+          char stealth_ip[64];
+          if (nr_stealth_get_webrtc_public_ip(stealth_ip, sizeof(stealth_ip)) > 0) {
+            int port_int = 0;
+            if (nr_transport_addr_get_port(&cand->addr, &port_int) == 0 && port_int > 0) {
+              nr_str_port_to_transport_addr(stealth_ip, (UINT2)port_int, IPPROTO_UDP, &cand->addr);
+            }
+          }
+        }
         cand->addr.protocol=cand->base.protocol;
         nr_transport_addr_fmt_addr_string(&cand->addr);
         nr_stun_client_ctx_destroy(&cand->u.srvrflx.stun);
