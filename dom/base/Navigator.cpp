@@ -39,6 +39,7 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_pdfjs.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/dom/Clipboard.h"
@@ -689,6 +690,12 @@ bool Navigator::GlobalPrivacyControl() {
 }
 
 uint64_t Navigator::HardwareConcurrency() {
+  // Stealth: return spoofed core count if pref is set.
+  {
+    int32_t hwc = StaticPrefs::zoom_stealth_hw_concurrency();
+    if (hwc > 0) return uint64_t(hwc);
+  }
+
   workerinternals::RuntimeService* rts =
       workerinternals::RuntimeService::GetOrCreateService();
   if (!rts) {
@@ -896,6 +903,12 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
   // touch simulation is enabled.
   if (bc && bc->Top()->InRDMPane()) {
     return bc->Top()->GetMaxTouchPointsOverride();
+  }
+
+  // Stealth: force 0 (no touchscreen) — consistent with desktop GPU spoofing
+  if (aCallerType != CallerType::System &&
+      mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
+    return 0;
   }
 
   // The maxTouchPoints is going to reveal the detail of users' hardware. So,
