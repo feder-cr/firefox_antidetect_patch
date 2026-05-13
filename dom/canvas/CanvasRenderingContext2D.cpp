@@ -49,6 +49,7 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CanvasGradient.h"
@@ -2257,6 +2258,87 @@ CanvasRenderingContext2D::SetContextOptions(JSContext* aCx,
   return NS_OK;
 }
 
+// Stealth: seed-derived canvas pixel noise. Coerente con le altre patch
+// (TextMetrics offset, DWrite gamma/ClearType, font filter) — stesso seed
+// propagato via zoom.stealth.fpp.hw_seed (mirror:always → tutti i processi).
+// Applicato al pixel buffer prima del ritorno di toDataURL/getImageData:
+// - Skip canvases < 64x64 (reCAPTCHA probe canvases, favicon-size assets) per
+//   evitare di alterare segnali che reCAPTCHA usa per coerenza behavioral.
+// - Skip alpha channel (i % 4 == 3) per preservare trasparenza.
+// - Skip zero-value channels per preservare il clearRect trap di CreepJS
+//   (CreepJS disegna, poi clearRect, poi rilegge — se i pixel "clearati"
+//   non sono 0 flag lied=true).
+// - ±1 su UN canale per ~12.5% dei pixel → molto meno invasivo del 50%,
+//   sufficiente a rompere MD5 hash di fp.canvas.geometry senza alterare
+//   fingerprint sottili (es. segnali statistici che reCAPTCHA può estrarre).
+// Seed → Fibonacci hash mixed col pixel index → deterministico per seed.
+static void ApplyStealthCanvasPixelNoise(uint8_t* aBuf, size_t aSize,
+                                         int32_t aSeed) {
+  if (!aBuf || aSize < 4 || aSeed <= 0) return;
+  // Skip small canvases (< 64x64 RGBA = 16384 bytes). Tipicamente reCAPTCHA
+  // probe canvases, favicon-size sprites o WebGL pixel-readback di 1x1.
+  // Fingerprinters seri (FP Pro, CreepJS) usano canvas ≥ 280x60 per geometry.
+  if (aSize < 64u * 64u * 4u) return;
+  // Skip-mask is configurable via pref (default 7 = 1/8 = ~12.5%).
+  // Higher mask → lower noise density. Intel HD profiles use 15 (~6.25%) to
+  // stay below FP Pro's tampering_ml threshold. Sanitize: must be 2^N-1.
+  int32_t maskPref = StaticPrefs::zoom_stealth_canvas_noise_skip_mask();
+  if (maskPref < 0) maskPref = 7;
+  uint32_t skipMask = uint32_t(maskPref);
+  // Force to next-lower power-of-two-minus-1 if not already.
+  uint32_t bit = 1u; while (bit && bit <= skipMask) bit <<= 1;
+  skipMask = bit ? (bit - 1) : 7u;
+  uint32_t h0 = uint32_t(aSeed);
+  // Mix seed to spread entropy (finalizer from splitmix)
+  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
+  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
+  for (size_t i = 0; i + 3 < aSize; i += 4) {
+    // Per-pixel hash
+    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
+    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
+    x *= 0xc2b2ae35u; x ^= x >> 16;
+    if ((x & skipMask) != 0) continue;  // 1/(skipMask+1) noise rate
+    // Pick channel 0/1/2 (skip alpha = 3)
+    int ch = int((x >> 3) % 3);
+    uint8_t* p = &aBuf[i + ch];
+    if (*p == 0) continue;  // preserve clearRect-zero trap
+    // ±1 based on separate bit; clamp at boundaries
+    if (x & 0x100) {
+      *p = (*p < 255) ? (*p + 1) : (*p - 1);
+    } else {
+      *p = (*p > 0) ? (*p - 1) : (*p + 1);
+    }
+  }
+}
+
+// Stealth substitution mode: replace RGB of every non-transparent pixel with
+// a deterministic hash of (seed, pixel_index). Alpha preserved. The resulting
+// canvas fingerprint depends only on (seed, dimensions) — entirely OS-
+// independent, so FP Pro's OS-specific canvas hash tables can't detect
+// Linux/Mesa base rendering under a Windows target spoof.
+// Only kicks in when zoom.stealth.canvas.substitute_pixels is true.
+// Same 64x64 size guard as the additive variant.
+static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
+                                                int32_t aSeed) {
+  if (!aBuf || aSize < 4 || aSeed <= 0) return;
+  if (aSize < 64u * 64u * 4u) return;
+  uint32_t h0 = uint32_t(aSeed);
+  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
+  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
+  for (size_t i = 0; i + 3 < aSize; i += 4) {
+    // Preserve alpha; if fully transparent, leave pixel (clearRect-zero trap).
+    uint8_t alpha = aBuf[i + 3];
+    if (alpha == 0) continue;
+    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
+    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
+    x *= 0xc2b2ae35u; x ^= x >> 16;
+    aBuf[i + 0] = uint8_t(x & 0xffu);
+    aBuf[i + 1] = uint8_t((x >> 8) & 0xffu);
+    aBuf[i + 2] = uint8_t((x >> 16) & 0xffu);
+    // alpha unchanged
+  }
+}
+
 UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
     mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
     int32_t* out_format, gfx::IntSize* out_imageSize) {
@@ -2292,6 +2374,26 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
           out_imageSize->width, out_imageSize->height,
           out_imageSize->width * out_imageSize->height * 4,
           SurfaceFormat::A8R8G8B8_UINT32);
+    }
+  }
+
+  // Stealth: seed-derived per-pixel noise (indipendente dall'RFP path).
+  // Copre toDataURL/toBlob → fp.canvas.geometry varia per seed.
+  // Two modes (mutually exclusive):
+  //   substitute: replace RGB entirely (OS-independent) → use when host OS
+  //               differs from target OS (Linux-built spoofing Windows)
+  //   additive:   ±1 on ~12.5% of pixels (default) → preserves real rendering
+  //               pattern, only randomizes hash
+  if (ret) {
+    int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (stealthSeed > 0) {
+      size_t bufSize =
+          size_t(out_imageSize->width) * size_t(out_imageSize->height) * 4;
+      if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
+        ApplyStealthCanvasPixelSubstitution(ret.get(), bufSize, stealthSeed);
+      } else {
+        ApplyStealthCanvasPixelNoise(ret.get(), bufSize, stealthSeed);
+      }
     }
   }
 
@@ -5206,6 +5308,27 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
     processor.mIgnoreSetText = true;
   }
 
+  // Stealth: per-session integer appunit offset on width for non-empty text.
+  // Empty measureText('') keeps totalWidthCoord==0 (untouched) so CreepJS
+  // isFloat check on empty-string TextMetrics passes. Non-empty strings get
+  // a fixed per-seed offset → every emoji in canvas2d.textMetricsSystemSum
+  // sum shifts by the same amount, producing unique sums per session.
+  if (totalWidthCoord > 0) {
+    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (seed > 0) {
+      uint32_t h = uint32_t(seed);
+      h ^= h >> 16; h *= 0x85ebca6bu; h ^= h >> 13; h *= 0xc2b2ae35u;
+      h ^= h >> 16;
+      // ±30 appunits ≈ ±0.5 CSS px; integer preserves non-subpixel paths
+      int32_t widthDelta = int32_t(h % 61) - 30;
+      totalWidthCoord += widthDelta;
+    }
+
+    // Per-family width scale is now applied at gfxTextRun level (see
+    // gfxTextRun::GetAdvanceWidth + MeasureText) so it covers both canvas
+    // measureText AND DOM <span>.offsetWidth. No canvas-only scaling here.
+  }
+
   float totalWidth = float(totalWidthCoord) / processor.mAppUnitsPerDevPixel;
 
   // offset pt.x based on text align
@@ -6661,6 +6784,23 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
                                     rawData.mData, size.width, size.height,
                                     size.height * size.width * 4,
                                     SurfaceFormat::A8R8G8B8_UINT32);
+    }
+
+    // Stealth: seed-derived per-pixel noise on getImageData.
+    // Additive by default; substitution when zoom.stealth.canvas.substitute_pixels.
+    if (rawData.mData) {
+      int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
+      if (stealthSeed > 0) {
+        const IntSize sz = readback->GetSize();
+        size_t bufSize = size_t(sz.width) * size_t(sz.height) * 4;
+        if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
+          ApplyStealthCanvasPixelSubstitution(
+              rawData.mData, bufSize, stealthSeed);
+        } else {
+          ApplyStealthCanvasPixelNoise(
+              rawData.mData, bufSize, stealthSeed);
+        }
+      }
     }
 
     JS::AutoCheckCannotGC nogc;
