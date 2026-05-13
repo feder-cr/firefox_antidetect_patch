@@ -950,6 +950,16 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   const gfxFontStyle* GetStyle() const { return &mStyle; }
 
+  // Stealth: return *every* family in the CSS font-family list as lowercase,
+  // in source order, including canonical CSS generics (serif, sans-serif,
+  // monospace, system-ui, cursive, fantasy). Used by StealthFontWidthFactor
+  // to pick the first entry that has a `zoom.stealth.font.metrics` factor —
+  // named fonts map to their own factor, and when the named font has no
+  // metrics entry (e.g. a random probe name that Firefox will fall through
+  // to the generic) we inherit the generic fallback's factor so test and
+  // baseline spans scale identically and FP Pro reports "not detected".
+  void GetAllFamilyNamesLowercase(nsTArray<nsCString>& aOut) const;
+
   // Get the presContext for which this fontGroup was constructed. This may be
   // null! (In the case of canvas not connected to a document.)
   FontVisibilityProvider* GetFontVisibilityProvider() const {

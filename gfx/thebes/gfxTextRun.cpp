@@ -7,6 +7,7 @@
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxFontConstants.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "gfxFontMissingGlyphs.h"
 #include "gfxGlyphExtents.h"
 #include "gfxHarfBuzzShaper.h"
@@ -36,6 +37,78 @@
 #ifdef XP_WIN
 #  include "gfxWindowsPlatform.h"
 #endif
+
+// Stealth helper (file-scope, defined early because used by both
+// gfxTextRun::MeasureText and gfxTextRun::GetAdvanceWidth below).
+// Parses `zoom.stealth.font.metrics` = "name|value,..." and looks up the
+// *first* name from `aCandidates` (in order) that has an entry in metrics.
+// Returns the scale factor to apply; if no candidate matches, returns 1.0.
+//
+// Two value formats are supported:
+//   name|0.978     — multiplicative factor applied directly
+//   name|160px     — absolute target width in CSS px; factor is computed as
+//                    targetPx / aNativeWidth (platform-independent: same pref
+//                    value works on Linux and Windows — C++ does the math)
+//
+// The px format lets Python store the target Windows width once in font_pool.json
+// without caring about the host platform's native metrics.
+//
+// Why walk the list: when FP Pro probes `font-family: "X", monospace`, if
+// X has a metrics entry we want X's factor; if X does NOT (fake/rare font
+// that Firefox fails to resolve), we must fall back to the generic factor
+// so test and baseline spans scale identically → undetected.
+static float StealthFontWidthFactor(const nsTArray<nsCString>& aCandidates,
+                                    float aNativeWidth = 0.0f) {
+  if (aCandidates.IsEmpty()) return 1.0f;
+  nsAutoCString metrics;
+  {
+    auto lock = mozilla::StaticPrefs::zoom_stealth_font_metrics();
+    metrics = *lock;
+  }
+  if (metrics.IsEmpty()) return 1.0f;
+  const char* data = metrics.BeginReading();
+  int32_t mlen = int32_t(metrics.Length());
+  for (const nsCString& fam : aCandidates) {
+    if (fam.IsEmpty()) continue;
+    int32_t mstart = 0;
+    for (int32_t mi = 0; mi <= mlen; mi++) {
+      if (mi == mlen || data[mi] == ',') {
+        if (mi > mstart) {
+          nsDependentCSubstring entry(data + mstart, mi - mstart);
+          int32_t bar = entry.FindChar('|');
+          if (bar > 0) {
+            nsDependentCSubstring name(entry, 0, bar);
+            if (fam.Equals(name)) {
+              nsDependentCSubstring valStr(entry, bar + 1,
+                                          entry.Length() - bar - 1);
+              uint32_t vlen = valStr.Length();
+              // "160px" format → absolute target width; compute factor at runtime
+              if (vlen > 2 && valStr[vlen - 2] == 'p' && valStr[vlen - 1] == 'x') {
+                if (aNativeWidth > 0.0f) {
+                  nsAutoCString numStr(Substring(valStr, 0, vlen - 2));
+                  double targetPx = 0.0;
+                  if (sscanf(numStr.get(), "%lf", &targetPx) == 1 &&
+                      targetPx > 0.0) {
+                    return float(targetPx / aNativeWidth);
+                  }
+                }
+                return 1.0f;
+              }
+              // plain factor format → use directly
+              nsAutoCString fs(valStr);
+              double f = 0.0;
+              if (sscanf(fs.get(), "%lf", &f) == 1 && f > 0.0 && f < 10.0) {
+                return float(f);
+              }
+            }
+          }
+        }
+        mstart = mi + 1;
+      }
+    }
+  }
+  return 1.0f;
+}
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -849,6 +922,17 @@ gfxTextRun::Metrics gfxTextRun::MeasureText(
     }
   }
 
+  // Stealth: same per-family width scale as GetAdvanceWidth — applies to
+  // canvas measureText().width (reads this Metrics.mAdvanceWidth) and any
+  // other caller of gfxTextRun::MeasureText.
+  if (mFontGroup && accumulatedMetrics.mAdvanceWidth > 0) {
+    nsTArray<nsCString> fams;
+    mFontGroup->GetAllFamilyNamesLowercase(fams);
+    float factor = StealthFontWidthFactor(fams, float(accumulatedMetrics.mAdvanceWidth));
+    if (factor != 1.0f) {
+      accumulatedMetrics.mAdvanceWidth *= factor;
+    }
+  }
   return accumulatedMetrics;
 }
 
@@ -1247,7 +1331,20 @@ gfxFloat gfxTextRun::GetAdvanceWidth(
     }
   }
 
-  return result + GetAdvanceForGlyphs(ligatureRange);
+  gfxFloat finalWidth = result + GetAdvanceForGlyphs(ligatureRange);
+
+  // Stealth: apply per-family width scale. Sole shared path used by both
+  // canvas measureText and DOM offsetWidth probe — scaling here propagates
+  // to every width query downstream. Reads zoom.stealth.font.metrics.
+  if (mFontGroup && finalWidth > 0) {
+    nsTArray<nsCString> fams;
+    mFontGroup->GetAllFamilyNamesLowercase(fams);
+    float factor = StealthFontWidthFactor(fams, float(finalWidth));
+    if (factor != 1.0f) {
+      finalWidth *= factor;
+    }
+  }
+  return finalWidth;
 }
 
 gfxFloat gfxTextRun::GetMinAdvanceWidth(Range aRange) {
@@ -1904,6 +2001,41 @@ class DeferredClearResolvedFonts final : public nsIRunnable {
 };
 
 NS_IMPL_ISUPPORTS(DeferredClearResolvedFonts, nsIRunnable)
+
+void gfxFontGroup::GetAllFamilyNamesLowercase(nsTArray<nsCString>& aOut) const {
+  aOut.Clear();
+  for (const mozilla::StyleSingleFontFamily& name : mFamilyList.list.AsSpan()) {
+    if (name.IsFamilyName()) {
+      nsAutoCString s;
+      name.AsFamilyName().name.AsAtom()->ToUTF8String(s);
+      ToLowerCase(s);
+      aOut.AppendElement(s);
+      continue;
+    }
+    // Generic family: append the canonical CSS generic name so the
+    // stealth width-factor lookup can distinguish sans-serif (Arial on
+    // Win) from serif (Times New Roman) from monospace (Consolas). When
+    // a named family precedes the generic (e.g. `"X", sans-serif`), the
+    // factor lookup tries names in order — if X has no metrics entry the
+    // generic fallback's factor applies, so test and baseline spans
+    // scale identically when Firefox actually falls back to the generic.
+    MOZ_ASSERT(name.IsGeneric());
+    const mozilla::StyleGenericFontFamily g = name.AsGeneric();
+    const char* genName = nullptr;
+    switch (g) {
+      case mozilla::StyleGenericFontFamily::Serif:     genName = "serif"; break;
+      case mozilla::StyleGenericFontFamily::SansSerif: genName = "sans-serif"; break;
+      case mozilla::StyleGenericFontFamily::Monospace: genName = "monospace"; break;
+      case mozilla::StyleGenericFontFamily::Cursive:   genName = "cursive"; break;
+      case mozilla::StyleGenericFontFamily::Fantasy:   genName = "fantasy"; break;
+      case mozilla::StyleGenericFontFamily::SystemUi:  genName = "system-ui"; break;
+      default: break;
+    }
+    if (genName) {
+      aOut.AppendElement(nsCString(genName));
+    }
+  }
+}
 
 void gfxFontGroup::EnsureFontList() {
   // Ensure resolved font instances are valid; discard them if necessary.
