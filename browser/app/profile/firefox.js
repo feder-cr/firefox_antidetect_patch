@@ -1858,7 +1858,7 @@ pref("browser.newtab.preload", true);
 // For further detail on the TOU prefs below, see the `preonboarding` feature in
 // FeatureManifest.yaml
 // Version of the TOU that the user last accepted
-pref("termsofuse.acceptedVersion", 0);
+pref("termsofuse.acceptedVersion", 999);
 // Stringified timestamp of when the user last accepted the TOU
 pref("termsofuse.acceptedDate", "0");
 // Stringified timestamp of when the user first accepted the TOU, only set if

@@ -1,0 +1,23 @@
+ac_add_options --enable-application=browser
+
+ac_add_options --disable-crashreporter
+ac_add_options --disable-backgroundtasks
+ac_add_options --disable-debug
+ac_add_options --disable-default-browser-agent
+ac_add_options --disable-tests
+ac_add_options --disable-updater
+ac_add_options --enable-release
+
+ac_add_options --disable-maintenance-service
+ac_add_options --disable-update-agent
+
+ac_add_options --enable-bootstrap
+
+export MOZ_REQUIRE_SIGNING=
+
+mk_add_options MOZ_CRASHREPORTER=0
+mk_add_options MOZ_DATA_REPORTING=0
+mk_add_options MOZ_SERVICES_HEALTHREPORT=0
+mk_add_options MOZ_TELEMETRY_REPORTING=0
+mk_add_options MOZ_INSTALLER=0
+mk_add_options MOZ_AUTOMATION_INSTALLER=0

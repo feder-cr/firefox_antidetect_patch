@@ -563,6 +563,12 @@ class JarMaker:
             except OSError as e:
                 if e.errno != errno.ENOENT:
                     raise
+            # Stealthfox fix: webcompat builtin-addons CSS files have
+            # very long names that overflow Windows MAX_PATH=260 unless
+            # we use \\?\<absolute> long-path syntax. abspath collapses
+            # the .. so the resolved absolute is much shorter.
+            if os.name == "nt":
+                out = "\\\\?\\" + os.path.abspath(out).replace("/", "\\")
             if "b" in mode:
                 return open(out, mode)
             else:
