@@ -1090,6 +1090,29 @@ JS_PUBLIC_API bool BuildStackString(JSContext* cx, JSPrincipals* principals,
                                             SavedFrameSelfHosted::Exclude,
                                             skippedNextAsync);
 
+      // Stealth: skip chrome://juggler frames from stack traces visible to
+      // web content. FingerprintJS Pro detects automation by checking
+      // Error.stack for juggler/debugger-specific frame sources.
+      {
+        JSAtom* source = frame->getSource();
+        if (source && source->length() >= 16) {
+          JS::AutoCheckCannotGC nogc;
+          bool skip = false;
+          if (source->hasLatin1Chars()) {
+            const JS::Latin1Char* chars = source->latin1Chars(nogc);
+            skip = (memcmp(chars, "chrome://juggler", 16) == 0);
+          } else {
+            const char16_t* chars = source->twoByteChars(nogc);
+            skip = (memcmp(chars, u"chrome://juggler", 16 * sizeof(char16_t)) == 0);
+          }
+          if (skip) {
+            frame = nextFrame;
+            skippedAsync = skippedNextAsync;
+            continue;
+          }
+        }
+      }
+
       switch (format) {
         case js::StackFormat::SpiderMonkey:
           if (!FormatSpiderMonkeyStackFrame(cx, sb, frame, indent,

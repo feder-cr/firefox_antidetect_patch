@@ -5081,14 +5081,29 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
   });
 
   // (5)
+  // Stealth: if debugger.stealthMode === true, skip debug mode activation.
+  // The Debugger still tracks the global (steps 1-4), but the Realm does NOT
+  // enter "debug mode" — Ion JIT stays enabled, no slowPathOnNativeCall overhead.
+  // This prevents FingerprintJS Pro from detecting Juggler via timing signals.
+  bool isStealth = false;
+  {
+    RootedObject dbgObj(cx, object);
+    RootedValue stealthVal(cx);
+    if (JS_GetProperty(cx, dbgObj, "stealthMode", &stealthVal) &&
+        stealthVal.isTrue()) {
+      isStealth = true;
+    }
+  }
   AutoRestoreRealmDebugMode debugModeGuard(debuggeeRealm);
-  debuggeeRealm->setIsDebuggee();
-  debuggeeRealm->updateDebuggerObservesAsmJS();
-  debuggeeRealm->updateDebuggerObservesWasm();
-  debuggeeRealm->updateDebuggerObservesCoverage();
-  if (observesAllExecution() &&
-      !ensureExecutionObservabilityOfRealm(cx, debuggeeRealm)) {
-    return false;
+  if (!isStealth) {
+    debuggeeRealm->setIsDebuggee();
+    debuggeeRealm->updateDebuggerObservesAsmJS();
+    debuggeeRealm->updateDebuggerObservesWasm();
+    debuggeeRealm->updateDebuggerObservesCoverage();
+    if (observesAllExecution() &&
+        !ensureExecutionObservabilityOfRealm(cx, debuggeeRealm)) {
+      return false;
+    }
   }
 
   globalDebuggersGuard.release();
