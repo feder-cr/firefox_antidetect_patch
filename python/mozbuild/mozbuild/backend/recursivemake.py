@@ -1470,7 +1470,10 @@ class RecursiveMakeBackend(MakeBackend):
         if isinstance(obj, (Program, SharedLibrary)):
             obj_target = self._pretty_path(obj.output_path, backend_file)
 
-        objs_ref = " \\\n    ".join(os.path.relpath(o, obj.objdir) for o in objs)
+        # Stealthfox fix: use absolute paths for obj dependencies. mozmake 4.4.1
+        # Win32 fails on relative paths > ~150 chars (libwebrtc deeply nested).
+        # Absolute paths bypass the bug; linker accepts them either way.
+        objs_ref = " \\\n    ".join(o for o in objs)
         if isinstance(obj, (SimpleProgram, Program, SharedLibrary)):
             # Don't bother with a list file if we're only linking objects built
             # in this directory.
