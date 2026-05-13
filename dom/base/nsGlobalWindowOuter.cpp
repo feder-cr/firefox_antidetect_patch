@@ -112,6 +112,7 @@
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_full_screen_api.h"
 #include "mozilla/StaticPrefs_print.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "mozilla/dom/BarProps.h"
 #include "mozilla/dom/DocGroup.h"
@@ -3523,6 +3524,20 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
       return bc->TopInnerSizeSpoofedForRFP();
     }
     return {};
+  }
+
+  // Stealth: spoof outerWidth/outerHeight to match the spoofed screen.
+  // outerWidth  = screen.width        (maximized window fills full screen width)
+  // outerHeight = screen.height - 48  (matches screen.availHeight — Windows
+  //                                    default taskbar height at 100% DPI)
+  // Without this, the real OS window size leaks: outerWidth > screen.width is
+  // physically impossible on a real machine and is flagged as spoofing.
+  {
+    int32_t sw = mozilla::StaticPrefs::zoom_stealth_screen_width();
+    int32_t sh = mozilla::StaticPrefs::zoom_stealth_screen_height();
+    if (sw > 0 && sh > 0) {
+      return CSSIntSize(sw, sh - 48);
+    }
   }
 
   // Windows showing documents in RDM panes and any subframes within them

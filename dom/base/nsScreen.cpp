@@ -17,6 +17,7 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
+#include "mozilla/StaticPrefs_zoom.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -67,6 +68,12 @@ nsDeviceContext* nsScreen::GetDeviceContext() const {
 }
 
 CSSIntRect nsScreen::GetRect() {
+  // Stealth: spoof screen resolution from prefs set by Python at launch
+  {
+    int32_t w = mozilla::StaticPrefs::zoom_stealth_screen_width();
+    int32_t h = mozilla::StaticPrefs::zoom_stealth_screen_height();
+    if (w > 0 && h > 0) return {0, 0, w, h};
+  }
   // Return window inner rect to prevent fingerprinting.
   if (ShouldResistFingerprinting(RFPTarget::ScreenRect)) {
     return GetTopWindowInnerRectForRFP();
@@ -99,6 +106,13 @@ CSSIntRect nsScreen::GetRect() {
 }
 
 CSSIntRect nsScreen::GetAvailRect() {
+  // Stealth: spoof screen avail rect from prefs set by Python at launch.
+  // -48px matches Windows default taskbar height at 100% DPI.
+  {
+    int32_t w = mozilla::StaticPrefs::zoom_stealth_screen_width();
+    int32_t h = mozilla::StaticPrefs::zoom_stealth_screen_height();
+    if (w > 0 && h > 0) return {0, 0, w, h - 48};
+  }
   // Return window inner rect to prevent fingerprinting.
   if (ShouldResistFingerprinting(RFPTarget::ScreenAvailRect)) {
     return GetTopWindowInnerRectForRFP();
