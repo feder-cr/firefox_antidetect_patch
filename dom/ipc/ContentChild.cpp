@@ -213,6 +213,8 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsJSEnvironment.h"
 #include "nsJSUtils.h"
+#include "js/RealmIterators.h"
+#include "js/RealmOptions.h"
 #include "nsMemoryInfoDumper.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
@@ -689,6 +691,35 @@ mozilla::ipc::IPCResult ContentChild::RecvSetXPCOMProcessAttributes(
     dnsServiceChild->SetTRRModeInChild(aXPCOMInit.trrMode(),
                                        aXPCOMInit.trrModeFromPref());
   }
+
+  // Stealth: apply timezone override from pref, and watch for future changes.
+  // Content processes from the pool may already be running when the pref is set,
+  // so we need both an immediate check AND a callback for dynamic pref sync.
+  // 150-specific: use per-Realm SetRealmTimezoneOverride (Mozilla removed
+  // the global nsJSUtils::SetTimeZoneOverride). Iterate every Realm in the
+  // process and apply the override.
+  {
+    static auto sTzPrefChanged = [](const char*, void*) {
+      nsAutoString tzOverride;
+      Preferences::GetString("juggler.timezone.override", tzOverride);
+      if (tzOverride.IsEmpty()) {
+        return;
+      }
+      nsAutoCString tzAscii = NS_LossyConvertUTF16toASCII(tzOverride);
+      AutoJSAPI jsapi;
+      if (!jsapi.Init(xpc::PrivilegedJunkScope())) {
+        return;
+      }
+      JS::IterateRealms(jsapi.cx(), const_cast<char*>(tzAscii.get()),
+        [](JSContext*, void* aData, JS::Realm* aRealm,
+           const JS::AutoRequireNoGC&) {
+          JS::SetRealmTimezoneOverride(aRealm, static_cast<const char*>(aData));
+        });
+    };
+    sTzPrefChanged(nullptr, nullptr);
+    Preferences::RegisterCallback(sTzPrefChanged, "juggler.timezone.override");
+  }
+
   return IPC_OK();
 }
 
@@ -2536,6 +2567,7 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateRequestedLocales(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvSystemTimezoneChanged() {
+  // Stealth: SetTimeZoneOverride was removed in 150. Just reset like vanilla.
   nsJSUtils::ResetTimeZone();
   return IPC_OK();
 }

@@ -1044,6 +1044,19 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
   if (XRE_IsParentProcess()) {
     Canonical()->CanonicalAttach();
   }
+
+  // Stealth: if our `juggler.timezone.override` pref is set and this is a
+  // top-level BC with no override yet, seed it from the pref. This guarantees
+  // the pref is the single source of truth, even when no caller (Playwright,
+  // WebDriver, ...) ever invokes Browser.setTimezoneOverride. The setter
+  // triggers DidSet which propagates the value per-realm.
+  if (IsTop() && GetTimezoneOverride().IsEmpty() && XRE_IsParentProcess()) {
+    nsAutoString stealthTz;
+    Preferences::GetString("juggler.timezone.override", stealthTz);
+    if (!stealthTz.IsEmpty()) {
+      SetTimezoneOverride(stealthTz);
+    }
+  }
 }
 
 void BrowsingContext::Detach(bool aFromIPC) {
@@ -3854,6 +3867,16 @@ void BrowsingContext::DidSet(FieldIndex<IDX_TimezoneOverride>,
                              nsString&& aOldValue) {
   MOZ_ASSERT(IsTop());
 
+  // Stealth: when our `juggler.timezone.override` pref is set, it wins
+  // over any per-context override Playwright (or anything else) tries to
+  // apply. The pref is the single source of truth: a downstream caller
+  // sending `null` to clear the timezone is silently rewritten to the
+  // pref value. This prevents Playwright's default `Browser.setTimezone-
+  // Override(null)` on first context creation from cancelling our pref.
+  nsAutoString stealthTz;
+  Preferences::GetString("juggler.timezone.override", stealthTz);
+  const bool stealthLocked = !stealthTz.IsEmpty();
+
   PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
     if (RefPtr<WindowContext> windowContext =
             aBrowsingContext->GetCurrentWindowContext()) {
@@ -3863,7 +3886,10 @@ void BrowsingContext::DidSet(FieldIndex<IDX_TimezoneOverride>,
             nsGlobalWindowInner::Cast(window)->GetGlobalJSObject();
         JS::Realm* realm = JS::GetObjectRealmOrNull(global);
 
-        if (GetTimezoneOverride().IsEmpty()) {
+        if (stealthLocked) {
+          JS::SetRealmTimezoneOverride(
+              realm, NS_ConvertUTF16toUTF8(stealthTz).get());
+        } else if (GetTimezoneOverride().IsEmpty()) {
           JS::SetRealmTimezoneOverride(realm, nullptr);
         } else {
           JS::SetRealmTimezoneOverride(
