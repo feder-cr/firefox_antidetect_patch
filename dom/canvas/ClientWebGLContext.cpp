@@ -25,6 +25,7 @@
 #include "mozilla/ResultVariant.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/BufferSourceBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/GeneratePlaceholderCanvasData.h"
@@ -54,6 +55,46 @@ std::string SanitizeVendor(const std::string&);
 }  // namespace webgl
 
 // -
+
+// Stealth: seed-derived WebGL readPixels noise. Stessa logica e stesso seed di
+// CanvasRenderingContext2D::ApplyStealthCanvasPixelNoise, propagato via
+// zoom.stealth.fpp.hw_seed (mirror:always). Copre il fingerprinting WebGL dei
+// fingerprinter che fanno render → readPixels → hash (CreepJS webgl image,
+// FP Pro gl pixel checksums). Vincoli:
+//   - solo format RGBA (0x1908) + type UNSIGNED_BYTE (0x1401): altri formati
+//     (FLOAT/HALF_FLOAT/INT) hanno semantica multi-byte, noising un singolo
+//     byte li corromperebbe.
+//   - NESSUNA soglia di dimensione minima: CreepJS usa subregion 17x42 (2856
+//     byte) su canvas 256x256, ben sotto la 64x64 della Canvas2D. reCAPTCHA
+//     NON usa WebGL readPixels — la protezione small-canvas non è necessaria
+//     qui e ci costerebbe la distinctness di canvasWebgl.pixels.
+//   - skip alpha channel (i % 4 == 3) e zero-value channels (clearRect trap
+//     ≡ framebuffer clear-to-zero che qualche fingerprinter usa come trap).
+//   - ±1 su un canale per ~12.5% dei pixel (allineato con canvas 2D).
+static void ApplyStealthWebGLReadPixelsNoise(uint8_t* aBuf, size_t aSize,
+                                             GLenum aFormat, GLenum aType,
+                                             int32_t aSeed) {
+  if (!aBuf || aSize < 4 || aSeed <= 0) return;
+  if (aFormat != LOCAL_GL_RGBA) return;
+  if (aType != LOCAL_GL_UNSIGNED_BYTE) return;
+  uint32_t h0 = uint32_t(aSeed);
+  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
+  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
+  for (size_t i = 0; i + 3 < aSize; i += 4) {
+    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
+    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
+    x *= 0xc2b2ae35u; x ^= x >> 16;
+    if ((x & 0x7) != 0) continue;
+    int ch = int((x >> 3) % 3);
+    uint8_t* p = &aBuf[i + ch];
+    if (*p == 0) continue;
+    if (x & 0x100) {
+      *p = (*p < 255) ? (*p + 1) : (*p - 1);
+    } else {
+      *p = (*p > 0) ? (*p - 1) : (*p + 1);
+    }
+  }
+}
 
 webgl::NotLostData::NotLostData(ClientWebGLContext& _context)
     : context(_context) {}
@@ -1176,6 +1217,30 @@ already_AddRefed<gfx::SourceSurface> ClientWebGLContext::GetSurfaceSnapshot(
   auto ret = BackBufferSnapshot();
   if (!ret) return nullptr;
 
+  // Stealth: apply seed-derived noise on the WebGL canvas snapshot used by
+  // canvas.toDataURL() / toBlob() / captureStream(). The surface format here
+  // is B8G8R8A8 or B8G8R8X8 — alpha is still byte index 3, R/G/B are
+  // indices 0/1/2 (swapped order vs RGBA but our noise works on any single
+  // non-alpha channel, so byte ordering is irrelevant to the hash-breaking
+  // property).
+  {
+    const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (stealthSeed > 0) {
+      const gfx::DataSourceSurface::ScopedMap map(
+          ret, gfx::DataSourceSurface::READ_WRITE);
+      if (map.IsMapped()) {
+        const auto size = ret->GetSize();
+        const auto stride = map.GetStride();
+        uint8_t* data = map.GetData();
+        const size_t byteSize = size_t(stride) * size_t(size.height);
+        // Format is always 4bpp here (B8G8R8A8 / B8G8R8X8) so we pass
+        // synthetic format/type matching our RGBA+UNSIGNED_BYTE guard.
+        ApplyStealthWebGLReadPixelsNoise(data, byteSize, LOCAL_GL_RGBA,
+                                         LOCAL_GL_UNSIGNED_BYTE, stealthSeed);
+      }
+    }
+  }
+
   // -
 
   const auto& options = notLost->info.options;
@@ -2164,6 +2229,37 @@ Maybe<std::string> ClientWebGLContext::GetString(const GLenum pname) {
   return ret;
 }
 
+// Stealth: parse a comma-separated "ENUM|VALUE" pref entry for GetParameter
+// override. ENUM in decimal, VALUE may itself contain ':' for vec2. Returns
+// true if `aPname` was found and fills out the split body into `aValueOut`.
+static bool LookupStealthParamEntry(const nsACString& aPref, GLenum aPname,
+                                    nsACString& aValueOut) {
+  if (aPref.IsEmpty()) return false;
+  const char* data = aPref.BeginReading();
+  int32_t len = int32_t(aPref.Length());
+  int32_t start = 0;
+  for (int32_t i = 0; i <= len; i++) {
+    if (i == len || data[i] == ',') {
+      if (i > start) {
+        nsDependentCSubstring entry(data + start, i - start);
+        int32_t bar = entry.FindChar('|');
+        if (bar > 0) {
+          nsDependentCSubstring namePart(entry, 0, bar);
+          nsAutoCString nameStr(namePart);
+          int32_t enumVal = 0;
+          if (sscanf(nameStr.get(), "%d", &enumVal) == 1 &&
+              GLenum(enumVal) == aPname) {
+            aValueOut = Substring(entry, bar + 1, entry.Length() - bar - 1);
+            return true;
+          }
+        }
+      }
+      start = i + 1;
+    }
+  }
+  return false;
+}
+
 void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
                                       JS::MutableHandle<JS::Value> retval,
                                       ErrorResult& rv, const bool debug) {
@@ -2175,6 +2271,73 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
   }
   const auto& limits = Limits();
   const auto& state = State();
+
+  // Stealth: BEFORE the native switch, consult per-enum override prefs so
+  // Linux/Mesa driver numerics (MAX_TEXTURE_SIZE etc.) can be replaced with
+  // Windows ANGLE canonical values. Hash of the parameter block becomes
+  // Windows-canonical — fixes FP Pro webgl_extensions.parameters mismatch.
+  {
+    nsAutoCString intPref, floatPref, int2Pref;
+    {
+      auto lk = mozilla::StaticPrefs::zoom_stealth_webgl_int_params();
+      intPref = *lk;
+    }
+    {
+      auto lk = mozilla::StaticPrefs::zoom_stealth_webgl_float_params();
+      floatPref = *lk;
+    }
+    {
+      auto lk = mozilla::StaticPrefs::zoom_stealth_webgl_int2_params();
+      int2Pref = *lk;
+    }
+    nsAutoCString body;
+    if (LookupStealthParamEntry(intPref, pname, body)) {
+      int64_t v = 0;
+      nsAutoCString bodyCopy(body);
+      if (sscanf(bodyCopy.get(), "%lld", &v) == 1) {
+        retval.set(JS::NumberValue(double(v)));
+        return;
+      }
+    }
+    if (LookupStealthParamEntry(floatPref, pname, body)) {
+      nsAutoCString bodyCopy(body);
+      int32_t colon = bodyCopy.FindChar(':');
+      if (colon > 0) {
+        nsAutoCString a(Substring(bodyCopy, 0, colon));
+        nsAutoCString b(Substring(bodyCopy, colon + 1,
+                                  bodyCopy.Length() - colon - 1));
+        double fa = 0, fb = 0;
+        if (sscanf(a.get(), "%lf", &fa) == 1 &&
+            sscanf(b.get(), "%lf", &fb) == 1) {
+          const auto arr = std::array<float, 2>{float(fa), float(fb)};
+          retval.set(Create<dom::Float32Array>(cx, this, arr, rv));
+          return;
+        }
+      } else {
+        double fv = 0;
+        if (sscanf(bodyCopy.get(), "%lf", &fv) == 1) {
+          retval.set(JS::NumberValue(fv));
+          return;
+        }
+      }
+    }
+    if (LookupStealthParamEntry(int2Pref, pname, body)) {
+      nsAutoCString bodyCopy(body);
+      int32_t colon = bodyCopy.FindChar(':');
+      if (colon > 0) {
+        nsAutoCString a(Substring(bodyCopy, 0, colon));
+        nsAutoCString b(Substring(bodyCopy, colon + 1,
+                                  bodyCopy.Length() - colon - 1));
+        int32_t ia = 0, ib = 0;
+        if (sscanf(a.get(), "%d", &ia) == 1 &&
+            sscanf(b.get(), "%d", &ib) == 1) {
+          const auto arr = std::array<int32_t, 2>{ia, ib};
+          retval.set(Create<dom::Int32Array>(cx, this, arr, rv));
+          return;
+        }
+      }
+    }
+  }
 
   // -
 
@@ -2455,6 +2618,20 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
 
     // -
 
+    // Stealth: GPU renderer/vendor from StaticPrefs (DataMutexString with
+    // mirror: always — propagates to content processes and is thread-safe,
+    // so workers (OffscreenCanvas + WebGL) see the same spoofed value.
+    nsAutoCString stealthRenderer;
+    nsAutoCString stealthVendor;
+    {
+      auto lock = mozilla::StaticPrefs::zoom_stealth_webgl_renderer();
+      stealthRenderer = *lock;
+    }
+    {
+      auto lock = mozilla::StaticPrefs::zoom_stealth_webgl_vendor();
+      stealthVendor = *lock;
+    }
+
     Maybe<std::string> ret;
 
     switch (pname) {
@@ -2463,19 +2640,26 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
         break;
 
       case LOCAL_GL_RENDERER: {
-        bool allowRenderer = StaticPrefs::webgl_enable_renderer_query();
-        if (ShouldResistFingerprinting(RFPTarget::WebGLRenderInfo) ||
-            ShouldResistFingerprinting(RFPTarget::WebGLRendererConstant)) {
-          allowRenderer = false;
-        }
-        if (allowRenderer) {
-          ret = GetUnmaskedRenderer();
-          if (ret) {
-            ret = Some(webgl::SanitizeRenderer(*ret));
+        if (!stealthRenderer.IsEmpty()) {
+          // Stealth: pass spoofed renderer through SanitizeRenderer().
+          // Real Firefox always sanitizes gl.RENDERER to a bucket — having
+          // gl.RENDERER match UNMASKED_RENDERER exactly would be detectable.
+          ret = Some(std::string{webgl::SanitizeRenderer(stealthRenderer.get())});
+        } else {
+          bool allowRenderer = StaticPrefs::webgl_enable_renderer_query();
+          if (ShouldResistFingerprinting(RFPTarget::WebGLRenderInfo) ||
+              ShouldResistFingerprinting(RFPTarget::WebGLRendererConstant)) {
+            allowRenderer = false;
           }
-        }
-        if (!ret) {
-          ret = Some(std::string{"Mozilla"});
+          if (allowRenderer) {
+            ret = GetUnmaskedRenderer();
+            if (ret) {
+              ret = Some(webgl::SanitizeRenderer(*ret));
+            }
+          }
+          if (!ret) {
+            ret = Some(std::string{"Mozilla"});
+          }
         }
         break;
       }
@@ -2505,8 +2689,16 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
 
         switch (pname) {
           case dom::WEBGL_debug_renderer_info_Binding::UNMASKED_RENDERER_WEBGL:
-            if (ShouldResistFingerprinting(RFPTarget::WebGLRenderInfo) ||
-                ShouldResistFingerprinting(RFPTarget::WebGLRendererConstant)) {
+            if (!stealthRenderer.IsEmpty()) {
+              // Stealth: same sanitization as gl.RENDERER for consistency.
+              if (StaticPrefs::webgl_sanitize_unmasked_renderer()) {
+                ret = Some(webgl::SanitizeRenderer(stealthRenderer.get()));
+              } else {
+                ret = Some(nsCString{stealthRenderer});
+              }
+            } else if (ShouldResistFingerprinting(RFPTarget::WebGLRenderInfo) ||
+                       ShouldResistFingerprinting(
+                           RFPTarget::WebGLRendererConstant)) {
               ret = Some("Mozilla"_ns);
             } else {
               ret = GetUnmaskedRenderer();
@@ -2517,11 +2709,12 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
             break;
 
           case dom::WEBGL_debug_renderer_info_Binding::UNMASKED_VENDOR_WEBGL:
-            if (ShouldResistFingerprinting(RFPTarget::WebGLRenderInfo)) {
+            if (!stealthVendor.IsEmpty()) {
+              ret = Some(nsCString{stealthVendor});
+            } else if (ShouldResistFingerprinting(RFPTarget::WebGLRenderInfo)) {
               ret = Some("Mozilla"_ns);
             } else if (ShouldResistFingerprinting(
                            RFPTarget::WebGLVendorRandomize)) {
-              // Generate "Mozilla <Base64(uint64)>"
               auto randomValue = RandomUint64();
               if (randomValue.isSome()) {
                 uint64_t value = randomValue.value();
@@ -3051,6 +3244,56 @@ ClientWebGLContext::GetShaderPrecisionFormat(const GLenum shadertype,
 
   const FuncScope funcScope(*this, "getShaderPrecisionFormat");
   if (IsContextLost()) return nullptr;
+
+  // Stealth: before consulting native shader precisions, check the pref
+  // `zoom.stealth.webgl.shader_precisions` for a Windows-canonical triple
+  // that replaces Linux Mesa's driver values. FP Pro hashes the 12 triples
+  // (2 shader types × 6 precision types) into its webgl_extensions.
+  // shader_precisions signal — without an override, Linux produces a
+  // constant hash across every session that FP Pro can map to Mesa.
+  {
+    nsAutoCString pref;
+    {
+      auto lk = mozilla::StaticPrefs::zoom_stealth_webgl_shader_precisions();
+      pref = *lk;
+    }
+    if (!pref.IsEmpty()) {
+      // Find entry "SHADERTYPE*PRECISIONTYPE|rmin:rmax:p"
+      const char* data = pref.BeginReading();
+      int32_t plen = int32_t(pref.Length());
+      int32_t start = 0;
+      for (int32_t i = 0; i <= plen; i++) {
+        if (i == plen || data[i] == ',') {
+          if (i > start) {
+            nsDependentCSubstring entry(data + start, i - start);
+            int32_t bar = entry.FindChar('|');
+            if (bar > 0) {
+              nsAutoCString key(Substring(entry, 0, bar));
+              nsAutoCString val(Substring(entry, bar + 1,
+                                          entry.Length() - bar - 1));
+              int32_t star = key.FindChar('*');
+              if (star > 0) {
+                unsigned int st = 0, pt = 0;
+                if (sscanf(key.get(), "%u*%u", &st, &pt) == 2 &&
+                    st == shadertype && pt == precisiontype) {
+                  int rmin = 0, rmax = 0, prec = 0;
+                  if (sscanf(val.get(), "%d:%d:%d", &rmin, &rmax, &prec)
+                      == 3) {
+                    webgl::ShaderPrecisionFormat fake;
+                    fake.rangeMin = static_cast<uint8_t>(rmin & 0xFF);
+                    fake.rangeMax = static_cast<uint8_t>(rmax & 0xFF);
+                    fake.precision = static_cast<uint8_t>(prec & 0xFF);
+                    return AsAddRefed(new WebGLShaderPrecisionFormatJS(fake));
+                  }
+                }
+              }
+            }
+          }
+          start = i + 1;
+        }
+      }
+    }
+  }
 
   const auto& shaderPrecisions = *notLost->info.shaderPrecisions;
   const auto args =
@@ -5492,6 +5735,13 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
   const auto& inProcess = notLost->inProcess;
   if (inProcess) {
     inProcess->ReadPixelsInto(desc, dest);
+    // Stealth: apply seed-derived noise on the just-written destination.
+    const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (stealthSeed > 0) {
+      ApplyStealthWebGLReadPixelsNoise(dest.Elements(), dest.Length(),
+                                       desc.pi.format, desc.pi.type,
+                                       stealthSeed);
+    }
     return true;
   }
   const auto& child = notLost->outOfProcess;
@@ -5533,6 +5783,14 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
     const auto srcRow = srcSubrect.subspan(i * byteStride, xByteSize);
     const auto destRow = destSubrect.subspan(i * byteStride, xByteSize);
     Memcpy(&destRow, srcRow);
+  }
+
+  // Stealth: apply seed-derived noise on the just-copied destination.
+  const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
+  if (stealthSeed > 0) {
+    ApplyStealthWebGLReadPixelsNoise(dest.Elements(), dest.Length(),
+                                     desc.pi.format, desc.pi.type,
+                                     stealthSeed);
   }
 
   return true;
@@ -6199,9 +6457,46 @@ bool ClientWebGLContext::IsExtensionForbiddenForCaller(
   }
 }
 
+// Stealth: read comma-separated WebGL extensions whitelist from the
+// corresponding pref (webgl1 vs webgl2). Returns vector of trimmed names.
+// Empty = no stealth override (use native list).
+static std::vector<nsCString> GetStealthExtensionWhitelist(bool aIsWebGL2) {
+  std::vector<nsCString> out;
+  nsAutoCString raw;
+  {
+    auto lock = aIsWebGL2
+                    ? mozilla::StaticPrefs::zoom_stealth_webgl2_extensions()
+                    : mozilla::StaticPrefs::zoom_stealth_webgl_extensions();
+    raw = *lock;
+  }
+  if (raw.IsEmpty()) return out;
+  int32_t start = 0;
+  while (start < static_cast<int32_t>(raw.Length())) {
+    int32_t comma = raw.FindChar(',', start);
+    if (comma < 0) comma = raw.Length();
+    nsAutoCString item(Substring(raw, start, comma - start));
+    item.Trim(" \t\r\n");
+    if (!item.IsEmpty()) out.push_back(item);
+    start = comma + 1;
+  }
+  return out;
+}
+
 bool ClientWebGLContext::IsSupported(const WebGLExtensionID ext,
                                      const dom::CallerType callerType) const {
   if (IsExtensionForbiddenForCaller(ext, callerType)) {
+    return false;
+  }
+
+  // Stealth: if the user configured an extension whitelist, gate visibility
+  // through it — extensions not in the list are reported as unsupported,
+  // regardless of what the real driver provides.
+  auto whitelist = GetStealthExtensionWhitelist(mIsWebGL2);
+  if (!whitelist.empty()) {
+    const auto& extName = GetExtensionName(ext);
+    for (const auto& allowed : whitelist) {
+      if (allowed.Equals(extName)) return true;
+    }
     return false;
   }
 
@@ -6216,6 +6511,17 @@ void ClientWebGLContext::GetSupportedExtensions(
   if (IsContextLost()) return;
 
   auto& retarr = retval.SetValue();
+
+  // Stealth: if a whitelist is set, return it verbatim. This keeps the list
+  // and getExtension()/IsSupported consistent.
+  auto whitelist = GetStealthExtensionWhitelist(mIsWebGL2);
+  if (!whitelist.empty()) {
+    for (const auto& name : whitelist) {
+      retarr.AppendElement(NS_ConvertUTF8toUTF16(name));
+    }
+    return;
+  }
+
   for (const auto i : MakeEnumeratedRange(WebGLExtensionID::Max)) {
     if (!IsSupported(i, callerType)) continue;
 
