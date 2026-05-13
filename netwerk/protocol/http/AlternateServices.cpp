@@ -8,6 +8,7 @@
 #include <algorithm>
 #include "LoadInfo.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/PContent.h"
@@ -1145,7 +1146,17 @@ void AltSvcCache::UpdateAltServiceMapping(
   }
 
   if (map->IsHttp3()) {
-    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;
+    // Stealthfox: also accept SOCKS5 when our SOCKS5-UDP-ASSOCIATE layer
+    // is enabled (network.proxy.socks_remote_udp). Without this, Firefox
+    // ignores Alt-Svc h3 advertisements whenever a SOCKS proxy is set,
+    // never creates a UDP socket, and our nsSOCKSUDPIOLayer hook never
+    // fires.
+    bool socksUdpEnabled = mozilla::Preferences::GetBool(
+        "network.proxy.socks_remote_udp", false);
+    bool isProxyAllowed = pi
+        ? (pi->IsDirect() || pi->IsHttp3Proxy() ||
+           (socksUdpEnabled && pi->IsSOCKS()))
+        : true;
     if (!isProxyAllowed) {
       LOG(
           ("AltSvcCache::UpdateAltServiceMapping %p map %p ignored h3 because "

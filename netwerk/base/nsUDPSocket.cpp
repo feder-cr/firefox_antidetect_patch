@@ -10,7 +10,9 @@
 #include "MockNetworkLayer.h"
 #include "nsQueryObject.h"
 #include "nsSocketTransport2.h"
+#include "nsSOCKSUDPIOLayer.h"
 #include "nsUDPSocket.h"
+#include "mozilla/Preferences.h"
 #include "nsProxyRelease.h"
 #include "nsError.h"
 #include "nsNetCID.h"
@@ -607,6 +609,43 @@ nsUDPSocket::InitWithAddress(const NetAddr* aAddr, nsIPrincipal* aPrincipal,
   if (!mFD) {
     NS_WARNING("unable to create UDP socket");
     return NS_ERROR_FAILURE;
+  }
+
+  // Stealthfox: if a SOCKS5 proxy is configured AND socks_remote_udp is
+  // enabled, push the SOCKS UDP layer onto the socket so that all
+  // sendto() / recvfrom() are tunneled via the proxy's UDP ASSOCIATE
+  // endpoint. Without this, QUIC / HTTP/3 traffic bypasses the proxy and
+  // leaks the host's real IP.
+  // Stealthfox: when SOCKS5 proxy is configured AND
+  // network.proxy.socks_remote_udp is true, push the SOCKS UDP layer
+  // onto the new fd so all sendto/recvfrom calls are tunneled via the
+  // proxy's UDP_ASSOCIATE relay. Without this, QUIC/HTTP-3 traffic
+  // would either bypass the proxy (leaking the host IP) or fail.
+  if (mozilla::Preferences::GetBool("network.proxy.socks_remote_udp", false)) {
+    int32_t proxyType = mozilla::Preferences::GetInt("network.proxy.type", 0);
+    int32_t socksVer = mozilla::Preferences::GetInt(
+        "network.proxy.socks_version", 5);
+    if (proxyType == 1 && socksVer == 5) {
+      nsAutoCString host;
+      mozilla::Preferences::GetCString("network.proxy.socks", host);
+      int32_t port = mozilla::Preferences::GetInt(
+          "network.proxy.socks_port", 0);
+      if (!host.IsEmpty() && port > 0) {
+        nsAutoCString user, pass;
+        mozilla::Preferences::GetCString("network.proxy.socks_username", user);
+        mozilla::Preferences::GetCString("network.proxy.socks_password", pass);
+        nsresult sr = mozilla::net::nsSOCKSUDPIOLayerAddToSocket(
+            mFD, host.get(), port, user.get(), pass.get());
+        if (NS_FAILED(sr)) {
+          UDPSOCKET_LOG(("SOCKS UDP layer push failed (%" PRIx32
+                         "); falling back to direct UDP",
+                         static_cast<uint32_t>(sr)));
+        } else {
+          UDPSOCKET_LOG(("SOCKS UDP layer attached (proxy %s:%d)",
+                         host.get(), port));
+        }
+      }
+    }
   }
 
 #ifdef FUZZING
