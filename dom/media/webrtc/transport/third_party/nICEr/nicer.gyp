@@ -25,6 +25,9 @@
               '../nrappkit/src/util/libekr',
               '../nrappkit/src/port/generic/include',
 
+              # transport dir — for nr_stealth_bridge.h
+              '../..',
+
               # INTERNAL
               "./src/crypto",
               "./src/ice",
