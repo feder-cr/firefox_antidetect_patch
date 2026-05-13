@@ -7,6 +7,7 @@
 
 #include "AudioNode.h"
 #include "AudioParam.h"
+#include "mozilla/StaticPrefs_zoom.h"
 
 namespace mozilla::dom {
 
@@ -51,6 +52,14 @@ class DynamicsCompressorNode final : public AudioNode {
 
   void SetReduction(float aReduction) {
     MOZ_ASSERT(NS_IsMainThread());
+    // Stealth: add per-session noise to compressorGainReduction so it varies.
+    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (seed > 0) {
+      uint32_t h = uint32_t(seed) ^ 0xA5A5A5A5u;
+      h ^= (h >> 16); h *= 0x45d9f3bu; h ^= (h >> 16);
+      aReduction += (float(int32_t(h & 0xFFFFu) - 0x8000) / float(0x8000))
+                    * 1.0e-5f;
+    }
     mReduction = aReduction;
   }
 

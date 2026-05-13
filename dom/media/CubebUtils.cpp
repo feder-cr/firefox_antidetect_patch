@@ -44,6 +44,7 @@
 #include "audioipc2_client_ffi_generated.h"
 #include "audioipc2_server_ffi_generated.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_zoom.h"
 
 #if defined(ENABLE_TESTS) || defined(FUZZING)
 #  define ENABLE_MOCK_CUBEB 1
@@ -498,6 +499,11 @@ uint32_t PreferredSampleRate(bool aShouldResistFingerprinting) {
   StaticMutexAutoLock lock(sMutex);
   if (sCubebForcedSampleRate) {
     return sCubebForcedSampleRate;
+  }
+  // Stealth: sampleRate from pref set by Python at launch
+  {
+    int32_t rate = mozilla::StaticPrefs::zoom_stealth_audio_sample_rate();
+    if (rate > 0) return (uint32_t)rate;
   }
   if (aShouldResistFingerprinting) {
     return 44100;
