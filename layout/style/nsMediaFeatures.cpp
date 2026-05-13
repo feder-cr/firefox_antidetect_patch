@@ -10,6 +10,7 @@
 #include "mozilla/RelativeLuminanceUtils.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/dom/BrowsingContextBinding.h"
@@ -58,6 +59,12 @@ static nsSize GetSize(const Document& aDocument) {
 
 // A helper for three features below.
 static nsSize GetDeviceSize(const Document& aDocument) {
+  // Stealth: spoof device size from prefs set by Python at launch
+  {
+    int32_t w = mozilla::StaticPrefs::zoom_stealth_screen_width();
+    int32_t h = mozilla::StaticPrefs::zoom_stealth_screen_height();
+    if (w > 0 && h > 0) return CSSPixel::ToAppUnits(CSSIntSize(w, h));
+  }
   if (aDocument.ShouldResistFingerprinting(RFPTarget::CSSDeviceSize)) {
     return GetSize(aDocument);
   }
@@ -397,6 +404,12 @@ static PointerCapabilities GetPointerCapabilities(const Document* aDocument,
     if (bc->TouchEventsOverride() == dom::TouchEventsOverride::Enabled) {
       return PointerCapabilities::Coarse;
     }
+  }
+
+  // Stealth: always report desktop pointer (fine + hover) — consistent with
+  // maxTouchPoints=0. Prevents any-pointer:coarse leak on touchscreen hardware.
+  if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
+    return PointerCapabilities::Fine | PointerCapabilities::Hover;
   }
 
   // The default value for Desktop is mouse-type pointer, and for Android
