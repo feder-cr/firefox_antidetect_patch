@@ -822,6 +822,11 @@ void js::DateTimeInfo::internalResyncICUDefaultTimeZone() {
     // identifier rules, update the ICU default time zone to use this value.
     if (IsOlsonCompatibleWindowsTimeZoneId(tz)) {
       tzid = mozilla::Span(tz.data(), tz.length());
+    } else if (tz.find('/') != std::string_view::npos) {
+      // Stealth: also accept full IANA timezone IDs (e.g. "America/Chicago").
+      // The original code only accepted Windows-compatible short forms.
+      // IANA IDs always contain a '/' (e.g. "America/New_York", "Europe/Berlin").
+      tzid = mozilla::Span(tz.data(), tz.length());
     } else {
       // If |tz| isn't a supported time zone identifier, use the default Windows
       // time zone for ICU.
