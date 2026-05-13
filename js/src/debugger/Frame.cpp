@@ -1007,13 +1007,15 @@ static bool EvaluateInEnv(
   AutoSetBypassCSPForDebugger setFlag(cx, evalOptions.bypassCSP());
 
   CompileOptions options(cx);
+  // Stealth: use generic filename instead of "debugger eval code" to prevent
+  // FingerprintJS Pro from detecting automation via Error.stack analysis.
   const char* filename =
-      evalOptions.filename() ? evalOptions.filename() : "debugger eval code";
+      evalOptions.filename() ? evalOptions.filename() : "eval code";
   options.setIsRunOnce(true)
       .setNoScriptRval(false)
       .setFileAndLine(filename, evalOptions.lineno())
       .setHideScriptFromDebugger(evalOptions.hideFromDebugger())
-      .setIntroductionType("debugger eval")
+      .setIntroductionType("eval")
       /* Do not perform the Javascript filename validation security check for
        * javascript executions sent through the debugger. Besides making up
        * a filename for these codepaths, we must allow arbitrary JS execution
