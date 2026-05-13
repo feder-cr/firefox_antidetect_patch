@@ -5,6 +5,7 @@
 #include "SpeechSynthesis.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/SpeechSynthesisBinding.h"
@@ -227,6 +228,45 @@ void SpeechSynthesis::GetVoices(
   if (nsContentUtils::ShouldResistFingerprinting(docShell,
                                                  RFPTarget::SpeechSynthesis)) {
     return;
+  }
+
+  // Stealth: if zoom.stealth.voices.list pref is set, fabricate voices from
+  // the pref and bypass the OS voice registry entirely. Each pref entry has
+  // the form "NAME|LANG|D|L" (D=default 0|1, L=local 0|1), comma-separated.
+  // The synthetic voice URI encodes all four fields so the accessors in
+  // SpeechSynthesisVoice.cpp can answer queries without a registry lookup.
+  {
+    nsAutoCString voicesPref;
+    {
+      auto lock = mozilla::StaticPrefs::zoom_stealth_voices_list();
+      voicesPref = *lock;
+    }
+    if (!voicesPref.IsEmpty()) {
+      nsISupports* voiceParent = NS_ISUPPORTS_CAST(nsIObserver*, this);
+      int32_t start = 0;
+      while (start < static_cast<int32_t>(voicesPref.Length())) {
+        int32_t comma = voicesPref.FindChar(',', start);
+        if (comma < 0) comma = voicesPref.Length();
+        nsAutoCString entry(Substring(voicesPref, start, comma - start));
+        entry.Trim(" \t\r\n");
+        start = comma + 1;
+        if (entry.IsEmpty()) continue;
+        // Synthetic URI: "stealth-voice:NAME|LANG|D|L" — accessors parse it.
+        nsAutoString uri;
+        uri.AssignLiteral("stealth-voice:");
+        AppendUTF8toUTF16(entry, uri);
+        RefPtr<SpeechSynthesisVoice> voice = mVoiceCache.Get(uri);
+        if (!voice) {
+          voice = new SpeechSynthesisVoice(voiceParent, uri);
+        }
+        aResult.AppendElement(voice);
+      }
+      mVoiceCache.Clear();
+      for (uint32_t i = 0; i < aResult.Length(); i++) {
+        mVoiceCache.InsertOrUpdate(aResult[i]->mUri, RefPtr{aResult[i].get()});
+      }
+      return;
+    }
   }
 
   nsresult rv = nsSynthVoiceRegistry::GetInstance()->GetVoiceCount(&voiceCount);

@@ -8,6 +8,39 @@
 
 namespace mozilla::dom {
 
+// Stealth: voice URIs of the form "stealth-voice:NAME|LANG|D|L" are fabricated
+// in SpeechSynthesis::GetVoices when the zoom.stealth.voices.list pref is set.
+// All accessors short-circuit here and parse fields directly from the URI,
+// so there's no round-trip through nsSynthVoiceRegistry (which would fail:
+// these voices never get registered with the OS voice backend).
+static constexpr auto kStealthVoicePrefix = u"stealth-voice:"_ns;
+
+static bool IsStealthVoiceURI(const nsAString& aUri) {
+  return StringBeginsWith(aUri, kStealthVoicePrefix);
+}
+
+// Extract field `idx` from the URI's trailing "NAME|LANG|D|L" section.
+// idx 0=name, 1=lang, 2=default("0"/"1"), 3=local("0"/"1"). Missing = "".
+static void GetStealthVoiceField(const nsAString& aUri, uint32_t idx,
+                                 nsAString& aOut) {
+  aOut.Truncate();
+  const uint32_t prefixLen = kStealthVoicePrefix.Length();
+  if (aUri.Length() <= prefixLen) return;
+  nsDependentSubstring body(aUri, prefixLen);
+  uint32_t cur = 0;
+  int32_t start = 0;
+  while (start <= static_cast<int32_t>(body.Length())) {
+    int32_t bar = body.FindChar(u'|', start);
+    if (bar < 0) bar = body.Length();
+    if (cur == idx) {
+      aOut = Substring(body, start, bar - start);
+      return;
+    }
+    start = bar + 1;
+    cur++;
+  }
+}
+
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(SpeechSynthesisVoice, mParent)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(SpeechSynthesisVoice)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(SpeechSynthesisVoice)
@@ -34,6 +67,10 @@ void SpeechSynthesisVoice::GetVoiceURI(nsString& aRetval) const {
 }
 
 void SpeechSynthesisVoice::GetName(nsString& aRetval) const {
+  if (IsStealthVoiceURI(mUri)) {
+    GetStealthVoiceField(mUri, 0, aRetval);
+    return;
+  }
   DebugOnly<nsresult> rv =
       nsSynthVoiceRegistry::GetInstance()->GetVoiceName(mUri, aRetval);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -41,6 +78,10 @@ void SpeechSynthesisVoice::GetName(nsString& aRetval) const {
 }
 
 void SpeechSynthesisVoice::GetLang(nsString& aRetval) const {
+  if (IsStealthVoiceURI(mUri)) {
+    GetStealthVoiceField(mUri, 1, aRetval);
+    return;
+  }
   DebugOnly<nsresult> rv =
       nsSynthVoiceRegistry::GetInstance()->GetVoiceLang(mUri, aRetval);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -48,6 +89,11 @@ void SpeechSynthesisVoice::GetLang(nsString& aRetval) const {
 }
 
 bool SpeechSynthesisVoice::LocalService() const {
+  if (IsStealthVoiceURI(mUri)) {
+    nsAutoString field;
+    GetStealthVoiceField(mUri, 3, field);
+    return field.EqualsLiteral("1");
+  }
   bool isLocal;
   DebugOnly<nsresult> rv =
       nsSynthVoiceRegistry::GetInstance()->IsLocalVoice(mUri, &isLocal);
@@ -58,6 +104,11 @@ bool SpeechSynthesisVoice::LocalService() const {
 }
 
 bool SpeechSynthesisVoice::Default() const {
+  if (IsStealthVoiceURI(mUri)) {
+    nsAutoString field;
+    GetStealthVoiceField(mUri, 2, field);
+    return field.EqualsLiteral("1");
+  }
   bool isDefault;
   DebugOnly<nsresult> rv =
       nsSynthVoiceRegistry::GetInstance()->IsDefaultVoice(mUri, &isDefault);
