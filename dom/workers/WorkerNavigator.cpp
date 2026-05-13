@@ -29,6 +29,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsRFPService.h"
 #include "nsString.h"
+#include "mozilla/StaticPrefs_zoom.h"
 
 class JSObject;
 struct JSContext;
@@ -221,6 +222,12 @@ void WorkerNavigator::GetUserAgent(nsString& aUserAgent, CallerType aCallerType,
 }
 
 uint64_t WorkerNavigator::HardwareConcurrency() const {
+  // Stealth: return spoofed core count if pref is set.
+  {
+    int32_t hwc = mozilla::StaticPrefs::zoom_stealth_hw_concurrency();
+    if (hwc > 0) return uint64_t(hwc);
+  }
+
   RuntimeService* rts = RuntimeService::GetService();
   MOZ_ASSERT(rts);
 
