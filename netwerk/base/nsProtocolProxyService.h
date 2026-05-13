@@ -399,6 +399,8 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
   nsCString mSOCKSProxyTarget;
   int32_t mSOCKSProxyPort{-1};
   int32_t mSOCKSProxyVersion{nsIProxyInfo::SOCKS_V4};
+  nsCString mSOCKSProxyUsername;
+  nsCString mSOCKSProxyPassword;
   bool mSOCKS4ProxyRemoteDNS{false};
   bool mSOCKS5ProxyRemoteDNS{false};
   bool mProxyOverTLS{true};

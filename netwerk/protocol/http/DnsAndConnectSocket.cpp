@@ -7,6 +7,8 @@
 
 #include "ConnectionHandle.h"
 #include "DnsAndConnectSocket.h"
+#include "mozilla/Preferences.h"
+#include "nsIProxyInfo.h"
 #include "nsHttpConnection.h"
 #include "nsIClassOfService.h"
 #include "nsIDNSRecord.h"
@@ -71,7 +73,19 @@ DnsAndConnectSocket::DnsAndConnectSocket(nsHttpConnectionInfo* ci,
        trans, mConnInfo->Origin(), mConnInfo->HashKey().get()));
 
   if (mConnInfo->UsingProxy()) {
-    mIsHttp3 = mConnInfo->IsHttp3ProxyConnection();
+    // Stealthfox: when our SOCKS5 UDP-ASSOCIATE layer is enabled, treat
+    // SOCKS5 as transparent to h3 — the proxy tunnels QUIC datagrams via
+    // UDP_ASSOCIATE, so the connection should still be created as
+    // HttpConnectionUDP (not TCP nsHttpConnection with ALPN h3).
+    bool socksUdpEnabled = mozilla::Preferences::GetBool(
+        "network.proxy.socks_remote_udp", false);
+    nsCOMPtr<nsProxyInfo> pi = mConnInfo->ProxyInfo();
+    bool isSocks = pi && pi->IsSOCKS();
+    if (socksUdpEnabled && isSocks) {
+      mIsHttp3 = mConnInfo->IsHttp3();
+    } else {
+      mIsHttp3 = mConnInfo->IsHttp3ProxyConnection();
+    }
   } else {
     mIsHttp3 = mConnInfo->IsHttp3();
   }
@@ -136,16 +150,22 @@ void DnsAndConnectSocket::CheckProxyConfig() {
     }
 
     if (mProxyTransparentResolvesHost) {
-      // Name resolution is done on the server side.  Just pretend
-      // client resolution is complete, this will get picked up later.
-      // since we don't need to do DNS now, we bypass the resolving
-      // step by initializing mNetAddr to an empty address, but we
-      // must keep the port. The SOCKS IO layer will use the hostname
-      // we send it when it's created, rather than the empty address
-      // we send with the connect call.
-      mPrimaryTransport.mSkipDnsResolution = true;
-      mBackupTransport.mSkipDnsResolution = true;
-      mSkipDnsResolution = true;
+      // Stealthfox: when our SOCKS5-UDP layer is enabled AND this
+      // connection is for HTTP/3 (UDP), we MUST resolve the host name
+      // client-side. Reason: h3 packets are UDP and bypass the SOCKS5
+      // CONNECT path; the proxy never sees a CONNECT containing the
+      // hostname. Our nsSOCKSUDPIOLayer needs a real numeric IP target
+      // to wrap into the SOCKS5 UDP datagram header (ATYP=IPv4 + ADDR).
+      // Without client-side DNS, h3+SOCKS goes through DnsAndConnectSocket
+      // but never fires OnLookupComplete, so SetupConn is never reached
+      // and HttpConnectionUDP::Init never runs.
+      bool socksUdpEnabled = mozilla::Preferences::GetBool(
+          "network.proxy.socks_remote_udp", false);
+      bool isHttp3Path = mIsHttp3;
+      bool skipDns = !(socksUdpEnabled && isHttp3Path);
+      mPrimaryTransport.mSkipDnsResolution = skipDns;
+      mBackupTransport.mSkipDnsResolution = skipDns;
+      mSkipDnsResolution = skipDns;
     }
 
     if (!proxyTransparent && !proxyInfo->Host().IsEmpty()) {
@@ -561,7 +581,6 @@ DnsAndConnectSocket::OnOutputStreamReady(nsIAsyncOutputStream* out) {
 
 nsresult DnsAndConnectSocket::SetupConn(bool isPrimary, nsresult status) {
   // assign the new socket to the http connection
-
   RefPtr<ConnectionEntry> ent =
       gHttpHandler->ConnMgr()->FindConnectionEntry(mConnInfo);
   MOZ_DIAGNOSTIC_ASSERT(ent);

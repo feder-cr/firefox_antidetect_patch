@@ -25,6 +25,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/PermissionManager.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_fission.h"
@@ -6637,10 +6638,18 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
 void HttpBaseChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
 
 bool HttpBaseChannel::Http3Allowed() const {
+  // Stealthfox: also allow SOCKS proxy when our SOCKS5-UDP-ASSOCIATE
+  // layer is enabled (network.proxy.socks_remote_udp). Otherwise Firefox
+  // unconditionally disables h3 whenever any non-direct proxy is set.
+  bool socksUdpEnabled = mozilla::Preferences::GetBool(
+      "network.proxy.socks_remote_udp", false);
   bool allowedProxyInfo =
-      mProxyInfo ? (static_cast<nsProxyInfo*>(mProxyInfo.get())->IsDirect() ||
-                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy())
-                 : true;
+      mProxyInfo
+          ? (static_cast<nsProxyInfo*>(mProxyInfo.get())->IsDirect() ||
+             static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy() ||
+             (socksUdpEnabled &&
+              static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS()))
+          : true;
   // TODO: When mUpgradeProtocolCallback is not null, we should allow HTTP/3 for
   // connect-udp.
   return !mUpgradeProtocolCallback && allowedProxyInfo &&

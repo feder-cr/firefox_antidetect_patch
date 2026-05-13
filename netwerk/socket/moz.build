@@ -21,12 +21,14 @@ include("/ipc/chromium/chromium-config.mozbuild")
 
 EXPORTS += [
     "nsSocketProviderService.h",
+    "nsSOCKSUDPIOLayer.h",
 ]
 
 UNIFIED_SOURCES += [
     "nsSocketProviderService.cpp",
     "nsSOCKSIOLayer.cpp",
     "nsSOCKSSocketProvider.cpp",
+    "nsSOCKSUDPIOLayer.cpp",
     "nsUDPSocketProvider.cpp",
 ]
 

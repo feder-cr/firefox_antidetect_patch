@@ -1079,6 +1079,16 @@ void nsProtocolProxyService::PrefsChanged(nsIPrefBranch* prefBranch,
     }
   }
 
+  if (!pref || !strcmp(pref, PROXY_PREF("socks_username"))) {
+    proxy_GetStringPref(prefBranch, PROXY_PREF("socks_username"),
+                        mSOCKSProxyUsername);
+  }
+
+  if (!pref || !strcmp(pref, PROXY_PREF("socks_password"))) {
+    proxy_GetStringPref(prefBranch, PROXY_PREF("socks_password"),
+                        mSOCKSProxyPassword);
+  }
+
   if (!pref || !strcmp(pref, PROXY_PREF("socks_remote_dns"))) {
     proxy_GetBoolPref(prefBranch, PROXY_PREF("socks_remote_dns"),
                       mSOCKS4ProxyRemoteDNS);
@@ -2316,9 +2326,9 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
   }
 
   if (type) {
-    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, ""_ns, ""_ns, ""_ns,
-                               ""_ns, proxyFlags, UINT32_MAX, nullptr, flags,
-                               result);
+    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, mSOCKSProxyUsername,
+                               mSOCKSProxyPassword, ""_ns, ""_ns, proxyFlags,
+                               UINT32_MAX, nullptr, flags, result);
     if (NS_FAILED(rv)) return rv;
   }
 
