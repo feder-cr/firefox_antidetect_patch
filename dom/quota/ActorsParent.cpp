@@ -74,6 +74,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StorageOriginAttributes.h"
 #include "mozilla/SystemPrincipal.h"
@@ -7647,6 +7648,17 @@ std::pair<uint64_t, uint64_t> QuotaManager::GetUsageAndLimitForEstimate(
     const OriginMetadata& aOriginMetadata) {
   AssertIsOnIOThread();
 
+  // Stealth: per-session storage quota override. When zoom.stealth.storage.quota_mb
+  // is > 0, navigator.storage.estimate().quota returns exactly that value (in MB).
+  // Default -1 = no override, vanilla Firefox behavior (disk-based group/origin
+  // limit). Sampled by the Python Forge conditionally on gpu_class (workstation
+  // users tend to have larger SSDs, integrated_old smaller). This masks the
+  // real disk size — one of the cross-session fingerprint signals — while
+  // staying in a realistic range.
+  const int32_t stealthQuotaMb =
+      StaticPrefs::zoom_stealth_storage_quota_mb();
+  const bool stealthOverride = (stealthQuotaMb > 0);
+
   uint64_t totalGroupUsage = 0;
 
   {
@@ -7662,7 +7674,11 @@ std::pair<uint64_t, uint64_t> QuotaManager::GetUsageAndLimitForEstimate(
                 groupInfo->LockedGetOriginInfo(aOriginMetadata.mOrigin);
 
             if (originInfo && originInfo->LockedPersisted()) {
-              return std::pair(mTemporaryStorageUsage, mTemporaryStorageLimit);
+              const uint64_t limit =
+                  stealthOverride
+                      ? (uint64_t(stealthQuotaMb) * 1024 * 1024)
+                      : mTemporaryStorageLimit;
+              return std::pair(mTemporaryStorageUsage, limit);
             }
           }
 
@@ -7673,7 +7689,10 @@ std::pair<uint64_t, uint64_t> QuotaManager::GetUsageAndLimitForEstimate(
     }
   }
 
-  return std::pair(totalGroupUsage, GetGroupLimit());
+  const uint64_t limit =
+      stealthOverride ? (uint64_t(stealthQuotaMb) * 1024 * 1024)
+                      : GetGroupLimit();
+  return std::pair(totalGroupUsage, limit);
 }
 
 uint64_t QuotaManager::GetOriginUsage(
