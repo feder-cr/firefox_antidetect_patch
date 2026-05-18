@@ -644,6 +644,19 @@ class JSONPoliciesProvider {
   }
 }
 
+class PlaywrightPoliciesProvider extends JSONPoliciesProvider {
+  _getConfigurationFile() {
+    let prefPath = Services.prefs.getStringPref(PREF_ALTERNATE_PATH, "");
+    if (!prefPath)
+      return null;
+
+    dump(`Playwright: loading enterprise policies from ${prefPath}\n`);
+    let configFile = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+    configFile.initWithPath(prefPath);
+    return configFile;
+  }
+}
+
 class WindowsGPOPoliciesProvider {
   constructor() {
     this._policies = null;
