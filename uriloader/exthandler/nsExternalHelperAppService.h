@@ -269,6 +269,11 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
       mozilla::dom::BrowsingContext* aContentContext, bool aForceSave,
       nsIInterfaceRequestor* aWindowContext,
       nsIStreamListener** aStreamListener);
+
+  // Stealthfox: Juggler-side download interceptor (set via
+  // setDownloadInterceptor). When non-null, CreateSaverForTempFile
+  // consults it to redirect downloads into Playwright's downloadOptions.
+  nsCOMPtr<nsIDownloadInterceptor> mInterceptor;
 };
 
 /**
