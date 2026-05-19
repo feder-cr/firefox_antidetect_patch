@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
-"""Regenerate the public patch series at feder-cr/firefox-stealth from the
-current stealth/<N> branch.
+"""Generate a snapshot of the stealth patch series from the current branch.
 
-Modeled on Brave's `npm run update_patches`: the source of truth is the
-branch, the .patch files are a generated artifact.
+The source of truth is the feder-cr/invisible-firefox fork (branch
+stealth/<N>).  This script generates a flat list of .patch files for
+distribution to users who want to apply the patches to a vanilla
+mozilla-firefox/firefox clone (rather than cloning the fork).
+
+Modeled on Brave's `npm run update_patches`.
 
 Usage:
   python scripts/update_patches.py
-  python scripts/update_patches.py --output ../firefox-stealth/
+  python scripts/update_patches.py --output ../patches-snapshot/
 
 What it does:
   1. Detects current stealth/<N> branch + matching stealth-base/v<N>.0.1 tag
   2. Runs `git format-patch <base>..HEAD -o <output>` to generate one
      .patch file per commit
   3. Numbers are zero-padded for stable sort
-  4. Writes a manifest.txt with commit→patch mapping for sanity-checking
-
-NOT done here (manual step):
-  - Bucket-grouping into the 15 logical area patches (canvas, webgl, ...)
-  - Adjusting commit-author dates for reproducibility
-  - Pushing to feder-cr/firefox-stealth
+  4. Writes a MANIFEST.txt with commit→patch mapping for sanity-checking
 """
 from __future__ import annotations
 

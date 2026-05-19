@@ -11,7 +11,7 @@
 #
 # Pre-conditions:
 #   - git rerere is enabled (git config rerere.enabled true) — REQUIRED
-#   - origin remote points at feder-cr/firefox
+#   - origin remote points at feder-cr/invisible-firefox
 #   - upstream remote points at mozilla-firefox/firefox
 
 set -e
