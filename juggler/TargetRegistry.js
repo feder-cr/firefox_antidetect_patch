@@ -102,7 +102,12 @@ class DownloadInterceptor {
   }
 }
 
-const screencastService = Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+let screencastService = null;
+try {
+  if (Cc['@mozilla.org/juggler/screencast;1']) {
+    screencastService = Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+  }
+} catch (e) { /* screencast not compiled — feature disabled */ }
 
 export class TargetRegistry {
   static instance() {
