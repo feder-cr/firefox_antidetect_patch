@@ -456,6 +456,27 @@ interface nsIDOMWindowUtils : nsISupports {
                             [optional] in nsISynthesizedEventCallback aCallback);
 
   /**
+   * Playwright: dispatch a synthetic mouse event and return a monotonically
+   * incrementing event identifier. Restored from the FF146 Juggler patch;
+   * dropped during the FF150 port and now re-added for issue #9.
+   */
+  [can_run_script]
+  unsigned long jugglerSendMouseEvent(in AString aType,
+                         in float aX,
+                         in float aY,
+                         in long aButton,
+                         in long aClickCount,
+                         in long aModifiers,
+                         in boolean aIgnoreRootScrollFrame,
+                         in float aPressure,
+                         in unsigned short aInputSourceArg,
+                         in boolean aIsDOMEventSynthesized,
+                         in boolean aIsWidgetEventSynthesized,
+                         in long aButtons,
+                         in unsigned long aIdentifier,
+                         in boolean aDisablePointerEvent);
+
+  /**
    * Suppress animations that are applied to a window by OS when
    * resizing, moving, changing size mode, ...
    */

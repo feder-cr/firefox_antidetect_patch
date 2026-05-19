@@ -594,27 +594,24 @@ export class PageHandler {
       if (win.windowUtils.flushApzRepaints())
         await helper.awaitTopic('apz-repaints-flushed');
 
-      const promises = [];
       for (const type of types) {
-        promises.push(new Promise(resolve => win.synthesizeMouseEvent(
+        win.windowUtils.jugglerSendMouseEvent(
           type,
           x + boundingBox.left,
           y + boundingBox.top,
-          {
-            identifier: win.windowUtils.DEFAULT_MOUSE_POINTER_ID,
-            button, buttons, clickCount, modifiers,
-            pressure: 0.0,
-            inputSource: 1,
-          },
-          {
-            isDOMEventSynthesized: true,
-            isWidgetEventSynthesized: false,
-            isAsyncEnabled: false,
-          },
-          resolve
-        )));
+          button,
+          clickCount,
+          modifiers,
+          false /* aIgnoreRootScrollFrame */,
+          0.0 /* pressure */,
+          0 /* inputSource */,
+          true /* isDOMEventSynthesized */,
+          false /* isWidgetEventSynthesized */,
+          buttons,
+          win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
+          false /* disablePointerEvent */
+        );
       }
-      await Promise.all(promises);
     };
 
     // We must switch to proper tab in the tabbed browser so that
@@ -631,21 +628,21 @@ export class PageHandler {
         // A special hack: if someone tries to do `mousemove` outside of
         // viewport coordinates, then move the mouse off from the Web Content.
         // This way we can eliminate all the hover effects.
-        win.synthesizeMouseEvent(
+        win.windowUtils.jugglerSendMouseEvent(
           'mousemove',
-          0, 0,
-          {
-            identifier: win.windowUtils.DEFAULT_MOUSE_POINTER_ID,
-            button, buttons, clickCount, modifiers,
-            pressure: 0.0,
-            inputSource: 1,
-          },
-          {
-            isDOMEventSynthesized: true,
-            isWidgetEventSynthesized: false,
-            isAsyncEnabled: false,
-          },
-          () => {}
+          0 /* x */,
+          0 /* y */,
+          button,
+          clickCount,
+          modifiers,
+          false /* aIgnoreRootScrollFrame */,
+          0.0 /* pressure */,
+          0 /* inputSource */,
+          true /* isDOMEventSynthesized */,
+          false /* isWidgetEventSynthesized */,
+          buttons,
+          win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
+          false /* disablePointerEvent */
         );
         return;
       }
@@ -680,20 +677,10 @@ export class PageHandler {
             const [px, py] = path[i];
             if (px < 0 || py < 0 || px >= bbox.width || py >= bbox.height) continue;
             try {
-              win.synthesizeMouseEvent('mousemove',
-                  px + bbox.left, py + bbox.top,
-                  {
-                    identifier: win.windowUtils.DEFAULT_MOUSE_POINTER_ID,
-                    button, buttons, clickCount, modifiers,
-                    pressure: 0.0,
-                    inputSource: 1,
-                  },
-                  {
-                    isDOMEventSynthesized: true,
-                    isWidgetEventSynthesized: false,
-                    isAsyncEnabled: false,
-                  },
-                  () => {});
+              win.windowUtils.jugglerSendMouseEvent('mousemove',
+                  px + bbox.left, py + bbox.top, button, clickCount, modifiers,
+                  false, 0.0, 0, true, false, buttons,
+                  win.windowUtils.DEFAULT_MOUSE_POINTER_ID, false);
             } catch (e) { /* ignore per-step errors */ }
             await new Promise(r => setTimeout(r, stepDelayMs));
           }

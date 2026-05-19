@@ -394,6 +394,8 @@ dictionary SynthesizeMouseEventData : SynthesizeEventData {
   short inputSource = 1;
   // Modifiers pressed, using constants defined as MODIFIER_* in nsIDOMWindowUtils.
   long modifiers = 0;
+  // Juggler event identifier for tracking events across processes.
+  unsigned long jugglerEventId = 0;
 };
 
 // Mozilla-specific stuff

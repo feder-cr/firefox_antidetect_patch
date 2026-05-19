@@ -539,23 +539,22 @@ export class PageAgent {
 
     if ((type === 'drop' && dropEffect !== 'none') || type ===  'dragover') {
       const win = this._frameTree.mainFrame().domWindow();
-      if (typeof win.synthesizeMouseEvent === 'function') {
-        await new Promise(resolve => win.synthesizeMouseEvent(
-          type, x, y,
-          {
-            identifier: win.windowUtils.DEFAULT_MOUSE_POINTER_ID,
-            button: 0, buttons: 0, clickCount: 0, modifiers,
-            pressure: 0.0,
-            inputSource: 1,
-          },
-          {
-            isDOMEventSynthesized: true,
-            isWidgetEventSynthesized: false,
-            isAsyncEnabled: false,
-          },
-          resolve
-        ));
-      }
+      win.windowUtils.jugglerSendMouseEvent(
+        type,
+        x,
+        y,
+        0, /*button*/
+        0, /*clickCount*/
+        modifiers,
+        false /*aIgnoreRootScrollFrame*/,
+        0.0 /*pressure*/,
+        0 /*inputSource*/,
+        true /*isDOMEventSynthesized*/,
+        false /*isWidgetEventSynthesized*/,
+        0 /*buttons*/,
+        win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
+        false /*disablePointerEvent*/,
+      );
       return;
     }
     if (type === 'dragend') {
