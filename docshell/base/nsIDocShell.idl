@@ -691,6 +691,15 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   void synchronizeLayoutHistoryState();
 
+  // Stealthfox: 5 attributes added by the Juggler patch series. Used by
+  // juggler/content/main.js and juggler/TargetRegistry.js. Without these,
+  // the JS code throws NS_ERROR_XPC_CANT_MODIFY_PROP_ON_WN at startup.
+  attribute boolean fileInputInterceptionEnabled;
+  attribute boolean overrideHasFocus;
+  attribute boolean bypassCSPEnabled;
+  attribute boolean forceActiveState;
+  attribute boolean disallowBFCache;
+
   /**
    * This attempts to save any applicable layout history state (like
    * scroll position) in the nsISHEntry. This is normally done

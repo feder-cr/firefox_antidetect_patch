@@ -1322,6 +1322,13 @@ class nsDocShell final : public nsDocLoader,
 
   bool mIsExecutingOnLoadHandler : 1;
 
+  // Stealthfox: 5 flags backing nsIDocShell attributes set by Juggler.
+  bool mFileInputInterceptionEnabled : 1;
+  bool mOverrideHasFocus : 1;
+  bool mBypassCSPEnabled : 1;
+  bool mForceActiveState : 1;
+  bool mDisallowBFCache : 1;
+
   bool mInvisible : 1;
 
   // There has been an OnStartRequest for a non-about:blank URI
