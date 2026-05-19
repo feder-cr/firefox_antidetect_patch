@@ -2876,6 +2876,58 @@ nsDocShell* nsDocShell::GetInProcessChildAt(int32_t aIndex) {
   return static_cast<nsDocShell*>(child);
 }
 
+// Stealthfox: 5 attribute impls (storage only) added by Juggler patch series.
+NS_IMETHODIMP
+nsDocShell::GetFileInputInterceptionEnabled(bool* aEnabled) {
+  *aEnabled = mFileInputInterceptionEnabled;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::SetFileInputInterceptionEnabled(bool aEnabled) {
+  mFileInputInterceptionEnabled = aEnabled;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::GetOverrideHasFocus(bool* aEnabled) {
+  *aEnabled = mOverrideHasFocus;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::SetOverrideHasFocus(bool aEnabled) {
+  mOverrideHasFocus = aEnabled;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::GetBypassCSPEnabled(bool* aEnabled) {
+  *aEnabled = mBypassCSPEnabled;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::SetBypassCSPEnabled(bool aEnabled) {
+  mBypassCSPEnabled = aEnabled;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::GetForceActiveState(bool* aEnabled) {
+  *aEnabled = mForceActiveState;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::SetForceActiveState(bool aEnabled) {
+  mForceActiveState = aEnabled;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::GetDisallowBFCache(bool* aEnabled) {
+  *aEnabled = mDisallowBFCache;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::SetDisallowBFCache(bool aEnabled) {
+  mDisallowBFCache = aEnabled;
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsDocShell::SynchronizeLayoutHistoryState() {
   if (mActiveEntry && mActiveEntry->GetLayoutHistoryState() &&
       mBrowsingContext) {
