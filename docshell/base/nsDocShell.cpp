@@ -8909,6 +8909,22 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
   attrs.SetFirstPartyDomain(isTopLevelDoc, aLoadState->URI());
 
   nsCOMPtr<nsIRequest> req;
+
+  // Juggler: report navigation started for non-same-document and non-javascript
+  // navigations.  This drives the Juggler protocol's Page.navigationStarted and
+  // ultimately Page.ready events.
+  if (!isJavaScript && !sameDocument) {
+    nsCOMPtr<nsIObserverService> observerService =
+        mozilla::services::GetObserverService();
+    if (observerService) {
+      observerService->NotifyObservers(
+          GetAsSupports(this), "juggler-navigation-started-renderer",
+          NS_ConvertASCIItoUTF16(
+              nsPrintfCString("%" PRIu64, aLoadState->GetLoadIdentifier()))
+              .get());
+    }
+  }
+
   rv = DoURILoad(aLoadState, aCacheKey, getter_AddRefs(req));
 
   if (NS_SUCCEEDED(rv)) {
