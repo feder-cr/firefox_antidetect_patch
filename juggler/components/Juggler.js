@@ -120,7 +120,6 @@ export class Juggler {
               this.onmessage({ data: message });
           },
           disconnected() {
-            dump(`[SF150-DBG] Juggler pipe disconnected! stack:\n${new Error().stack}\n`);
             if (browserHandler)
               browserHandler['Browser.close']();
           },
