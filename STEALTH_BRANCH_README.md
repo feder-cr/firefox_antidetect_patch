@@ -5,9 +5,19 @@ Questo branch (`stealth/150`) sul fork `feder-cr/firefox` di `mozilla-firefox/fi
 ## Stato (2026-05-19)
 
 - **Base**: `stealth-base/v150.0.1` → tag `FIREFOX_150_0_1_RELEASE` di `mozilla-firefox/firefox` (`ec9aaac47d4c...`)
-- **HEAD**: `stealth-head/v150.0.1` → tip del branch (`2f0dbec45ce5...`)
-- **Commit ahead**: 19 commit sopra `stealth-base/v150.0.1`
-- **Status build**: COMPILE ok, ma **RUNTIME ancora fallisce** per 3 gap C++ residui (vedi sotto)
+- **HEAD**: branch tip (`6ca01bfe0ca9...`)
+- **Commit ahead**: 25 commit sopra `stealth-base/v150.0.1`
+- **Status build**: ✅ COMPILE pulito, ✅ RUNTIME funziona — `firefox.exe` + Playwright + Juggler pipe + new_page + page.mouse.* tutti passano sul clean build. Gap residuo: locale="en-US" via `Browser.setLocaleOverride` causa crash del content process dopo ~30s (workaround: `locale=""` su `InvisiblePlaywright`).
+
+### Riassunto fix recenti (C1-C7)
+
+| Gap | Commit | Cosa |
+|---|---|---|
+| C1+C2 | `8feb68c7dc22` | re-land setDownloadInterceptor (IDL + cpp + .h member) |
+| C4 | `2495f9447cd9` | re-land 5 nsIDocShell stealth attributes (fileInputInterceptionEnabled, overrideHasFocus, bypassCSPEnabled, forceActiveState, disallowBFCache) |
+| C5 | `951efca4f9f6` | port FF146 launcher+wmain juggler-pipe handle inheritance: senza questo il pipe Playwright→browser si disconnette immediatamente |
+| C6 | `bec3da1e65e2` | port juggler-navigation-started observer notifications in nsDocShell.cpp + CanonicalBrowsingContext.cpp: senza questo Page.ready non viene mai emesso e ctx.new_page() hang |
+| C7 (partial) | `6ca01bfe0ca9` | storage-only stub per nsIDocShell.languageOverride; il port completo richiede BrowsingContext FIELD + ICU/JS locale reset (multi-file, da fare poi) |
 
 ## Storia del branch
 
@@ -61,15 +71,15 @@ git push origin main
 
 ## Gap residui per build pulito che FUNZIONA a runtime
 
-Tre modifiche C++ esistono nel `xul.dll` di `firefox-2` SHIPPED (verificate via `strings`) ma **non sono in questo branch né nel patch series pubblico**:
+I gap C1-C7 sono stati portati. L'unico gap RIMASTO è il completamento di C7.
 
-### C1. `setDownloadInterceptor` su `nsIExternalHelperAppService.idl` + cpp
-Sorgente reference: `release/stealthfox/firefox-source/uriloader/exthandler/nsIExternalHelperAppService.{idl,cpp,h}` (FF146 source). Aggiungi:
-- IDL: definizione `nsIDownloadInterceptor` interface + `setDownloadInterceptor()` method
-- cpp: implementazione `SetDownloadInterceptor` + `mInterceptor` member + intercept logic in `CreateSaverForTempFile`
+### C7. (Partial → completare) `languageOverride` BrowsingContext FIELD
+La stub committata in `6ca01bfe0ca9` mantiene `docShell.languageOverride = locale` no-op (storage only). Il fix completo richiede:
+- BrowsingContext FIELD `LanguageOverride` (con `DidSet`/`CanSet` callbacks) per propagazione cross-process
+- `SetIcuLocale(aLanguageOverride)` callback con `icu::Locale::setDefault`, `JS_ResetDefaultLocale`, `ResetDefaultLocaleInAllWorkers`
+- Multi-file: `BrowsingContext.{h,cpp}`, `CanonicalBrowsingContext.cpp` (txn.SetLanguageOverride), `nsDocShell.cpp` (call SetIcuLocale)
 
-### C2. `nsIDownloadInterceptor` interface (parte del C1)
-Stesso file IDL sopra.
+Sintomo del gap C7: `Browser.setLocaleOverride` con `locale="en-US"` (default di `InvisiblePlaywright`) causa crash del content process dopo ~30 secondi (GPU init timeout). Workaround: passare `locale=""` esplicitamente.
 
 ### C3. (Opzionale) Screencast: `HeadlessWindowCapturer` + `VideoCaptureModuleEx`
 Richiede patch a `third_party/libwebrtc` per i tipi `VideoCaptureModuleEx` + `RawFrameCallback`. Complicato perché mozilla potrebbe averli rimossi da upstream libwebrtc. Per ora **DISABLED** (stub no-op in `juggler/TargetRegistry.js`).
@@ -80,7 +90,12 @@ Richiede patch a `third_party/libwebrtc` per i tipi `VideoCaptureModuleEx` + `Ra
 - ✅ `jugglerSendMouseEvent` C++ proper landato (issue #9 fix)
 - ✅ `juggler/` correttamente hooked nel build (toolkit.mozbuild DIRS)
 - ✅ FF150 Fission cross-process navigation handlers (FrameTree.js, JugglerFrameParent.sys.mjs)
-- ❌ `setDownloadInterceptor` mancante → runtime fail al launch tramite Playwright
+- ✅ `setDownloadInterceptor` IDL + cpp + .h member (C1+C2)
+- ✅ `nsIDocShell` 5 stealth attributes (C4)
+- ✅ Launcher → child juggler-pipe handle inheritance (C5)
+- ✅ Juggler navigation observer notifications (C6)
+- ✅ Stealth funziona: webdriver=False, UA override, languages, page.mouse.* OK
+- ⚠️ `Browser.setLocaleOverride` con locale non vuoto crasha content process dopo 30s (C7 partial, workaround `locale=""`)
 
 ## firefox-2 SHIPPED resta canonical
 
