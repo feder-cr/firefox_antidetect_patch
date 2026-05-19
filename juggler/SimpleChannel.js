@@ -6,9 +6,9 @@
 // Note: this file should be loadabale with eval() into worker environment.
 // Avoid Components.*, ChromeUtils and global const variables.
 
-const SIMPLE_CHANNEL_MESSAGE_NAME = 'juggler:simplechannel';
+var SIMPLE_CHANNEL_MESSAGE_NAME = 'juggler:simplechannel';
 
-class SimpleChannel {
+var SimpleChannel = class SimpleChannel {
   constructor(name, uid) {
     this._name = name;
     this._messageId = 0;
@@ -250,4 +250,4 @@ class SimpleChannel {
       dump(`WARNING: unknown message in channel "${this._name}": ${JSON.stringify(data)}\n`);
     }
   }
-}
+};

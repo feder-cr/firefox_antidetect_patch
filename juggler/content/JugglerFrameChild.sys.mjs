@@ -63,7 +63,11 @@ export class JugglerFrameChild extends JSWindowActorChild {
   }
 
   didDestroy() {
-    helper.removeListeners(this._eventListeners);
+    try {
+      helper.removeListeners(this._eventListeners);
+    } catch (e) {
+      if (e) dump(`[JugglerFrameChild] removeListeners failed: ${e.message}\n`);
+    }
 
     if (this.browsingContext.parent)
       return;

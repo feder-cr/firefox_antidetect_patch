@@ -235,8 +235,16 @@ export class FrameTree {
     this._browsingContextGroup.__jugglerFrameTrees.delete(this);
     this._wdm.removeListener(this._wdmListener);
     this._runtime.dispose();
-    helper.removeListeners(this._eventListeners);
-    helper.removeListeners(this._dragEventListeners);
+    try {
+      helper.removeListeners(this._eventListeners);
+    } catch (e) {
+      if (e) dump(`[FrameTree] removeListeners(_eventListeners) failed (half-destroyed webProgress): ${e.message}\n`);
+    }
+    try {
+      helper.removeListeners(this._dragEventListeners);
+    } catch (e) {
+      if (e) dump(`[FrameTree] removeListeners(_dragEventListeners) failed: ${e.message}\n`);
+    }
   }
 
   onWindowEvent(event) {
@@ -300,6 +308,15 @@ export class FrameTree {
 
     const isStop = flag & Ci.nsIWebProgressListener.STATE_STOP;
     if (isStop && frame._pendingNavigationId && status) {
+      // FF150 Fission workaround: NS_BINDING_ABORTED on the main frame is
+      // SPURIOUS during cross-process BC swap. The old BC's DocLoader stops
+      // (firing STATE_STOP with status=NS_BINDING_ABORTED) before the new BC
+      // takes over and commits the same navigation. Suppressing this abort
+      // lets _frameNavigationCommitted on the new BC fire correctly.
+      // Real network failures use other status codes (e.g. NS_ERROR_*) and
+      // still propagate normally.
+      if (frame === this._mainFrame && status === Cr.NS_BINDING_ABORTED)
+        return;
       // Navigation is aborted.
       const navigationId = frame._pendingNavigationId;
       frame._pendingNavigationId = null;
