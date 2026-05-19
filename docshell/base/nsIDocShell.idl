@@ -700,6 +700,13 @@ interface nsIDocShell : nsIDocShellTreeItem
   attribute boolean forceActiveState;
   attribute boolean disallowBFCache;
 
+  // Stealthfox: languageOverride attribute used by the Juggler protocol's
+  // Browser.setLocaleOverride command. Stores the requested locale string;
+  // the actual locale propagation is handled separately. Without this
+  // attribute the JS code in juggler/content/main.js throws on assignment
+  // and the page content process is killed by the GPU-init timeout.
+  attribute AString languageOverride;
+
   /**
    * This attempts to save any applicable layout history state (like
    * scroll position) in the nsISHEntry. This is normally done
