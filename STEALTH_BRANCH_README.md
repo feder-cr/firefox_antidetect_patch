@@ -1,6 +1,8 @@
-# Firefox Stealth — branch `stealth/150`
+# Invisible Firefox — branch `stealth/150`
 
-Questo branch (`stealth/150`) sul fork `feder-cr/firefox` di `mozilla-firefox/firefox` è il **source of truth git-native** per gli stealth patches applicati a Firefox 150.0.1.
+Questo branch (`stealth/150`) sul fork `feder-cr/invisible-firefox` di `mozilla-firefox/firefox` è la **single source of truth** per gli stealth patches applicati a Firefox 150.0.1.
+
+> Storia: questo repo si chiamava `feder-cr/firefox` fino al 2026-05-19, e c'era un companion repo `feder-cr/firefox-stealth` con i .patch numerati. Entrambi consolidati qui (rename + delete). Vedi commit `ce71f1f...` su `feder-cr/invisible_playwright` per il rename trail.
 
 ## Stato (2026-05-19)
 
@@ -26,7 +28,7 @@ Questo branch (`stealth/150`) sul fork `feder-cr/firefox` di `mozilla-firefox/fi
 619db115 fix(juggler): disable screencast + try/catch on screencastService (FF150 libwebrtc gap)
 eb135ac7 build: add missing libwebrtc/api/location.h + nICEr ice_component.c (FF150 patch series gap)
 86f82412 fix(juggler): re-land jugglerSendMouseEvent C++ for FF150 (issue #9)
-[+15 commit, applicazione di 0001-build-infra.patch ... 0015-storage-quota.patch dal repo feder-cr/firefox-stealth]
+[+15 commit, applicazione di 0001-build-infra.patch ... 0015-storage-quota.patch (originariamente dal repo feder-cr/firefox-stealth, ora consolidati come commit qui)]
 ec9aaac4 [stealth-base/v150.0.1] FF150_0_1_RELEASE vanilla mozilla-firefox
 ```
 
@@ -34,7 +36,7 @@ ec9aaac4 [stealth-base/v150.0.1] FF150_0_1_RELEASE vanilla mozilla-firefox
 
 ### 1. Clone questo branch
 ```bash
-git clone -b stealth/150 https://github.com/feder-cr/firefox.git firefox-source
+git clone -b stealth/150 https://github.com/feder-cr/invisible-firefox.git firefox-source
 cd firefox-source
 ```
 
@@ -188,24 +190,26 @@ Aree con alta turbolenza upstream → priorità refactor verso pattern
 
 Tutti i test verdi → branch riproducibile e funzionante.
 
-### Patch series sync
+### Patch snapshot per utenti esterni
 
-Il branch è la source of truth. La patch series pubblica a
-`feder-cr/firefox-stealth` è un artefatto generato:
+Il branch è la source of truth. Per chi vuole applicare le modifiche a un
+clone vanilla di mozilla-firefox/firefox (senza usare il fork):
 
 ```bash
-# Rigenera 0001-*.patch ... 000N-*.patch da current branch
-python scripts/update_patches.py --output ../firefox-stealth/
+# Genera snapshot 0001-*.patch ... 000N-*.patch da current branch
+python scripts/update_patches.py --output ../patches-snapshot/
 
 # Verifica che le patch applicano su mozilla-central pulito
 python scripts/apply_patches.py /path/to/fresh/clone \
-       --patches ../firefox-stealth/ \
+       --patches ../patches-snapshot/ \
        --base FIREFOX_150_0_1_RELEASE
 ```
+
+Lo snapshot è solo un artefatto. Le PR/contributi vanno fatti sul fork
+(`feder-cr/invisible-firefox`), non sullo snapshot.
 
 ## Vedi anche
 
 - Schema completo input/output: `c:/tmp/firefox_stealth_schema.md` (workspace privato)
 - Memory analytics: `project_patch_series_gaps.md`, `project_clean_fork_workflow.md` (workspace privato)
-- Public deliverable: https://github.com/feder-cr/firefox-stealth (auto-generato da `scripts/update_patches.py`)
 - Python wrapper + binary releases: https://github.com/feder-cr/invisible_playwright

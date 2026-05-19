@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Apply the patch series from feder-cr/firefox-stealth to a fresh clone of
-mozilla-firefox/firefox.
+"""Apply a generated patch series (from update_patches.py) to a fresh clone
+of mozilla-firefox/firefox.
 
-Verifies that the public patch series is genuinely reproducible — i.e. a new
-contributor can clone vanilla Firefox + apply patches + build, without needing
-access to the feder-cr/firefox fork branch.
+Verifies that the snapshot is genuinely reproducible — i.e. a new contributor
+can clone vanilla Firefox + apply patches + build, without needing access to
+the feder-cr/invisible-firefox fork branch.
 
 This is the inverse of update_patches.py: it consumes what update_patches.py
 produces.  Both are read-only against the current repo.
