@@ -108,12 +108,15 @@ nsresult nsRemoteDebuggingPipe::Init(nsIRemoteDebuggingPipeClient* aClient) {
   MOZ_ALWAYS_SUCCEEDS(NS_NewNamedThread("Pipe Writer", getter_AddRefs(mWriterThread)));
 
 #if defined(_WIN32)
-  CHAR pipeReadStr[20];
-  CHAR pipeWriteStr[20];
+  // PW_PIPE_READ/PW_PIPE_WRITE are set by nsWindowsWMain.cpp from inherited
+  // stdio FDs 3/4 (passed by Playwright via Node.js stdio array, then
+  // forwarded by LauncherProcessWin.cpp to the browser child process).
+  CHAR pipeReadStr[20] = {0};
+  CHAR pipeWriteStr[20] = {0};
   GetEnvironmentVariableA("PW_PIPE_READ", pipeReadStr, 20);
   GetEnvironmentVariableA("PW_PIPE_WRITE", pipeWriteStr, 20);
-  readHandle = reinterpret_cast<HANDLE>(atoi(pipeReadStr));
-  writeHandle = reinterpret_cast<HANDLE>(atoi(pipeWriteStr));
+  readHandle = reinterpret_cast<HANDLE>(static_cast<intptr_t>(atoi(pipeReadStr)));
+  writeHandle = reinterpret_cast<HANDLE>(static_cast<intptr_t>(atoi(pipeWriteStr)));
 #endif
 
   MOZ_ALWAYS_SUCCEEDS(mReaderThread->Dispatch(NewRunnableMethod(
