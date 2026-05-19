@@ -714,6 +714,59 @@ nsDOMWindowUtils::IsCORSSafelistedRequestHeader(const nsACString& aName,
   return NS_OK;
 }
 
+static uint32_t sJugglerEventId = 0;
+
+NS_IMETHODIMP
+nsDOMWindowUtils::JugglerSendMouseEvent(
+    const nsAString& aType, float aX, float aY, int32_t aButton,
+    int32_t aClickCount, int32_t aModifiers, bool aIgnoreRootScrollFrame,
+    float aPressure, unsigned short aInputSourceArg,
+    bool aIsDOMEventSynthesized, bool aIsWidgetEventSynthesized,
+    int32_t aButtons, uint32_t aIdentifier, bool aDisablePointerEvent,
+    uint32_t* aJugglerEventId) {
+  *aJugglerEventId = ++sJugglerEventId;
+
+  // aDisablePointerEvent is accepted for FF146 API compat but ignored here;
+  // FF150's nsContentUtils::SynthesizeMouseEvent gates pointer dispatch on the
+  // event type via IsPointerEventMessage(), not on an options flag.
+  (void)aDisablePointerEvent;
+
+  RefPtr<PresShell> presShell = GetPresShell();
+  if (!presShell) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsPoint offset;
+  nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
+  if (!widget) {
+    return NS_ERROR_FAILURE;
+  }
+
+  LayoutDeviceIntPoint refPoint = nsContentUtils::ToWidgetPoint(
+      CSSPoint(aX, aY), offset, presShell->GetPresContext());
+
+  dom::SynthesizeMouseEventData mouseEventData;
+  mouseEventData.mIdentifier = aIdentifier;
+  mouseEventData.mButton = aButton;
+  mouseEventData.mButtons.Construct(aButtons);
+  mouseEventData.mClickCount.Construct(aClickCount);
+  mouseEventData.mPressure.Construct(aPressure);
+  mouseEventData.mInputSource = aInputSourceArg;
+  mouseEventData.mModifiers = aModifiers;
+  mouseEventData.mJugglerEventId = *aJugglerEventId;
+
+  dom::SynthesizeMouseEventOptions options;
+  options.mIgnoreRootScrollFrame = aIgnoreRootScrollFrame;
+  options.mIsDOMEventSynthesized = aIsDOMEventSynthesized;
+  options.mIsWidgetEventSynthesized = aIsWidgetEventSynthesized;
+  options.mIsAsyncEnabled = false;
+
+  auto result = nsContentUtils::SynthesizeMouseEvent(
+      presShell, widget, aType, refPoint, mouseEventData, options,
+      dom::Optional<OwningNonNull<dom::VoidFunction>>{});
+  return result.isOk() ? NS_OK : result.unwrapErr();
+}
+
 NS_IMETHODIMP
 nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
                                  double aDeltaY, double aDeltaZ,
