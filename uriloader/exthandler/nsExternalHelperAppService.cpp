@@ -386,6 +386,18 @@ NS_IMETHODIMP nsExternalHelperAppService::GetPreferredDownloadsDirectory(
   return NS_OK;
 }
 
+// Stealthfox: install/replace the Juggler-side download interceptor.
+// Storage only; the actual intercept dispatch in CreateSaverForTempFile is
+// not implemented in this minimal port — Juggler's interceptor receives
+// constructor wiring but downloads still flow through the default save
+// path. Sufficient to satisfy juggler/TargetRegistry.js startup; download
+// intercept-and-redirect feature itself remains TODO.
+NS_IMETHODIMP nsExternalHelperAppService::SetDownloadInterceptor(
+    nsIDownloadInterceptor* interceptor) {
+  mInterceptor = interceptor;
+  return NS_OK;
+}
+
 /**
  * Obtains the initial directory to save downloads to. (This may differ from the
  * actual download directory if "browser.download.start_downloads_in_tmp_dir" is
