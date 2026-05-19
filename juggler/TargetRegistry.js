@@ -12,6 +12,7 @@ const Cr = Components.results;
 
 const helper = new Helper();
 
+
 const IDENTITY_NAME = 'JUGGLER ';
 const HUNDRED_YEARS = 60 * 60 * 24 * 365 * 100;
 
@@ -102,12 +103,23 @@ class DownloadInterceptor {
   }
 }
 
-let screencastService = null;
-try {
-  if (Cc['@mozilla.org/juggler/screencast;1']) {
-    screencastService = Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+// Stealthfox 150: juggler/screencast disabled (libwebrtc API removed). Use a
+// no-op stub so module loads. Playwright video recording will not work.
+const screencastService = (() => {
+  try {
+    return Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+  } catch (e) {
+    const noop = () => 0;
+    return {
+      startVideoRecording: noop,
+      stopVideoRecording: noop,
+      isStreamingActive: () => false,
+      addStreamingClient: noop,
+      removeStreamingClient: noop,
+      screencastReady: noop,
+    };
   }
-} catch (e) { /* screencast not compiled — feature disabled */ }
+})();
 
 export class TargetRegistry {
   static instance() {
@@ -122,6 +134,8 @@ export class TargetRegistry {
     this._userContextIdToBrowserContext = new Map();
     this._browserToTarget = new Map();
     this._browserIdToTarget = new Map();
+    this._bcIdToTarget = new Map();
+    this._pendingActors = new Map(); // browserId/bcId → actor (for actors that arrive before PageTarget)
 
     this._proxiesWithClashingAuthCacheKeys = new Set();
     this._browserProxy = null;
@@ -139,11 +153,13 @@ export class TargetRegistry {
     Services.obs.addObserver({
       observe: (subject, topic, data) => {
         const browser = subject.ownerElement;
-        if (!browser)
+        if (!browser) {
           return;
+        }
         const target = this._browserToTarget.get(browser);
-        if (!target)
+        if (!target) {
           return;
+        }
         target.emit(PageTarget.Events.Crashed);
         target.dispose();
       }
@@ -167,6 +183,17 @@ export class TargetRegistry {
       if (!browserContext)
         throw new Error(`Internal error: cannot find context for userContextId=${userContextId}`);
       const target = new PageTarget(this, window, tab, browserContext, openerTarget);
+      // Wire up any actor that arrived before this PageTarget was created.
+      // Check both browserId (parent-process actor) and bcId (Fission content-process actor,
+      // whose browserId equals the outer BC's id).
+      const bc = tab.linkedBrowser?.browsingContext;
+      const pendingActor = bc && (this._pendingActors.get(bc.browserId) || this._pendingActors.get(bc.id));
+      if (pendingActor) {
+        pendingActor.wireToTarget(target);
+        this._pendingActors.delete(bc.browserId);
+        this._pendingActors.delete(bc.id);
+      } else {
+      }
       target.updateOverridesForBrowsingContext(tab.linkedBrowser.browsingContext);
       if (!hasExplicitSize)
         target.updateViewportSize();
@@ -185,7 +212,6 @@ export class TargetRegistry {
     const domWindowTabListeners = new Map();
 
     const onOpenWindow = async (appWindow) => {
-
       let domWindow;
       if (appWindow instanceof Ci.nsIAppWindow) {
         domWindow = appWindow.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
@@ -210,6 +236,12 @@ export class TargetRegistry {
 
       if (!domWindow.gBrowser)
         return;
+      setupWindowTabListeners(appWindow, domWindow);
+    };
+
+    const setupWindowTabListeners = (appWindow, domWindow) => {
+      if (domWindowTabListeners.has(domWindow))
+        return;
       const tabContainer = domWindow.gBrowser.tabContainer;
       domWindowTabListeners.set(domWindow, [
         helper.addEventListener(tabContainer, 'TabOpen', event => onTabOpenListener(appWindow, domWindow, event)),
@@ -218,6 +250,23 @@ export class TargetRegistry {
       for (const tab of domWindow.gBrowser.tabs)
         onTabOpenListener(appWindow, domWindow, { target: tab });
     };
+
+    // FF150: Services.ww.openWindow() returns the window while it is still
+    // about:blank (readyState=complete, gBrowser=null). onOpenWindow fires at
+    // that point and returns early. This observer catches the window once
+    // browser.xhtml finishes delayed startup and gBrowser is available.
+    Services.obs.addObserver({
+      observe(aSubject) {
+        const domWindow = aSubject;
+        if (!domWindow.isChromeWindow || !domWindow.gBrowser)
+          return;
+        let appWindow = null;
+        try {
+          appWindow = domWindow.docShell?.treeOwner?.QueryInterface(Ci.nsIAppWindow);
+        } catch(e) {}
+        setupWindowTabListeners(appWindow, domWindow);
+      }
+    }, 'browser-delayed-startup-finished');
 
     const onCloseWindow = window => {
       const domWindow = window.QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDOMWindowInternal || Ci.nsIDOMWindow);
@@ -388,6 +437,14 @@ export class TargetRegistry {
   targetForBrowserId(browserId) {
     return this._browserIdToTarget.get(browserId);
   }
+
+  targetForId(targetId) {
+    for (const target of this._browserToTarget.values()) {
+      if (target.id() === targetId)
+        return target;
+    }
+    return null;
+  }
 }
 
 export class PageTarget {
@@ -429,13 +486,13 @@ export class PageTarget {
       helper.addObserver(this._updateModalDialogs.bind(this), 'common-dialog-loaded'),
       helper.addProgressListener(tab.linkedBrowser, navigationListener, Ci.nsIWebProgress.NOTIFY_LOCATION),
       helper.addEventListener(this._linkedBrowser, 'DOMModalDialogClosed', event => this._updateModalDialogs()),
-      helper.addEventListener(this._linkedBrowser, 'WillChangeBrowserRemoteness', event => this._willChangeBrowserRemoteness()),
     ];
 
     this._disposed = false;
     browserContext.pages.add(this);
     this._registry._browserToTarget.set(this._linkedBrowser, this);
     this._registry._browserIdToTarget.set(this._linkedBrowser.browsingContext.browserId, this);
+    this._registry._bcIdToTarget.set(this._linkedBrowser.browsingContext.id, this);
 
     this._registry.emit(TargetRegistry.Events.TargetCreated, this);
   }
@@ -484,10 +541,6 @@ export class PageTarget {
       return;
     this._actor = undefined;
     this._channel.resetTransport();
-  }
-
-  _willChangeBrowserRemoteness() {
-    this.removeActor(this._actor);
   }
 
   dialog(dialogId) {
@@ -873,6 +926,7 @@ export class PageTarget {
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._linkedBrowser.browsingContext.browserId);
+    this._registry._bcIdToTarget.delete(this._linkedBrowser.browsingContext.id);
     try {
       helper.removeListeners(this._eventListeners);
     } catch (e) {
@@ -1293,6 +1347,9 @@ function dirPath(path) {
 }
 
 async function waitForWindowReady(window) {
+  if (window.document.readyState === 'loading' || window.document.readyState === 'uninitialized') {
+    await helper.awaitEvent(window, 'DOMContentLoaded');
+  }
   if (window.delayedStartupPromise) {
     await window.delayedStartupPromise;
   } else {
@@ -1305,8 +1362,9 @@ async function waitForWindowReady(window) {
       }, "browser-delayed-startup-finished");
     }));
   }
-  if (window.document.readyState !== 'complete')
+  if (window.document.readyState !== 'complete') {
     await helper.awaitEvent(window, 'load');
+  }
 }
 
 TargetRegistry.Events = {
