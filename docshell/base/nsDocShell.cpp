@@ -2928,6 +2928,17 @@ nsDocShell::SetDisallowBFCache(bool aEnabled) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsDocShell::GetLanguageOverride(nsAString& aLanguageOverride) {
+  aLanguageOverride = mLanguageOverride;
+  return NS_OK;
+}
+NS_IMETHODIMP
+nsDocShell::SetLanguageOverride(const nsAString& aLanguageOverride) {
+  mLanguageOverride = aLanguageOverride;
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsDocShell::SynchronizeLayoutHistoryState() {
   if (mActiveEntry && mActiveEntry->GetLayoutHistoryState() &&
       mBrowsingContext) {
