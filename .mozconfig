@@ -3,13 +3,20 @@ ac_add_options --enable-application=browser
 ac_add_options --disable-crashreporter
 ac_add_options --disable-backgroundtasks
 ac_add_options --disable-debug
-ac_add_options --disable-default-browser-agent
 ac_add_options --disable-tests
 ac_add_options --disable-updater
 ac_add_options --enable-release
 
-ac_add_options --disable-maintenance-service
-ac_add_options --disable-update-agent
+# Win-only flags: maintenance-service, update-agent, default-browser-agent are
+# all Windows-specific build-system options. Skip them on Linux/macOS, where
+# configure rejects them as "not available in this configuration".
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+        ac_add_options --disable-default-browser-agent
+        ac_add_options --disable-maintenance-service
+        ac_add_options --disable-update-agent
+        ;;
+esac
 
 ac_add_options --enable-bootstrap
 
