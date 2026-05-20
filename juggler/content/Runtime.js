@@ -163,8 +163,17 @@ class Runtime {
           return;
         }
         const errorWindow = Services.wm.getOuterWindowWithId(message.outerWindowID);
+        // Note: error locations are one-based, while console locations are zero-based in
+        // Firefox.  We want to report all of them as zero-based.  Newer Playwright
+        // clients read `pageError.location.url` strictly and crash when location
+        // is undefined (issue #13).
+        const errorLocation = {
+          lineNumber: message.lineNumber - 1,
+          columnNumber: message.columnNumber - 1,
+          url: message.sourceName,
+        };
         if (message.category === 'Web Worker' && message.logLevel === Ci.nsIConsoleMessage.error) {
-          emitEvent(this.events.onErrorFromWorker, errorWindow, message.message, '' + message.stack);
+          emitEvent(this.events.onErrorFromWorker, errorWindow, message.message, '' + message.stack, errorLocation);
           return;
         }
         const executionContext = this._windowToExecutionContext.get(errorWindow);
@@ -194,7 +203,8 @@ class Runtime {
           emitEvent(this.events.onRuntimeError, {
             executionContext,
             message: message.errorMessage,
-            stack: message.stack.toString(),
+            stack: message.stack ? message.stack.toString() : '',
+            location: errorLocation,
           });
         }
       },
