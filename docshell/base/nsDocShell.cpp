@@ -2939,6 +2939,46 @@ nsDocShell::SetLanguageOverride(const nsAString& aLanguageOverride) {
   return NS_OK;
 }
 
+// Stealthfox: content-side timezone override. Applies the requested IANA
+// timezone to the current window's JS realm so Date / Intl.DateTimeFormat
+// report it immediately on the page that's currently loading.
+//
+// Parent-process Browser.setTimezoneOverride still propagates via the
+// BrowsingContext TimezoneOverride FIELD (BrowsingContext.cpp DidSet);
+// this method runs from juggler/content/main.js on every navigation and
+// covers the realm that was just created by docshell-restore.
+NS_IMETHODIMP
+nsDocShell::OverrideTimezone(const nsAString& aTimezone, bool* aRetval) {
+  NS_ENSURE_ARG_POINTER(aRetval);
+  *aRetval = false;
+
+  nsCOMPtr<nsPIDOMWindowOuter> outer = GetWindow();
+  if (!outer) {
+    return NS_OK;
+  }
+  nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow();
+  if (!inner) {
+    return NS_OK;
+  }
+  JSObject* global = nsGlobalWindowInner::Cast(inner)->GetGlobalJSObject();
+  if (!global) {
+    return NS_OK;
+  }
+  JS::Realm* realm = JS::GetObjectRealmOrNull(global);
+  if (!realm) {
+    return NS_OK;
+  }
+
+  if (aTimezone.IsEmpty()) {
+    JS::SetRealmTimezoneOverride(realm, nullptr);
+  } else {
+    NS_ConvertUTF16toUTF8 utf8(aTimezone);
+    JS::SetRealmTimezoneOverride(realm, utf8.get());
+  }
+  *aRetval = true;
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsDocShell::SynchronizeLayoutHistoryState() {
   if (mActiveEntry && mActiveEntry->GetLayoutHistoryState() &&
       mBrowsingContext) {
