@@ -82,7 +82,11 @@ if [ -f "$HTML" ]; then
         "$HTML"
 fi
 
-LEAK_FILES=$(grep -arl '/home/feder' "$STAGING" 2>/dev/null | wc -l)
+# grep -arl exits 1 when there are NO matches. Combined with set -o pipefail
+# that propagates as a non-zero pipeline exit, killing the script silently
+# (the "good" case looked like an error). `|| true` keeps the leak check
+# semantically the same: LEAK_FILES counts matches, 0 = no leaks = success.
+LEAK_FILES=$( ( grep -arl '/home/feder' "$STAGING" 2>/dev/null || true ) | wc -l )
 if [ "$LEAK_FILES" -ne "0" ]; then
     echo "ERROR: $LEAK_FILES files still contain /home/feder paths:" >&2
     grep -arl '/home/feder' "$STAGING" 2>/dev/null | head -10 >&2
