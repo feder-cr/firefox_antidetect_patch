@@ -707,6 +707,16 @@ interface nsIDocShell : nsIDocShellTreeItem
   // and the page content process is killed by the GPU-init timeout.
   attribute AString languageOverride;
 
+  // Stealthfox: overrideTimezone method used by the Juggler protocol's
+  // content-side timezone propagation (juggler/content/main.js, called on
+  // every navigation). Applies the IANA timezone to the current realm via
+  // JS::SetRealmTimezoneOverride. Returns true on success, false if no
+  // current window/realm is available. The parent-side
+  // Browser.setTimezoneOverride path goes through the BrowsingContext
+  // TimezoneOverride FIELD (BrowsingContext.cpp DidSet), this method is
+  // the content-side complement that runs on every new realm.
+  boolean overrideTimezone(in AString aTimezone);
+
   /**
    * This attempts to save any applicable layout history state (like
    * scroll position) in the nsISHEntry. This is normally done
