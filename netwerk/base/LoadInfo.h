@@ -551,6 +551,8 @@ class LoadInfo final : public nsILoadInfo {
       dom::UserNavigationInvolvement::None;
 
   bool mSkipHTTPSUpgrade = false;
+
+  uint64_t mJugglerLoadIdentifier = 0;
 };
 // This is exposed solely for testing purposes and should not be used outside of
 // LoadInfo

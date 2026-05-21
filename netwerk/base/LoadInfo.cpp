@@ -745,7 +745,8 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mInterceptionInfo(rhs.mInterceptionInfo),
       mSchemelessInput(rhs.mSchemelessInput),
       mUserNavigationInvolvement(rhs.mUserNavigationInvolvement),
-      mSkipHTTPSUpgrade(rhs.mSkipHTTPSUpgrade) {
+      mSkipHTTPSUpgrade(rhs.mSkipHTTPSUpgrade),
+      mJugglerLoadIdentifier(rhs.mJugglerLoadIdentifier) {
 }
 
 LoadInfo::LoadInfo(
@@ -2087,6 +2088,18 @@ void LoadInfo::UpdateParentAddressSpaceInfo() {
     // IPAddress space of the browsing context
     mParentIpAddressSpace = bc->GetCurrentIPAddressSpace();
   }
+}
+
+NS_IMETHODIMP
+LoadInfo::GetJugglerLoadIdentifier(uint64_t* aResult) {
+  *aResult = mJugglerLoadIdentifier;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetJugglerLoadIdentifier(uint64_t aID) {
+  mJugglerLoadIdentifier = aID;
+  return NS_OK;
 }
 
 }  // namespace mozilla::net

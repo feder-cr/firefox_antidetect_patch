@@ -195,6 +195,7 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
       aLoadState->GetTextDirectiveUserActivation() ||
       aLoadState->HasLoadFlags(nsIWebNavigation::LOAD_FLAGS_FROM_EXTERNAL));
   loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());
+  loadInfo->SetJugglerLoadIdentifier(aLoadState->GetLoadIdentifier());
 
   return loadInfo.forget();
 }
