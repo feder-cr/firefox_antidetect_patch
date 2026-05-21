@@ -309,6 +309,10 @@ class nsHttpChannel final : public HttpBaseChannel,
   void MaybeResolveProxyAndBeginConnect();
   void MaybeStartDNSPrefetch();
 
+  // ---- Playwright begin
+  bool IsForcedOffline();
+  // ---- Playwright end
+
   // Based on the proxy configuration determine the strategy for resolving the
   // end server host name.
   ProxyDNSStrategy GetProxyDNSStrategy();
