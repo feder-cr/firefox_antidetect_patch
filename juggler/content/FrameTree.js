@@ -563,7 +563,18 @@ class Frame {
     const webSocketService = this._frameTree._webSocketEventService;
     if (this._webSocketListenerInnerWindowId && webSocketService.hasListenerFor(this._webSocketListenerInnerWindowId))
       webSocketService.removeListener(this._webSocketListenerInnerWindowId, this._webSocketListener);
-    this._webSocketListenerInnerWindowId = this.domWindow().windowGlobalChild.innerWindowId;
+
+    // Stealthfox issue #18: during rapid iframe create/detach bursts (e.g.
+    // id.sky.com's Grafana Faro session-start sequence), this handler can fire
+    // for a frame whose BrowsingContext is mid-teardown — `domWindow()` then
+    // returns undefined and unguarded `.windowGlobalChild.innerWindowId`
+    // threw TypeError, corrupting FrameTree and triggering page disposal.
+    const dw = this.domWindow();
+    if (!dw || !dw.windowGlobalChild) {
+      this._webSocketListenerInnerWindowId = 0;
+      return;
+    }
+    this._webSocketListenerInnerWindowId = dw.windowGlobalChild.innerWindowId;
     webSocketService.addListener(this._webSocketListenerInnerWindowId, this._webSocketListener);
 
     for (const context of this._worldNameToContext.values())
