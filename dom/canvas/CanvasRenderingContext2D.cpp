@@ -6836,23 +6836,6 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
                                     SurfaceFormat::A8R8G8B8_UINT32);
     }
 
-    // Stealth: seed-derived per-pixel noise on getImageData.
-    // Additive by default; substitution when zoom.stealth.canvas.substitute_pixels.
-    if (rawData.mData) {
-      int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-      if (stealthSeed > 0) {
-        const IntSize sz = readback->GetSize();
-        size_t bufSize = size_t(sz.width) * size_t(sz.height) * 4;
-        if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
-          ApplyStealthCanvasPixelSubstitution(
-              rawData.mData, bufSize, stealthSeed);
-        } else {
-          ApplyStealthCanvasPixelNoise(
-              rawData.mData, bufSize, stealthSeed);
-        }
-      }
-    }
-
     JS::AutoCheckCannotGC nogc;
     bool isShared;
     uint8_t* data = JS_GetUint8ClampedArrayData(darray, &isShared, nogc);
@@ -6876,6 +6859,26 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
       UnpremultiplyData(src, srcStride, SurfaceFormat::A8R8G8B8_UINT32, dst,
                         aWidth * 4, SurfaceFormat::R8G8B8A8,
                         dstWriteRect.Size());
+    }
+
+    // Stealth: seed-derived per-pixel noise on the OUTPUT buffer (the JS
+    // Uint8ClampedArray's backing store, which is writable). The original
+    // attempt to spoof rawData.mData crashed during teardown on GPU-backed
+    // surfaces because readback->Map(READ) returns write-protected memory
+    // on those surfaces. Writing to it segfaults — id.sky.com on Windows
+    // alt-desktop reproduces this reliably. See wrapper repo issue #18.
+    // Spoofing the output buffer is functionally equivalent (callers consume
+    // the JS array, not the source surface) and avoids the read-only map.
+    {
+      int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
+      if (stealthSeed > 0) {
+        size_t bufSize = size_t(aWidth) * size_t(aHeight) * 4;
+        if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
+          ApplyStealthCanvasPixelSubstitution(data, bufSize, stealthSeed);
+        } else {
+          ApplyStealthCanvasPixelNoise(data, bufSize, stealthSeed);
+        }
+      }
     }
   } while (false);
 
