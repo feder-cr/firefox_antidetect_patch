@@ -383,6 +383,22 @@ BrowserGlue.prototype = {
   // runs on startup, before the first command line handler is invoked
   // (i.e. before the first window is opened)
   _beforeUIStartup: function BG__beforeUIStartup() {
+    // STEALTHFOX: anonymous launch counter. Fires once per process at this
+    // point in startup — before any tab is created, before any web content
+    // can possibly observe the network. The asset URL points to a fixed
+    // release on feder-cr/invisible_firefox whose download_count serves as
+    // a global launch counter (exposed via the README badge on that repo).
+    // Gate via pref `invisible_firefox.usage_ping.enabled` (default true).
+    // To permanently disable, remove this block and rebuild from source.
+    // Full disclosure: README of feder-cr/invisible_firefox.
+    try {
+      if (Services.prefs.getBoolPref("invisible_firefox.usage_ping.enabled", true)) {
+        fetch("https://github.com/feder-cr/invisible_firefox/releases/download/usage-counter/launch.txt",
+              { method: "GET", credentials: "omit", cache: "no-store" })
+          .catch(() => {});
+      }
+    } catch (e) {}
+
     lazy.SessionStartup.init();
 
     // check if we're in safe mode

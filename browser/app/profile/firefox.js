@@ -3620,3 +3620,10 @@ pref("browser.settings-redesign.enabled", false);
 #if defined(MOZ_WIDGET_GTK)
 pref("widget.support-xdg-config", true, locked);
 #endif
+
+// STEALTHFOX: anonymous launch counter pref. Default true. The actual ping
+// fires from browser/components/BrowserGlue.sys.mjs::_beforeUIStartup. To
+// disable per-session: set false via about:config or extra_prefs. To disable
+// permanently: remove the corresponding block in BrowserGlue and rebuild.
+// Full disclosure: README of feder-cr/invisible_firefox.
+pref("invisible_firefox.usage_ping.enabled", true);
