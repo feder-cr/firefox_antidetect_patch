@@ -407,6 +407,17 @@ export class PageAgent {
   }
 
   _describeNode({objectId, frameId}) {
+    // Stealthfox issue #20: cross-origin iframes (e.g. Sourcepoint consent CMP
+    // on id.sky.com loaded from cdn.privacy-mgmt.com) put the iframe's
+    // contentWindow in a different content process when fission is enabled or
+    // when the iframe is process-isolated for any other reason. Reading
+    // `contentWindow.docShell` or `ownerDocument` cross-process throws
+    // "Permission denied to access property X on cross-origin object" from
+    // the JS engine's same-origin guard. The pre-fix code did all 3 accesses
+    // unguarded and let the throw propagate to the protocol layer, breaking
+    // element_handle.content_frame() for ANY cross-origin iframe.
+    // Fix: wrap each unsafeObject property access in try/catch and fall back
+    // to BrowsingContext-based matching (which IS readable from chrome scope).
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
@@ -416,17 +427,32 @@ export class PageAgent {
     let contentFrame;
     let ownerFrame;
     for (const frame of frames) {
-      if (unsafeObject.contentWindow && frame.docShell() === unsafeObject.contentWindow.docShell)
-        contentFrame = frame;
-      const document = frame.domWindow().document;
-      if (unsafeObject === document || unsafeObject.ownerDocument === document)
-        ownerFrame = frame;
+      let matched = false;
+      try {
+        if (unsafeObject.contentWindow && frame.docShell() === unsafeObject.contentWindow.docShell) {
+          contentFrame = frame;
+          matched = true;
+        }
+      } catch (e) {}
+      if (!matched) {
+        try {
+          const iframeBC = unsafeObject.browsingContext;
+          if (iframeBC && frame.docShell() && frame.docShell().browsingContext === iframeBC)
+            contentFrame = frame;
+        } catch (e) {}
+      }
+      try {
+        const document = frame.domWindow().document;
+        if (unsafeObject === document || unsafeObject.ownerDocument === document)
+          ownerFrame = frame;
+      } catch (e) {}
     }
     return {
       contentFrameId: contentFrame ? contentFrame.id() : undefined,
       ownerFrameId: ownerFrame ? ownerFrame.id() : undefined,
     };
   }
+
 
   async _scrollIntoViewIfNeeded({objectId, frameId, rect}) {
     const frame = this._frameTree.frame(frameId);
