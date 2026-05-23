@@ -4,7 +4,7 @@ of mozilla-firefox/firefox.
 
 Verifies that the snapshot is genuinely reproducible — i.e. a new contributor
 can clone vanilla Firefox + apply patches + build, without needing access to
-the feder-cr/invisible-firefox fork branch.
+the feder-cr/invisible_firefox fork branch.
 
 This is the inverse of update_patches.py: it consumes what update_patches.py
 produces.  Both are read-only against the current repo.

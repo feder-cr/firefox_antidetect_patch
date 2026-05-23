@@ -6,7 +6,7 @@
 #   ./scripts/make_release.sh <tag> "<release-name>" "<release-body>"
 #
 # Example:
-#   ./scripts/make_release.sh firefox-5 "invisible-firefox (150.0.1) rev 5" \
+#   ./scripts/make_release.sh firefox-5 "invisible_firefox (150.0.1) rev 5" \
 #       "Bug fix release. Closes issue #14."
 #
 # Expects:
