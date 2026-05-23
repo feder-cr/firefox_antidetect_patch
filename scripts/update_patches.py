@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a snapshot of the stealth patch series from the current branch.
 
-The source of truth is the feder-cr/invisible-firefox fork (branch
+The source of truth is the feder-cr/invisible_firefox fork (branch
 stealth/<N>).  This script generates a flat list of .patch files for
 distribution to users who want to apply the patches to a vanilla
 mozilla-firefox/firefox clone (rather than cloning the fork).

@@ -1,6 +1,6 @@
 # Invisible Firefox — branch `stealth/150`
 
-Questo branch (`stealth/150`) sul fork `feder-cr/invisible-firefox` di `mozilla-firefox/firefox` è la **single source of truth** per gli stealth patches applicati a Firefox 150.0.1.
+Questo branch (`stealth/150`) sul fork `feder-cr/invisible_firefox` di `mozilla-firefox/firefox` è la **single source of truth** per gli stealth patches applicati a Firefox 150.0.1.
 
 > Storia: questo repo si chiamava `feder-cr/firefox` fino al 2026-05-19, e c'era un companion repo `feder-cr/firefox-stealth` con i .patch numerati. Entrambi consolidati qui (rename + delete). Vedi commit `ce71f1f...` su `feder-cr/invisible_playwright` per il rename trail.
 
@@ -36,7 +36,7 @@ ec9aaac4 [stealth-base/v150.0.1] FF150_0_1_RELEASE vanilla mozilla-firefox
 
 ### 1. Clone questo branch
 ```bash
-git clone -b stealth/150 https://github.com/feder-cr/invisible-firefox.git firefox-source
+git clone -b stealth/150 https://github.com/feder-cr/invisible_firefox.git firefox-source
 cd firefox-source
 ```
 
@@ -206,7 +206,7 @@ python scripts/apply_patches.py /path/to/fresh/clone \
 ```
 
 Lo snapshot è solo un artefatto. Le PR/contributi vanno fatti sul fork
-(`feder-cr/invisible-firefox`), non sullo snapshot.
+(`feder-cr/invisible_firefox`), non sullo snapshot.
 
 ## Vedi anche
 
