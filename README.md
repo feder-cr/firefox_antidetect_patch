@@ -1,6 +1,6 @@
 # invisible_firefox
 
-[![browser launches](https://img.shields.io/github/downloads/feder-cr/invisible_firefox/usage-counter/launch.txt?label=browser%20launches&color=blue)](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
+[![browser launches](https://img.shields.io/github/downloads/feder-cr/invisible_firefox/usage-counter/total?label=browser%20launches&color=blue)](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
 
 Patched build of Firefox 150 used as the binary backend of the [invisible_playwright](https://github.com/feder-cr/invisible_playwright) Python wrapper. Branch `stealth/150` is the source of truth; see [STEALTH_BRANCH_README.md](STEALTH_BRANCH_README.md) for the patch series.
 
