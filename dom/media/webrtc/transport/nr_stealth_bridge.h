@@ -31,6 +31,15 @@ size_t nr_stealth_get_webrtc_public_ip(char* buf, size_t buf_len);
  * host candidate). Currently unused. */
 size_t nr_stealth_get_webrtc_host_ip(char* buf, size_t buf_len);
 
+/* Returns 1 if IPv6 host candidates must be dropped from ICE gathering, else
+ * 0. Reads env var STEALTHFOX_WEBRTC_DISABLE_IPV6 first ("0" = off, any other
+ * non-empty value = on), then falls back to the pref
+ * zoom.stealth.webrtc.disable_ipv6. The upstream
+ * media.peerconnection.ice.disableIPv6 pref is dead in FF150 (read nowhere in
+ * the ICE path), so this is the stealth path to stop the real global IPv6 host
+ * candidate from leaking past a SOCKS proxy that only carries TCP. */
+int nr_stealth_webrtc_disable_ipv6(void);
+
 #ifdef __cplusplus
 }
 #endif

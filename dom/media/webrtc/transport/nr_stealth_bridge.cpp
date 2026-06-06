@@ -65,3 +65,14 @@ extern "C" size_t nr_stealth_get_webrtc_host_ip(char* buf, size_t buf_len) {
   auto lock = mozilla::StaticPrefs::zoom_stealth_webrtc_host_ip();
   return CopyLockedStringTo(lock, buf, buf_len);
 }
+
+extern "C" int nr_stealth_webrtc_disable_ipv6(void) {
+  /* Env var first (read directly in the socket process, no IPC timing race —
+   * same rationale as the public IP). "0" disables explicitly; any other
+   * non-empty value enables. Falls back to the pref when the env is unset. */
+  const char* env = getenv("STEALTHFOX_WEBRTC_DISABLE_IPV6");
+  if (env && env[0] != '\0') {
+    return (env[0] != '0') ? 1 : 0;
+  }
+  return mozilla::StaticPrefs::zoom_stealth_webrtc_disable_ipv6() ? 1 : 0;
+}
