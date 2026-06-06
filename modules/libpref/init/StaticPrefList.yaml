@@ -20466,6 +20466,16 @@
   value: ""
   mirror: always
 
+# Drop IPv6 host candidates from ICE gathering. The upstream
+# media.peerconnection.ice.disableIPv6 pref is dead in FF150, so this is the
+# stealth replacement: stops the real global IPv6 host (and any IPv6 srflx
+# derived from it) leaking past a TCP-only SOCKS proxy. Also readable via env
+# STEALTHFOX_WEBRTC_DISABLE_IPV6 (primary, for the socket process).
+- name: zoom.stealth.webrtc.disable_ipv6
+  type: bool
+  value: false
+  mirror: always
+
 #---------------------------------------------------------------------------
 # End of prefs
 #---------------------------------------------------------------------------
