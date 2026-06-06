@@ -72,7 +72,6 @@ static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     nr_ice_candidate *cand = 0;
     char label[128];
     UINT2 srflx_port;
-    unsigned long foundation_seed;
     char foundation[16];
     unsigned int o1 = 0, o2 = 0, o3 = 0, o4 = 0;
     unsigned int port_seed;
@@ -116,13 +115,46 @@ static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     }
     cand->local_protocol = cand->base.protocol;
 
-    /* Foundation = decimal hash of (public_ip, base, "srflx"). Numeric format
-     * matches what nICEr's nr_ice_get_foundation produces. */
-    foundation_seed = 0;
-    for (const char* p = public_ip_buf; *p; ++p) foundation_seed = foundation_seed * 31 + (unsigned char)*p;
-    foundation_seed ^= ((unsigned long)port_seed * 7919UL);
-    foundation_seed = (foundation_seed % 3000000000UL) + 1000000000UL;
-    snprintf(foundation, sizeof(foundation), "%lu", foundation_seed);
+    /* Foundation = the index into ctx->foundations, exactly as
+     * nr_ice_get_foundation assigns it (keyed by base addr + type + stun-server
+     * addr). A real srflx shares the host's base but differs in type, so it
+     * never matches a host entry and always takes a FRESH index — vanilla shows
+     * the srflx foundation distinct from every host one. We can't call the
+     * static nr_ice_get_foundation (it derefs cand->stun_server, NULL here), so
+     * replicate its "append new foundation" branch: count existing entries, use
+     * that as our index, and append our own so later candidates keep getting
+     * correct, collision-free indices. (max+1 over the component list was wrong:
+     * it collided with the host TCP foundation.) */
+    {
+        nr_ice_ctx *fctx = cand->ctx;
+        nr_ice_foundation *f;
+        int idx = 0, found = 0;
+        /* REUSE the index of an existing SERVER_REFLEXIVE foundation on the
+         * same base, exactly as nr_ice_get_foundation does (matching on
+         * ip_version+protocol+IP, not port). The real-but-failed srflx
+         * candidates created just above (one per STUN server) already
+         * registered such a foundation for this base, so we inherit its small
+         * index (~1, like vanilla) and stay STABLE across every gather round.
+         * Only append a fresh one if none exists (e.g. TURN-only configs where
+         * no real srflx was created). Blindly appending every round made the
+         * foundation drift (4->6->2), itself a tell. */
+        STAILQ_FOREACH(f, &fctx->foundations, entry) {
+            if (f->type == (int)SERVER_REFLEXIVE &&
+                !nr_transport_addr_cmp(&cand->base, &f->addr,
+                                       NR_TRANSPORT_ADDR_CMP_MODE_ADDR)) {
+                found = 1;
+                break;
+            }
+            idx++;
+        }
+        if (!found && (f = R_NEW(nr_ice_foundation))) {
+            f->index = idx;
+            nr_transport_addr_copy(&f->addr, &cand->base);
+            f->type = SERVER_REFLEXIVE;
+            STAILQ_INSERT_TAIL(&fctx->foundations, f, entry);
+        }
+        snprintf(foundation, sizeof(foundation), "%d", idx);
+    }
 
     snprintf(label, sizeof(label), "srflx-stealth(%s)", public_ip_buf);
     if (!(cand->label = strdup(label)))
@@ -130,8 +162,28 @@ static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     if (!(cand->foundation = strdup(foundation)))
         ABORT(R_NO_MEMORY);
 
-    cand->priority = (UINT4)100 << 24 | (UINT4)65535 << 8 |
-                     (UINT4)(256 - cand->component_id);
+    /* Priority must reconstruct nr_ice_candidate_compute_priority for a
+     * SERVER_REFLEXIVE/UDP candidate:
+     *   (type_pref<<24)|(iface_pref<<16)|(dir<<13)|(stun_priority<<8)|(256-comp)
+     * type_pref=100 (SRV_RFLX), dir=0 (UDP), stun_priority=31 (=31-stun id 0).
+     * interface_preference is interface-specific (~126/127) and MUST match the
+     * real host candidate on this interface; the old hardcoded 0xFFFF gave
+     * local_pref=65535, a value no genuine nICEr candidate ever has (real range
+     * ~32256-32704) — an instant tell. Read it from the UDP host candidate
+     * already created for this address (bits 16-23 of its priority). */
+    {
+        UCHAR iface_pref = 126;  /* fallback if no host candidate is present yet */
+        nr_ice_candidate *hc;
+        TAILQ_FOREACH(hc, &component->candidates, entry_comp) {
+            if (hc->type == HOST && hc->local_protocol == IPPROTO_UDP && hc->priority) {
+                iface_pref = (UCHAR)((hc->priority >> 16) & 0xFF);
+                break;
+            }
+        }
+        cand->priority = ((UINT4)100 << 24) | ((UINT4)iface_pref << 16) |
+                         ((UINT4)0 << 13) | ((UINT4)31 << 8) |
+                         (UINT4)(256 - cand->component_id);
+    }
 
     nr_ice_candidate_compute_codeword(cand);
     cand->state = NR_ICE_CAND_STATE_INITIALIZING;
@@ -145,7 +197,13 @@ static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
           component->stream->label, cand->codeword,
           cand->addr.as_string, cand->base.as_string);
 
-    NR_ASYNC_TIMER_SET(0, nr_ice_stealth_srflx_fire_ready, (void *)cand,
+    /* Fire ~200 ms out, not immediately: a real srflx only arrives AFTER the
+     * STUN round-trip, so host candidates are emitted first and the srflx
+     * trickles in later (~RTT). Emitting it at 0 ms made it race/precede the
+     * host candidates, which is unnatural and broke first-candidate-based
+     * collectors (CreepJS). 200 ms is a plausible STUN RTT and well inside
+     * typical 3 s gathering windows. */
+    NR_ASYNC_TIMER_SET(200, nr_ice_stealth_srflx_fire_ready, (void *)cand,
                        &cand->ready_cb_timer);
     cand = 0;
 
