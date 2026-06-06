@@ -782,11 +782,32 @@ int nr_ice_set_local_addresses(nr_ice_ctx *ctx,
         }
       }
       if (!default_addr_ct) {
-        r_log(LOG_ICE,LOG_ERR,"ICE(%s): failed to find default addresses",ctx->label);
-        ABORT(R_FAILED);
+        /* The default-route probe (a connected UDP socket to the document's
+         * remote, see nr_ice_get_default_address) can't complete behind a
+         * SOCKS proxy: the remote is reachable only through the proxy, so the
+         * OS route lookup fails and we get zero default addresses. Failing ICE
+         * here blanks WebRTC entirely (host + srflx both "blocked"), which is
+         * itself a proxy/stealth tell. If we DO have real filtered local
+         * addresses (default_address_only just discarded them in favour of the
+         * route probe), fall back to them: obfuscate_host_addresses still masks
+         * them as <uuid>.local and the synthetic srflx injection then fires, so
+         * the page sees a normal NAT-user profile instead of a dead stack. */
+        if (addr_ct) {
+          r_log(LOG_ICE,LOG_WARNING,
+                "ICE(%s): default-route probe failed (proxy?); falling back to %d filtered local addr(s)",
+                ctx->label,addr_ct);
+          addrs = local_addrs;
+          /* addr_ct already holds the filtered survivor count */
+        }
+        else {
+          r_log(LOG_ICE,LOG_ERR,"ICE(%s): failed to find default addresses",ctx->label);
+          ABORT(R_FAILED);
+        }
       }
-      addrs = default_addrs;
-      addr_ct = default_addr_ct;
+      else {
+        addrs = default_addrs;
+        addr_ct = default_addr_ct;
+      }
     }
     else {
       addrs = local_addrs;
