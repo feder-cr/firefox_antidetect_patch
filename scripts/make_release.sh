@@ -10,7 +10,11 @@
 #       "Bug fix release. Closes issue #14."
 #
 # Expects:
-#   - Windows build at: c:/ff/source/obj-x86_64-pc-windows-msvc/dist/bin/firefox/
+#   - Windows build done (./mach build). This script runs `./mach package` to
+#     produce obj-x86_64-pc-windows-msvc/dist/firefox/ and zips its CONTENTS so
+#     firefox.exe sits at the zip ROOT — the wrapper's BINARY_ENTRY_REL and
+#     validate_release.py both require that. Zipping the firefox/ DIRECTORY (the
+#     old bug) nested the binary under firefox/ and the wrapper couldn't find it.
 #   - Linux build (WSL): ~/ff-build/firefox-150/obj-x86_64-pc-linux-gnu/dist/bin/
 #   - GITHUB_TOKEN env var with repo:write on feder-cr/invisible_playwright
 #
@@ -35,17 +39,33 @@ rm -f "$OUT"/firefox-*.{zip,tar.gz} "$OUT/checksums.txt"
 WIN_ZIP="firefox-150.0.1-stealth-win-x86_64.zip"
 LIN_TGZ="firefox-150.0.1-stealth-linux-x86_64.tar.gz"
 
-WIN_DIST="$REPO_ROOT/obj-x86_64-pc-windows-msvc/dist/bin/firefox"
+# mach package emits a clean app tree at obj/.../dist/firefox/ (firefox.exe +
+# libs + application.ini + dependentlibs.list, no dev cruft). The release zip
+# must hold those files at its ROOT, NOT under a firefox/ subdir.
+WIN_APP="$REPO_ROOT/obj-x86_64-pc-windows-msvc/dist/firefox"
 
 # ---------- Windows zip ----------
-echo "=== [1/5] Packaging Windows ==="
-if [[ ! -d "$WIN_DIST" ]]; then
-    echo "ERROR: Windows dist not found at $WIN_DIST" >&2
+echo "=== [1/5] Packaging Windows (mach package + zip CONTENTS at root) ==="
+( cd "$REPO_ROOT" && ./mach package )
+if [[ ! -f "$WIN_APP/firefox.exe" ]]; then
+    echo "ERROR: packaged app not found at $WIN_APP/firefox.exe (mach package failed?)" >&2
     exit 1
 fi
-( cd "$(dirname "$WIN_DIST")" && \
-  powershell.exe -NoProfile -Command \
-    "Compress-Archive -Path firefox -DestinationPath '$OUT\\$WIN_ZIP' -Force" )
+# Zip the CONTENTS of dist/firefox so firefox.exe is at the zip root (wrapper +
+# validate_release.py require it). Pass Windows-form paths so they resolve no
+# matter which python flavor `python3` is here.
+WIN_APP="$(cygpath -w "$WIN_APP")" OUT_ZIP="$(cygpath -w "$OUT/$WIN_ZIP")" python3 - <<'PY'
+import os, zipfile
+src, out = os.environ["WIN_APP"], os.environ["OUT_ZIP"]
+if os.path.exists(out):
+    os.remove(out)
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+    for root, _dirs, files in os.walk(src):
+        for f in files:
+            full = os.path.join(root, f)
+            z.write(full, os.path.relpath(full, src))  # firefox.exe at zip ROOT
+print(f"win zip: {out} ({os.path.getsize(out)//1024//1024} MB)")
+PY
 ls -lh "$OUT/$WIN_ZIP"
 
 # ---------- Linux tar.gz via the CORRECT pipeline ----------
