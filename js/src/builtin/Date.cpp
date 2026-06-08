@@ -2138,7 +2138,16 @@ static ClippedTime NowAsMillis(JSContext* cx) {
 
 JS::ClippedTime js::DateNow(JSContext* cx) { return NowAsMillis(cx); }
 
-static bool date_now(JSContext* cx, unsigned argc, Value* vp) {
+// Defeat JIT call-pattern fingerprinting of Date.now() — same rationale
+// as the matching Performance::Now() patch in dom/performance/Performance.cpp.
+// Bot-defense vendors profile the timing-call distribution of repeated
+// Date.now() calls; native inlining produces a tight pattern that classifies
+// as bot. MOZ_NEVER_INLINE + an asm compiler barrier perturbs the
+// distribution toward the noisier shape a real desktop browser produces,
+// while preserving "[native code]" for Function.prototype.toString.call
+// introspection. See invisible_playwright#32.
+static MOZ_NEVER_INLINE bool date_now(JSContext* cx, unsigned argc, Value* vp) {
+  asm volatile("" ::: "memory");
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Date", "now");
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().set(TimeValue(NowAsMillis(cx)));
