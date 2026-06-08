@@ -135,7 +135,25 @@ DOMHighResTimeStamp Performance::TimeStampToDOMHighResForRendering(
                                                          mRTPCallerType);
 }
 
-DOMHighResTimeStamp Performance::Now() {
+// Defeat JIT call-pattern fingerprinting of Performance.now().
+//
+// Bot-defense vendors profile the timing-call distribution of repeated
+// performance.now() calls over a sensor pass. Native Now() inlines to a
+// tight, statistically clean pattern that classifies as bot. Adding
+// non-inlinable indirection + a single-instruction compiler barrier
+// pushes the distribution into the noisier zone a real desktop browser
+// produces (CPU contention, GC, scheduler interference).
+//
+// Equivalent to the JS-layer wrap empirically validated in
+// invisible_playwright#32 but preserves "[native code]" for
+// Function.prototype.toString.call introspection.
+DOMHighResTimeStamp MOZ_NEVER_INLINE Performance::Now() {
+  // Single-instruction compiler barrier — prevents the optimizer from
+  // reordering or merging sequential call sites and from inlining the
+  // body at any call site that survives MOZ_NEVER_INLINE. Semantics
+  // unchanged.
+  asm volatile("" ::: "memory");
+
   DOMHighResTimeStamp rawTime = NowUnclamped();
 
   // XXX: Removing this caused functions in pkcs11f.h to fail.
