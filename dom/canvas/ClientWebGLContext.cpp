@@ -77,22 +77,31 @@ static void ApplyStealthWebGLReadPixelsNoise(uint8_t* aBuf, size_t aSize,
   if (!aBuf || aSize < 4 || aSeed <= 0) return;
   if (aFormat != LOCAL_GL_RGBA) return;
   if (aType != LOCAL_GL_UNSIGNED_BYTE) return;
-  uint32_t h0 = uint32_t(aSeed);
-  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
-  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
-  for (size_t i = 0; i + 3 < aSize; i += 4) {
-    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
-    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
-    x *= 0xc2b2ae35u; x ^= x >> 16;
-    if ((x & 0x7) != 0) continue;
-    int ch = int((x >> 3) % 3);
-    uint8_t* p = &aBuf[i + ch];
-    if (*p == 0) continue;
-    if (x & 0x100) {
-      *p = (*p < 255) ? (*p + 1) : (*p - 1);
-    } else {
-      *p = (*p > 0) ? (*p - 1) : (*p + 1);
+
+  // Per-seed gamma LUT (NOT isolated +-1 flips). Isolated +-1 noise reads as an
+  // unnatural high-frequency spike on an otherwise smooth GPU render and gets
+  // flagged as fingerprint "masking" (e.g. pixelscan). A monotonic per-channel
+  // gamma remap instead looks like a genuine display/GPU colour-profile
+  // difference (the same kind of variation the DWrite gamma jitter produces),
+  // yet still makes the readback hash differ per profile. Per-channel (R/G/B
+  // independent) -> 33^3 distinct curves for robust per-profile unlinkability.
+  uint32_t hg = uint32_t(aSeed);
+  hg ^= hg >> 16; hg *= 0x85ebca6bu; hg ^= hg >> 13;
+  hg *= 0xc2b2ae35u; hg ^= hg >> 16;
+  uint8_t lut[3][256];
+  for (int ch = 0; ch < 3; ++ch) {
+    const double gamma =
+        1.0 + (double(int32_t((hg >> (ch * 6)) % 33) - 16) * 0.0025);
+    for (int v = 0; v < 256; ++v) {
+      double n = std::pow(double(v) / 255.0, gamma);
+      int o = int(n * 255.0 + 0.5);
+      lut[ch][v] = uint8_t(o < 0 ? 0 : (o > 255 ? 255 : o));
     }
+  }
+  for (size_t i = 0; i + 3 < aSize; i += 4) {
+    aBuf[i + 0] = lut[0][aBuf[i + 0]];
+    aBuf[i + 1] = lut[1][aBuf[i + 1]];
+    aBuf[i + 2] = lut[2][aBuf[i + 2]];  // alpha (i+3) unchanged
   }
 }
 

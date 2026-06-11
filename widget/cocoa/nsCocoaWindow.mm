@@ -5262,7 +5262,10 @@ void nsCocoaWindow::Show(bool aState) {
     // If we had set the activationPolicy to accessory, then right now we won't
     // have a dock icon. Make sure that we undo that and show a dock icon now
     // that we're going to show a window.
-    if (NSApp.activationPolicy != NSApplicationActivationPolicyRegular) {
+    // STEALTHFOX_CLOAK_HOOK v1: when cloaking the window (invisible "headless"),
+    // keep the accessory policy so no Dock icon appears for the hidden window.
+    if (NSApp.activationPolicy != NSApplicationActivationPolicyRegular &&
+        !Preferences::GetBool("zoom.stealth.cloak_windows", false)) {
       NSApp.activationPolicy = NSApplicationActivationPolicyRegular;
       PR_SetEnv("MOZ_APP_NO_DOCK=");
     }
@@ -5360,6 +5363,25 @@ void nsCocoaWindow::Show(bool aState) {
       MoveVisibleWindowToWorkspace(mDeferredWorkspaceID);
       NS_OBJC_END_TRY_IGNORE_BLOCK
       mDeferredWorkspaceID = 0;
+    }
+
+    // STEALTHFOX_CLOAK_HOOK v1: invisible-but-rendered "headless" on macOS, the
+    // analog of the Windows DWMWA_CLOAK fix. The window was just ordered front
+    // (so it has a backing surface and renders); setAlphaValue:0 now makes it
+    // invisible WITHOUT changing NSWindowOcclusionState (alpha is a pure display
+    // blend), so WebRender keeps compositing it. We also pin mIgnoreOcclusionCount
+    // once, so DispatchOcclusionEvent never pauses the compositor even if the
+    // window becomes occluded (covered, or on a non-current Space) — unlike
+    // Windows, macOS has no occlusion-tracking pref to switch off. Gated by
+    // zoom.stealth.cloak_windows.
+    if ((mWindowType == WindowType::TopLevel ||
+         mWindowType == WindowType::Popup) &&
+        Preferences::GetBool("zoom.stealth.cloak_windows", false)) {
+      [mWindow setAlphaValue:0.0];
+      if (!mStealthCloaked) {
+        mStealthCloaked = true;
+        mIgnoreOcclusionCount++;
+      }
     }
   } else {
     // roll up any popups if a top-level window is going away
