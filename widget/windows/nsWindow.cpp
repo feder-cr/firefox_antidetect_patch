@@ -1489,6 +1489,15 @@ DWORD nsWindow::WindowExStyle() {
                "Expect alert windows to have type=dialog");
     return WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
   }
+  // STEALTHFOX_CLOAK_HOOK v1: a cloaked (invisible) chrome window must also stay
+  // out of the taskbar + alt-tab. WS_EX_TOOLWINDOW at creation does exactly that
+  // (the shell never adds a taskbar button for a tool window). Pairs with the
+  // DWMWA_CLOAK in nsWindow::Show. Gated by zoom.stealth.cloak_windows.
+  if ((mWindowType == WindowType::TopLevel ||
+       mWindowType == WindowType::Dialog) &&
+      mozilla::Preferences::GetBool("zoom.stealth.cloak_windows", false)) {
+    return WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW;
+  }
   return WS_EX_WINDOWEDGE;
 }
 
@@ -1838,6 +1847,21 @@ void nsWindow::Show(bool aState) {
 
           ::SetWindowPos(mWnd, HWND_TOP, 0, 0, 0, 0, flags);
         }
+      }
+
+      // STEALTHFOX_CLOAK_HOOK v1: invisible-but-rendered "headless" on Windows.
+      // The wrapper sets zoom.stealth.cloak_windows=true for headless=True. We
+      // keep the chrome window DWM-cloaked (still composited + GPU-rendered, but
+      // never shown on screen) instead of the broken SetThreadDesktop hide. The
+      // window was just shown above (its backing surface exists, so it renders);
+      // we now re-cloak it. DWMWA_CLOAK can only be set by the owning process,
+      // which is exactly why this must live in the browser's own C++.
+      if ((mWindowType == WindowType::TopLevel ||
+           mWindowType == WindowType::Popup) &&
+          mozilla::Preferences::GetBool("zoom.stealth.cloak_windows", false)) {
+        const BOOL stealthCloak = TRUE;
+        ::DwmSetWindowAttribute(mWnd, DWMWA_CLOAK, &stealthCloak,
+                                sizeof(stealthCloak));
       }
     } else {
       if (mWindowType != WindowType::Dialog) {

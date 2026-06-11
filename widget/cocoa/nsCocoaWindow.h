@@ -627,6 +627,11 @@ class nsCocoaWindow final : public nsIWidget {
   // contexts are permitted to enter DOM fullscreen.
   int mIgnoreOcclusionCount;
 
+  // STEALTHFOX_CLOAK_HOOK v1: set once when zoom.stealth.cloak_windows cloaks
+  // this window (alpha 0 + pinned occlusion-ignore), so mIgnoreOcclusionCount is
+  // incremented a single time.
+  bool mStealthCloaked = false;
+
   // Set to true when a native fullscreen transition is initiated -- either to
   // or from fullscreen -- and set to false when it is complete. During this
   // period, we presume the window is visible, which prevents us from sending
