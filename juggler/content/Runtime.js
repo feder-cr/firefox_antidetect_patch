@@ -352,7 +352,18 @@ class ExecutionContext {
     this._remoteObjects = new Map();
     this._id = generateId();
     this._auxData = auxData;
-    this._jsonStringifyObject = this._debuggee.executeInGlobal(_STEALTH_JSON_STRINGIFY_SRC).return;
+    // STEALTHFOX: do NOT run any code in the page realm before the page's own
+    // scripts. Building this JSON-stringify helper eagerly would touch page-realm
+    // intrinsics (JSON / Date.prototype / Array.prototype) before the first page
+    // script, an observable difference from a never-automated page. It is only
+    // needed at serialization time (always post-page); build it lazily on first use.
+    this._jsonStringifyObject = null;
+  }
+
+  _ensureJsonStringify() {
+    if (!this._jsonStringifyObject)
+      this._jsonStringifyObject = this._debuggee.executeInGlobal(_STEALTH_JSON_STRINGIFY_SRC).return;
+    return this._jsonStringifyObject;
   }
 
   id() {
@@ -559,7 +570,7 @@ class ExecutionContext {
   }
 
   _serialize(obj) {
-    const result = this._debuggee.executeInGlobalWithBindings('stringify(e)', {e: obj, stringify: this._jsonStringifyObject}, {useInnerBindings: true});
+    const result = this._debuggee.executeInGlobalWithBindings('stringify(e)', {e: obj, stringify: this._ensureJsonStringify()}, {useInnerBindings: true});
     if (result.throw)
       throw new Error('Object is not serializable');
     return result.return === undefined ? undefined : JSON.parse(result.return);

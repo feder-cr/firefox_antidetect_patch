@@ -550,7 +550,7 @@ export class PageAgent {
         modifiers,
         false /*aIgnoreRootScrollFrame*/,
         0.0 /*pressure*/,
-        0 /*inputSource*/,
+        1 /*inputSource: real mouse = MOZ_SOURCE_MOUSE (synthetic was 0 = automation tell)*/,
         true /*isDOMEventSynthesized*/,
         false /*isWidgetEventSynthesized*/,
         0 /*buttons*/,
