@@ -88,8 +88,8 @@ const _stealthfoxHumanize = {
     return out;
   },
   enabled() {
-    try { return Services.prefs.getBoolPref('stealthfox.humanize', false); }
-    catch (e) { return false; }
+    try { return Services.prefs.getBoolPref('stealthfox.humanize', true); }
+    catch (e) { return true; }
   },
   maxTimeS() {
     try { return parseFloat(Services.prefs.getCharPref('stealthfox.humanize.maxTime', '1.5')) || 1.5; }
@@ -603,8 +603,8 @@ export class PageHandler {
           clickCount,
           modifiers,
           false /* aIgnoreRootScrollFrame */,
-          0.0 /* pressure */,
-          0 /* inputSource */,
+          (buttons ? 0.5 : 0.0) /* pressure: real mouse = 0.5 while a button is down */,
+          1 /* inputSource: real mouse = MOZ_SOURCE_MOUSE (synthetic was 0 = automation tell) */,
           true /* isDOMEventSynthesized */,
           false /* isWidgetEventSynthesized */,
           buttons,
@@ -636,8 +636,8 @@ export class PageHandler {
           clickCount,
           modifiers,
           false /* aIgnoreRootScrollFrame */,
-          0.0 /* pressure */,
-          0 /* inputSource */,
+          (buttons ? 0.5 : 0.0) /* pressure: real mouse = 0.5 while a button is down */,
+          1 /* inputSource: real mouse = MOZ_SOURCE_MOUSE (synthetic was 0 = automation tell) */,
           true /* isDOMEventSynthesized */,
           false /* isWidgetEventSynthesized */,
           buttons,
@@ -679,10 +679,13 @@ export class PageHandler {
             try {
               win.windowUtils.jugglerSendMouseEvent('mousemove',
                   px + bbox.left, py + bbox.top, button, clickCount, modifiers,
-                  false, 0.0, 0, true, false, buttons,
+                  false, (buttons ? 0.5 : 0.0) /* pressure */, 1 /* inputSource: real mouse */, true, false, buttons,
                   win.windowUtils.DEFAULT_MOUSE_POINTER_ID, false);
             } catch (e) { /* ignore per-step errors */ }
-            await new Promise(r => setTimeout(r, stepDelayMs));
+            // Jittered inter-sample delay: a real human's pointer dt is non-uniform;
+            // a fixed stepMs was a behavioral tell. Gaussian around stepMs, floored at 2ms.
+            const d = Math.max(2, Math.round(_stealthfoxHumanize._gauss(stepDelayMs, stepDelayMs * 0.4)));
+            await new Promise(r => setTimeout(r, d));
           }
           this._humanizeFromX = x;
           this._humanizeFromY = y;

@@ -684,6 +684,11 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   using AllocationsLog = js::TraceableFifo<AllocationsLogEntry>;
 
   AllocationsLog allocationsLog;
+  // Stealth (invisible-attach): when this Debugger attached its debuggees OUT of
+  // Realm::debuggers_ (stealthMode), so the page realm reports no debuggers
+  // (hasDebuggers()==false). Cached at addDebuggee time because removeDebuggeeGlobal
+  // can run during GC sweep where JS (the stealthMode property read) cannot run.
+  bool invisibleDebuggee_ = false;
   bool trackingAllocationSites;
   double allocationSamplingProbability;
   size_t maxAllocationsLogLength;

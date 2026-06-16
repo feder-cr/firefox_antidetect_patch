@@ -5038,16 +5038,42 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
     return false;
   }
 
+  // Stealth (invisible-attach): read stealthMode BEFORE the no-GC region
+  // (JS_GetProperty can GC). When stealth, keep tracking the global (steps 2-4)
+  // but DON'T register in Realm::debuggers_ (step 1) and DON'T enter debug mode
+  // (step 5). Result: global->getDebuggers() stays empty => hasDebuggers()==false,
+  // making the page realm web-indistinguishable from a never-debugged realm.
+  // executeInGlobal/page.evaluate and GC teardown use debuggees/debuggeeZones
+  // (not debuggers_), so Juggler keeps working.
+  bool isStealth = false;
+  {
+    RootedObject dbgObj(cx, object);
+    RootedValue stealthVal(cx);
+    if (JS_GetProperty(cx, dbgObj, "stealthMode", &stealthVal) &&
+        stealthVal.isTrue()) {
+      isStealth = true;
+    }
+  }
+  invisibleDebuggee_ = isStealth;
+
   // There can be no GC past this point.
   JS::AutoAssertNoGC nogc;
 
-  // (1)
-  auto& globalDebuggers = global->getDebuggers(nogc);
-  if (!globalDebuggers.append(Realm::DebuggerVectorEntry(this, debuggeeLink))) {
-    ReportOutOfMemory(cx);
-    return false;
+  // (1) — skip the Realm debuggers_ registration for an invisible (stealth) attach.
+  bool appendedGlobalDebugger = false;
+  if (!isStealth) {
+    auto& globalDebuggers = global->getDebuggers(nogc);
+    if (!globalDebuggers.append(Realm::DebuggerVectorEntry(this, debuggeeLink))) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+    appendedGlobalDebugger = true;
   }
-  auto globalDebuggersGuard = MakeScopeExit([&] { globalDebuggers.popBack(); });
+  auto globalDebuggersGuard = MakeScopeExit([&] {
+    if (appendedGlobalDebugger) {
+      global->getDebuggers(nogc).popBack();
+    }
+  });
 
   // (2)
   if (!debuggees.put(global)) {
@@ -5069,31 +5095,24 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
     }
   });
 
-  // (4)
-  if (trackingAllocationSites) {
+  // (4) — never attach an alloc-metadata builder for a stealth (invisible) debuggee
+  // (keeps allocationMetadataBuilder_ null = vanilla even if tracking is ever enabled).
+  if (trackingAllocationSites && !isStealth) {
     Debugger::addAllocationsTracking(cx, global);
   }
 
   auto allocationsTrackingGuard = MakeScopeExit([&] {
-    if (trackingAllocationSites) {
+    if (trackingAllocationSites && !isStealth) {
       Debugger::removeAllocationsTracking(*global);
     }
   });
 
   // (5)
-  // Stealth: if debugger.stealthMode === true, skip debug mode activation.
-  // The Debugger still tracks the global (steps 1-4), but the Realm does NOT
-  // enter "debug mode" — Ion JIT stays enabled, no slowPathOnNativeCall overhead.
-  // This prevents FingerprintJS Pro from detecting Juggler via timing signals.
-  bool isStealth = false;
-  {
-    RootedObject dbgObj(cx, object);
-    RootedValue stealthVal(cx);
-    if (JS_GetProperty(cx, dbgObj, "stealthMode", &stealthVal) &&
-        stealthVal.isTrue()) {
-      isStealth = true;
-    }
-  }
+  // Stealth: when stealthMode (isStealth, read above before the no-GC region),
+  // skip debug mode activation. The Realm does NOT enter "debug mode" — Ion JIT
+  // stays enabled, no slowPathOnNativeCall overhead. Combined with the invisible
+  // attach above (no debuggers_ entry), a stealth debuggee is web-indistinguishable
+  // from a never-debugged realm.
   AutoRestoreRealmDebugMode debugModeGuard(debuggeeRealm);
   if (!isStealth) {
     debuggeeRealm->setIsDebuggee();
@@ -5187,8 +5206,13 @@ void Debugger::removeDebuggeeGlobal(JS::GCContext* gcx, GlobalObject* global,
   // the same zone. If after recomputing the debuggee zone set, this global's
   // zone is not in the set, then we must remove ourselves from the zone's
   // vector of observing debuggers.
-  globalDebuggersVector.erase(
-      findDebuggerInVector(this, &globalDebuggersVector));
+  // Stealth (invisible-attach): we never appended to debuggers_, so don't try to
+  // erase (findDebuggerInVector asserts the entry exists). This runs during GC
+  // sweep where JS can't run, hence the cached invisibleDebuggee_ flag.
+  if (!invisibleDebuggee_) {
+    globalDebuggersVector.erase(
+        findDebuggerInVector(this, &globalDebuggersVector));
+  }
 
   if (debugIter) {
     debugIter->remove();
