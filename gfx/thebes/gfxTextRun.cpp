@@ -38,27 +38,68 @@
 #  include "gfxWindowsPlatform.h"
 #endif
 
+// Stealth helper: self-calibrating collapse "base".
+// The whitelist collapse (gfxPlatformFontList::FindAndAddFamiliesLocked) backs
+// every whitelisted named family with the OS shared-font-list HEAD family, so a
+// collapsed text run's native advances are the list-head font's — which differ
+// per host (a Windows font on Windows, DejaVu on Linux, a system font on macOS).
+// To turn an absolute target width into the right per-host scale factor we need
+// that host's native width of a fixed reference string. We compute it exactly by
+// summing the collapsed font's per-glyph advances over the reference; the font's
+// size is irrelevant because it cancels with the run's native width downstream.
+// Cached per gfxFont* (one list-head font services all collapsed runs).
+static double StealthCollapseBase(gfxFont* aFont) {
+  if (!aFont) return 0.0;
+  static thread_local gfxFont* sCachedFont = nullptr;
+  static thread_local double sCachedBase = 0.0;
+  if (aFont == sCachedFont && sCachedBase > 0.0) return sCachedBase;
+  nsAutoCString ref;
+  {
+    auto lock = mozilla::StaticPrefs::zoom_stealth_font_calib_ref();
+    ref = *lock;
+  }
+  if (ref.IsEmpty()) return 0.0;
+  double base = 0.0;
+  const char* d = ref.BeginReading();
+  uint32_t n = ref.Length();
+  for (uint32_t i = 0; i < n; i++) {
+    // Reference is ASCII: one byte == one codepoint.
+    gfxFloat adv = aFont->GetCharAdvance((uint32_t)(uint8_t)d[i]);
+    if (adv > 0.0) base += adv;
+  }
+  if (base <= 0.0) return 0.0;
+  sCachedFont = aFont;
+  sCachedBase = base;
+  return base;
+}
+
 // Stealth helper (file-scope, defined early because used by both
 // gfxTextRun::MeasureText and gfxTextRun::GetAdvanceWidth below).
 // Parses `zoom.stealth.font.metrics` = "name|value,..." and looks up the
 // *first* name from `aCandidates` (in order) that has an entry in metrics.
 // Returns the scale factor to apply; if no candidate matches, returns 1.0.
 //
-// Two value formats are supported:
-//   name|0.978     — multiplicative factor applied directly
-//   name|160px     — absolute target width in CSS px; factor is computed as
-//                    targetPx / aNativeWidth (platform-independent: same pref
-//                    value works on Linux and Windows — C++ does the math)
-//
-// The px format lets Python store the target Windows width once in font_pool.json
-// without caring about the host platform's native metrics.
+// Three value formats are supported (disambiguated by magnitude/suffix):
+//   name|0.978     — multiplicative factor (< 10), applied directly. Used for
+//                    CSS generics, which bypass the collapse.
+//   name|2256.7    — ABSOLUTE target measureText width (>= 10), the real
+//                    (host-independent) Windows width of the calibration
+//                    reference string. Self-calibrating: factor = target /
+//                    StealthCollapseBase(font). The SAME pref value yields the
+//                    same on-screen width on Windows, Linux AND macOS — the
+//                    binary measures its own per-host base, so there is no
+//                    per-OS base table and nothing to measure on a Mac.
+//   name|160px     — LEGACY absolute target via targetPx / aNativeWidth (the
+//                    *current* string's native width). Non-proportional
+//                    (constant per font); kept for backward compatibility only.
 //
 // Why walk the list: when FP Pro probes `font-family: "X", monospace`, if
 // X has a metrics entry we want X's factor; if X does NOT (fake/rare font
 // that Firefox fails to resolve), we must fall back to the generic factor
 // so test and baseline spans scale identically → undetected.
 static float StealthFontWidthFactor(const nsTArray<nsCString>& aCandidates,
-                                    float aNativeWidth = 0.0f) {
+                                    float aNativeWidth = 0.0f,
+                                    gfxFont* aCollapsedFont = nullptr) {
   if (aCandidates.IsEmpty()) return 1.0f;
   nsAutoCString metrics;
   {
@@ -94,11 +135,22 @@ static float StealthFontWidthFactor(const nsTArray<nsCString>& aCandidates,
                 }
                 return 1.0f;
               }
-              // plain factor format → use directly
+              // plain number: factor (< 10) or absolute target width (>= 10)
               nsAutoCString fs(valStr);
-              double f = 0.0;
-              if (sscanf(fs.get(), "%lf", &f) == 1 && f > 0.0 && f < 10.0) {
-                return float(f);
+              double v = 0.0;
+              if (sscanf(fs.get(), "%lf", &v) == 1 && v > 0.0) {
+                if (v < 10.0) {
+                  return float(v);  // multiplicative factor (CSS generics)
+                }
+                // absolute target width → self-calibrate against this host's
+                // collapsed base so the same value works on every OS.
+                if (aCollapsedFont) {
+                  double base = StealthCollapseBase(aCollapsedFont);
+                  if (base > 0.0) {
+                    return float(v / base);
+                  }
+                }
+                return 1.0f;
               }
             }
           }
@@ -892,8 +944,10 @@ gfxTextRun::Metrics gfxTextRun::MeasureText(
   NS_ASSERTION(aRange.end <= GetLength(), "Substring out of range");
 
   Metrics accumulatedMetrics;
+  gfxFont* stealthCollapsedFont = nullptr;  // first run's font for self-calib base
   for (GlyphRunIterator iter(this, aRange); !iter.AtEnd(); iter.NextRun()) {
     gfxFont* font = iter.GlyphRun()->mFont;
+    if (!stealthCollapsedFont) stealthCollapsedFont = font;
     uint32_t start = iter.StringStart();
     uint32_t end = iter.StringEnd();
     Range ligatureRange(start, end);
@@ -928,7 +982,8 @@ gfxTextRun::Metrics gfxTextRun::MeasureText(
   if (mFontGroup && accumulatedMetrics.mAdvanceWidth > 0) {
     nsTArray<nsCString> fams;
     mFontGroup->GetAllFamilyNamesLowercase(fams);
-    float factor = StealthFontWidthFactor(fams, float(accumulatedMetrics.mAdvanceWidth));
+    float factor = StealthFontWidthFactor(
+        fams, float(accumulatedMetrics.mAdvanceWidth), stealthCollapsedFont);
     if (factor != 1.0f) {
       accumulatedMetrics.mAdvanceWidth *= factor;
     }
@@ -1339,7 +1394,11 @@ gfxFloat gfxTextRun::GetAdvanceWidth(
   if (mFontGroup && finalWidth > 0) {
     nsTArray<nsCString> fams;
     mFontGroup->GetAllFamilyNamesLowercase(fams);
-    float factor = StealthFontWidthFactor(fams, float(finalWidth));
+    gfxFont* stealthCollapsedFont = nullptr;  // first run's font for self-calib base
+    GlyphRunIterator iter(this, aRange);
+    if (!iter.AtEnd()) stealthCollapsedFont = iter.GlyphRun()->mFont;
+    float factor =
+        StealthFontWidthFactor(fams, float(finalWidth), stealthCollapsedFont);
     if (factor != 1.0f) {
       finalWidth *= factor;
     }

@@ -20393,6 +20393,20 @@
   value: ""
   mirror: always
 
+# Calibration reference string for the self-calibrating absolute-width path in
+# zoom.stealth.font.metrics. When a metrics entry's value is a plain number > 50
+# it is interpreted as an ABSOLUTE target measureText width (the real Windows
+# width of THIS reference string, host-independent). gfxTextRun sums the
+# collapsed list-head font's per-glyph advances over this exact string to derive
+# the host's native "base", then applies factor = target / base. Result:
+# measureText(font, ref) == target on Windows, Linux AND macOS with the SAME
+# pref value — no per-OS base table. MUST match the probe string the wrapper
+# measured the widths with. Default = the canonical 55-char width-diff probe.
+- name: zoom.stealth.font.calib_ref
+  type: DataMutexString
+  value: "mmmmwwwwiiiillloooMMMMWWWW0123456789 The quick brown fox"
+  mirror: always
+
 # Canvas pixel substitution mode (Bool). When true, GetImageBuffer replaces
 # every RGB pixel with a deterministic hash of (seed, pixel_index) instead of
 # adding ±1 additive noise. Alpha channel preserved. Small canvases (<64x64)
