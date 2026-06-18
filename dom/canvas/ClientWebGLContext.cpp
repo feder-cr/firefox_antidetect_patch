@@ -78,9 +78,39 @@ static void ApplyStealthWebGLReadPixelsNoise(uint8_t* aBuf, size_t aSize,
   if (aFormat != LOCAL_GL_RGBA) return;
   if (aType != LOCAL_GL_UNSIGNED_BYTE) return;
 
+  // STEALTHFOX_WEBGL_NOISE_UNIFORM_SKIP v1
+  // Skip near-uniform "reference" readbacks (very few distinct colours), e.g. a
+  // fixed solid-colour WebGL box that consistency scanners hash and compare to a
+  // universal constant. On Windows the solid render reads back
+  // perfectly pure and the gamma LUT preserves it; on Linux the GL backend
+  // (ANGLE-over-GL / llvmpipe, not real D3D11) lets a few hundred pixels drift one
+  // step under the LUT, breaking that fixed hash -> "masking". A uniform render has
+  // ZERO unlinkability to gain from noise (nothing to vary), so leaving it exact is
+  // both safe and more realistic. Real fingerprint renders (gradients/shaders/text)
+  // are high-entropy -> the early-exit trips and the gamma still applies.
+  {
+    const uint32_t kMaxRefColors = 16;
+    uint32_t seen[kMaxRefColors];
+    uint32_t nSeen = 0;
+    bool uniform = true;
+    for (size_t i = 0; i + 3 < aSize; i += 4) {
+      const uint32_t px = (uint32_t(aBuf[i]) << 24) | (uint32_t(aBuf[i + 1]) << 16) |
+                          (uint32_t(aBuf[i + 2]) << 8) | uint32_t(aBuf[i + 3]);
+      bool found = false;
+      for (uint32_t k = 0; k < nSeen; ++k) {
+        if (seen[k] == px) { found = true; break; }
+      }
+      if (!found) {
+        if (nSeen >= kMaxRefColors) { uniform = false; break; }
+        seen[nSeen++] = px;
+      }
+    }
+    if (uniform) return;  // reference/solid render -> leave pixels exact (oe etc.)
+  }
+
   // Per-seed gamma LUT (NOT isolated +-1 flips). Isolated +-1 noise reads as an
   // unnatural high-frequency spike on an otherwise smooth GPU render and gets
-  // flagged as fingerprint "masking" (e.g. pixelscan). A monotonic per-channel
+  // flagged as fingerprint "masking" by consistency scanners. A monotonic per-channel
   // gamma remap instead looks like a genuine display/GPU colour-profile
   // difference (the same kind of variation the DWrite gamma jitter produces),
   // yet still makes the readback hash differ per profile. Per-channel (R/G/B

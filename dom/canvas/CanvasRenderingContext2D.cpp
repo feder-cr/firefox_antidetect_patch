@@ -4764,6 +4764,72 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::MeasureText(
                            aError);
 }
 
+// STEALTHFOX_PERFONT_CANVAS_OFFSET v1
+// Some font-detection probes draw every candidate font on a tiny (e.g. 80x10,
+// 4px) canvas and deduplicate fonts BY RENDERED IMAGE, then send the surviving
+// font NAMES to a server that scores that set against a target-OS profile.
+// Our font whitelist backs every named font with the SAME list-head glyphs, so
+// every whitelisted font rasterizes to an identical image; the dedup collapses
+// them all to one or two names -> a degenerate set -> the scan stalls
+// ("Collecting Data") and/or flags masking. To defeat the image-dedup we shift
+// each collapsed font's canvas draw origin by a UNIQUE sub-pixel amount keyed by
+// its index in zoom.stealth.font.metrics, so each font renders a DISTINCT image
+// on ANY OS (Windows/Linux/macOS) and its real name survives -> the full Windows
+// font set is detected. Returns the 0-based metrics index of the first matching
+// collapsed (absolute-width, value >= 10) font, or -1 if the font is not a
+// collapsed whitelist font. CSS generics (factor < 10) render with real glyphs
+// and are already distinct, so they are skipped. Mirrors the metrics parse in
+// gfxTextRun.cpp::StealthFontWidthFactor.
+static int32_t StealthCollapsedFontIndex(gfxFontGroup* aFontGroup) {
+  if (!aFontGroup) {
+    return -1;
+  }
+  nsAutoCString metrics;
+  {
+    auto lock = mozilla::StaticPrefs::zoom_stealth_font_metrics();
+    metrics = *lock;
+  }
+  if (metrics.IsEmpty()) {
+    return -1;
+  }
+  AutoTArray<nsCString, 8> fams;
+  aFontGroup->GetAllFamilyNamesLowercase(fams);
+  const char* data = metrics.BeginReading();
+  int32_t mlen = int32_t(metrics.Length());
+  for (const nsCString& fam : fams) {
+    if (fam.IsEmpty()) {
+      continue;
+    }
+    int32_t idx = 0;
+    int32_t mstart = 0;
+    for (int32_t mi = 0; mi <= mlen; mi++) {
+      if (mi == mlen || data[mi] == ',') {
+        if (mi > mstart) {
+          nsDependentCSubstring entry(data + mstart, mi - mstart);
+          int32_t bar = entry.FindChar('|');
+          if (bar > 0) {
+            nsDependentCSubstring name(entry, 0, bar);
+            if (fam.Equals(name)) {
+              nsDependentCSubstring valStr(entry, bar + 1,
+                                           entry.Length() - bar - 1);
+              nsAutoCString fs(valStr);
+              nsresult rv;
+              double v = fs.ToDouble(&rv);
+              if (NS_SUCCEEDED(rv) && v >= 10.0) {
+                return idx;  // collapsed font -> unique sub-pixel shift
+              }
+              return -1;  // generic / multiplicative -> renders real, skip
+            }
+          }
+          idx++;
+        }
+        mstart = mi + 1;
+      }
+    }
+  }
+  return -1;
+}
+
 /**
  * Used for nsBidiPresUtils::ProcessText
  */
@@ -4966,6 +5032,26 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
 
     float& inlineCoord = verticalRun ? point.y.value : point.x.value;
     inlineCoord += aXOffset;
+
+    // STEALTHFOX_PERFONT_CANVAS_OFFSET v1 — give each collapsed whitelist font a
+    // unique sub-pixel draw shift so it rasterizes to a distinct canvas image
+    // (defeats image-dedup font probes; see StealthCollapsedFontIndex).
+    // Gated to tiny font-probe sizes (<= 8px CSS): the main canvas fingerprint
+    // (typically >= 11px) is byte-identical to before, so tampering scores are
+    // unaffected. 0.05px/index is reliably distinct anti-aliasing yet sub-visible.
+    if (mCtx->CurrentState().fontFont.size.ToCSSPixels() <= 8.0f) {
+      int32_t sfFontIdx = StealthCollapsedFontIndex(mFontgrp);
+      if (sfFontIdx >= 0) {
+        // 2D sub-pixel grid keyed by the font index. The collapsed+fallback
+        // raster only changes image every ~0.25px (measured), so a single-axis
+        // 0.05px step groups ~5 fonts per image; and a linear 0.34px step for
+        // 116 fonts would shift ~40px off the tiny (80x10) probe canvas. A
+        // 24-wide grid (x = idx%24 * 0.34px, y = idx/24 * 0.5px) keeps every
+        // font distinct AND on-canvas (x<=8px, y<=2.5px).
+        point.x.value += float(sfFontIdx % 24) * 0.34f;
+        point.y.value += float(sfFontIdx / 24) * 0.5f;
+      }
+    }
 
     PropertyProvider provider(*this);
 
