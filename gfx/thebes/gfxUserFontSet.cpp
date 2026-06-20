@@ -11,7 +11,6 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxPlatformFontList.h"
@@ -463,42 +462,7 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aIsContinue) {
       pfl->AddUserFontSet(fontSet);
       // Don't look up local fonts if the font whitelist is being used.
       gfxFontEntry* fe = nullptr;
-      // Stealth: per-session font filtering driven by Python (WHITELIST semantic).
-      // zoom.stealth.font.whitelist is a comma-separated list of lowercase
-      // font names. If non-empty, local() lookup only succeeds for listed
-      // fonts; any other name → block lookup. Empty = no filtering.
-      bool stealthBlocked = false;
-      {
-        nsAutoCString whitelist;
-        {
-          auto lock = mozilla::StaticPrefs::zoom_stealth_font_whitelist();
-          whitelist = *lock;
-        }
-        if (!whitelist.IsEmpty()) {
-          nsAutoCString lower(currSrc.mLocalName);
-          ToLowerCase(lower);
-          const char* data = whitelist.BeginReading();
-          uint32_t len = whitelist.Length();
-          uint32_t start = 0;
-          bool found = false;
-          for (uint32_t i = 0; i <= len; i++) {
-            if (i == len || data[i] == ',') {
-              if (i > start) {
-                nsDependentCSubstring tok(data + start, i - start);
-                if (lower.Equals(tok)) {
-                  found = true;
-                  break;
-                }
-              }
-              start = i + 1;
-            }
-          }
-          if (!found) {
-            stealthBlocked = true;
-          }
-        }
-      }
-      if (!stealthBlocked && !pfl->IsFontFamilyWhitelistActive()) {
+      if (!pfl->IsFontFamilyWhitelistActive()) {
         fe = gfxPlatform::GetPlatform()->LookupLocalFont(
             fontSet->GetFontVisibilityProvider(), currSrc.mLocalName, Weight(),
             Stretch(), SlantStyle());

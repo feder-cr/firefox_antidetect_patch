@@ -20380,33 +20380,6 @@
   value: ""
   mirror: always
 
-# Per-font width scale factors for canvas measureText() — comma-separated
-# entries `"fontname|factor"` (lowercase family, float scale). Reads in
-# CanvasRenderingContext2D::DrawOrMeasureText after the existing stealth
-# offset and before the CSS-pixel divide. Used to differentiate fabricated
-# whitelist fonts (all backed by the default family → identical widths)
-# so the classic width-diff font-detection probe reports each whitelist
-# font as "installed" with a Windows-like metric signature. Empty = no
-# scaling. Example: "arial|0.96,calibri|0.89,segoe ui|0.93,..."
-- name: zoom.stealth.font.metrics
-  type: DataMutexString
-  value: ""
-  mirror: always
-
-# Calibration reference string for the self-calibrating absolute-width path in
-# zoom.stealth.font.metrics. When a metrics entry's value is a plain number > 50
-# it is interpreted as an ABSOLUTE target measureText width (the real Windows
-# width of THIS reference string, host-independent). gfxTextRun sums the
-# collapsed list-head font's per-glyph advances over this exact string to derive
-# the host's native "base", then applies factor = target / base. Result:
-# measureText(font, ref) == target on Windows, Linux AND macOS with the SAME
-# pref value — no per-OS base table. MUST match the probe string the wrapper
-# measured the widths with. Default = the canonical 55-char width-diff probe.
-- name: zoom.stealth.font.calib_ref
-  type: DataMutexString
-  value: "mmmmwwwwiiiillloooMMMMWWWW0123456789 The quick brown fox"
-  mirror: always
-
 # Canvas pixel substitution mode (Bool). When true, GetImageBuffer replaces
 # every RGB pixel with a deterministic hash of (seed, pixel_index) instead of
 # adding ±1 additive noise. Alpha channel preserved. Small canvases (<64x64)
@@ -20445,16 +20418,6 @@
   type: String
   value: ""
   mirror: never
-
-# Font whitelist (comma-separated, case-insensitive lowercase).
-# SEMANTIC: only fonts in this list are visible to the page. Anything not
-# listed → lookup returns null (font "not installed"). Empty = no filtering.
-# Example: "arial,segoe ui,calibri,times new roman,..."
-# Python-driven via zoom.stealth.font Bayesian sampler (core ∪ optional).
-- name: zoom.stealth.font.whitelist
-  type: DataMutexString
-  value: ""
-  mirror: always
 
 # Storage quota override (megabytes). When > 0, navigator.storage.estimate()
 # returns exactly this value (in MB) to the page, overriding the disk-based

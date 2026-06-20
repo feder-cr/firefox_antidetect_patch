@@ -9,7 +9,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/Segmenter.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SVGContextPaint.h"
 
@@ -3078,41 +3077,6 @@ bool gfxFont::MeasureGlyphs(const gfxTextRun* aTextRun, uint32_t aStart,
         space += aSpacing[i + 1 - aStart].mBefore;
       }
       x += space;
-    }
-  }
-
-  // Stealth: per-session deterministic text width jitter, applied to the
-  // unified layout path so it affects BOTH getBoundingClientRect() (via
-  // nsTextFrame::Reflow) and ctx.measureText() / canvas text metrics.
-  //
-  // Target: FP Pro font_preferences — 7 CSS generic family width
-  // measurements that were collapsed to 1/N distinct across sessions
-  // because the underlying font → pixel width is deterministic on a given
-  // machine. With this hook, each (seed, run_length_bucket) produces a
-  // unique delta → font_preferences hash varies per session.
-  //
-  // Safety:
-  //  - Empty/invisible runs (x <= 0): NO jitter → preserves CreepJS
-  //    isFloat lie detection on TextMetrics of empty strings.
-  //  - Deterministic: same seed + same run width → same delta, so the
-  //    same DOM element measured twice returns the same width (layout
-  //    cache compatibility, no page re-flow).
-  //  - ±18 appunits ≈ ±0.3 CSS px: below sub-pixel rendering threshold,
-  //    invisible to users but enough to break FP Pro px-rounded hash.
-  if (x > 0.0) {
-    const int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (seed > 0) {
-      // Bucket the width so small text-length variations within one
-      // element don't produce different jitters (avoids visible jumps
-      // when a single character is added/removed during typing).
-      const int64_t widthBucket = int64_t(x) / 4;  // 4-appunit buckets
-      uint32_t h = uint32_t(seed);
-      h ^= uint32_t(widthBucket) * 2654435761u;
-      h ^= h >> 16; h *= 0x85ebca6bu; h ^= h >> 13; h *= 0xc2b2ae35u;
-      h ^= h >> 16;
-      const int32_t delta = int32_t(h % 37) - 18;  // ~±0.3 CSS px
-      x += double(delta);
-      if (x < 0.0) x = 0.0;
     }
   }
 

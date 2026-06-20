@@ -5,7 +5,6 @@
 #include "SharedFontList-impl.h"
 #include "gfxPlatformFontList.h"
 #include "gfxFontUtils.h"
-#include "mozilla/StaticPrefs_zoom.h"
 #include "gfxFont.h"
 #include "nsReadableUtils.h"
 #include "prerror.h"
@@ -1217,36 +1216,6 @@ Family* FontList::FindFamily(const nsCString& aName, bool aPrimaryNameOnly) {
   size_t match;
   if (BinarySearchIf(families, 0, header.mFamilyCount,
                      FamilyNameComparator(this, aName), &match)) {
-    // Stealth: per-session font filtering driven by Python (WHITELIST semantic).
-    // zoom.stealth.font.whitelist is a comma-separated list of lowercase names.
-    // If non-empty, ONLY listed fonts survive lookup. Empty = no filtering.
-    // Covers ALL lookup paths including FontFace.load() with local().
-    nsAutoCString whitelist;
-    {
-      auto lock = mozilla::StaticPrefs::zoom_stealth_font_whitelist();
-      whitelist = *lock;
-    }
-    if (!whitelist.IsEmpty()) {
-      const char* data = whitelist.BeginReading();
-      uint32_t len = whitelist.Length();
-      uint32_t start = 0;
-      bool found = false;
-      for (uint32_t i = 0; i <= len; i++) {
-        if (i == len || data[i] == ',') {
-          if (i > start) {
-            nsDependentCSubstring tok(data + start, i - start);
-            if (aName.Equals(tok)) {
-              found = true;
-              break;
-            }
-          }
-          start = i + 1;
-        }
-      }
-      if (!found) {
-        return nullptr;
-      }
-    }
     return &families[match];
   }
 
