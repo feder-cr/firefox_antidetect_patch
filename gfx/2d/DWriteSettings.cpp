@@ -8,7 +8,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/StaticPrefs_zoom.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -120,30 +119,6 @@ void DWriteSettings::Initialize() {
 
   UpdatePixelGeometry();
   gfxVars::SetSystemTextPixelGeometryListener(PixelGeometryVarUpdated);
-
-  // Stealth: per-session DirectWrite gamma + ClearType variation.
-  // Seed from zoom.stealth.fpp.hw_seed (set by Python at launch, mirror:always
-  // propagates to all processes). Variation within real monitor calibration
-  // range — not detectable as noise, produces authentically different
-  // canvas text rendering per session.
-  {
-    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (seed > 0) {
-      // Gamma: vary ±0.04 around system value (range ~2.16–2.24 for gamma=2.2)
-      // 9 distinct values: seed%9 → offsets {-4,-3,-2,-1,0,1,2,3,4} × 0.01
-      float gammaOffset = ((float)(seed % 9) - 4.0f) * 0.01f;
-      sGamma = sGamma.load() + gammaOffset;
-
-      // ClearType: vary ±0.04 around 1.0 → range 0.96–1.04
-      // 9 distinct values
-      float ctOffset = ((float)((seed >> 4) % 9) - 4.0f) * 0.01f;
-      sClearTypeLevel = sClearTypeLevel.load() + ctOffset;
-
-      // Invalidate cached rendering params so new values are used.
-      ClearStandardRenderingParams();
-      ClearGDIRenderingParams();
-    }
-  }
 }
 
 /* static */

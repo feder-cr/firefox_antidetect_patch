@@ -34,7 +34,6 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_mathml.h"
-#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -1750,73 +1749,6 @@ bool gfxPlatformFontList::FindAndAddFamiliesLocked(
     gfxFontStyle* aStyle, nsAtom* aLanguage, gfxFloat aDevToCssSize) {
   nsAutoCString key;
   GenerateFontListKey(aFamily, key);
-
-  // Stealth: zoom.stealth.font.whitelist is the SOLE source of truth for the
-  // font family list exposed to the page. When non-empty, the OS font list
-  // is ignored entirely:
-  //   - name in pref list → always succeed, backed by the default system
-  //     family so text still renders with real glyphs
-  //   - name not in pref list → always fail (return false)
-  // Result: JS enumeration (FontFaceSet / document.fonts / measureText
-  // probe) returns exactly the comma-separated list we hand over, nothing
-  // else. Identical output on Windows and Linux host OS — no fallback to
-  // mFontFamilies or SharedFontList whatsoever for non-generic queries.
-  //
-  // Whitelist applies to any *named* family query — including names that
-  // appear alongside a CSS generic fallback like `font-family: "Arial",
-  // sans-serif`. In that shape Firefox calls this with aFamily="Arial"
-  // and aGeneric=SansSerif; the previous `aGeneric == None` gate let the
-  // named lookup fall through to SharedFontList (where Arial doesn't
-  // exist on Linux), so FP Pro's font probe rendered the test span
-  // identically to the monospace baseline and reported Arial missing.
-  // Result: "Windows" identity with Arial=0/30, a free tampering signal.
-  //
-  // CSS generic families (aGeneric != None) bypass the stealth check so
-  // Firefox's own rendering chain can resolve sans-serif/serif/monospace.
-  if (aGeneric == StyleGenericFontFamily::None) {
-    nsAutoCString whitelist;
-    {
-      auto lock = mozilla::StaticPrefs::zoom_stealth_font_whitelist();
-      whitelist = *lock;
-    }
-    if (!whitelist.IsEmpty()) {
-      const char* data = whitelist.BeginReading();
-      uint32_t len = whitelist.Length();
-      uint32_t start = 0;
-      bool found = false;
-      for (uint32_t i = 0; i <= len; i++) {
-        if (i == len || data[i] == ',') {
-          if (i > start) {
-            nsDependentCSubstring tok(data + start, i - start);
-            if (key.Equals(tok)) {
-              found = true;
-              break;
-            }
-          }
-          start = i + 1;
-        }
-      }
-      if (!found) {
-        return false;
-      }
-      // Whitelist match: fabricate from the first family in the native list
-      // (shared or hash-map). We intentionally bypass GetDefaultFontLocked
-      // here — that function calls FindFamily("Arial") which re-enters
-      // FindAndAddFamiliesLocked and causes infinite recursion when the
-      // whitelist is active. Using the raw list head avoids the cycle.
-      if (SharedFontList() && SharedFontList()->NumFamilies() > 0) {
-        aOutput->AppendElement(
-            FamilyAndGeneric(FontFamily(SharedFontList()->Families()), aGeneric));
-        return true;
-      }
-      if (!mFontFamilies.IsEmpty()) {
-        aOutput->AppendElement(
-            FamilyAndGeneric(FontFamily(mFontFamilies.ConstIter().Data()), aGeneric));
-        return true;
-      }
-      return false;
-    }
-  }
 
   bool allowHidden = bool(aFlags & FindFamiliesFlags::eSearchHiddenFamilies);
   FontVisibility visibilityLevel =
