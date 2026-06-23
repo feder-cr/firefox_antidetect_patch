@@ -137,7 +137,8 @@ class OfflineDestinationNodeEngine final : public AudioNodeEngine {
       //      checks bins.slice(0,100) sum for noise detection.
       {
         int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-        if (seed > 0 && mLength > 200 && !aInput.IsNull() && i < inputChannelCount) {
+        if (seed > 0 && mozilla::StaticPrefs::zoom_stealth_audio_fp_noise() &&
+            mLength > 200 && !aInput.IsNull() && i < inputChannelCount) {
           // Scale: ~5e-7 — inaudible but enough to change float sums.
           float noiseScale =
               float((uint32_t(seed) % 2001u) + 500u) * 1.0e-9f;

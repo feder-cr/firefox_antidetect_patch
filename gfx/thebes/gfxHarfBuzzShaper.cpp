@@ -9,6 +9,7 @@
 #include "gfxFontUtils.h"
 #include "gfxTextRun.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/intl/String.h"
 #include "mozilla/intl/UnicodeProperties.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
@@ -1465,6 +1466,40 @@ bool gfxHarfBuzzShaper::ShapeText(DrawTarget* aDrawTarget,
                       0, length);
 
   hb_shape(mHBFont, mBuffer, features.Elements(), features.Length());
+
+  // Stealth: per-session BOUNDED font-width offset (smart jitter v2). The old
+  // version added a per-glyph spacing PLUS a cumulative offset, so the total
+  // measureText perturbation scaled with string length (up to ~2.8px on a long
+  // probe string) and spiked FP Pro tampering_ml on minimal-font profiles
+  // (a Windows that exposes few fonts is already "on the edge" for FP's ML, and
+  // a multi-pixel font-metric deviation tips it). font_preferences are a near-
+  // exact Windows signal, so any large deviation is a tell.
+  // v2 perturbs the run's TOTAL advance by a SINGLE small bounded amount
+  // (<= kStealthJitterMax px), length-independent: still varies measureText /
+  // font_hash for per-profile uniqueness, but stays well within FP's tolerance.
+  // Derived from zoom.stealth.fpp.hw_seed (per-profile, deterministic); 0 = vanilla.
+  {
+    int32_t stealthSeed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
+    if (stealthSeed > 0) {
+      const float kStealthJitterMax = 0.05f;  // max total advance offset, in px
+      uint32_t s = (uint32_t(stealthSeed) * 1103515245u + 12345u) & 0x7fffffffu;
+      float randomFloat =
+          (static_cast<float>(s) / 2147483647.0f) * kStealthJitterMax;
+      hb_position_t spacing = FloatToFixed(randomFloat);
+      unsigned int glyphCount = 0;
+      hb_glyph_position_t* glyphPositions =
+          hb_buffer_get_glyph_positions(mBuffer, &glyphCount);
+      if (glyphCount > 0) {
+        // Apply the bounded offset to the LAST glyph's advance only -> the run's
+        // total width shifts by exactly `spacing`, independent of glyph count.
+        if (aVertical) {
+          glyphPositions[glyphCount - 1].y_advance -= spacing;
+        } else {
+          glyphPositions[glyphCount - 1].x_advance += spacing;
+        }
+      }
+    }
+  }
 
   if (isRightToLeft) {
     hb_buffer_reverse(mBuffer);

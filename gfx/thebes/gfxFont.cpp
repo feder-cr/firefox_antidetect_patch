@@ -4165,6 +4165,44 @@ void gfxFont::SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
 // Return FALSE if the gfxFontEntry subclass does not
 // implement GetFontTable(), or for non-sfnt fonts where tables are
 // not available.
+// STEALTH: host-independent vertical metrics straight from the font's own OS/2
+// sfnt table (FUnits->px), bypassing the platform backend (DWrite/FreeType/CoreText)
+// whose computed asc/desc differ per OS. For a given bundled font + size the values
+// are byte-identical on every host -> canvas TextMetrics vertical fields become
+// host-independent (see CanvasRenderingContext2D::DrawOrMeasureText). emAscent/Descent
+// from sTypoAscender/sTypoDescender, maxAscent/Descent from usWinAscent/usWinDescent
+// (the Windows convention we always claim). Returns false if no usable OS/2 table.
+bool gfxFont::GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,
+                                          gfxFloat& aMaxAscent,
+                                          gfxFloat& aMaxDescent) {
+  if (mFUnitsConvFactor < 0.0) {
+    uint16_t unitsPerEm =
+        GetFontEntry() ? GetFontEntry()->UnitsPerEm() : gfxFontEntry::kInvalidUPEM;
+    if (unitsPerEm == gfxFontEntry::kInvalidUPEM || unitsPerEm == 0) {
+      return false;
+    }
+    mFUnitsConvFactor = GetAdjustedSize() / unitsPerEm;
+  }
+  if (mFUnitsConvFactor <= 0.0) {
+    return false;
+  }
+  gfxFontEntry::AutoTable os2Table(mFontEntry, TRUETYPE_TAG('O', 'S', '/', '2'));
+  if (!os2Table) {
+    return false;
+  }
+  uint32_t len;
+  const OS2Table* os2 =
+      reinterpret_cast<const OS2Table*>(hb_blob_get_data(os2Table, &len));
+  if (len < offsetof(OS2Table, usWinDescent) + sizeof(uint16_t)) {
+    return false;
+  }
+  aEmAscent = int16_t(os2->sTypoAscender) * mFUnitsConvFactor;
+  aEmDescent = -int16_t(os2->sTypoDescender) * mFUnitsConvFactor;  // sTypoDescender < 0
+  aMaxAscent = uint16_t(os2->usWinAscent) * mFUnitsConvFactor;
+  aMaxDescent = uint16_t(os2->usWinDescent) * mFUnitsConvFactor;
+  return true;
+}
+
 // If this returns TRUE without setting the mIsValid flag, then we -did-
 // apparently find an sfnt, but it was too broken to be used.
 bool gfxFont::InitMetricsFromSfntTables(Metrics& aMetrics) {

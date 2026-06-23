@@ -10,6 +10,8 @@
 #include "gfxPlatformFontList.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_zoom.h"
+#include "nsUnicharUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FontFaceBinding.h"
 #include "mozilla/dom/FontFaceSetImpl.h"
@@ -351,8 +353,64 @@ void FontFaceImpl::DoLoad() {
   mUserFontEntry->Load();
 }
 
+Maybe<bool> StealthFontAllowed(const nsACString& aFamily) {
+  nsAutoCString list;
+  // Env var first (process start), pref fallback — must match the channel the
+  // gfxPlatformFontList constructor uses, since Playwright delivers the pref over
+  // the juggler protocol only after start. Without this the Font Loading API gate
+  // would disagree with the actual (env-driven) allow-list under a wrapper launch.
+  if (const char* envList = getenv("STEALTHFOX_FONTLIST")) {
+    list = envList;
+  } else {
+    auto lock = StaticPrefs::zoom_stealth_font_fontlist();
+    list = *lock;
+  }
+  if (list.IsEmpty()) {
+    return Nothing();
+  }
+  nsAutoCString name(aFamily);
+  name.Trim(" \t\"'");
+  ToLowerCase(name);
+  if (name.IsEmpty()) {
+    return Some(false);
+  }
+  // list = comma-separated lowercase family names (no surrounding spaces);
+  // wrap both sides in commas so we match a whole token, not a substring.
+  nsAutoCString hay(",");
+  hay.Append(list);
+  hay.Append(',');
+  nsAutoCString needle(",");
+  needle.Append(name);
+  needle.Append(',');
+  return Some(hay.Find(needle) != kNotFound);
+}
+
 void FontFaceImpl::SetStatus(FontFaceLoadStatus aStatus) {
   gfxFontUtils::AssertSafeThreadOrServoFontMetricsLocked();
+
+  // Stealth: when a per-profile fontlist is active, force the Font Loading API
+  // status to match it (listed -> Loaded, else Error) so document.fonts.* and
+  // @font-face verdicts agree with the enumerated set. No fontlist -> vanilla.
+  {
+    nsAutoCString stealthFamily;
+    GetFamily(stealthFamily);
+    if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {
+      FontFaceLoadStatus forced =
+          *allowed ? FontFaceLoadStatus::Loaded : FontFaceLoadStatus::Error;
+      if (mStatus == forced) {
+        return;
+      }
+      mStatus = forced;
+      if (mInFontFaceSet) {
+        mFontFaceSet->OnFontFaceStatusChanged(this);
+      }
+      for (FontFaceSetImpl* otherSet : mOtherFontFaceSets) {
+        otherSet->OnFontFaceStatusChanged(this);
+      }
+      UpdateOwnerPromise();
+      return;
+    }
+  }
 
   if (mStatus == aStatus) {
     return;

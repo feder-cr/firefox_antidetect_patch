@@ -833,8 +833,21 @@ function causeTypeToString(causeType) {
 function appendExtraHTTPHeaders(httpChannel, headers) {
   if (!headers)
     return;
-  for (const header of headers)
-    httpChannel.setRequestHeader(header.name, header.value, false /* merge */);
+  for (const header of headers) {
+    let value = header.value;
+    // STEALTHFOX: Playwright sets the Accept-Language from the `locale` option as a single
+    // primary tag ("en-US"), which diverges from navigator.languages (the desktop-default
+    // 2-tag list ["en-US","en"]) — a fingerprint tell (browserscan 'language mismatch').
+    // Expand a single-tag Accept-Language to the Firefox-native q-valued form
+    // ("en-US" -> "en-US,en;q=0.5") so the wire header matches navigator.languages.
+    if (header.name.toLowerCase() === 'accept-language' && value &&
+        value.indexOf(',') === -1 && value.indexOf(';') === -1) {
+      const dash = value.indexOf('-');
+      if (dash > 0)
+        value = value + ',' + value.slice(0, dash) + ';q=0.5';
+    }
+    httpChannel.setRequestHeader(header.name, value, false /* merge */);
+  }
 }
 
 class ResponseStorage {

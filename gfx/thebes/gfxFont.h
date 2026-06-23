@@ -1640,6 +1640,14 @@ class gfxFont {
     return *mVerticalMetrics;
   }
 
+  // STEALTH: host-independent vertical metrics straight from the font's OS/2 sfnt
+  // table (FUnits->px), bypassing the platform backend (DWrite/FreeType/CoreText)
+  // whose computed asc/desc differ per OS. Same bundled font + size => byte-identical
+  // on every host. Used to make canvas TextMetrics vertical fields host-independent.
+  // Returns false if no usable OS/2 table (caller keeps native metrics). See .cpp.
+  bool GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,
+                                   gfxFloat& aMaxAscent, gfxFloat& aMaxDescent);
+
   struct Baselines {
     std::atomic<gfxFloat> mAlphabetic;
     std::atomic<gfxFloat> mHanging;

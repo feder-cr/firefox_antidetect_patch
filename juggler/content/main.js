@@ -48,7 +48,12 @@ export function initialize(browsingContext, docShell) {
     },
 
     locale: (locale) => {
+      // languageOverride drives navigator.language(s) + the Accept-Language
+      // header; overrideLocale applies the same locale to the realm's default
+      // Intl locale (Intl.DateTimeFormat/NumberFormat/toLocaleString), keeping
+      // navigator and Intl consistent for non-US locales.
       docShell.languageOverride = locale;
+      docShell.overrideLocale(locale);
     },
 
     javaScriptDisabled: (javaScriptDisabled) => {

@@ -2317,11 +2317,53 @@ static void ApplyStealthCanvasPixelNoise(uint8_t* aBuf, size_t aSize,
 // independent, so FP Pro's OS-specific canvas hash tables can't detect
 // Linux/Mesa base rendering under a Windows target spoof.
 // Only kicks in when zoom.stealth.canvas.substitute_pixels is true.
-// Same 64x64 size guard as the additive variant.
 static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
                                                 int32_t aSeed) {
   if (!aBuf || aSize < 4 || aSeed <= 0) return;
+  // 64x64 floor (mirrors the additive-noise path above): leave SMALL canvases
+  // (<64x64 RGBA) byte-EXACT. pixelscan's canvasNoiseOn2d masking probe fills 14 solid
+  // reference colours in a 70x5 canvas and checks they read back unmodified; ANY
+  // substitution there sets isCanvas=false -> pixelscan serves the 271-font all-OS probe
+  // list (instead of the 49 Windows-standard fonts) -> osFontsStatus=false -> "masking
+  // detected" (RE 2026-06-22, px294.js: jsFontsKey/canvasFonts gated on isCanvas).
+  // The earlier no-floor rationale (small font/text canvas leaks the host text render)
+  // was a red-herring: the real FP Pro tampering_ml driver was the OfflineAudioContext
+  // noise (zoom.stealth.audio.fp_noise), NOT canvasSmall. Real fingerprint canvases
+  // (FP Pro 280x60, CreepJS) are >=64x64 -> still get the full host-independent
+  // substitution below, so cross-OS "always Windows" stays intact.
   if (aSize < 64u * 64u * 4u) return;
+  // Uniform-skip (mirrors the WebGL substitution path): leave near-uniform "reference"
+  // renders (<=16 distinct colours, e.g. a solid red-box a scanner hashes against a
+  // universal constant) byte-EXACT so their hash stays that constant -> masking-safe.
+  // A uniform render has zero unlinkability to gain from substitution anyway. The real
+  // fingerprint canvas (text + gradients) is high-entropy -> NOT skipped -> gets the
+  // full host-independent overwrite below (the host's text rasterization is the signal).
+  {
+    // 16: skip near-uniform reference renders (<=15 distinct colours, e.g. pixelscan's
+    // solid red-box). NOTE 2026-06-22: lowering to 4 had ZERO effect on FP Pro's
+    // raw_canvas_text (eab471a3 unchanged, b005 still 0.4349) — its text canvas is not
+    // reached by this hook (low-entropy text skipped even at 4, and/or read via a path we
+    // don't cover). The Win-vs-Linux canvas_text/emoji difference turned out to be a
+    // red-herring: the real FP Pro tampering_ml driver was the OfflineAudioContext noise
+    // (see zoom.stealth.audio.fp_noise). Keep 16 (pixelscan-safe, no behavioural change).
+    const uint32_t kMaxRefColors = 16;
+    uint32_t seen[kMaxRefColors];
+    uint32_t nSeen = 0;
+    bool uniform = true;
+    for (size_t i = 0; i + 3 < aSize; i += 4) {
+      const uint32_t px = (uint32_t(aBuf[i]) << 24) | (uint32_t(aBuf[i + 1]) << 16) |
+                          (uint32_t(aBuf[i + 2]) << 8) | uint32_t(aBuf[i + 3]);
+      bool found = false;
+      for (uint32_t k = 0; k < nSeen; ++k) {
+        if (seen[k] == px) { found = true; break; }
+      }
+      if (!found) {
+        if (nSeen >= kMaxRefColors) { uniform = false; break; }
+        seen[nSeen++] = px;
+      }
+    }
+    if (uniform) return;  // reference/solid render -> leave exact (masking-safe)
+  }
   uint32_t h0 = uint32_t(aSeed);
   h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
   h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
@@ -5373,6 +5415,48 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
         -processor.mBoundingBox.Y() - baselineAnchor;
     double actualBoundingBoxDescent =
         processor.mBoundingBox.YMost() + baselineAnchor;
+    // STEALTH: replace the host-engine vertical metrics with host-INDEPENDENT values
+    // from the font's OS/2 sfnt table, so every TextMetrics vertical field is
+    // byte-identical across hosts (DWrite vs FreeType vs CoreText) for a given bundled
+    // font + size. The width is already host-independent (HarfBuzz advance jitter, §5.2e).
+    // Horizontal text only; falls back to the native path if no usable OS/2 table.
+    gfxFloat emA, emD, maxA, maxD;
+    if (StaticPrefs::zoom_stealth_fpp_hw_seed() > 0 &&
+        fontOrientation == nsFontMetrics::eHorizontal &&
+        font->GetStealthHostIndepVMetrics(emA, emD, maxA, maxD)) {
+      gfxFloat hiAnchor;  // host-independent baseline anchor (mirrors baselineAnchor)
+      switch (state.textBaseline) {
+        case CanvasTextBaseline::Top:
+          hiAnchor = emA;
+          break;
+        case CanvasTextBaseline::Middle:
+          hiAnchor = (emA - emD) * 0.5;
+          break;
+        case CanvasTextBaseline::Bottom:
+          hiAnchor = -emD;
+          break;
+        case CanvasTextBaseline::Hanging:
+          hiAnchor = emA * 0.8;
+          break;
+        case CanvasTextBaseline::Ideographic:
+          hiAnchor = -emD;
+          break;
+        default:  // Alphabetic
+          hiAnchor = 0.0;
+          break;
+      }
+      return MakeUnique<TextMetrics>(
+          totalWidth, 0.0, totalWidth,  // width + actualBoundingBoxLeft/Right
+          maxA - hiAnchor,              // fontBoundingBoxAscent
+          maxD + hiAnchor,              // fontBoundingBoxDescent
+          emA - hiAnchor,               // actualBoundingBoxAscent (em-box bound)
+          emD + hiAnchor,               // actualBoundingBoxDescent
+          emA - hiAnchor,               // emHeightAscent
+          emD + hiAnchor,               // emHeightDescent
+          (emA * 0.8) - hiAnchor,       // hangingBaseline
+          0.0 - hiAnchor,               // alphabeticBaseline
+          (-emD) - hiAnchor);           // ideographicBaseline
+    }
     return MakeUnique<TextMetrics>(
         totalWidth, actualBoundingBoxLeft, actualBoundingBoxRight,
         fontMetrics.maxAscent - baselineAnchor,   // fontBBAscent

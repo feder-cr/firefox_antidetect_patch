@@ -89,7 +89,7 @@ static void ApplyStealthWebGLReadPixelsNoise(uint8_t* aBuf, size_t aSize,
   // both safe and more realistic. Real fingerprint renders (gradients/shaders/text)
   // are high-entropy -> the early-exit trips and the gamma still applies.
   {
-    const uint32_t kMaxRefColors = 16;
+    const uint32_t kMaxRefColors = 16;  // skip near-uniform refs (<=15 colours). NOTE: 4 regressed FP Pro tml (b005 0.435->0.74, deterministic across 5 IPs) - reverted 2026-06-22
     uint32_t seen[kMaxRefColors];
     uint32_t nSeen = 0;
     bool uniform = true;
@@ -132,6 +132,86 @@ static void ApplyStealthWebGLReadPixelsNoise(uint8_t* aBuf, size_t aSize,
     aBuf[i + 0] = lut[0][aBuf[i + 0]];
     aBuf[i + 1] = lut[1][aBuf[i + 1]];
     aBuf[i + 2] = lut[2][aBuf[i + 2]];  // alpha (i+3) unchanged
+  }
+}
+
+// Stealth: HOST-INDEPENDENT render hash (Option B, endpoint-preserving). Replaces
+// each pixel's INTERMEDIATE (1..254) RGB bytes with a deterministic hash of
+// (seed, byte-index) while leaving SATURATED bytes (0/255) untouched, so the
+// readback/snapshot depends ONLY on (seed, dimensions) for real content — NOT the
+// host GPU's rasterization — yet a solid flat fill (all endpoints) stays byte-exact
+// (passes pixelscan's red-box `oe` masking term; see the loop below). The
+// gamma LUT above only REMAPS colours (it preserves the GPU's edge/AA/sub-pixel
+// structure), so the clean-render-seed pool the wrapper draws from is calibrated
+// per-host. Substitution removes that dependency: every machine emits the same
+// pixels for a given seed, so a multi-user fleet needs no per-host calibration.
+// Gated by zoom.stealth.webgl.substitute_pixels (OFF by default — it overwrites
+// the real render, so legitimate WebGL readback/display is lost; only enable
+// where host-independence matters more than WebGL fidelity, e.g. headless
+// automation). Same RGBA+UNSIGNED_BYTE guard as the gamma path; alpha preserved;
+// fully-transparent pixels skipped (CreepJS clearRect-zero trap). Mirrors the
+// canvas-2D ApplyStealthCanvasPixelSubstitution, verified clean on FP Pro.
+static void ApplyStealthWebGLPixelSubstitution(uint8_t* aBuf, size_t aSize,
+                                               GLenum aFormat, GLenum aType,
+                                               int32_t aSeed) {
+  if (!aBuf || aSize < 4 || aSeed <= 0) return;
+  if (aFormat != LOCAL_GL_RGBA) return;
+  if (aType != LOCAL_GL_UNSIGNED_BYTE) return;
+  // Skip near-uniform "reference" renders (<=16 distinct colours), e.g. pixelscan's
+  // solid red-box whose SHA-256 (`oe` masking term) must equal a universal constant.
+  // Leaving them byte-exact passes that check; a uniform render has ZERO unlinkability
+  // to gain from substitution anyway. Same guard the gamma path uses. The FP Pro WebGL
+  // test scene is high-entropy (gradients/shaders -> many colours), so it is NOT skipped
+  // and gets the full host-independent overwrite below (proven: the gamma moved tml, so
+  // that render trips this early-exit's else branch).
+  {
+    const uint32_t kMaxRefColors = 16;  // skip near-uniform refs (<=15 colours). NOTE: 4 regressed FP Pro tml (b005 0.435->0.74, deterministic across 5 IPs) - reverted 2026-06-22
+    uint32_t seen[kMaxRefColors];
+    uint32_t nSeen = 0;
+    bool uniform = true;
+    for (size_t i = 0; i + 3 < aSize; i += 4) {
+      const uint32_t px = (uint32_t(aBuf[i]) << 24) | (uint32_t(aBuf[i + 1]) << 16) |
+                          (uint32_t(aBuf[i + 2]) << 8) | uint32_t(aBuf[i + 3]);
+      bool found = false;
+      for (uint32_t k = 0; k < nSeen; ++k) {
+        if (seen[k] == px) { found = true; break; }
+      }
+      if (!found) {
+        if (nSeen >= kMaxRefColors) { uniform = false; break; }
+        seen[nSeen++] = px;
+      }
+    }
+    if (uniform) return;  // reference/solid render -> leave exact (pixelscan oe etc.)
+  }
+  uint32_t h0 = uint32_t(aSeed);
+  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
+  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
+  for (size_t i = 0; i + 3 < aSize; i += 4) {
+    if (aBuf[i + 3] == 0) continue;  // preserve fully-transparent (clearRect trap)
+    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
+    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
+    x *= 0xc2b2ae35u; x ^= x >> 16;
+    // FULL overwrite (host-independent): every non-transparent pixel's RGB = f(seed,
+    // index), so a high-entropy render becomes a pure function of (seed, index) =
+    // byte-identical on every GPU/OS. Endpoint-preserving (the prior version) left the
+    // host's 0/255 edge pattern intact -> Win-D3D11 vs Linux-GL diverged (the residual
+    // that made Windows seeds fail while Linux passed). Uniform reference renders are
+    // already left exact by the early-exit above, so the red-box stays pixelscan-safe.
+    aBuf[i + 0] = uint8_t(x & 0xffu);
+    aBuf[i + 1] = uint8_t((x >> 8) & 0xffu);
+    aBuf[i + 2] = uint8_t((x >> 16) & 0xffu);  // alpha (i+3) unchanged
+  }
+}
+
+// Dispatcher: single branch point for the WebGL render-hash stealth. Substitution
+// (host-independent) when zoom.stealth.webgl.substitute_pixels is set, else the
+// per-seed gamma LUT (the default — subtle, keeps WebGL rendering usable).
+static void ApplyStealthWebGLPixels(uint8_t* aBuf, size_t aSize, GLenum aFormat,
+                                    GLenum aType, int32_t aSeed) {
+  if (StaticPrefs::zoom_stealth_webgl_substitute_pixels()) {
+    ApplyStealthWebGLPixelSubstitution(aBuf, aSize, aFormat, aType, aSeed);
+  } else {
+    ApplyStealthWebGLReadPixelsNoise(aBuf, aSize, aFormat, aType, aSeed);
   }
 }
 
@@ -1274,8 +1354,8 @@ already_AddRefed<gfx::SourceSurface> ClientWebGLContext::GetSurfaceSnapshot(
         const size_t byteSize = size_t(stride) * size_t(size.height);
         // Format is always 4bpp here (B8G8R8A8 / B8G8R8X8) so we pass
         // synthetic format/type matching our RGBA+UNSIGNED_BYTE guard.
-        ApplyStealthWebGLReadPixelsNoise(data, byteSize, LOCAL_GL_RGBA,
-                                         LOCAL_GL_UNSIGNED_BYTE, stealthSeed);
+        ApplyStealthWebGLPixels(data, byteSize, LOCAL_GL_RGBA,
+                                LOCAL_GL_UNSIGNED_BYTE, stealthSeed);
       }
     }
   }
@@ -5774,12 +5854,12 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
   const auto& inProcess = notLost->inProcess;
   if (inProcess) {
     inProcess->ReadPixelsInto(desc, dest);
-    // Stealth: apply seed-derived noise on the just-written destination.
+    // Stealth: seed-derived render-hash on the just-written destination
+    // (gamma, or substitution when zoom.stealth.webgl.substitute_pixels).
     const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
     if (stealthSeed > 0) {
-      ApplyStealthWebGLReadPixelsNoise(dest.Elements(), dest.Length(),
-                                       desc.pi.format, desc.pi.type,
-                                       stealthSeed);
+      ApplyStealthWebGLPixels(dest.Elements(), dest.Length(),
+                              desc.pi.format, desc.pi.type, stealthSeed);
     }
     return true;
   }
@@ -5824,12 +5904,12 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
     Memcpy(&destRow, srcRow);
   }
 
-  // Stealth: apply seed-derived noise on the just-copied destination.
+  // Stealth: seed-derived render-hash on the just-copied destination
+  // (gamma, or substitution when zoom.stealth.webgl.substitute_pixels).
   const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
   if (stealthSeed > 0) {
-    ApplyStealthWebGLReadPixelsNoise(dest.Elements(), dest.Length(),
-                                     desc.pi.format, desc.pi.type,
-                                     stealthSeed);
+    ApplyStealthWebGLPixels(dest.Elements(), dest.Length(),
+                            desc.pi.format, desc.pi.type, stealthSeed);
   }
 
   return true;

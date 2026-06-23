@@ -6,6 +6,7 @@
 #define mozilla_dom_FontFaceImpl_h
 
 #include "gfxUserFontSet.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/dom/FontFaceBinding.h"
 #include "nsTHashSet.h"
@@ -26,6 +27,13 @@ class UTF8StringOrArrayBufferOrArrayBufferView;
 }  // namespace mozilla
 
 namespace mozilla::dom {
+
+// Stealth: per-profile fontlist gate for the CSS Font Loading API. Returns
+// Nothing when no fontlist pref is set (vanilla behavior), else Some(true) if
+// the family is in zoom.stealth.font.fontlist and Some(false) otherwise. Lets
+// FontFace.status / .load() / document.fonts.check() agree with the enumerated
+// set. Defined in FontFaceImpl.cpp.
+mozilla::Maybe<bool> StealthFontAllowed(const nsACString& aFamily);
 
 class FontFaceImpl final {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FontFaceImpl)
