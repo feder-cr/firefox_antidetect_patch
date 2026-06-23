@@ -1241,6 +1241,11 @@ void gfxDWriteFontList::AppendFamiliesFromCollection(
       nsAutoCString key;
       key = name;
       BuildKeyNameFromFontName(key);
+      // Stealth bundle-only: drop system families entirely, keep only bundled
+      // families that are in the forge sample.
+      if (StealthSkipFamily(key, aCollection != mSystemFonts)) {
+        return;
+      }
       bool bad = mBadUnderlineFamilyNames.ContainsSorted(key);
       bool classic =
           aForceClassicFams && aForceClassicFams->ContainsSorted(key);
@@ -1736,9 +1741,11 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
   GetFontsFromCollection(mSystemFonts);
 
   // if no fonts found, something is out of whack, bail and use GDI backend
-  NS_ASSERTION(mFontFamilies.Count() > kBundledCount,
+  // (skip this when stealth bundle-only is active: we intentionally add no
+  // system fonts, so Count()==kBundledCount is the expected, correct state).
+  NS_ASSERTION(mStealthBundleOnly || mFontFamilies.Count() > kBundledCount,
                "no fonts found in the system fontlist -- holy crap batman!");
-  if (mFontFamilies.Count() == kBundledCount) {
+  if (!mStealthBundleOnly && mFontFamilies.Count() == kBundledCount) {
     glean::fontlist::dwritefont_init_problem.AccumulateSingleSample(
         uint32_t(errNoFonts));
     return NS_ERROR_FAILURE;
@@ -1899,6 +1906,12 @@ void gfxDWriteFontList::GetFontsFromCollection(
         name);  // keep a copy before we lowercase it as a key
 
     BuildKeyNameFromFontName(name);
+
+    // Stealth bundle-only: drop system families entirely, keep only bundled
+    // families that are in the forge sample.
+    if (StealthSkipFamily(name, aCollection != mSystemFonts)) {
+      continue;
+    }
 
     RefPtr<gfxFontFamily> fam;
 

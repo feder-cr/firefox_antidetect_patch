@@ -20307,6 +20307,14 @@
   value: -1
   mirror: always
 
+# Diagnostic gate (2026-06-22): when false, disable the per-session OfflineAudioContext
+# noise even if hw_seed > 0. Lets us isolate whether the audio noise (vs the font jitter)
+# is what drives FP Pro tampering_ml on Windows. Default true = noise on (legacy behaviour).
+- name: zoom.stealth.audio.fp_noise
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 - name: zoom.stealth.audio.output_latency_ms
   type: int32_t
   value: -1
@@ -20376,6 +20384,37 @@
 # SHADERTYPE=35632 (FRAGMENT) or 35633 (VERTEX), PRECISIONTYPE=36336..36341
 # (LOW_FLOAT..HIGH_INT). E.g. "35633*36338|-127:127:23". Empty = native.
 - name: zoom.stealth.webgl.shader_precisions
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# Stealth (Option B): replace WebGL readback/snapshot RGB with hash(seed,index)
+# (endpoint-preserving: 0/255 bytes kept so pixelscan's red-box `oe` term passes)
+# instead of the per-channel gamma LUT. Makes the WebGL render hash a pure function
+# of (seed, dimensions) — HOST-INDEPENDENT (the gamma preserves the real GPU's
+# render structure, so its clean-render-seed pool is per-host calibrated). OFF by
+# default: it overwrites the real render, so legitimate WebGL readback/display is
+# lost. Enable only where host-independence matters more than WebGL fidelity
+# (multi-GPU headless fleets). Read by ApplyStealthWebGLPixels.
+- name: zoom.stealth.webgl.substitute_pixels
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Per-profile font allow-list (comma-separated lowercase family names) = the set
+# the page may enumerate. Sampled by the Python _fpforge (core always +
+# conditioned optional subset) and applied to the native system font list AT
+# CONSTRUCTION (gfxPlatformFontList ctor) so it is set once at init with no
+# runtime font-list rebuild. Glyphs for these names come from the bundled fonts
+# in <GRE>/fonts. Empty = no filtering (vanilla).
+- name: zoom.stealth.font.fontlist
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# CSS system-ui generic family (e.g. "Segoe UI"). When set, the system-ui
+# generic resolves to exactly this family on every host. Empty = vanilla.
+- name: zoom.stealth.font.system_ui
   type: DataMutexString
   value: ""
   mirror: always

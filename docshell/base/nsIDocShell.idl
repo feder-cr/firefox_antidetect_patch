@@ -717,6 +717,17 @@ interface nsIDocShell : nsIDocShellTreeItem
   // the content-side complement that runs on every new realm.
   boolean overrideTimezone(in AString aTimezone);
 
+  // Stealthfox: overrideLocale method, the locale counterpart of
+  // overrideTimezone. Applies the requested BCP-47 locale to the current
+  // realm via JS::SetRealmLocaleOverride so Intl.DateTimeFormat /
+  // Intl.NumberFormat / toLocaleString report it immediately on the page
+  // that's loading. Without this, languageOverride sets navigator.language
+  // and the Accept-Language header but the realm's default Intl locale stays
+  // at the build's app locale (en-US) — a navigator-vs-Intl mismatch that
+  // browserscan's language check (Q0 intlLang) flags for non-US locales.
+  // Returns true on success, false if no current window/realm is available.
+  boolean overrideLocale(in AString aLocale);
+
   /**
    * This attempts to save any applicable layout history state (like
    * scroll position) in the nsISHEntry. This is normally done

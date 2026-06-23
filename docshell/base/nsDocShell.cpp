@@ -2979,6 +2979,46 @@ nsDocShell::OverrideTimezone(const nsAString& aTimezone, bool* aRetval) {
   return NS_OK;
 }
 
+// Stealthfox: content-side locale override, the counterpart of
+// OverrideTimezone above. Applies the requested BCP-47 locale to the current
+// window's JS realm so Intl.DateTimeFormat / Intl.NumberFormat / toLocaleString
+// report it immediately. languageOverride only feeds navigator.language and the
+// Accept-Language header; the realm's default Intl locale otherwise stays at the
+// build's app locale (en-US, the only packaged langpack), producing a
+// navigator-vs-Intl mismatch on non-US locales. This runs from
+// juggler/content/main.js on every navigation, covering the realm just created.
+NS_IMETHODIMP
+nsDocShell::OverrideLocale(const nsAString& aLocale, bool* aRetval) {
+  NS_ENSURE_ARG_POINTER(aRetval);
+  *aRetval = false;
+
+  nsCOMPtr<nsPIDOMWindowOuter> outer = GetWindow();
+  if (!outer) {
+    return NS_OK;
+  }
+  nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow();
+  if (!inner) {
+    return NS_OK;
+  }
+  JSObject* global = nsGlobalWindowInner::Cast(inner)->GetGlobalJSObject();
+  if (!global) {
+    return NS_OK;
+  }
+  JS::Realm* realm = JS::GetObjectRealmOrNull(global);
+  if (!realm) {
+    return NS_OK;
+  }
+
+  if (aLocale.IsEmpty()) {
+    JS::SetRealmLocaleOverride(realm, nullptr);
+  } else {
+    NS_ConvertUTF16toUTF8 utf8(aLocale);
+    JS::SetRealmLocaleOverride(realm, utf8.get());
+  }
+  *aRetval = true;
+  return NS_OK;
+}
+
 NS_IMETHODIMP nsDocShell::SynchronizeLayoutHistoryState() {
   if (mActiveEntry && mActiveEntry->GetLayoutHistoryState() &&
       mBrowsingContext) {

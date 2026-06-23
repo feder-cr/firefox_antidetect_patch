@@ -1552,6 +1552,16 @@ void gfxFcPlatformFontList::AddPatternToFontList(
     nsAutoCString keyName(aFamilyName);
     ToLowerCase(keyName);
 
+    // Stealth bundle-only: drop system families entirely, keep only bundled
+    // families in the forge sample. Null aFontFamily + return so this family's
+    // first face is dropped; aLastFamilyName is already set to canonical above,
+    // so subsequent faces of this skipped family take the FcStrCmp==0 path and
+    // are dropped by the `!aFontFamily` guard after this block.
+    if (StealthSkipFamily(keyName, aAppFonts)) {
+      aFontFamily = nullptr;
+      return;
+    }
+
     aFontFamily = static_cast<gfxFontconfigFontFamily*>(
         mFontFamilies
             .LookupOrInsertWith(keyName,
@@ -1570,6 +1580,13 @@ void gfxFcPlatformFontList::AddPatternToFontList(
     if (aAppFonts) {
       aFontFamily->SetFamilyContainsAppFonts(true);
     }
+  }
+
+  // Stealth bundle-only: a skipped family (above) left aFontFamily null; drop
+  // every face of it (this catches faces 2..N of a skipped family, which take
+  // the FcStrCmp==0 path and never re-enter the block above).
+  if (!aFontFamily) {
+    return;
   }
 
   // Add pointers to other localized family names. Most fonts
@@ -1875,6 +1892,14 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
 
     aLastFamilyName = canonical;
     aFamilyName = ToCharPtr(canonical);
+
+    // Stealth bundle-only (shared-fontlist path): drop system families entirely,
+    // keep only bundled families in the forge sample. Returning false here skips
+    // the InitData/faces add for this pattern; subsequent faces of the same
+    // skipped family recompute the same keyName and are skipped again.
+    if (StealthSkipFamily(keyName, aAppFont)) {
+      return false;
+    }
 
     const FontVisibility visibility =
         aAppFont ? FontVisibility::Base : GetVisibilityForFamily(keyName);

@@ -1052,6 +1052,21 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
       SetTimezoneOverride(stealthTz);
     }
   }
+
+  // Stealth: same single-source-of-truth pattern for the locale. The
+  // juggler.locale.override pref seeds the LanguageOverride FIELD, whose DidSet
+  // applies JS::SetRealmLocaleOverride per-realm — making Intl.DateTimeFormat /
+  // NumberFormat / toLocaleString follow the locale. languageOverride (docShell)
+  // only covers navigator.language + the Accept-Language header; without this the
+  // realm's default Intl locale stays at the build app locale (en-US), a
+  // navigator-vs-Intl mismatch flagged for non-US locales.
+  if (IsTop() && GetLanguageOverride().IsEmpty() && XRE_IsParentProcess()) {
+    nsAutoCString stealthLocale;
+    Preferences::GetCString("juggler.locale.override", stealthLocale);
+    if (!stealthLocale.IsEmpty()) {
+      SetLanguageOverride(stealthLocale);
+    }
+  }
 }
 
 void BrowsingContext::Detach(bool aFromIPC) {
@@ -3545,8 +3560,18 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
           JS::SetRealmLocaleOverride(realm, mDefaultLocale.get());
           mDefaultLocale = nullptr;
         } else {
+          // The override may be an Accept-Language list ("fr-FR, fr") so that
+          // navigator.languages reports the full desktop-default list; the
+          // realm's Intl default locale must be a single BCP-47 tag, so apply
+          // only the primary one ("fr-FR").
+          nsCString primaryLocale(languageOverride);
+          int32_t comma = primaryLocale.FindChar(',');
+          if (comma >= 0) {
+            primaryLocale.Truncate(comma);
+          }
+          primaryLocale.Trim(" \t");
           JS::SetRealmLocaleOverride(
-              realm, PromiseFlatCString(languageOverride).get());
+              realm, PromiseFlatCString(primaryLocale).get());
         }
 
         if (Navigator* navigator = window->Navigator()) {

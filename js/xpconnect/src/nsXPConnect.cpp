@@ -557,8 +557,16 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
     nsCString locale = nsRFPService::GetSpoofedJSLocale();
     aOptions.behaviors().setLocaleOverride(locale.get());
   } else if (!aLanguageOverride.IsEmpty()) {
-    aOptions.behaviors().setLocaleOverride(
-        PromiseFlatCString(aLanguageOverride).get());
+    // The override may be an Accept-Language list ("fr-FR, fr") so that
+    // navigator.languages reports the full desktop-default list; the realm's
+    // Intl default locale must be a single BCP-47 tag, so use the primary one.
+    nsAutoCString primaryLocale(aLanguageOverride);
+    int32_t comma = primaryLocale.FindChar(',');
+    if (comma >= 0) {
+      primaryLocale.Truncate(comma);
+    }
+    primaryLocale.Trim(" \t");
+    aOptions.behaviors().setLocaleOverride(primaryLocale.get());
   }
 }
 

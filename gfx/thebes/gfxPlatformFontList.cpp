@@ -34,6 +34,7 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_mathml.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -314,6 +315,46 @@ gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
 
   mFontPrefs = MakeUnique<FontPrefs>();
 
+  // Stealth bundle-only: parse our per-profile font set HERE, at construction.
+  // Env var first — Playwright delivers firefox_user_prefs over the juggler
+  // protocol only AFTER process start (Browser.enable), too late for the
+  // font-list build below; the env is present at start and inherited by content
+  // processes. When non-empty, the platform font list is built from the BUNDLED
+  // fonts ALONE, restricted to these families (see StealthSkipFamily): host
+  // system fonts never enter the list — not for detection, not for fallback —
+  // so the render is 100% from our bundle on EVERY OS. We deliberately do NOT
+  // set the native font.system.whitelist pref: that path (ApplyWhitelist) clears
+  // the already-built family list, which stalls font fingerprinters' scan.
+  // Filtering at build time (block-at-birth) avoids that. Empty = vanilla.
+  {
+    nsAutoCString stealthFontList;
+    if (const char* envList = getenv("STEALTHFOX_FONTLIST")) {
+      stealthFontList = envList;
+    } else {
+      auto lock = mozilla::StaticPrefs::zoom_stealth_font_fontlist();
+      stealthFontList = *lock;
+    }
+    if (!stealthFontList.IsEmpty()) {
+      mStealthBundleOnly = true;
+      int32_t start = 0;
+      const int32_t len = int32_t(stealthFontList.Length());
+      while (start < len) {
+        int32_t comma = stealthFontList.FindChar(',', start);
+        int32_t end = (comma == kNotFound) ? len : comma;
+        nsAutoCString key(Substring(stealthFontList, start, end - start));
+        key.Trim(" \t");
+        ToLowerCase(key);
+        if (!key.IsEmpty()) {
+          mStealthFontSet.Insert(key);
+        }
+        if (comma == kNotFound) {
+          break;
+        }
+        start = comma + 1;
+      }
+    }
+  }
+
   gfxFontUtils::GetPrefsFontList(kFontSystemWhitelistPref, mEnabledFontsList);
   mFontFamilyWhitelistActive = !mEnabledFontsList.IsEmpty();
 
@@ -580,6 +621,18 @@ void gfxPlatformFontList::FontWhitelistPrefChanged(const char* aPref,
   auto* pfl = gfxPlatformFontList::PlatformFontList();
   pfl->UpdateFontList(true);
   dom::ContentParent::NotifyUpdatedFonts(true);
+}
+
+bool gfxPlatformFontList::StealthSkipFamily(const nsACString& aKey,
+                                            bool aIsBundled) const {
+  if (!mStealthBundleOnly) {
+    return false;  // vanilla: keep every family
+  }
+  if (!aIsBundled) {
+    return true;  // bundle-only active: a system font is never added
+  }
+  // bundled font: keep only if its family key is in the forge sample
+  return !mStealthFontSet.Contains(aKey);
 }
 
 void gfxPlatformFontList::ApplyWhitelist() {
@@ -2246,6 +2299,27 @@ void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap,
 static void GetSystemUIFontFamilies(
     FontVisibilityProvider* aFontVisibilityProvider,
     [[maybe_unused]] nsAtom* aLangGroup, nsTArray<nsCString>& aFamilies) {
+  // Stealth: force the CSS system-ui generic to a fixed family. Our persona is
+  // always Windows, so a `font-family: system-ui` probe must resolve to
+  // "Segoe UI" (set via zoom.stealth.font.system_ui) on every host, never the
+  // host's real menu font (Cantarell on Linux, Helvetica on macOS). Empty =
+  // vanilla resolution below.
+  {
+    nsAutoCString stealthSystemUi;
+    // Env var first (set at process start), pref fallback — same rationale as
+    // the font allow-list in the constructor: Playwright delivers prefs over the
+    // juggler protocol after start, so the env is the reliable channel.
+    if (const char* envUi = getenv("STEALTHFOX_SYSTEMUI")) {
+      stealthSystemUi = envUi;
+    } else {
+      auto lock = mozilla::StaticPrefs::zoom_stealth_font_system_ui();
+      stealthSystemUi = *lock;
+    }
+    if (!stealthSystemUi.IsEmpty()) {
+      aFamilies.AppendElement(stealthSystemUi);
+      return;
+    }
+  }
   // TODO: On macOS, use CTCreateUIFontForLanguage or such thing (though the
   // code below ends up using [NSFont systemFontOfSize: 0.0].
   nsFont systemFont;

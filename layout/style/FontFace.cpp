@@ -239,7 +239,16 @@ void FontFace::SetSizeAdjust(const nsACString& aValue, ErrorResult& aRv) {
   mImpl->SetSizeAdjust(aValue, aRv);
 }
 
-FontFaceLoadStatus FontFace::Status() { return mImpl->Status(); }
+FontFaceLoadStatus FontFace::Status() {
+  // Stealth: a per-profile fontlist makes the Font Loading API verdict match
+  // the enumerated set (listed -> Loaded, else Error). No fontlist -> vanilla.
+  nsAutoCString stealthFamily;
+  GetFamily(stealthFamily);
+  if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {
+    return *allowed ? FontFaceLoadStatus::Loaded : FontFaceLoadStatus::Error;
+  }
+  return mImpl->Status();
+}
 
 Promise* FontFace::Load(ErrorResult& aRv) {
   EnsurePromise();
@@ -247,6 +256,20 @@ Promise* FontFace::Load(ErrorResult& aRv) {
   if (!mLoaded) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
+  }
+
+  // Stealth: with a per-profile fontlist active, resolve/reject load() to match
+  // the fontlist instead of actually loading. No fontlist -> vanilla load.
+  nsAutoCString stealthFamily;
+  GetFamily(stealthFamily);
+  if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {
+    if (*allowed) {
+      mLoaded->MaybeResolve(this);
+    } else {
+      mLoaded->MaybeReject(NS_ERROR_FAILURE);
+    }
+    mImpl->UpdateOwnerKeepAlive();
+    return mLoaded;
   }
 
   mImpl->Load(aRv);

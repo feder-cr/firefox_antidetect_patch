@@ -1367,8 +1367,15 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
       const nsCString& localeOverride =
           window->GetBrowsingContext()->Top()->GetLanguageOverride();
       if (!localeOverride.IsEmpty()) {
-        realmOptions.behaviors().setLocaleOverride(
-            PromiseFlatCString(localeOverride).get());
+        // Accept-Language list ("fr-FR, fr") -> primary BCP-47 tag for the
+        // realm Intl locale (navigator.languages keeps the full list).
+        nsAutoCString primaryLocale(localeOverride);
+        int32_t comma = primaryLocale.FindChar(',');
+        if (comma >= 0) {
+          primaryLocale.Truncate(comma);
+        }
+        primaryLocale.Trim(" \t");
+        realmOptions.behaviors().setLocaleOverride(primaryLocale.get());
       }
 
       const nsAString& timezoneOverride =
