@@ -18,7 +18,16 @@ case "$(uname -s)" in
         ;;
 esac
 
-ac_add_options --enable-bootstrap
+# --enable-bootstrap auto-downloads toolchains via `mach bootstrap`. On the
+# windows-latest CI runner the MSVC/Win11 SDK is already installed, and the
+# bootstrap SDK download hangs on Microsoft's CDN (the "X64 Debuggers And Tools"
+# MSI never finishes — the build freezes ~30s in). firefox-11/12 built Windows
+# fine without it, using the runner's pre-installed SDK. So enable bootstrap
+# only off Windows (Linux/macOS download their toolchains fine).
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT) ;;
+    *) ac_add_options --enable-bootstrap ;;
+esac
 
 export MOZ_REQUIRE_SIGNING=
 
