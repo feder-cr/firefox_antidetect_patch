@@ -24,6 +24,7 @@ import json
 import platform
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -610,7 +611,21 @@ def _downloadPayload(payload, destname, fileid, allowHashMismatch):
             if "size" in payload:
                 size = payload["size"]
             print("Downloading %s (%s)" % (fileid, formatSize(size)), flush=True)
-            urllib.request.urlretrieve(payload["url"], destname)
+            # Stealthfox: total per-file watchdog. socket.setdefaulttimeout only
+            # catches a fully stalled connection, not a slow trickle from a flaky
+            # CDN edge -- the Win11 SDK "X64 Debuggers And Tools" MSI dripped for
+            # hours without ever erroring, so this 5-attempt loop never retried
+            # and the cross-compile build hung. Cap each file and raise on
+            # overrun so the loop reconnects (fresh CDN edge) instead of hanging.
+            def _dl_watchdog(signum, frame):
+                raise TimeoutError("download exceeded 120s for %s" % fileid)
+            _prev_alarm = signal.signal(signal.SIGALRM, _dl_watchdog)
+            signal.alarm(120)
+            try:
+                urllib.request.urlretrieve(payload["url"], destname)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, _prev_alarm)
             if "sha256" in payload:
                 if sha256File(destname).lower() != payload["sha256"].lower():
                     if allowHashMismatch:
