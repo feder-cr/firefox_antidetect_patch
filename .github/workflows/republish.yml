@@ -1,0 +1,220 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# republish.yml — re-gate + publish an EXISTING build's artifacts WITHOUT rebuilding.
+#
+# When a release run's 5 builds all SUCCEEDED but the publish was blocked by a
+# GATE/TEST bug (not a binary defect), rebuilding all five targets (hours) just to
+# re-run a few-minute test is wasteful. This workflow downloads the binary artifacts
+# from a prior `release` run, re-runs the (now-fixed) drive gate + cloak/WebGL guards
+# against those exact byte-identical binaries on their native runners, and — only if
+# green — publishes the DRAFT release. Same publish logic as release.yml (draft, notes,
+# checksums, source-commit) so the human still runs the realness gate before un-drafting.
+#
+# Inputs:
+#   build_run_id : the `release` run whose `asset-*` + `source-commit` artifacts to reuse
+#                  (must be within the 7-day artifact retention window).
+#   release_tag  : tag to publish the draft under (e.g. firefox-11).
+# ─────────────────────────────────────────────────────────────────────────────
+name: republish
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'release run id whose built artifacts to reuse (no rebuild)'
+        required: true
+      release_tag:
+        description: 'release tag to publish the draft under (e.g. firefox-11)'
+        required: true
+
+env:
+  SOURCE_REPO: feder-cr/firefox_antidetect_patch
+
+jobs:
+  gate:
+    name: gate-${{ matrix.leg }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: linux-x86_64
+            runner: ubuntu-24.04
+            kind: linux
+            asset: firefox-150.0.1-stealth-linux-x86_64.tar.gz
+            extra: '--full'
+          - leg: linux-arm64
+            runner: ubuntu-24.04-arm
+            kind: linux
+            asset: firefox-150.0.1-stealth-linux-arm64.tar.gz
+            extra: ''
+          - leg: win-x86_64
+            runner: windows-latest
+            kind: win
+            asset: firefox-150.0.1-stealth-win-x86_64.zip
+            extra: ''
+          - leg: macos-arm64
+            runner: macos-15
+            kind: mac
+            asset: firefox-150.0.1-stealth-macos-arm64.tar.gz
+            extra: ''
+          - leg: macos-x86_64
+            runner: macos-15-intel
+            kind: mac
+            asset: firefox-150.0.1-stealth-macos-x86_64.tar.gz
+            extra: ''
+    steps:
+      - name: Checkout wrapper (for scripts/ci_drive_gate.py — the FIXED gate)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          fetch-depth: 1
+      - name: Download asset from the existing build run (no rebuild)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: asset-${{ matrix.leg }}
+          path: art
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Install Playwright driver (pinned, no bundled browser)
+        shell: bash
+        run: python -m pip install --quiet "playwright==$(cat scripts/playwright_pin.txt)"
+      - name: Linux system deps for headless firefox
+        if: matrix.kind == 'linux'
+        run: sudo "$(which python)" -m playwright install-deps firefox
+      - name: Extract + locate firefox binary
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ff
+          A="art/${{ matrix.asset }}"
+          case "${{ matrix.kind }}" in
+            win)   python -c "import zipfile; zipfile.ZipFile('$A').extractall('ff')"; EXE="ff/firefox.exe";;
+            linux) tar xzf "$A" -C ff; EXE="ff/firefox";;
+            mac)   tar xzf "$A" -C ff; EXE="ff/Firefox.app/Contents/MacOS/firefox";;
+          esac
+          [ -e "$EXE" ] || { echo "ERROR: firefox binary not found at $EXE"; exit 1; }
+          chmod +x "$EXE" 2>/dev/null || true
+          echo "FF_EXE=$EXE" >> "$GITHUB_ENV"
+          echo "located: $EXE"
+      - name: DRIVE GATE — Playwright launch via juggler + real page (+ interaction on --full)
+        shell: bash
+        run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
+      - name: Install pyobjc Quartz (macOS — to read the cloak window alpha)
+        if: matrix.kind == 'mac'
+        run: python -m pip install --quiet pyobjc-framework-Quartz
+      - name: Cloak + WebGL-masking guards (headed)
+        shell: bash
+        run: |
+          python -m pip install --quiet ".[dev]"
+          INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
+            tests/test_cloak.py \
+            "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
+            -m e2e -o addopts='' -q
+
+  publish:
+    name: publish-draft-release
+    needs: [gate]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout wrapper (for scripts/gen_release_notes.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Download all build assets from the existing build run (no rebuild)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: asset-*
+          path: dl
+          merge-multiple: true
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download source-commit metadata from the existing build run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: source-commit
+          path: src-meta
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Assert all 5 target archives present (no silent partial release)
+        run: |
+          cd dl
+          EXPECTED="
+          firefox-150.0.1-stealth-linux-x86_64.tar.gz
+          firefox-150.0.1-stealth-linux-arm64.tar.gz
+          firefox-150.0.1-stealth-win-x86_64.zip
+          firefox-150.0.1-stealth-macos-arm64.tar.gz
+          firefox-150.0.1-stealth-macos-x86_64.tar.gz
+          "
+          for a in $EXPECTED; do
+            [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
+          done
+          echo "all 5 target archives present"
+      - name: Generate checksums.txt
+        run: |
+          cd dl; ls -la
+          sha256sum firefox-150.0.1-stealth-* > checksums.txt
+          echo "----- checksums.txt -----"; cat checksums.txt
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          N="${TAG#firefox-}"
+          echo "num=$N" >> "$GITHUB_OUTPUT"
+          case "$N" in (*[!0-9]*|'') echo "prevtag=" >> "$GITHUB_OUTPUT";;
+                        (*) echo "prevtag=firefox-$((N-1))" >> "$GITHUB_OUTPUT";; esac
+          echo "publishing DRAFT release for tag: $TAG"
+      - name: Build release notes from the source commits
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          CUR="$(cat src-meta/source-commit.txt 2>/dev/null | tr -d '[:space:]')"
+          echo "this build's source commit: ${CUR:-<none>}"
+          PREV=""
+          PREVTAG="${{ steps.tag.outputs.prevtag }}"
+          if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
+               --pattern source-commit.txt --dir prev 2>/dev/null; then
+            PREV="$(cat prev/source-commit.txt | tr -d '[:space:]')"
+            echo "previous ($PREVTAG) source commit: $PREV"
+          else
+            echo "no previous source-commit.txt — changelog section omitted this time"
+          fi
+          python scripts/gen_release_notes.py --tag "${{ steps.tag.outputs.tag }}" \
+            --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SOURCE_REPO }}" > body.md
+          echo "----- generated body.md -----"; cat body.md
+          cp src-meta/source-commit.txt dl/source-commit.txt
+      - name: Create DRAFT release with all assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: firefox_antidetect_patch (150.0.1) rev ${{ steps.tag.outputs.num }}
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            dl/*.tar.gz
+            dl/*.zip
+            dl/checksums.txt
+            dl/source-commit.txt
+          body_path: body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
