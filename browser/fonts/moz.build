@@ -16,6 +16,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk", "cocoa"):
         "arialbd7_04.ttf",
         "arialbi7_04.ttf",
         "ariali7_04.ttf",
+        "ariblk.ttf",
         "arnopro_syn.ttf",
         "bahnschrift2_07.ttf",
         "calibri6_26.ttf",
@@ -100,6 +101,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk", "cocoa"):
         "MTEXTRA.TTF",
         "mvboli6_85.ttf",
         "myriadpro_syn.ttf",
+        "Nirmala.ttf",
         "ntailu5_99.ttf",
         "ntailub5_99.ttf",
         "OUTLOOK.TTF",
@@ -153,5 +155,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk", "cocoa"):
         "verdanaz5_33.ttf",
         "webdings5_01.ttf",
         "wingding5_01.ttf",
+        "wingdng2.ttf",
+        "wingdng3.ttf",
         "yugothm1_95.ttc",
     ]
