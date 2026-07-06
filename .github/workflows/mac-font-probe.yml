@@ -1,0 +1,75 @@
+# mac-font-probe.yml - FAST macOS font iteration WITHOUT rebuilding Firefox.
+#
+# The full release build takes ~2h per leg on macOS. To nail the macOS font
+# packaging (the bundle fonts were missing from the .app), this reuses a
+# PRIOR build run's macos .app artifact, injects the bundle font files into a
+# chosen path inside the .app, re-signs, and runs the font gate. ~10 min.
+#
+# Once the right fonts_subdir makes the gate pass, fix the packaging for real
+# and do ONE final release build. Dispatch-only; zero secrets.
+name: mac-font-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'build run id whose asset-macos-arm64 to reuse'
+        required: true
+      fonts_subdir:
+        description: 'path inside the .app to drop the bundle fonts'
+        default: 'Contents/Resources/fonts'
+      source_ref:
+        description: 'firefox_antidetect_patch ref for browser/fonts'
+        default: 'stealth/150'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Checkout source (browser/fonts)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/firefox_antidetect_patch
+          ref: ${{ github.event.inputs.source_ref }}
+          fetch-depth: 1
+          path: src
+      - name: Checkout wrapper (ci_font_gate.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          fetch-depth: 1
+          path: wrapper
+      - name: Download the built .app from the prior run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: asset-macos-arm64
+          path: art
+          run-id: ${{ github.event.inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract .app + inject the bundle fonts
+        run: |
+          set -e
+          mkdir -p ff && tar xzf art/*.tar.gz -C ff
+          APP="ff/Firefox.app"
+          [ -d "$APP" ] || { echo "ERROR: no Firefox.app in the artifact"; exit 1; }
+          echo "=== fonts already in the .app (before): $(find "$APP" -iname '*.ttf' -o -iname '*.ttc' | wc -l) ==="
+          DEST="$APP/${{ github.event.inputs.fonts_subdir }}"
+          mkdir -p "$DEST"
+          cp src/browser/fonts/*.ttf src/browser/fonts/*.ttc "$DEST"/ 2>/dev/null || true
+          echo "=== injected into $DEST: $(ls "$DEST" | wc -l) files ==="
+          # the injection breaks the ad-hoc signature -> re-sign so it launches
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP" && echo "re-signed OK"
+      - name: Set up Python + Playwright
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Install Playwright driver
+        run: python -m pip install --quiet "playwright==$(cat wrapper/scripts/playwright_pin.txt)"
+      - name: FONT GATE on the patched .app
+        run: python wrapper/scripts/ci_font_gate.py "ff/Firefox.app/Contents/MacOS/firefox"
