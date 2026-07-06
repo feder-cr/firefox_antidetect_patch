@@ -7,6 +7,7 @@
 #include "mozilla/intl/OSPreferences.h"
 
 #include "gfxDWriteFontList.h"
+#include "StealthBundleFontList.h"
 #include "gfxDWriteFonts.h"
 #include "gfxDWriteCommon.h"
 #include "nsUnicharUtils.h"
@@ -1068,6 +1069,27 @@ static void GetPostScriptNameFromNameTable(IDWriteFontFace* aFace,
 
 gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
     fontlist::Face* aFace, const fontlist::Family* aFamily) {
+  if (mStealthBundleOnly) {
+    // Uniform bundle path: instantiate the face straight from its bundle file
+    // instead of the DWrite collection, so the family list (from the manifest)
+    // drives everything. MakePlatformFont handles single-face files; .ttc faces
+    // (mIndex > 0) are a follow-up (it rejects numFaces != 1 for now).
+    auto* bundle = StealthBundleFontList::Get();
+    if (bundle) {
+      const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
+      nsTArray<uint8_t> data;
+      if (bundle->ReadFaceData(file, data) && !data.IsEmpty()) {
+        uint8_t* buf = static_cast<uint8_t*>(malloc(data.Length()));
+        if (buf) {
+          memcpy(buf, data.Elements(), data.Length());
+          nsAutoCString name(aFamily->DisplayName().AsString(SharedFontList()));
+          return MakePlatformFont(name, aFace->mWeight, aFace->mStretch,
+                                  aFace->mStyle, buf, data.Length());
+        }
+      }
+    }
+    return nullptr;
+  }
   IDWriteFontCollection* collection =
 #ifdef MOZ_BUNDLED_FONTS
       aFamily->IsBundled() ? mBundledFonts : mSystemFonts;
@@ -1338,6 +1360,13 @@ void gfxDWriteFontList::AppendFamiliesFromCollection(
 void gfxDWriteFontList::GetFacesInitDataForFamily(
     const fontlist::Family* aFamily, nsTArray<fontlist::Face::InitData>& aFaces,
     bool aLoadCmaps) const {
+  if (mStealthBundleOnly) {
+    if (auto* bundle = StealthBundleFontList::Get()) {
+      bundle->GetFaces(aFamily->DisplayName().AsString(SharedFontList()),
+                       aFaces);
+      return;
+    }
+  }
   IDWriteFontCollection* collection =
 #ifdef MOZ_BUNDLED_FONTS
       aFamily->IsBundled() ? mBundledFonts : mSystemFonts;
@@ -1601,6 +1630,17 @@ enum DWriteInitError {
 };
 
 void gfxDWriteFontList::InitSharedFontListForPlatform() {
+  if (mStealthBundleOnly) {
+    // Build the shared family list from our manifest, uniform across OSes, and
+    // skip the DWrite system enumeration entirely (host fonts never enter).
+    auto* bundle = StealthBundleFontList::Get();
+    if (bundle && SharedFontList()) {
+      nsTArray<fontlist::Family::InitData> families(bundle->Families().Clone());
+      SharedFontList()->SetFamilyNames(families);
+      GetPrefsAndStartLoader();
+      return;
+    }
+  }
   mGDIFontTableAccess = Preferences::GetBool(
       "gfx.font_rendering.directwrite.use_gdi_table_loading", false);
   mForceGDIClassicMaxFontSize = Preferences::GetInt(

@@ -232,6 +232,12 @@ UNIFIED_SOURCES += [
     "VsyncSource.cpp",
 ]
 
+# Our uniform bundle-only font-list builder. Non-unified: it defines a few
+# short-named file-static helpers that could collide in a unified blob.
+SOURCES += [
+    "StealthBundleFontList.cpp",
+]
+
 UNIFIED_SOURCES += [
     "SkMemoryReporter.cpp",
 ]
