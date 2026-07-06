@@ -1039,9 +1039,11 @@ void CoreTextFontList::AddFamily(const nsACString& aFamilyName,
                                  FontVisibility aVisibility) {
 #ifdef MOZ_BUNDLED_FONTS
   // Stealth bundle-only: keep only bundled families, drop every host system
-  // font. CoreText merges bundled + system fonts into a single enumeration, so
-  // we filter here to expose exactly the Windows persona on every host OS.
-  if (StealthSkipFamily(aFamilyName, mBundledFamilies.Contains(aFamilyName))) {
+  // font. CoreText merges bundled + system fonts into a single enumeration
+  // (unlike Win/Linux, which enumerate host and bundled separately, so there we
+  // skip the host enumeration wholesale), so the filter must be per-family here:
+  // drop any family not in the bundled set.
+  if (mStealthBundleOnly && !mBundledFamilies.Contains(aFamilyName)) {
     return;
   }
 #endif
@@ -1281,12 +1283,6 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
           (CFStringRef)CFArrayGetValueAtIndex(familyNames, i);
       GetStringForCFString(familyName, name16);
       NS_ConvertUTF16toUTF8 name(name16);
-#ifdef MOZ_BUNDLED_FONTS
-      // Stealth bundle-only: drop host system families (see AddFamily above).
-      if (StealthSkipFamily(name, mBundledFamilies.Contains(name))) {
-        continue;
-      }
-#endif
       nsAutoCString key;
       GenerateFontListKey(name, key);
       families.AppendElement(fontlist::Family::InitData(
@@ -1295,12 +1291,6 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
 #if USE_DEPRECATED_FONT_FAMILY_NAMES
     for (const nsACString& name : kDeprecatedFontFamilies) {
       if (DeprecatedFamilyIsAvailable(name)) {
-#ifdef MOZ_BUNDLED_FONTS
-        // Stealth bundle-only: deprecated names are host fonts; drop them.
-        if (StealthSkipFamily(name, mBundledFamilies.Contains(name))) {
-          continue;
-        }
-#endif
         nsAutoCString key;
         GenerateFontListKey(name, key);
         families.AppendElement(
