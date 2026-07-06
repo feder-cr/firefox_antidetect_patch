@@ -2404,6 +2404,15 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
     }
   }
 
+  // Stealth bundle-only: on Windows, DWrite's weight-stretch-style model exposes
+  // the weight-stripped base family "Franklin Gothic" for the "Franklin Gothic
+  // Medium" font. fontconfig keys only the GDI name ("Franklin Gothic Medium"),
+  // so without this the Linux build would expose one fewer family than the
+  // Windows persona it impersonates. Redirect the base name to the real family.
+  if (mStealthBundleOnly && familyName.EqualsLiteral("franklin gothic")) {
+    familyName.AssignLiteral("franklin gothic medium");
+  }
+
   // fontconfig allows conditional substitutions in such a way that it's
   // difficult to distinguish an explicit substitution from other suggested
   // choices. To sniff out explicit substitutions, compare the substitutions
@@ -2673,8 +2682,12 @@ void gfxFcPlatformFontList::AddGenericFonts(
     }
   }
 
-  // when pref fonts exist, use standard pref font lookup
-  if (usePrefFontList) {
+  // when pref fonts exist, use standard pref font lookup. Stealth: also force
+  // this path when bundle-only, so the CSS generics resolve via the base-class
+  // ResolveGenericFontNames (StealthGenericWindowsFont -> Windows fonts) instead
+  // of fontconfig, which would map them to a host font we have dropped (making
+  // serif/monospace collapse to Arial).
+  if (usePrefFontList || mStealthBundleOnly) {
     gfxPlatformFontList::AddGenericFonts(aFontVisibilityProvider, aGenericType,
                                          aLanguage, aFamilyList);
     if (!isSystemUi) {

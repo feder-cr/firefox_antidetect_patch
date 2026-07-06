@@ -354,35 +354,14 @@ void FontFaceImpl::DoLoad() {
 }
 
 Maybe<bool> StealthFontAllowed(const nsACString& aFamily) {
-  nsAutoCString list;
-  // Env var first (process start), pref fallback — must match the channel the
-  // gfxPlatformFontList constructor uses, since Playwright delivers the pref over
-  // the juggler protocol only after start. Without this the Font Loading API gate
-  // would disagree with the actual (env-driven) allow-list under a wrapper launch.
-  if (const char* envList = getenv("STEALTHFOX_FONTLIST")) {
-    list = envList;
-  } else {
-    auto lock = StaticPrefs::zoom_stealth_font_fontlist();
-    list = *lock;
-  }
-  if (list.IsEmpty()) {
-    return Nothing();
-  }
-  nsAutoCString name(aFamily);
-  name.Trim(" \t\"'");
-  ToLowerCase(name);
-  if (name.IsEmpty()) {
-    return Some(false);
-  }
-  // list = comma-separated lowercase family names (no surrounding spaces);
-  // wrap both sides in commas so we match a whole token, not a substring.
-  nsAutoCString hay(",");
-  hay.Append(list);
-  hay.Append(',');
-  nsAutoCString needle(",");
-  needle.Append(name);
-  needle.Append(',');
-  return Some(hay.Find(needle) != kNotFound);
+  // The patched build is ALWAYS bundle-only: the platform font list already
+  // contains ONLY the bundled Windows families (host fonts are dropped at birth),
+  // so the Font Loading API reflects the allow-list by construction - a
+  // local()/@font-face probe for a host font simply fails to resolve. No separate
+  // gate and no external list are needed. (More realistic than force-erroring, so
+  // legitimate downloadable web fonts report Loaded as on a real Firefox.)
+  (void)aFamily;
+  return Nothing();
 }
 
 void FontFaceImpl::SetStatus(FontFaceLoadStatus aStatus) {
