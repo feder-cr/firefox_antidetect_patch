@@ -17,7 +17,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk", "cocoa"):
         "ariblk.ttf",
         "bahnschrift2_07.ttf",
         # Our uniform-font-list manifest (read at font-list init from <GRE>/fonts).
-        "bundle-fonts.manifest",
+        "bundle-fonts.list",
         "calibri6_26.ttf",
         "calibrib6_26.ttf",
         "calibrii6_26.ttf",
