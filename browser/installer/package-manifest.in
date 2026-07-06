@@ -50,7 +50,7 @@
 @RESPATH@/dictionaries/*
 @RESPATH@/browser/localization/*
 @RESPATH@/localization/*
-#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK) || defined(XP_MACOSX)
 @RESPATH@/fonts/*
 #endif
 @RESPATH@/hyphenation/*
