@@ -4,6 +4,7 @@
 
 #include "AppleUtils.h"
 #include "CoreTextFontList.h"
+#include "StealthBundleFontList.h"
 #include "gfxFontConstants.h"
 #include "gfxMacFont.h"
 #include "gfxUserFontSet.h"
@@ -1238,6 +1239,21 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
 
   InitSystemFontNames();
 
+  if (mStealthBundleOnly && XRE_IsParentProcess()) {
+    // Uniform bundle: build the shared family list from our manifest (skipping
+    // the CoreText enumeration; host fonts never enter). Faces are provided
+    // lazily by GetFacesInitDataForFamily.
+    auto* bundle = StealthBundleFontList::Get();
+    auto* list = SharedFontList();
+    if (bundle && list) {
+      nsTArray<fontlist::Family::InitData> families(bundle->Families().Clone());
+      list->SetFamilyNames(families);
+      InitAliasesForSingleFaceList();
+      GetPrefsAndStartLoader();
+      return;
+    }
+  }
+
   if (XRE_IsParentProcess()) {
     // Only the parent process listens for OS font-changed notifications;
     // after rebuilding its list, it will update the content processes.
@@ -1720,6 +1736,46 @@ gfxFontFamily* CoreTextFontList::CreateFontFamily(
 
 gfxFontEntry* CoreTextFontList::CreateFontEntry(
     fontlist::Face* aFace, const fontlist::Family* aFamily) {
+  if (mStealthBundleOnly) {
+    // Instantiate the face straight from its bundle file:
+    // CTFontManagerCreateFontDescriptorsFromData yields one descriptor per face
+    // of a .ttc, so pick the wanted index and wrap its CGFont in a CTFontEntry.
+    auto* bundle = StealthBundleFontList::Get();
+    if (!bundle) {
+      return nullptr;
+    }
+    nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
+    nsTArray<uint8_t> data;
+    if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
+      return nullptr;
+    }
+    AutoCFTypeRef<CFDataRef> cfData(
+        CFDataCreate(kCFAllocatorDefault, data.Elements(), data.Length()));
+    if (!cfData) {
+      return nullptr;
+    }
+    AutoCFTypeRef<CFArrayRef> descriptors(
+        CTFontManagerCreateFontDescriptorsFromData(cfData));
+    if (!descriptors || aFace->mIndex >= CFArrayGetCount(descriptors)) {
+      return nullptr;
+    }
+    CTFontDescriptorRef desc = (CTFontDescriptorRef)CFArrayGetValueAtIndex(
+        descriptors, aFace->mIndex);
+    AutoCFTypeRef<CTFontRef> ctFont(
+        CTFontCreateWithFontDescriptor(desc, 0.0, nullptr));
+    if (!ctFont) {
+      return nullptr;
+    }
+    AutoCFTypeRef<CGFontRef> cgFont(CTFontCopyGraphicsFont(ctFont, nullptr));
+    if (!cgFont) {
+      return nullptr;
+    }
+    nsAutoCString name(aFamily->DisplayName().AsString(SharedFontList()));
+    auto* fe = new CTFontEntry(name, cgFont, aFace->mWeight, aFace->mStretch,
+                               aFace->mStyle, true, false);
+    fe->InitializeFrom(aFace, aFamily);
+    return fe;
+  }
   CTFontEntry* fe = new CTFontEntry(
       aFace->mDescriptor.AsString(SharedFontList()), aFace->mWeight, false,
       0.0);  // XXX standardFace, sizeHint
@@ -1815,6 +1871,13 @@ void CoreTextFontList::AddFaceInitData(
 void CoreTextFontList::GetFacesInitDataForFamily(
     const fontlist::Family* aFamily, nsTArray<fontlist::Face::InitData>& aFaces,
     bool aLoadCmaps) const {
+  if (mStealthBundleOnly) {
+    if (auto* bundle = StealthBundleFontList::Get()) {
+      bundle->GetFaces(aFamily->DisplayName().AsString(SharedFontList()),
+                       aFaces);
+      return;
+    }
+  }
   auto name = aFamily->Key().AsString(SharedFontList());
   CrashReporter::AutoRecordAnnotation autoFontName(
       CrashReporter::Annotation::FontName, name);
