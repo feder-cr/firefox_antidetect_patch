@@ -42,6 +42,11 @@ class StealthBundleFontList final {
   void GetFaces(const nsACString& aFamilyName,
                 nsTArray<mozilla::fontlist::Face::InitData>& aFaces) const;
 
+  // Reads the raw bytes of a bundle file (aFile is a Face's mDescriptor, i.e.
+  // the file name under <GRE>/fonts) into aData. Cached: the same buffer is
+  // shared across all faces of a .ttc. Returns false if the file is unreadable.
+  bool ReadFaceData(const nsACString& aFile, nsTArray<uint8_t>& aData);
+
  private:
   StealthBundleFontList() = default;
   ~StealthBundleFontList() = default;
@@ -55,6 +60,8 @@ class StealthBundleFontList final {
   // family lookup key (lowercased display name) -> its faces
   nsTHashMap<nsCStringHashKey, nsTArray<mozilla::fontlist::Face::InitData>>
       mFaces;
+  // file name -> its raw bytes, so the N faces of a .ttc share one read
+  nsTHashMap<nsCStringHashKey, nsTArray<uint8_t>> mFileCache;
 };
 
 #endif  // StealthBundleFontList_h_
