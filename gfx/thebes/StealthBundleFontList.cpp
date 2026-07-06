@@ -63,7 +63,7 @@ bool StealthBundleFontList::Load() {
     return false;
   }
   if (NS_FAILED(file->Append(u"fonts"_ns)) ||
-      NS_FAILED(file->Append(u"bundle-fonts.manifest"_ns))) {
+      NS_FAILED(file->Append(u"bundle-fonts.list"_ns))) {
     return false;
   }
   nsCOMPtr<nsIInputStream> stream;
