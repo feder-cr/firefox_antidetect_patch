@@ -11,6 +11,21 @@
 #include "nsTHashMap.h"
 #include "nsHashKeys.h"
 
+// One manifest face, stored as trivially-copyable raw values. Both
+// fontlist::Face::InitData and the CSS WeightRange/StretchRange/SlantStyleRange
+// types are move-only (deleted copy), so we cannot cache them; instead we cache
+// these primitives and build a fresh Face::InitData (with fresh ranges) per
+// GetFaces call, the way the platform backends build theirs.
+struct StealthBundleFace {
+  nsCString mFile;
+  uint16_t mIndex = 0;
+  int32_t mWeightMin = 400;
+  int32_t mWeightMax = 400;
+  float mStretchMin = 100.0f;
+  float mStretchMax = 100.0f;
+  bool mItalic = false;
+};
+
 /**
  * Reads <GRE>/fonts/bundle-fonts.manifest (generated offline by
  * scripts/gen_bundle_font_manifest.py) and hands back the canonical family list
@@ -40,7 +55,7 @@ class StealthBundleFontList final {
   // the family is unknown. Mirrors the platform GetFacesInitDataForFamily
   // contract.
   void GetFaces(const nsACString& aFamilyName,
-                nsTArray<mozilla::fontlist::Face::InitData>& aFaces) const;
+                nsTArray<mozilla::fontlist::Face::InitData>& aFaces);
 
   // Reads the raw bytes of a bundle file (aFile is a Face's mDescriptor, i.e.
   // the file name under <GRE>/fonts) into aData. Cached: the same buffer is
@@ -57,9 +72,8 @@ class StealthBundleFontList final {
   bool Load();
 
   nsTArray<mozilla::fontlist::Family::InitData> mFamilies;
-  // family lookup key (lowercased display name) -> its faces
-  nsTHashMap<nsCStringHashKey, nsTArray<mozilla::fontlist::Face::InitData>>
-      mFaces;
+  // family lookup key (lowercased display name) -> its faces (raw, copyable)
+  nsTHashMap<nsCStringHashKey, nsTArray<StealthBundleFace>> mFaces;
   // file name -> its raw bytes, so the N faces of a .ttc share one read
   nsTHashMap<nsCStringHashKey, nsTArray<uint8_t>> mFileCache;
 };

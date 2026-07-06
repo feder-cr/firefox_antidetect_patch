@@ -1630,17 +1630,6 @@ enum DWriteInitError {
 };
 
 void gfxDWriteFontList::InitSharedFontListForPlatform() {
-  if (mStealthBundleOnly) {
-    // Build the shared family list from our manifest, uniform across OSes, and
-    // skip the DWrite system enumeration entirely (host fonts never enter).
-    auto* bundle = StealthBundleFontList::Get();
-    if (bundle && SharedFontList()) {
-      nsTArray<fontlist::Family::InitData> families(bundle->Families().Clone());
-      SharedFontList()->SetFamilyNames(families);
-      GetPrefsAndStartLoader();
-      return;
-    }
-  }
   mGDIFontTableAccess = Preferences::GetBool(
       "gfx.font_rendering.directwrite.use_gdi_table_loading", false);
   mForceGDIClassicMaxFontSize = Preferences::GetInt(
@@ -1693,16 +1682,26 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
       forceClassicFams.Sort();
     }
     nsTArray<fontlist::Family::InitData> families;
-    AppendFamiliesFromCollection(mSystemFonts, families, &forceClassicFams);
+    if (mStealthBundleOnly) {
+      // Uniform bundle: the family list is our manifest, not the DWrite
+      // collection enumeration (host fonts never enter). The collections above
+      // are still set up so mGDIInterop etc. stay valid; CreateFontEntry
+      // rasterizes each face straight from its bundle file.
+      if (auto* bundle = StealthBundleFontList::Get()) {
+        families = bundle->Families().Clone();
+      }
+    } else {
+      AppendFamiliesFromCollection(mSystemFonts, families, &forceClassicFams);
 #ifdef MOZ_BUNDLED_FONTS
-    if (mBundledFonts) {
-      TimeStamp start2 = TimeStamp::Now();
-      AppendFamiliesFromCollection(mBundledFonts, families);
-      TimeStamp end2 = TimeStamp::Now();
-      glean::fontlist::bundledfonts_activate.AccumulateRawDuration(
-          (end1 - start1) + (end2 - start2));
-    }
+      if (mBundledFonts) {
+        TimeStamp start2 = TimeStamp::Now();
+        AppendFamiliesFromCollection(mBundledFonts, families);
+        TimeStamp end2 = TimeStamp::Now();
+        glean::fontlist::bundledfonts_activate.AccumulateRawDuration(
+            (end1 - start1) + (end2 - start2));
+      }
 #endif
+    }
     SharedFontList()->SetFamilyNames(families);
     GetPrefsAndStartLoader();
   }

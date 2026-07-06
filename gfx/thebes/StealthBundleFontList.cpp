@@ -17,6 +17,7 @@
 #include "nsIFile.h"
 #include "nsIInputStream.h"
 #include "nsNetUtil.h"
+#include "nsStreamUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsReadableUtils.h"
@@ -44,29 +45,16 @@ static uint32_t SplitPipe(const nsACString& aLine,
   return aOut.Length();
 }
 
-static WeightRange ParseWeight(const nsACString& aMin, const nsACString& aMax) {
-  nsresult rv1, rv2;
-  int32_t lo = nsCString(aMin).ToInteger(&rv1);
-  int32_t hi = nsCString(aMax).ToInteger(&rv2);
-  if (NS_FAILED(rv1)) lo = 400;
-  if (NS_FAILED(rv2)) hi = lo;
-  return WeightRange(FontWeight::FromInt(lo), FontWeight::FromInt(hi));
+static int32_t ParseInt(const nsACString& aStr, int32_t aDefault) {
+  nsresult rv;
+  int32_t v = nsCString(aStr).ToInteger(&rv);
+  return NS_FAILED(rv) ? aDefault : v;
 }
 
-static StretchRange ParseStretch(const nsACString& aMin,
-                                 const nsACString& aMax) {
-  nsresult rv1, rv2;
-  float lo = nsCString(aMin).ToFloat(&rv1);
-  float hi = nsCString(aMax).ToFloat(&rv2);
-  if (NS_FAILED(rv1)) lo = 100.0f;
-  if (NS_FAILED(rv2)) hi = lo;
-  return StretchRange(FontStretch::FromFloat(lo), FontStretch::FromFloat(hi));
-}
-
-static SlantStyleRange ParseStyle(const nsACString& aStyle) {
-  return aStyle.EqualsLiteral("italic")
-             ? SlantStyleRange(FontSlantStyle::ITALIC)
-             : SlantStyleRange(FontSlantStyle::NORMAL);
+static float ParseFloat(const nsACString& aStr, float aDefault) {
+  nsresult rv;
+  float v = nsCString(aStr).ToFloat(&rv);
+  return NS_FAILED(rv) ? aDefault : v;
 }
 
 bool StealthBundleFontList::Load() {
@@ -102,7 +90,6 @@ bool StealthBundleFontList::Load() {
       currentKey = key;
       mFamilies.AppendElement(Family::InitData(key, name, Family::kNoIndex,
                                                FontVisibility::Base));
-      mFaces.GetOrInsertNew(key);
       continue;
     }
     if (StringBeginsWith(line, "f|"_ns)) {
@@ -110,43 +97,57 @@ bool StealthBundleFontList::Load() {
       if (SplitPipe(line, fields) < 9 || currentKey.IsEmpty()) {
         continue;  // malformed / orphan face - skip, never crash
       }
-      Face::InitData face;
-      face.mDescriptor = fields[1];  // bundle file name
-      nsresult rv;
-      face.mIndex = uint16_t(nsCString(fields[2]).ToInteger(&rv));
-      if (NS_FAILED(rv)) face.mIndex = 0;
-#ifdef MOZ_WIDGET_GTK
-      face.mSize = 0;  // scalable
-#endif
-      face.mFixedPitch = false;  // manifest does not carry it yet
-      face.mWeight = ParseWeight(fields[3], fields[4]);
-      face.mStretch = ParseStretch(fields[5], fields[6]);
-      face.mStyle = ParseStyle(fields[7]);
-      face.mCharMap = nullptr;
-      if (auto* faces = mFaces.GetValue(currentKey)) {
-        faces->AppendElement(std::move(face));
-      }
+      StealthBundleFace face;
+      face.mFile = fields[1];
+      face.mIndex = uint16_t(ParseInt(fields[2], 0));
+      face.mWeightMin = ParseInt(fields[3], 400);
+      face.mWeightMax = ParseInt(fields[4], face.mWeightMin);
+      face.mStretchMin = ParseFloat(fields[5], 100.0f);
+      face.mStretchMax = ParseFloat(fields[6], face.mStretchMin);
+      face.mItalic = fields[7].EqualsLiteral("italic");
+      mFaces.LookupOrInsert(currentKey).AppendElement(std::move(face));
     }
   }
 
   return !mFamilies.IsEmpty();
 }
 
-void StealthBundleFontList::GetFaces(
-    const nsACString& aFamilyName,
-    nsTArray<Face::InitData>& aFaces) const {
+void StealthBundleFontList::GetFaces(const nsACString& aFamilyName,
+                                     nsTArray<Face::InitData>& aFaces) {
   nsAutoCString key(aFamilyName);
   ToLowerCase(key);
-  if (const auto* faces = mFaces.GetValue(key)) {
-    aFaces.AppendElements(*faces);
+  auto entry = mFaces.Lookup(key);
+  if (!entry) {
+    return;
+  }
+  for (const auto& f : entry.Data()) {
+    // Build a fresh (move-only) Face::InitData per call from the cached raw
+    // primitives; aggregate-init every member in declaration order, with fresh
+    // (move-only) range values.
+    Face::InitData face = {
+        f.mFile,   // mDescriptor = bundle file name
+        f.mIndex,  // mIndex
+#ifdef MOZ_WIDGET_GTK
+        0,  // mSize (0 = scalable)
+#endif
+        false,  // mFixedPitch (manifest does not carry it yet)
+        WeightRange(FontWeight::FromInt(f.mWeightMin),
+                    FontWeight::FromInt(f.mWeightMax)),
+        StretchRange(FontStretch::FromFloat(f.mStretchMin),
+                     FontStretch::FromFloat(f.mStretchMax)),
+        SlantStyleRange(f.mItalic ? FontSlantStyle::ITALIC
+                                  : FontSlantStyle::NORMAL),
+        nullptr,  // mCharMap
+    };
+    aFaces.AppendElement(std::move(face));
   }
 }
 
 bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,
                                          nsTArray<uint8_t>& aData) {
   nsCString file(aFile);
-  if (auto* cached = mFileCache.GetValue(file)) {
-    aData.AppendElements(*cached);
+  if (auto cached = mFileCache.Lookup(file)) {
+    aData.AppendElements(cached.Data());
     return true;
   }
   nsCOMPtr<nsIFile> path;
