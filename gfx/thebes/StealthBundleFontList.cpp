@@ -20,7 +20,6 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsReadableUtils.h"
-#include "mozilla/StaticPtr.h"
 
 using namespace mozilla;
 using mozilla::fontlist::Face;
@@ -143,18 +142,44 @@ void StealthBundleFontList::GetFaces(
   }
 }
 
+bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,
+                                         nsTArray<uint8_t>& aData) {
+  nsCString file(aFile);
+  if (auto* cached = mFileCache.GetValue(file)) {
+    aData.AppendElements(*cached);
+    return true;
+  }
+  nsCOMPtr<nsIFile> path;
+  if (NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(path))) ||
+      NS_FAILED(path->Append(u"fonts"_ns)) ||
+      NS_FAILED(path->Append(NS_ConvertUTF8toUTF16(file)))) {
+    return false;
+  }
+  nsCOMPtr<nsIInputStream> stream;
+  if (NS_FAILED(NS_NewLocalFileInputStream(getter_AddRefs(stream), path))) {
+    return false;
+  }
+  nsCString bytes;
+  if (NS_FAILED(NS_ConsumeStream(stream, UINT32_MAX, bytes))) {
+    return false;
+  }
+  nsTArray<uint8_t> buf;
+  buf.AppendElements(reinterpret_cast<const uint8_t*>(bytes.get()),
+                     bytes.Length());
+  aData.AppendElements(buf);
+  mFileCache.InsertOrUpdate(file, std::move(buf));
+  return true;
+}
+
 /* static */
 StealthBundleFontList* StealthBundleFontList::Get() {
-  static StaticAutoPtr<StealthBundleFontList> sInstance;
-  static bool sTried = false;
-  if (!sTried) {
-    sTried = true;
+  static StealthBundleFontList* sInstance = []() -> StealthBundleFontList* {
     auto* list = new StealthBundleFontList();
     if (list->Load()) {
-      sInstance = list;
-    } else {
-      delete list;
+      return list;  // leaked on purpose: lives for the process
     }
-  }
-  return sInstance.get();
+    delete list;
+    return nullptr;
+  }();
+  return sInstance;
 }
