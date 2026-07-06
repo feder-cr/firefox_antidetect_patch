@@ -362,6 +362,18 @@ jobs:
         shell: bash
         run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
 
+      # FONT GATE - assert this leg's binary exposes EXACTLY the Windows font
+      # persona: the SAME family set on every OS (the local Win/Linux parity we
+      # can prove by hand), host-leak 0, and the CSS generics mapping to Windows
+      # fonts. This is the ONLY place macOS/CoreText font handling is validated -
+      # there is no local Mac - so a Mac-only regression (e.g. host fonts leaking
+      # through CoreText, or the bundle-only skip not wired in) fails HERE, on the
+      # real macos-15 / macos-15-intel artifact, before anything can ship.
+      # Headless, no proxy, no secrets. See scripts/ci_font_gate.py in the wrapper.
+      - name: FONT GATE - exactly the Windows font persona on this OS
+        shell: bash
+        run: python scripts/ci_font_gate.py "$FF_EXE"
+
       # CLOAK + WEBGL-MASKING GUARDS — run the wrapper's e2e cloak/gamma checks
       # against THIS leg's freshly-built artifact, on its native runner. The
       # wrapper's headless=True is headed+hidden (cloak on Win/macOS, its own
