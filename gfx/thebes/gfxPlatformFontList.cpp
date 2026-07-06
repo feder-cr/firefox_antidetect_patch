@@ -315,45 +315,12 @@ gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
 
   mFontPrefs = MakeUnique<FontPrefs>();
 
-  // Stealth bundle-only: parse our per-profile font set HERE, at construction.
-  // Env var first — Playwright delivers firefox_user_prefs over the juggler
-  // protocol only AFTER process start (Browser.enable), too late for the
-  // font-list build below; the env is present at start and inherited by content
-  // processes. When non-empty, the platform font list is built from the BUNDLED
-  // fonts ALONE, restricted to these families (see StealthSkipFamily): host
-  // system fonts never enter the list — not for detection, not for fallback —
-  // so the render is 100% from our bundle on EVERY OS. We deliberately do NOT
-  // set the native font.system.whitelist pref: that path (ApplyWhitelist) clears
-  // the already-built family list, which stalls font fingerprinters' scan.
-  // Filtering at build time (block-at-birth) avoids that. Empty = vanilla.
-  {
-    nsAutoCString stealthFontList;
-    if (const char* envList = getenv("STEALTHFOX_FONTLIST")) {
-      stealthFontList = envList;
-    } else {
-      auto lock = mozilla::StaticPrefs::zoom_stealth_font_fontlist();
-      stealthFontList = *lock;
-    }
-    if (!stealthFontList.IsEmpty()) {
-      mStealthBundleOnly = true;
-      int32_t start = 0;
-      const int32_t len = int32_t(stealthFontList.Length());
-      while (start < len) {
-        int32_t comma = stealthFontList.FindChar(',', start);
-        int32_t end = (comma == kNotFound) ? len : comma;
-        nsAutoCString key(Substring(stealthFontList, start, end - start));
-        key.Trim(" \t");
-        ToLowerCase(key);
-        if (!key.IsEmpty()) {
-          mStealthFontSet.Insert(key);
-        }
-        if (comma == kNotFound) {
-          break;
-        }
-        start = comma + 1;
-      }
-    }
-  }
+  // Stealth: this patched build is ALWAYS bundle-only. Host system fonts never
+  // enter the font list (see StealthSkipFamily) - the exposed set is exactly the
+  // bundled Windows font families, identical on every OS. There is NO external
+  // allow-list and no per-profile customization: the list IS the bundle. (The
+  // bundled fonts must be active; see gfx.bundled-fonts.activate, default-on.)
+  mStealthBundleOnly = true;
 
   gfxFontUtils::GetPrefsFontList(kFontSystemWhitelistPref, mEnabledFontsList);
   mFontFamilyWhitelistActive = !mEnabledFontsList.IsEmpty();
@@ -623,16 +590,14 @@ void gfxPlatformFontList::FontWhitelistPrefChanged(const char* aPref,
   dom::ContentParent::NotifyUpdatedFonts(true);
 }
 
-bool gfxPlatformFontList::StealthSkipFamily(const nsACString& aKey,
+bool gfxPlatformFontList::StealthSkipFamily([[maybe_unused]] const nsACString& aKey,
                                             bool aIsBundled) const {
   if (!mStealthBundleOnly) {
     return false;  // vanilla: keep every family
   }
-  if (!aIsBundled) {
-    return true;  // bundle-only active: a system font is never added
-  }
-  // bundled font: keep only if its family key is in the forge sample
-  return !mStealthFontSet.Contains(aKey);
+  // Bundle-only: keep every BUNDLED family, drop every host system font. The
+  // exposed set is exactly the bundle - no external allow-list, no customization.
+  return !aIsBundled;
 }
 
 void gfxPlatformFontList::ApplyWhitelist() {
@@ -2299,27 +2264,11 @@ void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap,
 static void GetSystemUIFontFamilies(
     FontVisibilityProvider* aFontVisibilityProvider,
     [[maybe_unused]] nsAtom* aLangGroup, nsTArray<nsCString>& aFamilies) {
-  // Stealth: force the CSS system-ui generic to a fixed family. Our persona is
-  // always Windows, so a `font-family: system-ui` probe must resolve to
-  // "Segoe UI" (set via zoom.stealth.font.system_ui) on every host, never the
-  // host's real menu font (Cantarell on Linux, Helvetica on macOS). Empty =
-  // vanilla resolution below.
-  {
-    nsAutoCString stealthSystemUi;
-    // Env var first (set at process start), pref fallback — same rationale as
-    // the font allow-list in the constructor: Playwright delivers prefs over the
-    // juggler protocol after start, so the env is the reliable channel.
-    if (const char* envUi = getenv("STEALTHFOX_SYSTEMUI")) {
-      stealthSystemUi = envUi;
-    } else {
-      auto lock = mozilla::StaticPrefs::zoom_stealth_font_system_ui();
-      stealthSystemUi = *lock;
-    }
-    if (!stealthSystemUi.IsEmpty()) {
-      aFamilies.AppendElement(stealthSystemUi);
-      return;
-    }
-  }
+  // Stealth: our persona is always Windows, so `font-family: system-ui` must
+  // resolve to "Segoe UI" on every host - never the host's real menu font
+  // (Cantarell on Linux, San Francisco on macOS). Hardcoded, no external config.
+  aFamilies.AppendElement("Segoe UI"_ns);
+  return;
   // TODO: On macOS, use CTCreateUIFontForLanguage or such thing (though the
   // code below ends up using [NSFont systemFontOfSize: 0.0].
   nsFont systemFont;
@@ -2346,6 +2295,31 @@ static void GetSystemUIFontFamilies(
   CopyUTF16toUTF8(systemFontName, *aFamilies.AppendElement());
 }
 
+// Stealth: map the standard CSS generics to the bundled Windows fonts, per
+// language group, matching a real Windows install. Returns nullptr for scripts
+// we don't force (natural resolution against the bundle) and for non-text
+// generics (cursive/fantasy/system-ui, handled elsewhere).
+static const char* StealthGenericWindowsFont(StyleGenericFontFamily aGeneric,
+                                             const char* aLang) {
+  if (aGeneric != StyleGenericFontFamily::Serif &&
+      aGeneric != StyleGenericFontFamily::SansSerif &&
+      aGeneric != StyleGenericFontFamily::Monospace) {
+    return nullptr;
+  }
+  auto is = [&](const char* s) { return aLang && !strcmp(aLang, s); };
+  if (is("ja")) return "Yu Gothic UI";
+  if (is("ko")) return "Malgun Gothic";
+  if (is("zh-CN")) return "Microsoft YaHei UI";
+  if (is("zh-TW") || is("zh-HK")) return "Microsoft JhengHei UI";
+  // Default (Latin + any other non-CJK script; the default langgroup differs by
+  // platform - "x-western" on Windows, something else on Linux/fontconfig - so we
+  // do NOT gate on it): western Windows fonts. For a script the western font
+  // lacks, the bundled font that covers it is used as fallback.
+  if (aGeneric == StyleGenericFontFamily::Serif) return "Times New Roman";
+  if (aGeneric == StyleGenericFontFamily::SansSerif) return "Arial";
+  return "Consolas";  // Monospace
+}
+
 void gfxPlatformFontList::ResolveGenericFontNames(
     FontVisibilityProvider* aFontVisibilityProvider,
     StyleGenericFontFamily aGenericType, eFontPrefLang aPrefLang,
@@ -2369,6 +2343,15 @@ void gfxPlatformFontList::ResolveGenericFontNames(
   // load fonts for "font.name-list.generic.lang"
   if (mFontPrefs->LookupNameList(prefName, value)) {
     gfxFontUtils::ParseFontList(value, genericFamilies);
+  }
+
+  // Stealth: force the standard generics to the bundled Windows fonts on every
+  // host (prepend = highest priority), so they never resolve to a dropped host
+  // font. No external font.name-list.* needed.
+  if (mStealthBundleOnly) {
+    if (const char* win = StealthGenericWindowsFont(aGenericType, langGroupStr)) {
+      genericFamilies.InsertElementAt(0, nsDependentCString(win));
+    }
   }
 
   nsAtom* langGroup = GetLangGroupForPrefLang(aPrefLang);
