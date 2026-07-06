@@ -760,8 +760,8 @@ nsresult gfxDWriteFontEntry::CreateFontFace(
       } else if (mFontFile) {
         IDWriteFontFile* fontFile = mFontFile.get();
         hr = Factory::GetDWriteFactory()->CreateFontFace(
-            mFaceType, 1, &fontFile, 0, DWRITE_FONT_SIMULATIONS_NONE,
-            getter_AddRefs(mFontFace));
+            mFaceType, 1, &fontFile, mBundleFaceIndex,
+            DWRITE_FONT_SIMULATIONS_NONE, getter_AddRefs(mFontFace));
       } else {
         MOZ_ASSERT_UNREACHABLE("invalid font entry");
         return NS_ERROR_FAILURE;
@@ -1072,24 +1072,49 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
     fontlist::Face* aFace, const fontlist::Family* aFamily) {
   if (mStealthBundleOnly) {
     // Uniform bundle path: instantiate the face straight from its bundle file
-    // instead of the DWrite collection, so the family list (from the manifest)
-    // drives everything. MakePlatformFont handles single-face files; .ttc faces
-    // (mIndex > 0) are a follow-up (it rejects numFaces != 1 for now).
+    // (the manifest family list drives everything; the DWrite collection is not
+    // consulted). Like MakePlatformFont, but keeps multi-face .ttc files and
+    // addresses the wanted face by index (mBundleFaceIndex).
     auto* bundle = StealthBundleFontList::Get();
-    if (bundle) {
-      const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
-      nsTArray<uint8_t> data;
-      if (bundle->ReadFaceData(file, data) && !data.IsEmpty()) {
-        uint8_t* buf = static_cast<uint8_t*>(malloc(data.Length()));
-        if (buf) {
-          memcpy(buf, data.Elements(), data.Length());
-          nsAutoCString name(aFamily->DisplayName().AsString(SharedFontList()));
-          return MakePlatformFont(name, aFace->mWeight, aFace->mStretch,
-                                  aFace->mStyle, buf, data.Length());
-        }
-      }
+    if (!bundle) {
+      return nullptr;
     }
-    return nullptr;
+    const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
+    nsTArray<uint8_t> data;
+    if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
+      return nullptr;
+    }
+    uint8_t* buf = static_cast<uint8_t*>(malloc(data.Length()));
+    if (!buf) {
+      return nullptr;
+    }
+    memcpy(buf, data.Elements(), data.Length());
+    RefPtr<gfxDWriteFontFileStream> stream;
+    RefPtr<IDWriteFontFile> fontFile;
+    HRESULT hr = gfxDWriteFontFileLoader::CreateCustomFontFile(
+        buf, data.Length(), getter_AddRefs(fontFile), getter_AddRefs(stream));
+    free(buf);
+    if (FAILED(hr)) {
+      return nullptr;
+    }
+    nsAutoString uniqueName;
+    if (NS_FAILED(gfxFontUtils::MakeUniqueUserFontName(uniqueName))) {
+      return nullptr;
+    }
+    auto* entry = new gfxDWriteFontEntry(NS_ConvertUTF16toUTF8(uniqueName),
+                                         fontFile, stream, aFace->mWeight,
+                                         aFace->mStretch, aFace->mStyle);
+    entry->mBundleFaceIndex = aFace->mIndex;
+    BOOL supported;
+    DWRITE_FONT_FILE_TYPE fileType;
+    UINT32 numFaces;
+    if (FAILED(fontFile->Analyze(&supported, &fileType, &entry->mFaceType,
+                                 &numFaces)) ||
+        !supported || aFace->mIndex >= numFaces) {
+      delete entry;
+      return nullptr;
+    }
+    return entry;
   }
   IDWriteFontCollection* collection =
 #ifdef MOZ_BUNDLED_FONTS

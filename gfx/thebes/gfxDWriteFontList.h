@@ -239,6 +239,10 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
 
   DWRITE_FONT_FACE_TYPE mFaceType;
 
+  // Face index within a custom (bundle) font file; 0 for single-face files and
+  // for system fonts. Lets a .ttc face be addressed by index in CreateFontFace.
+  uint16_t mBundleFaceIndex = 0;
+
   mozilla::Atomic<FontTableCache*> mFontTableCache;
 
   int8_t mIsCJK;
