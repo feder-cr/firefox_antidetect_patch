@@ -1036,6 +1036,14 @@ CoreTextFontList::~CoreTextFontList() {
 
 void CoreTextFontList::AddFamily(const nsACString& aFamilyName,
                                  FontVisibility aVisibility) {
+#ifdef MOZ_BUNDLED_FONTS
+  // Stealth bundle-only: keep only bundled families, drop every host system
+  // font. CoreText merges bundled + system fonts into a single enumeration, so
+  // we filter here to expose exactly the Windows persona on every host OS.
+  if (StealthSkipFamily(aFamilyName, mBundledFamilies.Contains(aFamilyName))) {
+    return;
+  }
+#endif
   nsAutoCString key;
   ToLowerCase(aFamilyName, key);
 
@@ -1257,6 +1265,12 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
           (CFStringRef)CFArrayGetValueAtIndex(familyNames, i);
       GetStringForCFString(familyName, name16);
       NS_ConvertUTF16toUTF8 name(name16);
+#ifdef MOZ_BUNDLED_FONTS
+      // Stealth bundle-only: drop host system families (see AddFamily above).
+      if (StealthSkipFamily(name, mBundledFamilies.Contains(name))) {
+        continue;
+      }
+#endif
       nsAutoCString key;
       GenerateFontListKey(name, key);
       families.AppendElement(fontlist::Family::InitData(
@@ -1265,6 +1279,12 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
 #if USE_DEPRECATED_FONT_FAMILY_NAMES
     for (const nsACString& name : kDeprecatedFontFamilies) {
       if (DeprecatedFamilyIsAvailable(name)) {
+#ifdef MOZ_BUNDLED_FONTS
+        // Stealth bundle-only: deprecated names are host fonts; drop them.
+        if (StealthSkipFamily(name, mBundledFamilies.Contains(name))) {
+          continue;
+        }
+#endif
         nsAutoCString key;
         GenerateFontListKey(name, key);
         families.AppendElement(
@@ -1915,6 +1935,15 @@ void CoreTextFontList::InitSystemFontNames() {
 FontFamily CoreTextFontList::GetDefaultFontForPlatform(
     FontVisibilityProvider* aFontVisibilityProvider, const gfxFontStyle* aStyle,
     nsAtom* aLanguage) {
+  if (mStealthBundleOnly) {
+    // The macOS system UI font is a host font we drop under bundle-only; fall
+    // back to the bundled Windows UI persona so the platform default resolves
+    // to a real (bundled) family instead of null.
+    FontFamily f = FindFamily(aFontVisibilityProvider, "Segoe UI"_ns);
+    if (!f.IsNull()) {
+      return f;
+    }
+  }
   AutoCFTypeRef<CTFontRef> font(CTFontCreateUIFontForLanguage(
       kCTFontUIFontUser, 0.0, nullptr));  // TODO: language
   AutoCFTypeRef<CFStringRef> name(CTFontCopyFamilyName(font));
