@@ -20,6 +20,15 @@ esac
 
 ac_add_options --enable-bootstrap
 
+# Bundle the Windows core font set on EVERY desktop OS. bundled_fonts_default in
+# toolkit/moz.configure enables MOZ_BUNDLED_FONTS only for Windows + Linux, so
+# macOS defaulted OFF: the bundle never loaded and our bundle-only block-at-birth
+# hooks (behind #ifdef MOZ_BUNDLED_FONTS) were compiled out, leaking host fonts.
+# Enabling it explicitly is a no-op on Win/Linux (already on) and turns the
+# self-contained font persona on for macOS. The font files are packaged on cocoa
+# already (browser/fonts/moz.build).
+ac_add_options --enable-bundled-fonts
+
 export MOZ_REQUIRE_SIGNING=
 
 mk_add_options MOZ_CRASHREPORTER=0
