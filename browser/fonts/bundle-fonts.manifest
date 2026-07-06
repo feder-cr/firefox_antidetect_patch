@@ -1,0 +1,2226 @@
+{
+  "families": [
+    {
+      "faces": [
+        {
+          "file": "arial7_04.ttf",
+          "index": 0,
+          "psname": "ArialMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "arialbd7_04.ttf",
+          "index": 0,
+          "psname": "Arial-BoldMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "arialbi7_04.ttf",
+          "index": 0,
+          "psname": "Arial-BoldItalicMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "ariali7_04.ttf",
+          "index": 0,
+          "psname": "Arial-ItalicMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Arial"
+    },
+    {
+      "faces": [
+        {
+          "file": "ariblk.ttf",
+          "index": 0,
+          "psname": "Arial-Black",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            900,
+            900
+          ]
+        }
+      ],
+      "name": "Arial Black"
+    },
+    {
+      "faces": [
+        {
+          "file": "bahnschrift2_07.ttf",
+          "index": 0,
+          "psname": "Bahnschrift",
+          "stretch": [
+            75.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            300,
+            700
+          ]
+        }
+      ],
+      "name": "Bahnschrift"
+    },
+    {
+      "faces": [
+        {
+          "file": "calibri6_26.ttf",
+          "index": 0,
+          "psname": "Calibri",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "calibrib6_26.ttf",
+          "index": 0,
+          "psname": "Calibri-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "calibrii6_26.ttf",
+          "index": 0,
+          "psname": "Calibri-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "calibriz6_26.ttf",
+          "index": 0,
+          "psname": "Calibri-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Calibri"
+    },
+    {
+      "faces": [
+        {
+          "file": "cambria6_99.ttc",
+          "index": 0,
+          "psname": "Cambria",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "cambriab6_98.ttf",
+          "index": 0,
+          "psname": "Cambria-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "cambriai6_98.ttf",
+          "index": 0,
+          "psname": "Cambria-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "cambriaz6_98.ttf",
+          "index": 0,
+          "psname": "Cambria-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Cambria"
+    },
+    {
+      "faces": [
+        {
+          "file": "cambria6_99.ttc",
+          "index": 1,
+          "psname": "CambriaMath",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Cambria Math"
+    },
+    {
+      "faces": [
+        {
+          "file": "candara5_64.ttf",
+          "index": 0,
+          "psname": "Candara",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "candarab5_64.ttf",
+          "index": 0,
+          "psname": "Candara-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "candarai5_64.ttf",
+          "index": 0,
+          "psname": "Candara-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "candaraz5_64.ttf",
+          "index": 0,
+          "psname": "Candara-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Candara"
+    },
+    {
+      "faces": [
+        {
+          "file": "comic5_15.ttf",
+          "index": 0,
+          "psname": "ComicSansMS",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "comicbd5_15.ttf",
+          "index": 0,
+          "psname": "ComicSansMS-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "comici5_15.ttf",
+          "index": 0,
+          "psname": "ComicSansMS-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "comicz5_15.ttf",
+          "index": 0,
+          "psname": "ComicSansMS-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Comic Sans MS"
+    },
+    {
+      "faces": [
+        {
+          "file": "consola7_00.ttf",
+          "index": 0,
+          "psname": "Consolas",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "consolab7_00.ttf",
+          "index": 0,
+          "psname": "Consolas-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "consolai7_00.ttf",
+          "index": 0,
+          "psname": "Consolas-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "consolaz7_00.ttf",
+          "index": 0,
+          "psname": "Consolas-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Consolas"
+    },
+    {
+      "faces": [
+        {
+          "file": "constan5_93.ttf",
+          "index": 0,
+          "psname": "Constantia",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "constanb5_93.ttf",
+          "index": 0,
+          "psname": "Constantia-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "constani5_93.ttf",
+          "index": 0,
+          "psname": "Constantia-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "constanz5_93.ttf",
+          "index": 0,
+          "psname": "Constantia-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Constantia"
+    },
+    {
+      "faces": [
+        {
+          "file": "corbel6_01.ttf",
+          "index": 0,
+          "psname": "Corbel",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "corbelb6_01.ttf",
+          "index": 0,
+          "psname": "Corbel-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "corbeli6_01.ttf",
+          "index": 0,
+          "psname": "Corbel-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "corbelz6_01.ttf",
+          "index": 0,
+          "psname": "Corbel-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Corbel"
+    },
+    {
+      "faces": [
+        {
+          "file": "cour6_94.ttf",
+          "index": 0,
+          "psname": "CourierNewPSMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "courbd6_94.ttf",
+          "index": 0,
+          "psname": "CourierNewPS-BoldMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "courbi6_94.ttf",
+          "index": 0,
+          "psname": "CourierNewPS-BoldItalicMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "couri6_94.ttf",
+          "index": 0,
+          "psname": "CourierNewPS-ItalicMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Courier New"
+    },
+    {
+      "faces": [
+        {
+          "file": "ebrima5_19.ttf",
+          "index": 0,
+          "psname": "Ebrima",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "ebrimabd5_19.ttf",
+          "index": 0,
+          "psname": "Ebrima-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Ebrima"
+    },
+    {
+      "faces": [
+        {
+          "file": "framd5_02.ttf",
+          "index": 0,
+          "psname": "FranklinGothic-Medium",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "framdit5_01.ttf",
+          "index": 0,
+          "psname": "FranklinGothic-MediumItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Franklin Gothic"
+    },
+    {
+      "faces": [
+        {
+          "file": "framd5_02.ttf",
+          "index": 0,
+          "psname": "FranklinGothic-Medium",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "framdit5_01.ttf",
+          "index": 0,
+          "psname": "FranklinGothic-MediumItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Franklin Gothic Medium"
+    },
+    {
+      "faces": [
+        {
+          "file": "gabriola5_93.ttf",
+          "index": 0,
+          "psname": "Gabriola",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Gabriola"
+    },
+    {
+      "faces": [
+        {
+          "file": "gadugi1_13.ttf",
+          "index": 0,
+          "psname": "Gadugi",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "gadugib1_13.ttf",
+          "index": 0,
+          "psname": "Gadugi-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Gadugi"
+    },
+    {
+      "faces": [
+        {
+          "file": "georgia5_59.ttf",
+          "index": 0,
+          "psname": "Georgia",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "georgiab5_59.ttf",
+          "index": 0,
+          "psname": "Georgia-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "georgiai5_59.ttf",
+          "index": 0,
+          "psname": "Georgia-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "georgiaz5_59.ttf",
+          "index": 0,
+          "psname": "Georgia-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Georgia"
+    },
+    {
+      "faces": [
+        {
+          "file": "impact5_11.ttf",
+          "index": 0,
+          "psname": "Impact",
+          "stretch": [
+            75.0,
+            75.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Impact"
+    },
+    {
+      "faces": [
+        {
+          "file": "inkfree2_00.ttf",
+          "index": 0,
+          "psname": "InkFree",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Ink Free"
+    },
+    {
+      "faces": [
+        {
+          "file": "javatext1_10.ttf",
+          "index": 0,
+          "psname": "JavaneseText",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Javanese Text"
+    },
+    {
+      "faces": [
+        {
+          "file": "LEELAWAD.TTF",
+          "index": 0,
+          "psname": "Leelawadee",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Leelawadee"
+    },
+    {
+      "faces": [
+        {
+          "file": "leelauib5_06.ttf",
+          "index": 0,
+          "psname": "LeelawadeeUI-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "LEELAWUI.TTF",
+          "index": 0,
+          "psname": "LeelawadeeUI",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "leelawui5_06.ttf",
+          "index": 0,
+          "psname": "LeelawadeeUI",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Leelawadee UI"
+    },
+    {
+      "faces": [
+        {
+          "file": "LUCON.TTF",
+          "index": 0,
+          "psname": "LucidaConsole",
+          "stretch": [
+            87.5,
+            87.5
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Lucida Console"
+    },
+    {
+      "faces": [
+        {
+          "file": "L_10646.TTF",
+          "index": 0,
+          "psname": "LucidaSansUnicode",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Lucida Sans Unicode"
+    },
+    {
+      "faces": [
+        {
+          "file": "msgothic5_32.ttc",
+          "index": 0,
+          "psname": "MS-Gothic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "MS Gothic"
+    },
+    {
+      "faces": [
+        {
+          "file": "msgothic5_32.ttc",
+          "index": 2,
+          "psname": "MS-PGothic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "MS PGothic"
+    },
+    {
+      "faces": [
+        {
+          "file": "msgothic5_32.ttc",
+          "index": 1,
+          "psname": "MS-UIGothic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "MS UI Gothic"
+    },
+    {
+      "faces": [
+        {
+          "file": "mvboli6_85.ttf",
+          "index": 0,
+          "psname": "MVBoli",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "MV Boli"
+    },
+    {
+      "faces": [
+        {
+          "file": "malgun.ttf",
+          "index": 0,
+          "psname": "MalgunGothic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Malgun Gothic"
+    },
+    {
+      "faces": [
+        {
+          "file": "marlett5_01.ttf",
+          "index": 0,
+          "psname": "Marlett",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            500,
+            500
+          ]
+        }
+      ],
+      "name": "Marlett"
+    },
+    {
+      "faces": [
+        {
+          "file": "himalaya5_23.ttf",
+          "index": 0,
+          "psname": "MicrosoftHimalaya",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft Himalaya"
+    },
+    {
+      "faces": [
+        {
+          "file": "msjh6_15.ttc",
+          "index": 0,
+          "psname": "MicrosoftJhengHeiRegular",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft JhengHei"
+    },
+    {
+      "faces": [
+        {
+          "file": "msjh6_15.ttc",
+          "index": 1,
+          "psname": "MicrosoftJhengHeiUIRegular",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft JhengHei UI"
+    },
+    {
+      "faces": [
+        {
+          "file": "ntailu5_99.ttf",
+          "index": 0,
+          "psname": "MicrosoftNewTaiLue",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "ntailub5_99.ttf",
+          "index": 0,
+          "psname": "MicrosoftNewTaiLue-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Microsoft New Tai Lue"
+    },
+    {
+      "faces": [
+        {
+          "file": "phagspa6_00.ttf",
+          "index": 0,
+          "psname": "MicrosoftPhagsPa",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "phagspab6_00.ttf",
+          "index": 0,
+          "psname": "MicrosoftPhagsPa-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Microsoft PhagsPa"
+    },
+    {
+      "faces": [
+        {
+          "file": "micross7_03.ttf",
+          "index": 0,
+          "psname": "MicrosoftSansSerif",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft Sans Serif"
+    },
+    {
+      "faces": [
+        {
+          "file": "taile6_00.ttf",
+          "index": 0,
+          "psname": "MicrosoftTaiLe",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "taileb6_00.ttf",
+          "index": 0,
+          "psname": "MicrosoftTaiLe-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Microsoft Tai Le"
+    },
+    {
+      "faces": [
+        {
+          "file": "MSUIGHUB.TTF",
+          "index": 0,
+          "psname": "MicrosoftUighur-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "MSUIGHUR.TTF",
+          "index": 0,
+          "psname": "MicrosoftUighur",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft Uighur"
+    },
+    {
+      "faces": [
+        {
+          "file": "msyh6_31.ttc",
+          "index": 0,
+          "psname": "MicrosoftYaHei",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft YaHei"
+    },
+    {
+      "faces": [
+        {
+          "file": "msyh6_31.ttc",
+          "index": 1,
+          "psname": "MicrosoftYaHeiUI",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft YaHei UI"
+    },
+    {
+      "faces": [
+        {
+          "file": "msyi6_00.ttf",
+          "index": 0,
+          "psname": "Microsoft-Yi-Baiti",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Microsoft Yi Baiti"
+    },
+    {
+      "faces": [
+        {
+          "file": "mingliub.ttc",
+          "index": 0,
+          "psname": "MingLiU-ExtB",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "MingLiU-ExtB"
+    },
+    {
+      "faces": [
+        {
+          "file": "monbaiti5_54.ttf",
+          "index": 0,
+          "psname": "MongolianBaiti",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Mongolian Baiti"
+    },
+    {
+      "faces": [
+        {
+          "file": "mmrtext1_21.ttf",
+          "index": 0,
+          "psname": "MyanmarText",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "mmrtextb1_21.ttf",
+          "index": 0,
+          "psname": "MyanmarText-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Myanmar Text"
+    },
+    {
+      "faces": [
+        {
+          "file": "simsun.ttc",
+          "index": 1,
+          "psname": "NSimSun",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "NSimSun"
+    },
+    {
+      "faces": [
+        {
+          "file": "Nirmala.ttf",
+          "index": 0,
+          "psname": "NirmalaUI",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Nirmala UI"
+    },
+    {
+      "faces": [
+        {
+          "file": "mingliub.ttc",
+          "index": 1,
+          "psname": "PMingLiU-ExtB",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "PMingLiU-ExtB"
+    },
+    {
+      "faces": [
+        {
+          "file": "pala5_03.ttf",
+          "index": 0,
+          "psname": "PalatinoLinotype-Roman",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "palab5_03.ttf",
+          "index": 0,
+          "psname": "PalatinoLinotype-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "palabi5_03.ttf",
+          "index": 0,
+          "psname": "PalatinoLinotype-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "palai5_03.ttf",
+          "index": 0,
+          "psname": "PalatinoLinotype-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Palatino Linotype"
+    },
+    {
+      "faces": [
+        {
+          "file": "segoeicons1_44.ttf",
+          "index": 0,
+          "psname": "SegoeFluentIcons",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Segoe Fluent Icons"
+    },
+    {
+      "faces": [
+        {
+          "file": "segmdl21_86.ttf",
+          "index": 0,
+          "psname": "SegoeMDL2Assets",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Segoe MDL2 Assets"
+    },
+    {
+      "faces": [
+        {
+          "file": "segoepr5_04.ttf",
+          "index": 0,
+          "psname": "SegoePrint",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "segoeprb5_04.ttf",
+          "index": 0,
+          "psname": "SegoePrint-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Segoe Print"
+    },
+    {
+      "faces": [
+        {
+          "file": "segoesc5_03.ttf",
+          "index": 0,
+          "psname": "SegoeScript",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "segoescb5_03.ttf",
+          "index": 0,
+          "psname": "SegoeScript-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Segoe Script"
+    },
+    {
+      "faces": [
+        {
+          "file": "segoeui5_67.ttf",
+          "index": 0,
+          "psname": "SegoeUI",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "segoeuib5_67.ttf",
+          "index": 0,
+          "psname": "SegoeUI-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "segoeuii5_66.ttf",
+          "index": 0,
+          "psname": "SegoeUI-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "segoeuil.ttf",
+          "index": 0,
+          "psname": "SegoeUI-Light",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            300,
+            300
+          ]
+        },
+        {
+          "file": "segoeuisl.ttf",
+          "index": 0,
+          "psname": "SegoeUI-Semilight",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            350,
+            350
+          ]
+        },
+        {
+          "file": "segoeuiz5_66.ttf",
+          "index": 0,
+          "psname": "SegoeUI-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Segoe UI"
+    },
+    {
+      "faces": [
+        {
+          "file": "seguiemj1_60.ttf",
+          "index": 0,
+          "psname": "SegoeUIEmoji",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Segoe UI Emoji"
+    },
+    {
+      "faces": [
+        {
+          "file": "seguihis1_09.ttf",
+          "index": 0,
+          "psname": "SegoeUIHistoric",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Segoe UI Historic"
+    },
+    {
+      "faces": [
+        {
+          "file": "seguisym6_24.ttf",
+          "index": 0,
+          "psname": "SegoeUISymbol",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Segoe UI Symbol"
+    },
+    {
+      "faces": [
+        {
+          "file": "simsun.ttc",
+          "index": 0,
+          "psname": "SimSun",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "SimSun"
+    },
+    {
+      "faces": [
+        {
+          "file": "simsunb5_08.ttf",
+          "index": 0,
+          "psname": "SimSun-ExtB",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "SimSun-ExtB"
+    },
+    {
+      "faces": [
+        {
+          "file": "SitkaSmall.ttf",
+          "index": 0,
+          "psname": "SitkaSmall-Regular",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Sitka Small"
+    },
+    {
+      "faces": [
+        {
+          "file": "sylfaen5_08.ttf",
+          "index": 0,
+          "psname": "Sylfaen",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Sylfaen"
+    },
+    {
+      "faces": [
+        {
+          "file": "symbol5_01.ttf",
+          "index": 0,
+          "psname": "SymbolMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Symbol"
+    },
+    {
+      "faces": [
+        {
+          "file": "tahoma7_04.ttf",
+          "index": 0,
+          "psname": "Tahoma",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "tahomabd7_04.ttf",
+          "index": 0,
+          "psname": "Tahoma-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Tahoma"
+    },
+    {
+      "faces": [
+        {
+          "file": "times7_11.ttf",
+          "index": 0,
+          "psname": "TimesNewRomanPSMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "timesbd7_11.ttf",
+          "index": 0,
+          "psname": "TimesNewRomanPS-BoldMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "timesbi7_11.ttf",
+          "index": 0,
+          "psname": "TimesNewRomanPS-BoldItalicMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "timesi7_11.ttf",
+          "index": 0,
+          "psname": "TimesNewRomanPS-ItalicMT",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Times New Roman"
+    },
+    {
+      "faces": [
+        {
+          "file": "trebuc5_15.ttf",
+          "index": 0,
+          "psname": "TrebuchetMS",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "trebucbd5_15.ttf",
+          "index": 0,
+          "psname": "TrebuchetMS-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "trebucbi5_15.ttf",
+          "index": 0,
+          "psname": "Trebuchet-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "trebucit5_15.ttf",
+          "index": 0,
+          "psname": "TrebuchetMS-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Trebuchet MS"
+    },
+    {
+      "faces": [
+        {
+          "file": "verdana5_33.ttf",
+          "index": 0,
+          "psname": "Verdana",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "verdanab5_33.ttf",
+          "index": 0,
+          "psname": "Verdana-Bold",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            700,
+            700
+          ]
+        },
+        {
+          "file": "verdanai5_33.ttf",
+          "index": 0,
+          "psname": "Verdana-Italic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            400,
+            400
+          ]
+        },
+        {
+          "file": "verdanaz5_33.ttf",
+          "index": 0,
+          "psname": "Verdana-BoldItalic",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "italic",
+          "weight": [
+            700,
+            700
+          ]
+        }
+      ],
+      "name": "Verdana"
+    },
+    {
+      "faces": [
+        {
+          "file": "webdings5_01.ttf",
+          "index": 0,
+          "psname": "Webdings",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Webdings"
+    },
+    {
+      "faces": [
+        {
+          "file": "wingding5_01.ttf",
+          "index": 0,
+          "psname": "Wingdings-Regular",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Wingdings"
+    },
+    {
+      "faces": [
+        {
+          "file": "wingdng2.ttf",
+          "index": 0,
+          "psname": "Wingdings2",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Wingdings 2"
+    },
+    {
+      "faces": [
+        {
+          "file": "wingdng3.ttf",
+          "index": 0,
+          "psname": "Wingdings3",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Wingdings 3"
+    },
+    {
+      "faces": [
+        {
+          "file": "yugothm1_95.ttc",
+          "index": 0,
+          "psname": "YuGothic-Medium",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            500,
+            500
+          ]
+        }
+      ],
+      "name": "Yu Gothic"
+    },
+    {
+      "faces": [
+        {
+          "file": "yugothm1_95.ttc",
+          "index": 1,
+          "psname": "YuGothicUI-Regular",
+          "stretch": [
+            100.0,
+            100.0
+          ],
+          "style": "normal",
+          "weight": [
+            400,
+            400
+          ]
+        }
+      ],
+      "name": "Yu Gothic UI"
+    }
+  ]
+}
