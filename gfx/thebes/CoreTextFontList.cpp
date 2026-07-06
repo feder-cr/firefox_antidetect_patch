@@ -1746,11 +1746,40 @@ gfxFontEntry* CoreTextFontList::CreateFontEntry(
     }
     AutoCFTypeRef<CFArrayRef> descriptors(
         CTFontManagerCreateFontDescriptorsFromData(cfData));
-    if (!descriptors || aFace->mIndex >= CFArrayGetCount(descriptors)) {
+    if (!descriptors) {
       return nullptr;
     }
-    CTFontDescriptorRef desc = (CTFontDescriptorRef)CFArrayGetValueAtIndex(
-        descriptors, aFace->mIndex);
+    CFIndex descCount = CFArrayGetCount(descriptors);
+    // Pick the wanted face by PostScript name, NOT by raw array index: Apple
+    // does not document CTFontManagerCreateFontDescriptorsFromData as returning
+    // a .ttc's faces in the collection's file order, so indexing could select
+    // the wrong CJK face. Match kCTFontNameAttribute (the PostScript name)
+    // against the manifest's psname; fall back to the index only if that fails.
+    CTFontDescriptorRef desc = nullptr;
+    nsAutoCString wantPsname;
+    if (bundle->GetPsname(file, aFace->mIndex, wantPsname)) {
+      for (CFIndex i = 0; i < descCount; i++) {
+        auto* d = (CTFontDescriptorRef)CFArrayGetValueAtIndex(descriptors, i);
+        AutoCFTypeRef<CFStringRef> ps(
+            (CFStringRef)CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute));
+        if (!ps) {
+          continue;
+        }
+        nsAutoString ps16;
+        GetStringForCFString(ps, ps16);
+        if (NS_ConvertUTF16toUTF8(ps16).Equals(wantPsname)) {
+          desc = d;
+          break;
+        }
+      }
+    }
+    if (!desc) {
+      if (aFace->mIndex >= descCount) {
+        return nullptr;
+      }
+      desc = (CTFontDescriptorRef)CFArrayGetValueAtIndex(descriptors,
+                                                         aFace->mIndex);
+    }
     AutoCFTypeRef<CTFontRef> ctFont(
         CTFontCreateWithFontDescriptor(desc, 0.0, nullptr));
     if (!ctFont) {

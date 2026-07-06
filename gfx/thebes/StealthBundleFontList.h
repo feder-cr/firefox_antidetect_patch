@@ -18,6 +18,7 @@
 // GetFaces call, the way the platform backends build theirs.
 struct StealthBundleFace {
   nsCString mFile;
+  nsCString mPsname;  // PostScript name (nameID 6); used to pick the right .ttc face
   uint16_t mIndex = 0;
   int32_t mWeightMin = 400;
   int32_t mWeightMax = 400;
@@ -27,7 +28,7 @@ struct StealthBundleFace {
 };
 
 /**
- * Reads <GRE>/fonts/bundle-fonts.manifest (generated offline by
+ * Reads <GRE>/fonts/bundle-fonts.list (generated offline by
  * scripts/gen_bundle_font_manifest.py) and hands back the canonical family list
  * plus the per-family face init data. This lets InitSharedFontListForPlatform
  * build the shared font list uniformly from the bundle on EVERY OS, instead of
@@ -61,6 +62,13 @@ class StealthBundleFontList final {
   // the file name under <GRE>/fonts) into aData. Cached: the same buffer is
   // shared across all faces of a .ttc. Returns false if the file is unreadable.
   bool ReadFaceData(const nsACString& aFile, nsTArray<uint8_t>& aData);
+
+  // Returns the PostScript name of the face at (aFile, aIndex) via aOut, or
+  // false if unknown. macOS CreateFontEntry uses this to select the correct
+  // face from CTFontManagerCreateFontDescriptorsFromData by PostScript name
+  // (kCTFontNameAttribute) rather than trusting the descriptor array order,
+  // which Apple does not document as matching the .ttc's face order.
+  bool GetPsname(const nsACString& aFile, uint16_t aIndex, nsACString& aOut);
 
  private:
   StealthBundleFontList() = default;

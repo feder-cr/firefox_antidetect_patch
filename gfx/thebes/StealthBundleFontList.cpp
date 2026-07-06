@@ -105,6 +105,7 @@ bool StealthBundleFontList::Load() {
       face.mStretchMin = ParseFloat(fields[5], 100.0f);
       face.mStretchMax = ParseFloat(fields[6], face.mStretchMin);
       face.mItalic = fields[7].EqualsLiteral("italic");
+      face.mPsname = fields[8];
       mFaces.LookupOrInsert(currentKey).AppendElement(std::move(face));
     }
   }
@@ -170,6 +171,19 @@ bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,
   aData.AppendElements(buf);
   mFileCache.InsertOrUpdate(file, std::move(buf));
   return true;
+}
+
+bool StealthBundleFontList::GetPsname(const nsACString& aFile, uint16_t aIndex,
+                                      nsACString& aOut) {
+  for (const auto& faces : mFaces.Values()) {
+    for (const auto& f : faces) {
+      if (f.mIndex == aIndex && f.mFile.Equals(aFile)) {
+        aOut = f.mPsname;
+        return !aOut.IsEmpty();
+      }
+    }
+  }
+  return false;
 }
 
 /* static */
