@@ -1289,11 +1289,6 @@ void gfxDWriteFontList::AppendFamiliesFromCollection(
       nsAutoCString key;
       key = name;
       BuildKeyNameFromFontName(key);
-      // Stealth bundle-only: drop system families entirely, keep only bundled
-      // families that are in the forge sample.
-      if (StealthSkipFamily(key, aCollection != mSystemFonts)) {
-        return;
-      }
       bool bad = mBadUnderlineFamilyNames.ContainsSorted(key);
       bool classic =
           aForceClassicFams && aForceClassicFams->ContainsSorted(key);
@@ -1803,7 +1798,11 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
 
   QueryPerformanceCounter(&t3);  // system font collection
 
-  GetFontsFromCollection(mSystemFonts);
+  // Stealth bundle-only: skip the host system-font enumeration entirely; only
+  // the bundled collection (above) populates the list, so no host font enters.
+  if (!mStealthBundleOnly) {
+    GetFontsFromCollection(mSystemFonts);
+  }
 
   // if no fonts found, something is out of whack, bail and use GDI backend
   // (skip this when stealth bundle-only is active: we intentionally add no
@@ -1971,12 +1970,6 @@ void gfxDWriteFontList::GetFontsFromCollection(
         name);  // keep a copy before we lowercase it as a key
 
     BuildKeyNameFromFontName(name);
-
-    // Stealth bundle-only: drop system families entirely, keep only bundled
-    // families that are in the forge sample.
-    if (StealthSkipFamily(name, aCollection != mSystemFonts)) {
-      continue;
-    }
 
     RefPtr<gfxFontFamily> fam;
 

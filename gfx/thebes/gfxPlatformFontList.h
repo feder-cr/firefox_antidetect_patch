@@ -652,14 +652,6 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     return mFontFamilyWhitelistActive;
   };
 
-  // Stealth bundle-only: returns true if this family must be SKIPPED while the
-  // font list is being built. When the per-profile font set is active, every
-  // system font is skipped (host fonts never enter the list - no detection and
-  // no fallback) and bundled fonts are kept only if their (lowercased) family
-  // key is in the set. aKey must already be lowercased; aIsBundled is whether
-  // the family comes from the bundled (<GRE>/fonts) collection, not the system.
-  bool StealthSkipFamily(const nsACString& aKey, bool aIsBundled) const;
-
   static void FontWhitelistPrefChanged(const char* aPref, void* aClosure);
 
   bool AddWithLegacyFamilyName(const nsACString& aLegacyName,
@@ -1117,9 +1109,10 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   nsTHashSet<nsCString> mIconFontsSet;
 
   // Stealth bundle-only: always true in this patched build. The platform font
-  // list is built from the bundled fonts ALONE; host system fonts never enter
-  // it. The exposed set is exactly the bundle - no external allow-list. Set in
-  // the constructor. See StealthSkipFamily.
+  // list is built from the bundled fonts ALONE; the host font enumeration is
+  // skipped entirely (see the InitFontList backends), so host system fonts
+  // never enter it. The exposed set is exactly the bundle - no external
+  // allow-list. Set in the constructor.
   bool mStealthBundleOnly = false;
 
   // This is an owning reference; we are responsible to delete the FontList at

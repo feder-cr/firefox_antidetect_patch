@@ -1553,16 +1553,6 @@ void gfxFcPlatformFontList::AddPatternToFontList(
     nsAutoCString keyName(aFamilyName);
     ToLowerCase(keyName);
 
-    // Stealth bundle-only: drop system families entirely, keep only bundled
-    // families in the forge sample. Null aFontFamily + return so this family's
-    // first face is dropped; aLastFamilyName is already set to canonical above,
-    // so subsequent faces of this skipped family take the FcStrCmp==0 path and
-    // are dropped by the `!aFontFamily` guard after this block.
-    if (StealthSkipFamily(keyName, aAppFonts)) {
-      aFontFamily = nullptr;
-      return;
-    }
-
     aFontFamily = static_cast<gfxFontconfigFontFamily*>(
         mFontFamilies
             .LookupOrInsertWith(keyName,
@@ -1738,8 +1728,12 @@ nsresult gfxFcPlatformFontList::InitFontListForPlatform() {
 #endif
 
   // iterate over available fonts
-  FcFontSet* systemFonts = FcConfigGetFonts(nullptr, FcSetSystem);
-  AddFontSetFamilies(systemFonts, policy.get(), /* aAppFonts = */ false);
+  // Stealth bundle-only: skip the host system-font enumeration entirely; only
+  // the app-bundled set (above) populates the list, so no host font enters.
+  if (!mStealthBundleOnly) {
+    FcFontSet* systemFonts = FcConfigGetFonts(nullptr, FcSetSystem);
+    AddFontSetFamilies(systemFonts, policy.get(), /* aAppFonts = */ false);
+  }
 
   return NS_OK;
 }
@@ -1912,14 +1906,6 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
 
     aLastFamilyName = canonical;
     aFamilyName = ToCharPtr(canonical);
-
-    // Stealth bundle-only (shared-fontlist path): drop system families entirely,
-    // keep only bundled families in the forge sample. Returning false here skips
-    // the InitData/faces add for this pattern; subsequent faces of the same
-    // skipped family recompute the same keyName and are skipped again.
-    if (StealthSkipFamily(keyName, aAppFont)) {
-      return false;
-    }
 
     const FontVisibility visibility =
         aAppFont ? FontVisibility::Base : GetVisibilityForFamily(keyName);
@@ -2449,15 +2435,6 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
       }
       return false;
     }
-  }
-
-  // Stealth bundle-only: on Windows, DWrite's weight-stretch-style model exposes
-  // the weight-stripped base family "Franklin Gothic" for the "Franklin Gothic
-  // Medium" font. fontconfig keys only the GDI name ("Franklin Gothic Medium"),
-  // so without this the Linux build would expose one fewer family than the
-  // Windows persona it impersonates. Redirect the base name to the real family.
-  if (mStealthBundleOnly && familyName.EqualsLiteral("franklin gothic")) {
-    familyName.AssignLiteral("franklin gothic medium");
   }
 
   // fontconfig allows conditional substitutions in such a way that it's

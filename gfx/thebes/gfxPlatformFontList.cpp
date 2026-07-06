@@ -315,11 +315,12 @@ gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
 
   mFontPrefs = MakeUnique<FontPrefs>();
 
-  // Stealth: this patched build is ALWAYS bundle-only. Host system fonts never
-  // enter the font list (see StealthSkipFamily) - the exposed set is exactly the
-  // bundled Windows font families, identical on every OS. There is NO external
-  // allow-list and no per-profile customization: the list IS the bundle. (The
-  // bundled fonts must be active; see gfx.bundled-fonts.activate, default-on.)
+  // Stealth: this patched build is ALWAYS bundle-only. The per-OS InitFontList
+  // backends skip the host font enumeration entirely, so host system fonts never
+  // enter the font list - the exposed set is exactly the bundled Windows font
+  // families, identical on every OS. There is NO external allow-list and no
+  // per-profile customization: the list IS the bundle. (The bundled fonts must
+  // be active; see gfx.bundled-fonts.activate, default-on.)
   mStealthBundleOnly = true;
 
   gfxFontUtils::GetPrefsFontList(kFontSystemWhitelistPref, mEnabledFontsList);
@@ -588,16 +589,6 @@ void gfxPlatformFontList::FontWhitelistPrefChanged(const char* aPref,
   auto* pfl = gfxPlatformFontList::PlatformFontList();
   pfl->UpdateFontList(true);
   dom::ContentParent::NotifyUpdatedFonts(true);
-}
-
-bool gfxPlatformFontList::StealthSkipFamily([[maybe_unused]] const nsACString& aKey,
-                                            bool aIsBundled) const {
-  if (!mStealthBundleOnly) {
-    return false;  // vanilla: keep every family
-  }
-  // Bundle-only: keep every BUNDLED family, drop every host system font. The
-  // exposed set is exactly the bundle - no external allow-list, no customization.
-  return !aIsBundled;
 }
 
 void gfxPlatformFontList::ApplyWhitelist() {
