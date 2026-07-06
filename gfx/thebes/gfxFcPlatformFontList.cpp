@@ -5,6 +5,7 @@
 #include "mozilla/Logging.h"
 
 #include "gfxFcPlatformFontList.h"
+#include "StealthBundleFontList.h"
 #include "gfxFont.h"
 #include "gfxFT2Utils.h"
 #include "gfxPlatform.h"
@@ -1841,6 +1842,25 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
   UpdateSystemFontOptions();
 #endif
 
+  if (mStealthBundleOnly) {
+    // Uniform bundle: build the shared family list + faces from our manifest,
+    // skipping the fontconfig enumeration (host fonts never enter). Linux builds
+    // faces eagerly, so AddFaces each family here.
+    auto* bundle = StealthBundleFontList::Get();
+    auto* list = SharedFontList();
+    if (bundle && list) {
+      nsTArray<fontlist::Family::InitData> famData(bundle->Families().Clone());
+      list->SetFamilyNames(famData);
+      for (uint32_t i = 0; i < list->NumFamilies(); i++) {
+        auto& fam = list->Families()[i];
+        nsTArray<fontlist::Face::InitData> faceData;
+        bundle->GetFaces(fam.DisplayName().AsString(list), faceData);
+        fam.AddFaces(list, faceData);
+      }
+      return;
+    }
+  }
+
 #ifdef MOZ_BUNDLED_FONTS
   if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
     auto timerId = glean::fontlist::bundledfonts_activate.Start();
@@ -2214,6 +2234,33 @@ gfxFcPlatformFontList::GetFilteredPlatformFontLists() {
 
 gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
     fontlist::Face* aFace, const fontlist::Family* aFamily) {
+  if (mStealthBundleOnly) {
+    // Instantiate the face straight from its bundle file via FreeType;
+    // CloneFace takes the .ttc face index directly.
+    auto* bundle = StealthBundleFontList::Get();
+    if (!bundle) {
+      return nullptr;
+    }
+    const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
+    nsTArray<uint8_t> data;
+    if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
+      return nullptr;
+    }
+    uint8_t* buf = static_cast<uint8_t*>(malloc(data.Length()));
+    if (!buf) {
+      return nullptr;
+    }
+    memcpy(buf, data.Elements(), data.Length());
+    // FTUserFontData takes ownership of buf (frees it in its dtor).
+    RefPtr<FTUserFontData> ufd = new FTUserFontData(buf, data.Length());
+    RefPtr<SharedFTFace> face = ufd->CloneFace(aFace->mIndex);
+    if (!face) {
+      return nullptr;
+    }
+    nsAutoCString name(aFamily->DisplayName().AsString(SharedFontList()));
+    return new gfxFontconfigFontEntry(name, aFace->mWeight, aFace->mStretch,
+                                      aFace->mStyle, std::move(face));
+  }
   nsAutoCString desc(aFace->mDescriptor.AsString(SharedFontList()));
   FcPattern* pattern = FcNameParse((const FcChar8*)desc.get());
   auto* fe = new gfxFontconfigFontEntry(desc, pattern, true);
