@@ -577,7 +577,11 @@ bool gfxFontconfigFontEntry::TestCharacterMap(uint32_t aCh) {
 bool gfxFontconfigFontEntry::HasFontTable(uint32_t aTableTag) {
   if (FTUserFontData* ufd = GetUserFontData()) {
     if (ufd->FontData()) {
-      return !!gfxFontUtils::FindTableDirEntry(ufd->FontData(), aTableTag);
+      auto* face = GetFTFace();
+      uint32_t faceIndex =
+          face ? uint32_t(face->GetFace()->face_index & 0x7FFF) : 0;
+      return !!gfxFontUtils::FindTableDirEntry(ufd->FontData(), aTableTag,
+                                               faceIndex);
     }
   }
   return gfxFT2FontEntryBase::FaceHasTable(GetFTFace(), aTableTag);
@@ -587,7 +591,11 @@ hb_blob_t* gfxFontconfigFontEntry::GetFontTable(uint32_t aTableTag) {
   // for data fonts, read directly from the font data
   if (FTUserFontData* ufd = GetUserFontData()) {
     if (ufd->FontData()) {
-      return gfxFontUtils::GetTableFromFontData(ufd->FontData(), aTableTag);
+      auto* face = GetFTFace();
+      uint32_t faceIndex =
+          face ? uint32_t(face->GetFace()->face_index & 0x7FFF) : 0;
+      return gfxFontUtils::GetTableFromFontData(ufd->FontData(), aTableTag,
+                                                faceIndex);
     }
   }
 
