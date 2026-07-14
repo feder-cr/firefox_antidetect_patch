@@ -578,8 +578,10 @@ hb_blob_t* FT2FontEntry::GetFontTable(uint32_t aTableTag) {
     // If there's a cairo font face, we may be able to return a blob
     // that just wraps a range of the attached user font data
     if (userFontData->FontData()) {
+      uint32_t faceIndex =
+          mFTFace ? uint32_t(mFTFace->GetFace()->face_index & 0x7FFF) : 0;
       return gfxFontUtils::GetTableFromFontData(userFontData->FontData(),
-                                                aTableTag);
+                                                aTableTag, faceIndex);
     }
   }
 
