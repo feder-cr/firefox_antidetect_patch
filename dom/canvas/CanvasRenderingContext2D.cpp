@@ -2316,6 +2316,16 @@ static void ApplyStealthCanvasPixelNoise(uint8_t* aBuf, size_t aSize,
 // canvas fingerprint depends only on (seed, dimensions) — entirely OS-
 // independent, so FP Pro's OS-specific canvas hash tables can't detect
 // Linux/Mesa base rendering under a Windows target spoof.
+// Stealth: privileged (system/chrome/resource) readbacks are automation/UA reads
+// (e.g. Playwright page.screenshot() via drawWindow), never web content, so
+// spoofing them buys no anti-fingerprinting and only corrupts automation output
+// (wrapper issue #49). Same exemption CanvasUtils uses for canvas protection.
+static bool StealthSkipPrivilegedReadback(nsIPrincipal* aPrincipal) {
+  return aPrincipal && (aPrincipal->IsSystemPrincipal() ||
+                        aPrincipal->SchemeIs("chrome") ||
+                        aPrincipal->SchemeIs("resource"));
+}
+
 // Only kicks in when zoom.stealth.canvas.substitute_pixels is true.
 static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
                                                 int32_t aSeed) {
@@ -2426,7 +2436,7 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
   //               differs from target OS (Linux-built spoofing Windows)
   //   additive:   ±1 on ~12.5% of pixels (default) → preserves real rendering
   //               pattern, only randomizes hash
-  if (ret) {
+  if (ret && !StealthSkipPrivilegedReadback(PrincipalOrNull())) {
     int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
     if (stealthSeed > 0) {
       size_t bufSize =
@@ -6934,7 +6944,7 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
     // the JS array, not the source surface) and avoids the read-only map.
     {
       int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-      if (stealthSeed > 0) {
+      if (stealthSeed > 0 && !StealthSkipPrivilegedReadback(&aSubjectPrincipal)) {
         size_t bufSize = size_t(aWidth) * size_t(aHeight) * 4;
         if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
           ApplyStealthCanvasPixelSubstitution(data, bufSize, stealthSeed);
