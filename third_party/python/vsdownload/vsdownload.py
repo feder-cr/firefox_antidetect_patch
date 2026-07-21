@@ -619,13 +619,19 @@ def _downloadPayload(payload, destname, fileid, allowHashMismatch):
             # overrun so the loop reconnects (fresh CDN edge) instead of hanging.
             def _dl_watchdog(signum, frame):
                 raise TimeoutError("download exceeded 120s for %s" % fileid)
-            _prev_alarm = signal.signal(signal.SIGALRM, _dl_watchdog)
-            signal.alarm(120)
+            # signal.SIGALRM is Unix-only (the watchdog is for the Linux cross-build).
+            # On native Windows it does not exist, so skip the alarm and rely on the
+            # socket.setdefaulttimeout set in main() instead of crashing get_vs.
+            _have_alarm = hasattr(signal, "SIGALRM")
+            if _have_alarm:
+                _prev_alarm = signal.signal(signal.SIGALRM, _dl_watchdog)
+                signal.alarm(120)
             try:
                 urllib.request.urlretrieve(payload["url"], destname)
             finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, _prev_alarm)
+                if _have_alarm:
+                    signal.alarm(0)
+                    signal.signal(signal.SIGALRM, _prev_alarm)
             if "sha256" in payload:
                 if sha256File(destname).lower() != payload["sha256"].lower():
                     if allowHashMismatch:
