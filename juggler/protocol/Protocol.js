@@ -77,6 +77,12 @@ pageTypes.Size = {
 pageTypes.Viewport = {
   viewportSize: pageTypes.Size,
   deviceScaleFactor: t.Optional(t.Number),
+  // STEALTHFOX: Playwright 1.61+ sends an isMobile field on Browser.setDefaultViewport
+  // (Firefox 151 Juggler). The strict checkScheme validator rejects any undeclared
+  // field, so declare it to stay forward-compatible. We are always desktop, so the
+  // value is accepted and ignored (setDefaultViewport only reads viewportSize +
+  // deviceScaleFactor); no mobile/touch emulation is applied.
+  isMobile: t.Optional(t.Boolean),
 };
 
 pageTypes.DOMQuad = {
