@@ -31,14 +31,14 @@ on:
     inputs:
       source_ref:
         description: 'firefox_antidetect_patch ref to build'
-        default: 'stealth/150'
+        default: 'stealth/151'
       release_tag:
         description: 'release tag to publish the draft under (e.g. firefox-9)'
         required: true
 
 env:
   SOURCE_REPO: feder-cr/firefox_antidetect_patch
-  SOURCE_REF: ${{ github.event.inputs.source_ref || 'stealth/150' }}
+  SOURCE_REF: ${{ github.event.inputs.source_ref || 'stealth/151' }}
 
 jobs:
   build:
