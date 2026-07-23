@@ -567,19 +567,33 @@ class gfxFontUtils {
   static nsresult GetFamilyNameFromTable(hb_blob_t* aNameTable,
                                          nsACString& aFamilyName);
 
-  // Find the table directory entry for a given table tag, in a (validated)
-  // buffer of 'sfnt' data. Returns null if the tag is not present.
-  static mozilla::TableDirEntry* FindTableDirEntry(const void* aFontData,
-                                                   uint32_t aTableTag);
+  // Resolve the sfnt offset for a given face within a buffer of font data.
+  // For single-face sfnt data, returns aFontData. For .ttc collections,
+  // reads the TTC header's offset table and returns the pointer to the
+  // sfnt header for the requested face. Returns null if aFaceIndex is out
+  // of range.
+  static const void* FindSfntOffset(const void* aFontData, uint32_t aFaceIndex);
 
-  // Return a blob that wraps a table found within a buffer of font data.
+  // Find the table directory entry for a given table tag, in a (validated)
+  // buffer of font data (single-face sfnt or .ttc collection). aFaceIndex
+  // selects the face within a .ttc (ignored for single-face fonts).
+  // Returns null if the tag is not present.
+  static mozilla::TableDirEntry* FindTableDirEntry(const void* aFontData,
+                                                   uint32_t aTableTag,
+                                                   uint32_t aFaceIndex = 0);
+
+  // Return a blob that wraps a table found within a buffer of font data
+  // (single-face sfnt or .ttc collection). aFaceIndex selects the face
+  // within a .ttc (ignored for single-face fonts). Table offsets are
+  // relative to the beginning of the file, so the blob points into aFontData.
   // The blob does NOT own its data; caller guarantees that the buffer
   // will remain valid at least as long as the blob.
   // Returns null if the specified table is not found.
-  // This method assumes aFontData is valid 'sfnt' data; before using this,
+  // This method assumes aFontData is valid font data; before using this,
   // caller is responsible to do any sanitization/validation necessary.
   static hb_blob_t* GetTableFromFontData(const void* aFontData,
-                                         uint32_t aTableTag);
+                                         uint32_t aTableTag,
+                                         uint32_t aFaceIndex = 0);
 
   // create a new name table and build a new font with that name table
   // appended on the end, returns true on success

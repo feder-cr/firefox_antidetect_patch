@@ -1049,9 +1049,33 @@ static int DirEntryCmp(const void* aKey, const void* aItem) {
 }
 
 /* static */
+const void* gfxFontUtils::FindSfntOffset(const void* aFontData,
+                                         uint32_t aFaceIndex) {
+  const auto* data = reinterpret_cast<const uint8_t*>(aFontData);
+  const SFNTHeader* sfnt = reinterpret_cast<const SFNTHeader*>(data);
+  if (sfnt->sfntVersion == 0x74746366u) {  // 'ttcf'
+    const TTCHeader* ttc = reinterpret_cast<const TTCHeader*>(data);
+    if (aFaceIndex >= uint32_t(ttc->numFonts)) {
+      return nullptr;
+    }
+    // The offset table immediately follows the TTCHeader (12 bytes).
+    const AutoSwap_PRUint32* offsets =
+        reinterpret_cast<const AutoSwap_PRUint32*>(data + sizeof(TTCHeader));
+    uint32_t faceOffset = offsets[aFaceIndex];
+    return data + faceOffset;
+  }
+  return aFontData;
+}
+
+/* static */
 TableDirEntry* gfxFontUtils::FindTableDirEntry(const void* aFontData,
-                                               uint32_t aTableTag) {
-  const SFNTHeader* header = reinterpret_cast<const SFNTHeader*>(aFontData);
+                                               uint32_t aTableTag,
+                                               uint32_t aFaceIndex) {
+  const void* sfntData = FindSfntOffset(aFontData, aFaceIndex);
+  if (!sfntData) {
+    return nullptr;
+  }
+  const SFNTHeader* header = reinterpret_cast<const SFNTHeader*>(sfntData);
   const TableDirEntry* dir = reinterpret_cast<const TableDirEntry*>(header + 1);
   return static_cast<TableDirEntry*>(
       bsearch(&aTableTag, dir, uint16_t(header->numTables),
@@ -1060,9 +1084,12 @@ TableDirEntry* gfxFontUtils::FindTableDirEntry(const void* aFontData,
 
 /* static */
 hb_blob_t* gfxFontUtils::GetTableFromFontData(const void* aFontData,
-                                              uint32_t aTableTag) {
-  const TableDirEntry* dir = FindTableDirEntry(aFontData, aTableTag);
+                                              uint32_t aTableTag,
+                                              uint32_t aFaceIndex) {
+  const TableDirEntry* dir = FindTableDirEntry(aFontData, aTableTag, aFaceIndex);
   if (dir) {
+    // Table offsets are always relative to the beginning of the file, even
+    // for faces within a .ttc collection.
     return hb_blob_create(
         reinterpret_cast<const char*>(aFontData) + dir->offset, dir->length,
         HB_MEMORY_MODE_READONLY, nullptr, nullptr);
