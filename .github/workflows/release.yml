@@ -56,7 +56,7 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
             win_disables: 'no'
             extra_pkgs: ''
-            asset: firefox-150.0.1-stealth-linux-x86_64.tar.gz
+            asset: firefox-151.0-stealth-linux-x86_64.tar.gz
           - leg: linux-arm64
             runner: ubuntu-24.04-arm
             family: linux
@@ -64,7 +64,7 @@ jobs:
             rust_target: aarch64-unknown-linux-gnu
             win_disables: 'no'
             extra_pkgs: ''
-            asset: firefox-150.0.1-stealth-linux-arm64.tar.gz
+            asset: firefox-151.0-stealth-linux-arm64.tar.gz
           - leg: win-x86_64
             runner: ubuntu-24.04
             family: win
@@ -72,7 +72,7 @@ jobs:
             rust_target: x86_64-pc-windows-msvc
             win_disables: 'yes'
             extra_pkgs: 'msitools p7zip-full zip'
-            asset: firefox-150.0.1-stealth-win-x86_64.zip
+            asset: firefox-151.0-stealth-win-x86_64.zip
           - leg: macos-arm64
             runner: macos-15
             family: mac
@@ -80,7 +80,7 @@ jobs:
             rust_target: aarch64-apple-darwin
             win_disables: 'no'
             extra_pkgs: ''
-            asset: firefox-150.0.1-stealth-macos-arm64.tar.gz
+            asset: firefox-151.0-stealth-macos-arm64.tar.gz
           - leg: macos-x86_64
             runner: macos-15-intel
             family: mac
@@ -88,7 +88,7 @@ jobs:
             rust_target: x86_64-apple-darwin
             win_disables: 'no'
             extra_pkgs: ''
-            asset: firefox-150.0.1-stealth-macos-x86_64.tar.gz
+            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
     steps:
       - name: Free disk + 16G swap (Linux runners)
         if: matrix.family != 'mac'
@@ -295,27 +295,27 @@ jobs:
           - leg: linux-x86_64
             runner: ubuntu-24.04
             kind: linux
-            asset: firefox-150.0.1-stealth-linux-x86_64.tar.gz
+            asset: firefox-151.0-stealth-linux-x86_64.tar.gz
             extra: '--full'
           - leg: linux-arm64
             runner: ubuntu-24.04-arm
             kind: linux
-            asset: firefox-150.0.1-stealth-linux-arm64.tar.gz
+            asset: firefox-151.0-stealth-linux-arm64.tar.gz
             extra: ''
           - leg: win-x86_64
             runner: windows-latest
             kind: win
-            asset: firefox-150.0.1-stealth-win-x86_64.zip
+            asset: firefox-151.0-stealth-win-x86_64.zip
             extra: ''
           - leg: macos-arm64
             runner: macos-15
             kind: mac
-            asset: firefox-150.0.1-stealth-macos-arm64.tar.gz
+            asset: firefox-151.0-stealth-macos-arm64.tar.gz
             extra: ''
           - leg: macos-x86_64
             runner: macos-15-intel
             kind: mac
-            asset: firefox-150.0.1-stealth-macos-x86_64.tar.gz
+            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
             extra: ''
     steps:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
@@ -425,11 +425,11 @@ jobs:
         run: |
           cd dl
           EXPECTED="
-          firefox-150.0.1-stealth-linux-x86_64.tar.gz
-          firefox-150.0.1-stealth-linux-arm64.tar.gz
-          firefox-150.0.1-stealth-win-x86_64.zip
-          firefox-150.0.1-stealth-macos-arm64.tar.gz
-          firefox-150.0.1-stealth-macos-x86_64.tar.gz
+          firefox-151.0-stealth-linux-x86_64.tar.gz
+          firefox-151.0-stealth-linux-arm64.tar.gz
+          firefox-151.0-stealth-win-x86_64.zip
+          firefox-151.0-stealth-macos-arm64.tar.gz
+          firefox-151.0-stealth-macos-x86_64.tar.gz
           "
           for a in $EXPECTED; do
             [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
@@ -439,7 +439,7 @@ jobs:
         run: |
           cd dl; ls -la
           # explicit glob — never include checksums.txt itself (the `*`-includes-itself trap)
-          sha256sum firefox-150.0.1-stealth-* > checksums.txt
+          sha256sum firefox-151.0-stealth-* > checksums.txt
           echo "----- checksums.txt -----"; cat checksums.txt
       - name: Resolve release tag
         id: tag
@@ -483,7 +483,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: firefox_antidetect_patch (150.0.1) rev ${{ steps.tag.outputs.num }}
+          name: firefox_antidetect_patch (151.0) rev ${{ steps.tag.outputs.num }}
           draft: true
           prerelease: false
           fail_on_unmatched_files: true

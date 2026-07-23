@@ -1,0 +1,15 @@
+# patch_survival_check.sh allow-list
+#
+# One substring per line. A finding is suppressed if any line here appears
+# inside it (the lost line, the identifier name, or the file path).
+#
+# This file is the honest record of what we removed ON PURPOSE during a rebase.
+# Every entry should say why, and be as narrow as possible - a broad entry
+# (e.g. just "Stealth") silences the gate instead of documenting a decision.
+#
+# Format:
+#   <substring>        # why it was intentionally removed / refactored
+#
+# Nothing is allow-listed yet: the FF150->151 rebase turned out to have lost
+# only the TTC font fix, which was re-applied rather than accepted, so there is
+# no deliberate removal to record for it.

@@ -37,23 +37,23 @@ jobs:
           - leg: linux-x86_64
             runner: ubuntu-24.04
             kind: linux
-            asset: firefox-150.0.1-stealth-linux-x86_64.tar.gz
+            asset: firefox-151.0-stealth-linux-x86_64.tar.gz
           - leg: linux-arm64
             runner: ubuntu-24.04-arm
             kind: linux
-            asset: firefox-150.0.1-stealth-linux-arm64.tar.gz
+            asset: firefox-151.0-stealth-linux-arm64.tar.gz
           - leg: win-x86_64
             runner: windows-latest
             kind: win
-            asset: firefox-150.0.1-stealth-win-x86_64.zip
+            asset: firefox-151.0-stealth-win-x86_64.zip
           - leg: macos-arm64
             runner: macos-15
             kind: mac
-            asset: firefox-150.0.1-stealth-macos-arm64.tar.gz
+            asset: firefox-151.0-stealth-macos-arm64.tar.gz
           - leg: macos-x86_64
             runner: macos-15-intel
             kind: mac
-            asset: firefox-150.0.1-stealth-macos-x86_64.tar.gz
+            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
     steps:
       - name: Checkout wrapper (current default branch — the FIXED tests)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

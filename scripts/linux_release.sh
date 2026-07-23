@@ -23,7 +23,7 @@ SOURCE_DIR="${SOURCE_DIR:-$HOME/ff-build/firefox-150}"
 STAGING="${STAGING:-$HOME/ff-build/stealth-staging-$TAG}"
 OUTPUT_DIR="${OUTPUT_DIR:-$HOME/ff-build/release-$TAG}"
 DIST="$SOURCE_DIR/obj-x86_64-pc-linux-gnu/dist/bin"
-TARBALL="$OUTPUT_DIR/firefox-150.0.1-stealth-linux-x86_64.tar.gz"
+TARBALL="$OUTPUT_DIR/firefox-151.0-stealth-linux-x86_64.tar.gz"
 
 if [ ! -d "$DIST" ]; then
     echo "ERROR: dist/bin not found at $DIST" >&2

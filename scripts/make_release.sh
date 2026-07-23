@@ -6,7 +6,7 @@
 #   ./scripts/make_release.sh <tag> "<release-name>" "<release-body>"
 #
 # Example:
-#   ./scripts/make_release.sh firefox-5 "invisible_firefox (150.0.1) rev 5" \
+#   ./scripts/make_release.sh firefox-5 "invisible_firefox (151.0) rev 5" \
 #       "Bug fix release. Closes issue #14."
 #
 # Expects:
@@ -36,8 +36,8 @@ OUT="$REPO_ROOT/release-out/$TAG"
 mkdir -p "$OUT"
 rm -f "$OUT"/firefox-*.{zip,tar.gz} "$OUT/checksums.txt"
 
-WIN_ZIP="firefox-150.0.1-stealth-win-x86_64.zip"
-LIN_TGZ="firefox-150.0.1-stealth-linux-x86_64.tar.gz"
+WIN_ZIP="firefox-151.0-stealth-win-x86_64.zip"
+LIN_TGZ="firefox-151.0-stealth-linux-x86_64.tar.gz"
 
 # mach package emits a clean app tree at obj/.../dist/firefox/ (firefox.exe +
 # libs + application.ini + dependentlibs.list, no dev cruft). The release zip

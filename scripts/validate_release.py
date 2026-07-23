@@ -10,7 +10,8 @@ Each archive is extracted to a clean temp dir and:
      must exist as real files
   4. Smoke-test — `firefox --version` (Linux: run under WSL if invoked from
      Windows; Windows: run the exe directly) must succeed and print
-     "Mozilla Firefox 150.x.y"
+     "Mozilla Firefox <major>.x.y", where <major> is read from the tree
+     (browser/config/version_display.txt) rather than hardcoded
 
 Exits non-zero on the first failure so a release script can `&&` it
 before uploading.
@@ -18,9 +19,9 @@ before uploading.
 Usage:
     python scripts/validate_release.py <tag>
 
-    # Validates both:
-    #   release/binary/<tag>/firefox-150.0.1-stealth-linux-x86_64.tar.gz
-    #   release/binary/<tag>/firefox-150.0.1-stealth-win-x86_64.zip
+    # Validates both (<ver> comes from browser/config/version_display.txt):
+    #   release/binary/<tag>/firefox-<ver>-stealth-linux-x86_64.tar.gz
+    #   release/binary/<tag>/firefox-<ver>-stealth-win-x86_64.zip
 """
 from __future__ import annotations
 
@@ -47,7 +48,31 @@ LEAK_PATTERNS = [
 CRITICAL_LINUX = ["firefox", "application.ini", "dependentlibs.list"]
 CRITICAL_WIN = ["firefox.exe", "application.ini", "dependentlibs.list"]
 
-VERSION_RE = re.compile(r"^Mozilla Firefox 150\.\d+(\.\d+)?", re.M)
+def _upstream_version() -> str:
+    """Upstream Firefox version this branch is based on, read from the tree.
+
+    Deliberately NOT hardcoded: it used to be pinned to 150, which silently made
+    this gate unable to pass on an FF151 build - the smoke test prints
+    "Mozilla Firefox 151.0" and the 150 regex rejected every archive. Reading it
+    from the tree means the next base bump carries this along for free.
+    """
+    for rel in ("browser/config/version_display.txt", "browser/config/version.txt"):
+        p = REPO_ROOT / rel
+        if p.is_file():
+            v = p.read_text(encoding="utf-8").strip()
+            if v:
+                return v
+    raise SystemExit(
+        "validate_release: cannot read the Firefox version from the tree "
+        "(browser/config/version_display.txt missing)"
+    )
+
+
+UPSTREAM_VERSION = _upstream_version()          # e.g. "151.0"
+UPSTREAM_MAJOR = UPSTREAM_VERSION.split(".")[0]  # e.g. "151"
+VERSION_RE = re.compile(
+    rf"^Mozilla Firefox {re.escape(UPSTREAM_MAJOR)}\.\d+(\.\d+)?", re.M
+)
 
 
 class ValidationError(Exception):
@@ -229,8 +254,8 @@ def main() -> int:
         if not args.tag:
             ap.error("provide either <tag> or --linux/--win paths")
         base = REPO_ROOT / "release" / "binary" / args.tag
-        linux_archive = base / "firefox-150.0.1-stealth-linux-x86_64.tar.gz"
-        win_archive = base / "firefox-150.0.1-stealth-win-x86_64.zip"
+        linux_archive = base / f"firefox-{UPSTREAM_VERSION}-stealth-linux-x86_64.tar.gz"
+        win_archive = base / f"firefox-{UPSTREAM_VERSION}-stealth-win-x86_64.zip"
 
     failures: list[str] = []
 

@@ -77,12 +77,15 @@ pageTypes.Size = {
 pageTypes.Viewport = {
   viewportSize: pageTypes.Size,
   deviceScaleFactor: t.Optional(t.Number),
-  // STEALTHFOX: Playwright 1.61+ sends an isMobile field on Browser.setDefaultViewport
-  // (Firefox 151 Juggler). The strict checkScheme validator rejects any undeclared
-  // field, so declare it to stay forward-compatible. We are always desktop, so the
-  // value is accepted and ignored (setDefaultViewport only reads viewportSize +
-  // deviceScaleFactor); no mobile/touch emulation is applied.
+  // STEALTHFOX: Playwright 1.61+ sends isMobile and screenSize on
+  // Browser.setDefaultViewport (Firefox 151 Juggler). The strict checkScheme
+  // validator rejects any undeclared field, so declare both to stay
+  // forward-compatible. Both are accepted and ignored: setDefaultViewport reads
+  // only viewportSize + deviceScaleFactor, we are always desktop, and the screen
+  // dimensions come from the fingerprint prefs - letting the client override them
+  // would break the seed/screen consistency the profile guarantees.
   isMobile: t.Optional(t.Boolean),
+  screenSize: t.Optional(t.Nullable(pageTypes.Size)),
 };
 
 pageTypes.DOMQuad = {
@@ -805,6 +808,11 @@ const Page = {
     'setViewportSize': {
       params: {
         viewportSize: t.Nullable(pageTypes.Size),
+        // STEALTHFOX: same 1.61 drift as pageTypes.Viewport, on the per-page path
+        // (page.set_viewport_size). Declared and ignored - the handler reads only
+        // viewportSize, and screen dimensions stay owned by the fingerprint prefs.
+        screenSize: t.Optional(t.Nullable(pageTypes.Size)),
+        isMobile: t.Optional(t.Boolean),
       },
     },
     'setZoom': {
