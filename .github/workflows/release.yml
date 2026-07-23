@@ -104,6 +104,17 @@ jobs:
           ref: ${{ env.SOURCE_REF }}
           fetch-depth: 1
 
+      # Cheapest gate in the pipeline, guarding the most expensive failure: the asset
+      # basename is hand-written in every matrix entry below and derived independently
+      # on the client side. When the two disagree CI publishes one name while the
+      # wrapper fetches another, so every download 404s while the build is green, the
+      # archives are valid and the release page looks correct (issue #14). Fail here in
+      # seconds instead of after five multi-hour builds.
+      - name: Check asset names match the version this tree builds
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        run: python3 scripts/check_release_naming.py
+
       # Record which firefox_antidetect_patch commit this build came from. The publish
       # job turns the range previous-release..this commit into the release notes
       # (scripts/gen_release_notes.py), and re-publishes it as a source-commit.txt
