@@ -98,8 +98,22 @@ jobs:
       - name: Free disk + 16G swap (Linux runners)
         if: matrix.family != 'mac'
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
-            /usr/local/share/boost "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" 2>/dev/null || true
+          # The GH-hosted 14GB-free disk is tight for a full Firefox build: objdir
+          # (.o + libxul) + `mach package` (a second dist copy) + the archive, plus
+          # 16G of swap and, on the win-cross leg, the fetched MSVC toolchain. The
+          # first firefox-18 win leg packaged fine and the second died on
+          # `No space left on device` at packaging time - i.e. marginal, not broken.
+          # Reclaim the big preinstalled caches up front so it stops being marginal.
+          # Everything here is best-effort (|| true) - a missing path must never fail
+          # the build.
+          echo "disk before cleanup:"; df -h / | tail -1
+          sudo rm -rf \
+            /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/boost /usr/share/swift /usr/local/share/powershell \
+            /usr/local/lib/node_modules /opt/microsoft \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" 2>/dev/null || true
+          sudo docker image prune --all --force 2>/dev/null || true
+          echo "disk after cleanup:"; df -h / | tail -1
           sudo fallocate -l 16G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || true
 
       - name: Checkout patched Firefox source
