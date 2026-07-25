@@ -114,7 +114,12 @@ echo "  regular files:       $(tar -tzvf "$TARBALL" | grep -c '^-')"
 echo ""
 
 echo "[6/6] Mandatory smoke test via validate_release.py..."
-python3 "$REPO_ROOT/scripts/validate_release.py" --linux "$TARBALL" --linux-only
+# One leg, pre-packaging: structure, build-machine paths and the smoke test. The
+# site-name scan needs a token list that lives outside this repo, so it is waived
+# HERE and required at publish time - make_release.sh calls the same validator
+# without this flag, and that call now exits 3 if the list is not set.
+python3 "$REPO_ROOT/scripts/validate_release.py" --linux "$TARBALL" --linux-only \
+    --no-site-patterns
 echo ""
 echo "OK — Linux tarball cleared for upload."
 echo ""

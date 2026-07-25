@@ -232,7 +232,13 @@ jobs:
           tar --owner=0 --group=0 --numeric-owner --mtime="2026-01-01 00:00:00 UTC" \
               -czf "out/${{ matrix.asset }}" -C "$STAGING" .              # firefox at ROOT
           echo "=== HARD GATE: scripts/validate_release.py (the issue-#14 protector) ==="
-          python3 scripts/validate_release.py --linux "out/${{ matrix.asset }}" --linux-only
+          # --no-site-patterns: the site-name token list is deliberately not in this
+          # repository and cannot be on a CI runner, so this leg checks structure and
+          # build-machine paths only. Without the flag the run now exits 3 rather than
+          # printing a warning nobody reads. The full scan is the operator's
+          # pre-publish run, with STEALTH_EXTRA_LEAK_PATTERNS set.
+          python3 scripts/validate_release.py --linux "out/${{ matrix.asset }}" \
+            --linux-only --no-site-patterns
           ls -la out/
 
       # ── WINDOWS (cross): zip the CLEAN dist/firefox tree, firefox.exe at root
@@ -438,7 +444,10 @@ jobs:
         shell: bash
         run: |
           python -m pip install --quiet ".[dev]"
-          INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
+          python -m invisible_core seal --binary "$FF_EXE" \
+            --tag "${{ github.event.inputs.release_tag || github.ref_name }}" \
+            -o gate.seal.json
+          INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_cloak.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             -m e2e -o addopts='' -q
@@ -456,6 +465,9 @@ jobs:
           repository: feder-cr/invisible_playwright
           ref: main
           fetch-depth: 1
+      - name: Checkout source repo (for scripts/make_seal.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: _src, fetch-depth: 1 }
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: '3.11' }
@@ -498,6 +510,15 @@ jobs:
           case "$N" in (*[!0-9]*|'') echo "prevtag=" >> "$GITHUB_OUTPUT";;
                         (*) echo "prevtag=firefox-$((N-1))" >> "$GITHUB_OUTPUT";; esac
           echo "publishing DRAFT release for tag: $TAG"
+      - name: Generate + gate seal.json
+        run: |
+          python3 _src/scripts/make_seal.py \
+            --tag "${{ steps.tag.outputs.tag }}" \
+            --assets dl \
+            --source-commit-file src-meta/source-commit.txt \
+            --playwright-range _src/browser/config/stealth_playwright_range.txt \
+            -o dl/seal.json
+          echo "----- seal.json -----"; cat dl/seal.json
       - name: Build release notes from the source commits
         id: notes
         env:
@@ -536,6 +557,7 @@ jobs:
             dl/*.zip
             dl/checksums.txt
             dl/source-commit.txt
+            dl/seal.json
           body_path: body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

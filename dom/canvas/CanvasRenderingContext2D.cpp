@@ -6938,8 +6938,9 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
     // Uint8ClampedArray's backing store, which is writable). The original
     // attempt to spoof rawData.mData crashed during teardown on GPU-backed
     // surfaces because readback->Map(READ) returns write-protected memory
-    // on those surfaces. Writing to it segfaults — id.sky.com on Windows
-    // alt-desktop reproduces this reliably. See wrapper repo issue #18.
+    // on those surfaces. Writing to it segfaults: reproduced reliably on
+    // Windows alt-desktop by a real site that draws to a GPU-backed surface.
+    // See wrapper repo issue #18.
     // Spoofing the output buffer is functionally equivalent (callers consume
     // the JS array, not the source surface) and avoids the read-only map.
     {
