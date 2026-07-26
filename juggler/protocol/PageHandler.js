@@ -27,10 +27,14 @@ const helper = new Helper();
  *   stealthfox.humanize.maxTime  (char, seconds, default "1.5")
  *   stealthfox.humanize.stepMs   (int,  ms,      default 10)
  *
- * Algorithm is a JS port of camoufox's C++ MouseTrajectories.hpp:
- * 2 random knots offset by +/-80 px, Bernstein/Bezier curve sampled at
- * max(4, length^0.25 * 20) points, Gaussian jitter on intermediate Y,
- * ease-out-quad tween.
+ * Algorithm: 2 random knots offset by +/-80 px, Bernstein/Bezier curve
+ * sampled at max(4, length^0.25 * 20) points, Gaussian jitter on
+ * intermediate Y, ease-out-quad tween.
+ *
+ * Every number above is a constant, so the shape is identical for every
+ * movement of every install. That is an invariant, and it is why the
+ * per-session generator lives in the wrapper now: see the wrapper's
+ * _motion.py. This path stays as the fallback.
  */
 const _stealthfoxHumanize = {
   _factorial(n) { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; },
