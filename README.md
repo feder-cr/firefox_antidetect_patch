@@ -26,13 +26,18 @@ a value nobody thought to change with it, and a worker or an iframe can ask the 
 question in a context the patch never reached. Doing it in the engine removes the seam
 instead of hiding it.
 
-The surfaces set from source: navigator and the user agent, screen geometry, WebGL
-vendor and renderer strings with their numeric limits, canvas pixel output, the font
-set, the audio pipeline, WebRTC ICE candidates, timezone, locale, and the proxy path.
+The surfaces set from source: navigator and the user agent,
+[screen geometry](https://github.com/feder-cr/invisible_playwright/blob/main/docs/screen-size-headless-tells.md),
+[WebGL vendor and renderer strings](https://github.com/feder-cr/invisible_playwright/blob/main/docs/webgl-renderer-strings.md)
+with [their numeric limits](https://github.com/feder-cr/invisible_playwright/blob/main/docs/webgl-parameters-are-identical.md),
+canvas pixel output, [the font set](https://github.com/feder-cr/invisible_playwright/blob/main/docs/bundled-fonts-cross-platform.md),
+[the audio pipeline](https://github.com/feder-cr/invisible_playwright/blob/main/docs/audiocontext-fingerprinting.md),
+[WebRTC ICE candidates](https://github.com/feder-cr/invisible_playwright/blob/main/docs/webrtc-ice-candidate-spoofing.md),
+timezone, locale, and the proxy path.
 
 Every value arrives through a preference, so nothing is hardcoded in C++ and one seed
 reproduces one machine. What each of those surfaces reveals, and what it costs to get
-right, is written up at
+right, is written up one at a time at
 **[feder-cr.github.io/invisible_playwright](https://feder-cr.github.io/invisible_playwright/)**.
 
 ## Anonymous launch counter
