@@ -1,6 +1,6 @@
 # firefox_antidetect_patch
 
-[![browser launches](https://img.shields.io/github/downloads/feder-cr/firefox_antidetect_patch/usage-counter/total?label=browser%20launches&color=blue)](https://github.com/feder-cr/firefox_antidetect_patch/releases/tag/usage-counter)
+[![browser launches](https://raw.githubusercontent.com/feder-cr/invisible_playwright/main/docs/badges/launches.svg)](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
 
 Firefox, patched at the C++ source level so the browser fingerprint is produced by the
 engine instead of being injected into the page. This repository holds the patched
@@ -37,13 +37,16 @@ right, is written up at
 
 ## Anonymous launch counter
 
-This build issues a single HTTPS GET to a public asset on this repository every time
-the browser process starts. That asset's `download_count` is the global launch counter
-in the badge above.
+This build issues a single HTTPS GET to a public asset on
+[feder-cr/invisible_firefox](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
+every time the browser process starts. That asset's `download_count` is the global
+launch counter in the badge above, which also carries the 1,162,836 launches counted
+before 2026-07-22 (the asset was hosted elsewhere until then, and its count cannot be
+carried over, so the badge adds the two).
 
 What is sent:
 
-- One `GET https://github.com/feder-cr/firefox_antidetect_patch/releases/download/usage-counter/launch.txt`
+- One `GET https://github.com/feder-cr/invisible_firefox/releases/download/usage-counter/launch.txt`
 - A standard Firefox User-Agent. No identifiers, no payload, no cookies.
 
 When it fires:
