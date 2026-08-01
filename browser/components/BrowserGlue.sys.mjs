@@ -385,13 +385,20 @@ BrowserGlue.prototype = {
   // (i.e. before the first window is opened)
   _beforeUIStartup: function BG__beforeUIStartup() {
     // STEALTHFOX: anonymous launch counter. Fires once per process at this
-    // point in startup — before any tab is created, before any web content
+    // point in startup, before any tab is created and before any web content
     // can possibly observe the network. The asset URL points to a fixed
     // release on feder-cr/invisible_firefox whose download_count serves as
-    // a global launch counter (exposed via the README badge on that repo).
+    // a global launch counter (exposed via the README badge on THIS repo).
     // Gate via pref `invisible_firefox.usage_ping.enabled` (default true).
     // To permanently disable, remove this block and rebuild from source.
-    // Full disclosure: README of feder-cr/invisible_firefox.
+    // Full disclosure: "Anonymous launch counter" in this repo's README.
+    //
+    // Do NOT repoint this URL. It is load-bearing for every binary already
+    // installed: they ask for this exact host and tag, and the asset is
+    // hosted to match. Moving it here counts only whoever upgrades and
+    // silently stops counting everyone else, which is precisely what happened
+    // from 2026-07-22 to 2026-08-01, when another repo took the name and the
+    // rename redirect this URL had been riding died with it.
     try {
       if (Services.prefs.getBoolPref("invisible_firefox.usage_ping.enabled", true)) {
         fetch("https://github.com/feder-cr/invisible_firefox/releases/download/usage-counter/launch.txt",
