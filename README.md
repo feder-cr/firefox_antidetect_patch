@@ -1,5 +1,3 @@
-[![Sponsored](https://readmead.site/api/ad/feder-cr)](https://readmead.site/api/click/feder-cr)
-
 # firefox_antidetect_patch
 
 [![browser launches](https://img.shields.io/github/downloads/feder-cr/firefox_antidetect_patch/usage-counter/total?label=browser%20launches&color=blue)](https://github.com/feder-cr/firefox_antidetect_patch/releases/tag/usage-counter)
