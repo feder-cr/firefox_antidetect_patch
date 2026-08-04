@@ -36,6 +36,13 @@ that these run in seconds with no build.
 
 Run it standalone - `python scripts/test_make_seal.py` - because this repository
 has no pytest configuration and a gate that needs one would not run.
+
+
+RUN IT DIRECTLY: `python scripts/test_make_seal.py`. This is NOT a pytest suite - it
+carries its own case registry and passes each case a temp directory, so
+`pytest` collects it by name, finds no fixture called `d`, and reports every
+case as an ERROR. That reads exactly like a broken gate, and it cost one
+wrong conclusion on 2026-08-02 before the file was run the way it is built.
 """
 from __future__ import annotations
 

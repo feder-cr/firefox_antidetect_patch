@@ -1,4 +1,13 @@
 # scripts/test_gen_bundle_font_manifest.py
+"""gen_bundle_font_manifest.py, driven against a built tree.
+
+RUN IT DIRECTLY: `python scripts/test_gen_bundle_font_manifest.py`. This is
+NOT a pytest suite - it has no fixtures and asserts at import time, so `pytest`
+collects it by name and reports whatever it finds as a collection error. That
+reads exactly like a broken gate, and on 2026-08-02 it produced one wrong
+conclusion about this repository before the files were run the way they are
+built.
+"""
 import json, os
 from gen_bundle_font_manifest import build_manifest
 
