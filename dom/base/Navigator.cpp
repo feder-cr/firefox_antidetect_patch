@@ -912,10 +912,19 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
     return bc->Top()->GetMaxTouchPointsOverride();
   }
 
-  // Stealth: force 0 (no touchscreen) — consistent with desktop GPU spoofing
+  // Stealth: the DECLARED touch point count. This used to be a literal 0,
+  // which is the right value for the desktop GPU personas we ship but the
+  // wrong shape: a constant buried in C++ is not pinnable, not inspectable and
+  // not overridable through extra_prefs, so a touchscreen persona (a Surface,
+  // a 2-in-1) would have needed a browser rebuild. It is now
+  // HardwareProfile.max_touch_points, at the same level as every other surface
+  // (rule 6). The pref defaults to -1, so a build launched without
+  // invisible_core keeps exactly the previous behaviour.
   if (aCallerType != CallerType::System &&
       mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
-    return 0;
+    const int32_t declared =
+        mozilla::StaticPrefs::zoom_stealth_max_touch_points();
+    return declared >= 0 ? uint32_t(declared) : 0;
   }
 
   // The maxTouchPoints is going to reveal the detail of users' hardware. So,

@@ -20350,6 +20350,16 @@
   value: -1
   mirror: always
 
+# The declared navigator.maxTouchPoints. Was a literal 0 in Navigator.cpp: the
+# right value for the desktop personas we ship, but a constant buried in C++ is
+# not pinnable, not inspectable and not overridable from extra_prefs, and a
+# touchscreen persona would have needed a browser rebuild. -1 keeps the
+# compiled behaviour so a build launched without invisible_core is unchanged.
+- name: zoom.stealth.max_touch_points
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
 # The declared screen colour depth. Without it nsScreen::PixelDepth returns
 # nsDeviceContext::GetDepth(), i.e. the REAL panel. The field-by-field audit
 # (19-field-declaration-audit.md) caught it only because it asks for proof

@@ -14,6 +14,7 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_zoom.h"
 
 #include "harfbuzz/hb.h"
 #include "mozilla/FontPropertyTypes.h"
@@ -192,10 +193,31 @@ void gfxDWriteFont::UpdateClearTypeVars() {
   int pixelGeometry = DWRITE_PIXEL_GEOMETRY_RGB;
   int renderingMode = DWRITE_RENDERING_MODE_DEFAULT;
 
+  // Stealth: DO NOT ASK THE MACHINE. These six values are read once at startup
+  // and then stay fixed for the whole process, which makes them exactly the
+  // kind of thing invisible_core declares - and the order here was
+  // defaults -> SYSTEM -> prefs, so the system value sat in the MIDDLE and
+  // survived whenever a pref was absent or out of range. That is an override
+  // with a fallback, not a declaration, and it is the shape that let the codec
+  // table look finished while leaking: on the development machine the host's
+  // answer happens to be the one we want.
+  //
+  // Skipping the block leaves the hard-coded defaults above (ClearType level
+  // 1.0, contrast 1.0, gamma 2.2, RGB geometry, DEFAULT rendering mode), which
+  // are the canonical Windows values and are host-independent by construction,
+  // and the prefs below then declare the actual identity. Note gamma 2.2 here
+  // against Skia's LINEAR default on Linux (DrawTargetSkia.cpp:1850-1856) -
+  // that asymmetry is the reason the two platforms rasterise glyph coverage
+  // differently, and it cannot be closed while either side reads its host.
+  const bool stealthDeclared =
+      mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0;
+
   // Override these from DWrite function if available.
   RefPtr<IDWriteRenderingParams> defaultRenderingParams;
-  HRESULT hr = Factory::GetDWriteFactory()->CreateRenderingParams(
-      getter_AddRefs(defaultRenderingParams));
+  HRESULT hr = stealthDeclared
+                   ? E_FAIL
+                   : Factory::GetDWriteFactory()->CreateRenderingParams(
+                         getter_AddRefs(defaultRenderingParams));
   if (SUCCEEDED(hr) && defaultRenderingParams) {
     clearTypeLevel = defaultRenderingParams->GetClearTypeLevel();
 
