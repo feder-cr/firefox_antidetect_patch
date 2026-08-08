@@ -79,9 +79,23 @@ struct StealthBundleFace {
  */
 class StealthBundleFontList final {
  public:
-  // Returns the singleton, or nullptr if the manifest is missing/unreadable
-  // (caller then falls back to an empty bundle-only list - never to host
-  // fonts).
+  // NEVER RETURNS NULL. If the manifest cannot be loaded from any of its three
+  // sources this crashes, and that is the contract every caller depends on.
+  //
+  // It used to return nullptr, and this comment used to say the caller "then
+  // falls back to an empty bundle-only list - never to host fonts". That was
+  // the intent and not the behaviour: all thirteen call sites are written
+  // `if (auto* bundle = Get())` and simply skip their work, so one load failure
+  // silently handed enumeration, vertical metrics, aliases, the per-script
+  // fallback table and the generic families back to whatever the machine has,
+  // with the browser still running and rendering. The comment described the
+  // design; the code did something else, which is why the rule is to read the
+  // literal the code compares and never the sentence beside it.
+  //
+  // Those null checks are now unreachable. They are harmless and left for a
+  // mechanical pass, but the invariant lives HERE, at the one place that owns
+  // it, so that restoring a nullable Get() cannot quietly reopen thirteen
+  // fallbacks: it has to break this contract first.
   static StealthBundleFontList* Get();
 
   // The full family list, ready for SharedFontList()->SetFamilyNames().
