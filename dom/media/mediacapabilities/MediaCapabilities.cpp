@@ -525,6 +525,42 @@ void MediaCapabilities::CreateMediaCapabilitiesDecodingInfo(
                         aValue) {
                holder->Complete();
                if (aValue.IsReject()) {
+                 // Stealth: the DECLARED answer wins over a rejection.
+                 //
+                 // decodingInfo asks two different questions - "is this type
+                 // supported" and "can the decoder actually handle this
+                 // stream" - and only the first goes through
+                 // DecoderTraits::CanHandleContainerType, which the declared
+                 // MIME table already covers. The second queries the real
+                 // decoder, so on a build with no H.264 it REJECTS and this
+                 // branch zeroes all three fields. Measured 2026-08-08, one
+                 // seed on both hosts: canPlayType, MediaSource
+                 // .isTypeSupported and MediaRecorder.isTypeSupported all
+                 // agreed, and only decodingInfo disagreed - supported, smooth
+                 // and powerEfficient true on Windows and false on Linux. One
+                 // declared surface out of four is worse than none, because
+                 // the disagreement BETWEEN them is itself the tell.
+                 //
+                 // Re-asking CanHandleContainerType is what keeps rule 7: a
+                 // type the table does not name falls through to the real
+                 // logic there and still earns its rejection. Only a type we
+                 // have declared playable is answered the way Windows answers
+                 // it.
+                 bool declared = false;
+                 if (aConfiguration.mVideo.WasPassed()) {
+                   Maybe<MediaContainerType> ct = MakeMediaContainerType(
+                       aConfiguration.mVideo.Value().mContentType);
+                   declared = ct && DecoderTraits::CanHandleContainerType(
+                                        *ct, nullptr) != CANPLAY_NO;
+                 }
+                 if (declared) {
+                   MediaCapabilitiesDecodingInfo declaredInfo;
+                   declaredInfo.mSupported = true;
+                   declaredInfo.mSmooth = true;
+                   declaredInfo.mPowerEfficient = true;
+                   promise->MaybeResolve(std::move(declaredInfo));
+                   return;
+                 }
                  MediaCapabilitiesDecodingInfo info;
                  info.mSupported = false;
                  info.mSmooth = false;
