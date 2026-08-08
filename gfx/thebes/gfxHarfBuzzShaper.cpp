@@ -723,6 +723,25 @@ hb_bool_t gfxHarfBuzzShaper::GetGlyphExtents(
   return true;
 }
 
+bool gfxHarfBuzzShaper::GetGlyfBBox(uint16_t aGID, int16_t& aXMin,
+                                    int16_t& aYMin, int16_t& aXMax,
+                                    int16_t& aYMax) const {
+  bool emptyGlyf;
+  const Glyf* glyf = FindGlyf(aGID, &emptyGlyf);
+  if (!glyf) {
+    return false;  // no glyf table (CFF): the caller keeps its own answer
+  }
+  if (emptyGlyf) {
+    aXMin = aYMin = aXMax = aYMax = 0;
+    return true;
+  }
+  aXMin = int16_t(glyf->xMin);
+  aYMin = int16_t(glyf->yMin);
+  aXMax = int16_t(glyf->xMax);
+  aYMax = int16_t(glyf->yMax);
+  return true;
+}
+
 /* static */ hb_bool_t gfxHarfBuzzShaper::HBGetContourPoint(
     hb_font_t* font, void* font_data, unsigned int point_index,
     hb_codepoint_t glyph, hb_position_t* x, hb_position_t* y, void* user_data) {

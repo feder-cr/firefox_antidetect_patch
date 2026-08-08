@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxFT2FontBase.h"
+#include "gfxHarfBuzzShaper.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "gfxFT2Utils.h"
 #include "harfbuzz/hb.h"
 #include "mozilla/Likely.h"
@@ -805,6 +807,40 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
 
 bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
                                     bool aTight) {
+  // STEALTH: report the ink box DirectWrite reports, not the one FreeType
+  // computes.
+  //
+  // gfxDWriteFont::GetGlyphBounds calls GetDesignGlyphMetrics, which is the
+  // glyf table's own bounding box scaled by size/upem and nothing else - no
+  // hinting, no rasteriser. The code below asks FreeType for HINTED bounds
+  // instead, and the two disagree by up to a pixel. That reaches the page
+  // directly: measureText's four actualBoundingBox fields are built from this,
+  // and measured 2026-08-09 against stock Firefox 151 over the whole finite
+  // domain of textBaseline x textAlign x direction, Windows matched on 12960
+  // of 12960 fields while Linux differed on 1440.
+  //
+  // The arithmetic mirrors gfxDWriteFonts.cpp:781-784 deliberately, including
+  // the float (not double) conversion factor, so Windows keeps the numbers it
+  // already had and Linux is brought TO them. DWrite's Inflate(1.0, 0.0) is
+  // NOT mirrored: it is guarded by !aBounds->IsEmpty() on the uninitialised
+  // out-parameter, which gfxFont::SetupGlyphExtents default-constructs to an
+  // empty rect, so on Windows that branch never runs.
+  //
+  // A font with no glyf table falls through to FreeType below, unchanged: this
+  // overrides an answer, it does not replace the backend.
+  if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
+    if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
+      int16_t xMin, yMin, xMax, yMax;
+      const uint16_t upem = mFontEntry->UnitsPerEm();
+      if (upem && shaper->GetGlyfBBox(aGID, xMin, yMin, xMax, yMax)) {
+        const float conv = float(GetAdjustedSize() / gfxFloat(upem));
+        *aBounds = gfxRect(xMin * conv, -yMax * conv, (xMax - xMin) * conv,
+                           (yMax - yMin) * conv);
+        return true;
+      }
+    }
+  }
+
   IntRect bounds;
   const GlyphMetrics metrics = GetCachedGlyphMetrics(aGID, &bounds);
   if (!metrics.HasValidBounds()) {

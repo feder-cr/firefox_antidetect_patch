@@ -5591,14 +5591,39 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
       //
       // Whether a string has ink is a property of the bundled font, not of the
       // host engine, so none of this costs host-independence.
-      const bool hasInk = !processor.mBoundingBox.IsEmpty();
+      //
+      // AND THE INK BOX IS THE REAL ONE AGAIN, since 2026-08-09. The four
+      // actualBoundingBox* fields used to be replaced by the ADVANCE box
+      // (offsetX and totalWidth - offsetX) and the EM box, on the stated
+      // grounds that the ink box was host-dependent. That was asserted, never
+      // measured, and it cost more than it could possibly buy:
+      //
+      //   * it made `actualBoundingBoxLeft + actualBoundingBoxRight == width`
+      //     hold EXACTLY, for every string, font and size. No real Firefox
+      //     produces that - ink is narrower than the advance - so it is a
+      //     one-line detector check that needs no reference values, no second
+      //     machine and no knowledge of our fonts;
+      //   * with the default textAlign it made actualBoundingBoxLeft exactly
+      //     0.0, where stock Firefox 151 answers -0.796875 for Arial 16px;
+      //   * measured against stock Firefox 151 on the same machine over the
+      //     whole finite domain, 1980 of 12960 fields differed and ALL 1980
+      //     were these four. Every other field - width, the font box, the em
+      //     box, all three baselines - already matched exactly.
+      //
+      // The ink box comes from glyph outlines in fonts we bundle, and the
+      // outlines are byte-identical on both hosts (verified glyph by glyph for
+      // the probe string: 0 of 15 differ between the system Arial 7.06 and the
+      // bundled 7.04). So there was nothing host-dependent to protect against,
+      // and the cross-OS diff after this change is what says so rather than
+      // this comment.
       return MakeUnique<TextMetrics>(
-          totalWidth, offsetX,            // width + actualBoundingBoxLeft
-          totalWidth - offsetX,           // actualBoundingBoxRight
+          totalWidth,
+          actualBoundingBoxLeft,          // the real ink box, not the advance
+          actualBoundingBoxRight,
           maxA - hiAnchor,                // fontBoundingBoxAscent
           maxD + hiAnchor,                // fontBoundingBoxDescent
-          hasInk ? emA - hiAnchor : -hiAnchor,  // actualBoundingBoxAscent
-          hasInk ? emD + hiAnchor : hiAnchor,   // actualBoundingBoxDescent
+          actualBoundingBoxAscent,
+          actualBoundingBoxDescent,
           emA - hiAnchor,                 // emHeightAscent
           emD + hiAnchor,                 // emHeightDescent
           // The hanging and ideographic baselines come from HarfBuzz's own

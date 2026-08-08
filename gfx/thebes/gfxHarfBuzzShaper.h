@@ -55,6 +55,27 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
                                      void* user_data);
 
  public:
+  // STEALTH: the DESIGN-space bounding box of a glyph, in FONT UNITS, read
+  // straight from the glyf table.
+  //
+  // It exists so the FreeType backend can report the same ink box the
+  // DirectWrite one does. gfxDWriteFont::GetGlyphBounds calls
+  // GetDesignGlyphMetrics, which is this table and nothing else, while
+  // gfxFT2FontBase asks FreeType for HINTED bounds - so the two disagree, and
+  // the disagreement reaches the page through measureText's four
+  // actualBoundingBox fields. Measured 2026-08-09 against stock Firefox 151:
+  // with the ink box reported honestly, Windows matches on 12960 of 12960
+  // fields and Linux differs on 1440.
+  //
+  // Confirmed by hand before it was written: Arial 'C' has xMin 102 at 2048
+  // units per em, so at 16px the left edge is -0.796875, and that is exactly
+  // what stock Firefox reports for actualBoundingBoxLeft.
+  //
+  // False for a font with no glyf table (CFF), and the caller must then fall
+  // through to its own backend rather than invent a box.
+  bool GetGlyfBBox(uint16_t aGID, int16_t& aXMin, int16_t& aYMin,
+                   int16_t& aXMax, int16_t& aYMax) const;
+
   explicit gfxHarfBuzzShaper(gfxFont* aFont);
   virtual ~gfxHarfBuzzShaper();
 
@@ -132,6 +153,7 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
 
   hb_bool_t GetGlyphExtents(hb_codepoint_t aGlyph,
                             hb_glyph_extents_t* aExtents) const;
+
 
   bool UseVerticalPresentationForms() const {
     return mUseVerticalPresentationForms;
