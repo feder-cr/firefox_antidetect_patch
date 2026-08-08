@@ -5,6 +5,7 @@
 #include "CanvasRenderingContext2D.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "CanvasImageCache.h"
 #include "CanvasUtils.h"
@@ -21,6 +22,7 @@
 #include "gfxPlatform.h"
 #include "gfxTextRun.h"
 #include "gfxUtils.h"
+#include "StealthBundleFontList.h"
 #include "js/Array.h"  // JS::GetArrayLength
 #include "js/Conversions.h"
 #include "js/HeapAPI.h"
@@ -2326,6 +2328,114 @@ static bool StealthSkipPrivilegedReadback(nsIPrincipal* aPrincipal) {
                         aPrincipal->SchemeIs("resource"));
 }
 
+// STEALTH: snap the alpha channel onto DirectWrite's coverage ladder.
+//
+// The alpha of an antialiased glyph edge IS the coverage the platform
+// rasteriser computed, and the substitution below deliberately preserves alpha
+// (it overwrites colour, not shape). So the rasteriser's signature passes
+// straight THROUGH that substitution - and the signature is structural, not
+// marginal. Measured 2026-08-07 over 48 family/size/weight combinations, black
+// text on transparent so alpha IS coverage:
+//
+//     Windows / DirectWrite :   9-19 distinct alpha levels per render
+//     Linux   / FreeType    : 193-256 distinct levels (16 of the 48 used all 256)
+//
+// So a detector does not need to compare a hash to tell the two apart - it can
+// COUNT the levels. Counting is also the more robust tell, because two genuine
+// Windows machines produce DIFFERENT hashes anyway (the value moves with the
+// Windows build and the ClearType settings) while both land in the low tens of
+// levels.
+//
+// Snapping to the nearest ladder entry KEEPS THE REAL GLYPH SHAPE: this
+// quantises coverage, it does not replace it, so text read back is still the
+// text that was drawn, with the coarser edge Windows produces.
+//
+// The ladder comes from invisible_core, through
+// zoom.stealth.canvas.alpha_ladder. It used to be read from the font manifest,
+// which was the wrong home twice over: it is not a property of any font FILE -
+// it is what the rasteriser does to an edge - and living in the manifest meant
+// changing it required a Firefox rebuild.
+//
+// COLOUR GLYPHS ARE SKIPPED, and that omission was a measured regression rather
+// than a theoretical one. A colour emoji is a BITMAP: its alpha carries the
+// artwork, not an antialiasing ramp, so there is nothing to quantise and
+// quantising it destroys the image. Measured 2026-08-08 at 72px on U+1F600:
+// retail Windows 152 renders 159 distinct alpha levels, firefox-18 (no ladder)
+// renders 158, and this function applied to the whole buffer collapsed it to
+// 16 - manufacturing exactly the countable tell the ladder exists to remove.
+// The test used here is that the three colour channels agree: greyscale-
+// antialiased text drawn with a solid fill has R==G==B on every pixel, while an
+// emoji's artwork does not. It is a heuristic, so it is justified by
+// measurement and not by argument - see the regression numbers above and the
+// gate that pins them.
+//
+// 0 and 255 are the ladder's endpoints, so fully transparent and fully opaque
+// pixels never move - the clearRect trap and any solid reference render stay
+// byte-exact.
+static void ApplyStealthCanvasAlphaLadder(uint8_t* aBuf, size_t aSize) {
+  if (!aBuf || aSize < 4) return;
+  // DataMutexString: take the lock, copy out, drop it. Same shape as
+  // SpeechSynthesis.cpp does for zoom.stealth.voices.list.
+  nsAutoCString spec;
+  {
+    auto lock = mozilla::StaticPrefs::zoom_stealth_canvas_alpha_ladder();
+    spec = *lock;
+  }
+  if (spec.IsEmpty()) {
+    return;  // not configured: leave the rasteriser's own coverage alone
+  }
+  AutoTArray<uint8_t, 32> ladder;
+  for (const nsACString& part : spec.Split(',')) {
+    nsresult rv;
+    const int32_t v = PromiseFlatCString(part).ToInteger(&rv);
+    if (NS_FAILED(rv) || v < 0 || v > 255) {
+      return;  // malformed -> no snap at all, never a partial one
+    }
+    ladder.AppendElement(uint8_t(v));
+  }
+  if (ladder.Length() < 2) {
+    return;
+  }
+  // 256-entry lookup table. The inner loop runs per pixel over a canvas that
+  // can be millions of pixels, so a search per pixel is not worth paying when
+  // the domain is a single byte.
+  //
+  // Built on the STACK, per call, and deliberately not cached. Two earlier
+  // versions were caches and both were wrong: the first was a one-shot
+  // `static bool sMapReady`, correct only while the ladder came from the font
+  // manifest and was constant for the process; the second keyed a pair of
+  // function-local statics on the pref string, which fixed the staleness and
+  // introduced a DATA RACE - readback runs off the main thread for an
+  // OffscreenCanvas in a worker, and two threads writing sMap and sMapSpec
+  // unsynchronised is undefined behaviour that would surface as wrong pixels,
+  // rarely, and never reproducibly. Found by audit 2026-08-08.
+  //
+  // The cache was also saving the wrong half of the work: 256 * 17 comparisons
+  // is nothing beside the per-pixel loop below, which runs over a canvas that
+  // can be millions of pixels. There was no cost worth a shared mutable byte.
+  uint8_t map[256];
+  for (uint32_t a = 0; a < 256; ++a) {
+    uint8_t best = ladder[0];
+    int32_t bestErr = 256;
+    for (uint8_t lv : ladder) {
+      const int32_t err = std::abs(int32_t(a) - int32_t(lv));
+      if (err < bestErr) {
+        bestErr = err;
+        best = lv;
+      }
+    }
+    map[a] = best;
+  }
+  for (size_t i = 0; i + 3 < aSize; i += 4) {
+    // Colour glyph: leave the whole pixel alone. See the comment above for the
+    // measurement that made this necessary.
+    if (aBuf[i] != aBuf[i + 1] || aBuf[i + 1] != aBuf[i + 2]) {
+      continue;
+    }
+    aBuf[i + 3] = map[aBuf[i + 3]];
+  }
+}
+
 // Only kicks in when zoom.stealth.canvas.substitute_pixels is true.
 static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
                                                 int32_t aSeed) {
@@ -2441,6 +2551,19 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
     if (stealthSeed > 0) {
       size_t bufSize =
           size_t(out_imageSize->width) * size_t(out_imageSize->height) * 4;
+      // COVERAGE FIRST, then colour, and the order is load-bearing.
+      //
+      // The ladder tells greyscale-antialiased text from a colour-emoji bitmap
+      // by the three colour channels agreeing, and the substitution below
+      // overwrites R, G and B with three INDEPENDENT hash bytes. Run after it,
+      // the guard matches on odds of 1 in 65536 per pixel, so over a few
+      // hundred ink pixels the ladder is a guaranteed no-op. Measured
+      // 2026-08-08: "A" at 72px read back 149 distinct alpha levels against
+      // Windows' 16, and no antialiasing mode could have fixed it - the colour
+      // channels were being destroyed one line earlier. Alpha is preserved by
+      // both colour passes ("alpha unchanged"), so quantising it first and
+      // scrambling colour afterwards is safe in a way the reverse is not.
+      ApplyStealthCanvasAlphaLadder(ret.get(), bufSize);
       if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
         ApplyStealthCanvasPixelSubstitution(ret.get(), bufSize, stealthSeed);
       } else {
@@ -5428,44 +5551,165 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
     // STEALTH: replace the host-engine vertical metrics with host-INDEPENDENT values
     // from the font's OS/2 sfnt table, so every TextMetrics vertical field is
     // byte-identical across hosts (DWrite vs FreeType vs CoreText) for a given bundled
-    // font + size. The width is already host-independent (HarfBuzz advance jitter, §5.2e).
+    // font + size. The width is host-independent because the bundled font's advances
+    // are; there is no jitter in it (the per-run jitter this comment used to cite was
+    // removed - it made widths non-additive, which retail's are not).
     // Horizontal text only; falls back to the native path if no usable OS/2 table.
+    // NO SECOND PATH. This used to also require fontOrientation ==
+    // eHorizontal, which left vertical text falling through to the engine's own
+    // metrics - a reachable fallback, not a theoretical one: one CSS
+    // declaration on the canvas element (writing-mode: vertical-rl) reaches it,
+    // and measured 2026-08-08 the two platforms then disagree where they agree
+    // everywhere else:
+    //
+    //     vertical-rl/mixed    abbA   Windows 29.0390625   Linux 29.5
+    //     vertical-rl/mixed    abbD   Windows 37.65234375  Linux 37.5
+    //     vertical-rl/upright  abbA   Windows -6.4609375   Linux -6
+    //
+    // 8 divergent fields against 0 on the horizontal arm, and ~0.46px is a
+    // fingerprint signal, not a rounding tail. A declared surface with a live
+    // fallback is two behaviours, and a page picks between them with a style
+    // property.
+    //
+    // The vertical case needs no new data: retail reads fontMetrics from
+    // GetMetrics(eHorizontal) unconditionally (see its initialisation above),
+    // so the em and font boxes are the horizontal ones there too. All that
+    // differs is the anchor, adjusted below exactly as the drawing path does.
     gfxFloat emA, emD, maxA, maxD;
     if (StaticPrefs::zoom_stealth_fpp_hw_seed() > 0 &&
-        fontOrientation == nsFontMetrics::eHorizontal &&
         font->GetStealthHostIndepVMetrics(emA, emD, maxA, maxD)) {
-      gfxFloat hiAnchor;  // host-independent baseline anchor (mirrors baselineAnchor)
+      // Finish the job gfxDWriteFonts::ComputeMetrics does, which this branch
+      // bypasses. GetStealthHostIndepVMetrics hands back usWinAscent/usWinDescent
+      // scaled to px - the same quantity DWrite calls fontMetrics.ascent/descent -
+      // but RAW, while a real Firefox rounds them (gfxDWriteFonts.cpp:396-397)
+      // and then derives the em box from the rounded pair (:400-403). Skipping
+      // that is why every TextMetrics vertical field came back fractional here
+      // and whole in retail; the correction is to put the missing steps back,
+      // not to round again somewhere downstream.
+      //
+      // This is the single lie CreepJS reports against this build. Its test is
+      // not about width and not about additivity despite the name it prints
+      // ("metric noise"): it measures the EMPTY string and flags any of
+      // actualBoundingBox{Ascent,Descent,Left,Right} or
+      // fontBoundingBox{Ascent,Descent} that is not whole
+      // (`const isFloat = (n) => n % 1 !== 0`, read from the vendored source
+      // after an earlier guess at additivity failed to clear it).
+      //
+      // Measured 2026-08-08, Arial, retail Firefox 152 against this build:
+      //
+      //     72px  fontBoundingBoxAscent   retail 65   ours 65.1796875
+      //     20px  fontBoundingBoxAscent   retail 18   ours 18.10546875
+      //     12px  fontBoundingBoxAscent   retail 11   ours 10.86328125
+      //     10px  fontBoundingBoxDescent  retail  2   ours  2.119140625
+      //
+      // Rounding reproduces retail on all ten measurements (five sizes x ascent
+      // and descent), which it must: it is literally the operation at :396.
+      // The shipped firefox-18 returns the same fractional values, so this is
+      // not a regression - it is a rounding we never did, present since
+      // bundle-only shipped.
+      maxA = std::round(maxA);
+      maxD = std::round(maxD);
+      const gfxFloat maxH = maxA + maxD;
+      if (maxH > 0.0) {
+        // gfxDWriteFonts.cpp:400-403. Note this is NOT sTypoAscender: DWrite
+        // splits the em box in the ratio of the ROUNDED usWin pair, so emAscent
+        // stays fractional in retail too (72px Arial: 72 * 65/80 = 58.5) and
+        // must stay fractional here. Rounding it would be a new divergence, not
+        // a fix - CreepJS never looks at emHeightAscent.
+        const gfxFloat emH = font->GetAdjustedSize();
+        emA = emH * maxA / maxH;
+        emD = emH - emA;
+      }
+      // Host-independent baseline anchor. This MIRRORS the baselineAnchor
+      // switch above and has to mirror it case for case, including which cases
+      // call GetBaseline: Hanging and Ideographic are synthesized by HarfBuzz
+      // there, not derived from the em box. Approximating them as emA * 0.8 and
+      // -emD is what this used to do, and it was wrong on every field that
+      // subtracts the anchor, not just on the two baselines it names. Measured
+      // 2026-08-08 over the full finite domain of measureText (6 textBaseline x
+      // 5 textAlign x 2 direction x 3 fonts x 2 sizes x 3 strings = 1080 cases,
+      // 12960 fields): 2520 divergences from retail traced to this switch, and
+      // ZERO of them are visible at the alphabetic baseline, where the anchor is
+      // 0 and the approximation cancels. A sweep of the sizes alone could not
+      // have found it.
+      gfxFloat hiAnchor;
       switch (state.textBaseline) {
+        case CanvasTextBaseline::Hanging:
+          hiAnchor = font->GetBaseline(gfxFont::kHanging, fontOrientation);
+          break;
         case CanvasTextBaseline::Top:
           hiAnchor = emA;
           break;
         case CanvasTextBaseline::Middle:
           hiAnchor = (emA - emD) * 0.5;
           break;
+        case CanvasTextBaseline::Alphabetic:
+          hiAnchor = font->GetBaseline(gfxFont::kAlphabetic, fontOrientation);
+          break;
+        case CanvasTextBaseline::Ideographic:
+          hiAnchor =
+              font->GetBaseline(gfxFont::kIdeographicUnder, fontOrientation);
+          break;
         case CanvasTextBaseline::Bottom:
           hiAnchor = -emD;
           break;
-        case CanvasTextBaseline::Hanging:
-          hiAnchor = emA * 0.8;
-          break;
-        case CanvasTextBaseline::Ideographic:
-          hiAnchor = -emD;
-          break;
-        default:  // Alphabetic
+        default:
           hiAnchor = 0.0;
           break;
       }
+      if (fontOrientation == nsFontMetrics::eVertical) {
+        // Mirrors the same adjustment on baselineAnchor above: a vertical run
+        // is shaped against the centre baseline rather than the alphabetic one.
+        hiAnchor -= (emA - emD) * 0.5;
+      }
+      // No ink, no ink box - and "no box" means what retail computes from an
+      // empty one, NOT zero. The em-box substitution is what makes the actual
+      // bounding box host-independent for text that draws something; applying
+      // it to text that draws nothing invents a box a real Firefox does not
+      // report. But retail's two values there are -mBoundingBox.Y() - anchor
+      // and .YMost() + anchor with an EMPTY box, which is -anchor and +anchor,
+      // and that is zero only when the anchor is zero, i.e. only at the
+      // alphabetic baseline. A hardcoded 0.0 was measured against exactly that
+      // baseline and agreed with retail by cancellation: at textBaseline
+      // "bottom", 16px Arial, retail answers 2.8235294117647065 and the
+      // hardcode answered 0.
+      //
+      // Left and Right are a different story again: they read X and XMost, not
+      // emptiness, so retail reports them non-zero even with no ink (at 10px,
+      // "   " gives -5.566666666666666 and +5.566666666666666). They stay on
+      // the substituted box, anchored to offsetX the way retail anchors them,
+      // so they move with textAlign. Before this they were the constants 0 and
+      // totalWidth, which did not move with textAlign at all - a missing
+      // dependency reads worse than a wrong number, because a page can find it
+      // by changing one property and seeing nothing happen.
+      //
+      // Whether a string has ink is a property of the bundled font, not of the
+      // host engine, so none of this costs host-independence.
+      const bool hasInk = !processor.mBoundingBox.IsEmpty();
       return MakeUnique<TextMetrics>(
-          totalWidth, 0.0, totalWidth,  // width + actualBoundingBoxLeft/Right
-          maxA - hiAnchor,              // fontBoundingBoxAscent
-          maxD + hiAnchor,              // fontBoundingBoxDescent
-          emA - hiAnchor,               // actualBoundingBoxAscent (em-box bound)
-          emD + hiAnchor,               // actualBoundingBoxDescent
-          emA - hiAnchor,               // emHeightAscent
-          emD + hiAnchor,               // emHeightDescent
-          (emA * 0.8) - hiAnchor,       // hangingBaseline
-          0.0 - hiAnchor,               // alphabeticBaseline
-          (-emD) - hiAnchor);           // ideographicBaseline
+          totalWidth, offsetX,            // width + actualBoundingBoxLeft
+          totalWidth - offsetX,           // actualBoundingBoxRight
+          maxA - hiAnchor,                // fontBoundingBoxAscent
+          maxD + hiAnchor,                // fontBoundingBoxDescent
+          hasInk ? emA - hiAnchor : -hiAnchor,  // actualBoundingBoxAscent
+          hasInk ? emD + hiAnchor : hiAnchor,   // actualBoundingBoxDescent
+          emA - hiAnchor,                 // emHeightAscent
+          emD + hiAnchor,                 // emHeightDescent
+          // The hanging and ideographic baselines come from HarfBuzz's own
+          // fallback synthesis, which is what the ordinary path below calls and
+          // therefore what retail reports. This branch approximated them as
+          // emA * 0.8 and -emD, and both were wrong at every size measured:
+          // 72px Arial gives hanging 46.800000000000004 our way against
+          // retail's 43.19999694824219, and ideographic -13.5 against
+          // -15.2578125. The values are 16.16 fixed point (position / 65536.0),
+          // which is where retail's .9999 tails come from. HarfBuzz reads the
+          // bundled font's tables and GetAdjustedSize, so nothing host-specific
+          // enters - and the cross-OS diff after this change is what says so,
+          // not this comment.
+          font->GetBaseline(gfxFont::kHanging, fontOrientation) - hiAnchor,
+          font->GetBaseline(gfxFont::kAlphabetic, fontOrientation) - hiAnchor,
+          font->GetBaseline(gfxFont::kIdeographicUnder, fontOrientation) -
+              hiAnchor);
     }
     return MakeUnique<TextMetrics>(
         totalWidth, actualBoundingBoxLeft, actualBoundingBoxRight,
@@ -6947,6 +7191,11 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
       int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
       if (stealthSeed > 0 && !StealthSkipPrivilegedReadback(&aSubjectPrincipal)) {
         size_t bufSize = size_t(aWidth) * size_t(aHeight) * 4;
+        // Coverage first - see the twin call site in GetImageBuffer for why
+        // the order matters: the colour pass below overwrites R, G and B with
+        // independent hash bytes, and the ladder's colour-glyph guard needs
+        // them intact to tell text from an emoji bitmap.
+        ApplyStealthCanvasAlphaLadder(data, bufSize);
         if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
           ApplyStealthCanvasPixelSubstitution(data, bufSize, stealthSeed);
         } else {
