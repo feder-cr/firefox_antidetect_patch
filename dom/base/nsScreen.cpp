@@ -5,6 +5,7 @@
 #include "nsScreen.h"
 
 #include "mozilla/GeckoBindings.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -45,6 +46,24 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(nsScreen, DOMEventTargetHelper,
                                    mScreenOrientation)
 
 int32_t nsScreen::PixelDepth() {
+  // Stealth: the declared depth, before anything reads the real panel. This
+  // used to fall through to nsDeviceContext::GetDepth() and report whatever
+  // display the user actually has, which is a host value inside a persona that
+  // claims to be a particular Windows machine.
+  //
+  // It survived every cross-OS comparison we ran, and the reason is worth
+  // keeping: both development machines are 24-bit, so the field AGREED across
+  // platforms and looked declared. Agreement is not declaration - an absence
+  // of difference is not evidence of a shared source, and this is the field
+  // that proved it. Found by the field-by-field audit
+  // (19-field-declaration-audit.md), which asks for the source in the code
+  // rather than for equality in the measurement.
+  {
+    const int32_t declared = StaticPrefs::zoom_stealth_screen_color_depth();
+    if (declared > 0) {
+      return declared;
+    }
+  }
   // Return 24 to prevent fingerprinting.
   if (ShouldResistFingerprinting(RFPTarget::ScreenPixelDepth)) {
     return 24;

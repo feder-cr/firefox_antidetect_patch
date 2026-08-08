@@ -20350,6 +20350,18 @@
   value: -1
   mirror: always
 
+# The declared screen colour depth. Without it nsScreen::PixelDepth returns
+# nsDeviceContext::GetDepth(), i.e. the REAL panel. The field-by-field audit
+# (19-field-declaration-audit.md) caught it only because it asks for proof
+# rather than for agreement: it reads 24 on both development machines because
+# both happen to be 24-bit, so it matched cross-OS by coincidence and not by
+# declaration. A user on a 30-bit display would report 30 under a Windows
+# persona that says nothing of the sort.
+- name: zoom.stealth.screen.color_depth
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
 - name: zoom.stealth.webgl.renderer
   type: DataMutexString
   value: ""
