@@ -652,6 +652,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     return mFontFamilyWhitelistActive;
   };
 
+
   static void FontWhitelistPrefChanged(const char* aPref, void* aClosure);
 
   bool AddWithLegacyFamilyName(const nsACString& aLegacyName,

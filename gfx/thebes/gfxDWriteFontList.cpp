@@ -1114,6 +1114,23 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
       delete entry;
       return nullptr;
     }
+    // Wire the entry back to its shared-list face. This was the last of the
+    // three bundle-only branches still omitting it: Linux was fixed 2026-08-07,
+    // macOS already had it, and a comment in gfxFcPlatformFontList.cpp asserted
+    // THIS one did too, citing a line number that is in the host-collection
+    // branch below. The comment was wrong and the consequence was invisible -
+    // mShmemFace stayed null for every bundled face on Windows, so
+    // GetStealthBundleVMetrics returned false and the manifest's vertical
+    // metrics were never applied here at all.
+    //
+    // Nothing LOOKED broken, because Windows fell back to DirectWrite's own
+    // metrics and the manifest was computed to reproduce exactly those: the
+    // cross-OS parity gate passed 68/68 on numbers that came from two different
+    // sources happening to agree. That is a coincidence held in place by the
+    // generator being right, not a mechanism - had DWrite changed how it
+    // derives any metric, Windows would have drifted from the file that claims
+    // to define it and nothing would have said so.
+    entry->InitializeFrom(aFace, aFamily);
     return entry;
   }
   IDWriteFontCollection* collection =
@@ -1731,8 +1748,29 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
     return;
   }
 
-  GetDirectWriteSubstitutes();
-  GetFontSubstitutes();
+  // STEALTH: under bundle-only the aliases come from the manifest and are
+  // applied for every OS in gfxPlatformFontList::FindAndAddFamiliesLocked.
+  // These two build the platform's own table instead, and GetFontSubstitutes()
+  // reads it from the HOST REGISTRY (HKLM\...\FontSubstitutes) - so the set of
+  // resolvable alias names varied by machine (third-party software adds
+  // entries) and existed on no other OS. Measured 2026-08-07: "HELV" and
+  // "Small Fonts" resolved here and nowhere else, giving raw_fonts_n 8 on
+  // Windows against 6 on Linux.
+  //
+  // Note bundle-only made this WORSE rather than better: the pref
+  // gfx.windows-font-substitutes.always defaults false, i.e. "substitute only
+  // when the original family is absent", and with the family list cut to 72
+  // no alias name is ever present, so every possible substitution registered.
+  //
+  // Suppressed only when the manifest actually carries aliases; against a
+  // v1/v2 manifest the old behaviour stands, because removing the aliases
+  // outright would suppress a signal a real Windows Firefox does emit.
+  auto* stealthBundle =
+      mStealthBundleOnly ? StealthBundleFontList::Get() : nullptr;
+  if (!stealthBundle || !stealthBundle->HasAliases()) {
+    GetDirectWriteSubstitutes();
+    GetFontSubstitutes();
+  }
 }
 
 nsresult gfxDWriteFontList::InitFontListForPlatform() {
@@ -1818,14 +1856,23 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
   QueryPerformanceCounter(&t4);  // iterate over system fonts
 
   mOtherFamilyNamesInitialized = true;
-  GetFontSubstitutes();
+  // STEALTH: see the note at the shared-list call site above - under
+  // bundle-only with a v3 manifest the aliases are ours, not the host's.
+  auto* stealthBundle2 =
+      mStealthBundleOnly ? StealthBundleFontList::Get() : nullptr;
+  const bool stealthAliases = stealthBundle2 && stealthBundle2->HasAliases();
+  if (!stealthAliases) {
+    GetFontSubstitutes();
+  }
 
   // bug 642093 - DirectWrite does not support old bitmap (.fon)
   // font files, but a few of these such as "Courier" and "MS Sans Serif"
   // are frequently specified in shoddy CSS, without appropriate fallbacks.
   // By mapping these to TrueType equivalents, we provide better consistency
   // with both pre-DW systems and with IE9, which appears to do the same.
-  GetDirectWriteSubstitutes();
+  if (!stealthAliases) {
+    GetDirectWriteSubstitutes();
+  }
 
   // bug 551313 - DirectWrite creates a Gill Sans family out of
   // poorly named members of the Gill Sans MT family containing

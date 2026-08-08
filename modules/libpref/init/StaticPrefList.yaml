@@ -20471,6 +20471,40 @@
   value: ""
   mirror: always
 
+# Glyph-edge coverage ladder: the distinct alpha levels a Windows rasteriser
+# produces on an antialiased glyph edge, ascending, comma separated. Measured
+# 2026-08-07 over 48 family/size/weight combinations: Windows yields 9-19
+# levels per render and FreeType 193-256, and a detector does not need to
+# compare a hash to separate those - it can COUNT. Empty disables the snap.
+# Delivered by invisible_core rather than the font manifest: it is not a
+# property of any font FILE, it is what the rasteriser does to an edge.
+- name: zoom.stealth.canvas.alpha_ladder
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# The whole font manifest, carried by invisible_core and preferred over the
+# copy in NS_GRE_DIR/fonts/. Families, per-face vertical metrics, the alias
+# table, the coverage ladder and the per-script fallback lists - one pref
+# rather than one per table, because the binary already parses this text.
+# Empty means "use the file", which is what keeps a browser launched without
+# that package rendering with fonts instead of none.
+- name: zoom.stealth.fonts.manifest
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# Declared answers for canPlayType / MediaSource.isTypeSupported, as
+# "mimetype|yes|maybe|no" entries separated by commas. Consulted before any
+# decoder is asked. The engine's own answer is HOST-dependent on Linux - it
+# turns on whether the user's machine has libavcodec - so two users of the same
+# build distinguish themselves from each other. Empty leaves the media stack
+# alone; a type not named falls through untouched.
+- name: zoom.stealth.media.mime_answers
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # IANA timezone override (e.g. "America/New_York"). Single source of truth for
 # StealthFox timezone spoofing. Takes priority over juggler.timezone.override.
 - name: zoom.stealth.timezone

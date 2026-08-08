@@ -1467,39 +1467,34 @@ bool gfxHarfBuzzShaper::ShapeText(DrawTarget* aDrawTarget,
 
   hb_shape(mHBFont, mBuffer, features.Elements(), features.Length());
 
-  // Stealth: per-session BOUNDED font-width offset (smart jitter v2). The old
-  // version added a per-glyph spacing PLUS a cumulative offset, so the total
-  // measureText perturbation scaled with string length (up to ~2.8px on a long
-  // probe string) and spiked FP Pro tampering_ml on minimal-font profiles
-  // (a Windows that exposes few fonts is already "on the edge" for FP's ML, and
-  // a multi-pixel font-metric deviation tips it). font_preferences are a near-
-  // exact Windows signal, so any large deviation is a tell.
-  // v2 perturbs the run's TOTAL advance by a SINGLE small bounded amount
-  // (<= kStealthJitterMax px), length-independent: still varies measureText /
-  // font_hash for per-profile uniqueness, but stays well within FP's tolerance.
-  // Derived from zoom.stealth.fpp.hw_seed (per-profile, deterministic); 0 = vanilla.
-  {
-    int32_t stealthSeed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (stealthSeed > 0) {
-      const float kStealthJitterMax = 0.05f;  // max total advance offset, in px
-      uint32_t s = (uint32_t(stealthSeed) * 1103515245u + 12345u) & 0x7fffffffu;
-      float randomFloat =
-          (static_cast<float>(s) / 2147483647.0f) * kStealthJitterMax;
-      hb_position_t spacing = FloatToFixed(randomFloat);
-      unsigned int glyphCount = 0;
-      hb_glyph_position_t* glyphPositions =
-          hb_buffer_get_glyph_positions(mBuffer, &glyphCount);
-      if (glyphCount > 0) {
-        // Apply the bounded offset to the LAST glyph's advance only -> the run's
-        // total width shifts by exactly `spacing`, independent of glyph count.
-        if (aVertical) {
-          glyphPositions[glyphCount - 1].y_advance -= spacing;
-        } else {
-          glyphPositions[glyphCount - 1].x_advance += spacing;
-        }
-      }
-    }
-  }
+  // Stealth: the per-run advance jitter was REMOVED 2026-08-08. It is the one
+  // thing CreepJS ever caught this build doing - the single entry in its lie
+  // list, `CanvasRenderingContext2D.measureText: metric noise detected` - and
+  // it was both detectable and unrealistic.
+  //
+  // DETECTABLE, by addition and nothing else. The offset was added to the LAST
+  // glyph of every shaped run, so measuring a string in pieces accumulated one
+  // offset per piece while measuring it whole accumulated one. Measured at
+  // 72px in Arial, 50 identical characters summed singly against the same 50 as
+  // one string:
+  //
+  //     this build      +2.449982 px
+  //     retail FF 152   +0.000069 px
+  //
+  // A real Firefox is additive to within seven hundred-thousandths of a pixel;
+  // we were off by a factor of 35000. The test needs no reference values, no
+  // second machine and no knowledge of our fonts - just add the parts.
+  //
+  // UNREALISTIC, which is the better reason. Two real Windows machines with the
+  // same fonts measure the same string identically; text width is not a per-
+  // machine quantity. Making every identity unique in it manufactured a
+  // variation the population being imitated does not have. Per-identity
+  // uniqueness still comes from the canvas PIXEL path, from the GPU persona and
+  // from the screen - none of which had to lie about a font metric to get it.
+  //
+  // The v2 this replaces was itself a reduction of a v1 that perturbed every
+  // glyph and moved a long string by ~2.8px, which spiked FP Pro's tampering_ml.
+  // Halving a tell twice is not the same as removing it.
 
   if (isRightToLeft) {
     hb_buffer_reverse(mBuffer);

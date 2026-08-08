@@ -456,6 +456,58 @@ pref("accessibility.browsewithcaret_shortcut.enabled", true);
   pref("ui.scrollToClick", 0);
 #endif
 
+// STEALTH: pin the CSS system fonts to the Windows shell font, on EVERY host.
+//
+// The system-font keywords a page can read - caption, icon, menu, message-box,
+// small-caption, status-bar - are filled from the PLATFORM's UI settings, which
+// is a different subsystem from the font list: GTK settings on Linux, the shell
+// font on Windows, and neither is touched by the bundled-font work. So they
+// named the operating system outright. Measured 2026-08-07 on the shipped
+// firefox-18, same build and seed:
+//
+//     Windows : family "Segoe UI", size 12px
+//     Linux   : family "Sans",     size 13.3333px
+//
+// CreepJS reads exactly this and reported `system_fonts: Segoe UI:Windows`
+// against `Sans:Linux` - a direct platform disclosure, and one that survived
+// sealing the font-family list, because "Sans" here never came from the font
+// list at all.
+//
+// nsXPLookAndFeel::GetFontValue tries these prefs BEFORE calling
+// NativeGetFont, so setting them means the host is never consulted. Values are
+// the measured Windows ones: 9pt Segoe UI = 12px at 96dpi, weight 400.
+//
+// The sizes are QUOTED on purpose: GetFontValue reads them with
+// Preferences::GetFloat, and a float pref in Gecko is declared as a string
+// (cf. media.volume_scale "1.0"). Declared as a bare int the read fails and
+// the fallback StyleFONT_MEDIUM_PX (16px) is used instead - measured, that is
+// exactly what the first attempt produced.
+//
+// The four -moz-* entries are pinned too. They are not readable as CSS
+// keywords, but they drive form-control rendering, and a real Windows Firefox
+// draws buttons and fields with the same shell font - leaving them host-derived
+// would put the difference back into button metrics, which a page CAN measure.
+pref("ui.font.caption", "Segoe UI");
+pref("ui.font.caption.size", "12");
+pref("ui.font.icon", "Segoe UI");
+pref("ui.font.icon.size", "12");
+pref("ui.font.menu", "Segoe UI");
+pref("ui.font.menu.size", "12");
+pref("ui.font.message-box", "Segoe UI");
+pref("ui.font.message-box.size", "12");
+pref("ui.font.small-caption", "Segoe UI");
+pref("ui.font.small-caption.size", "12");
+pref("ui.font.status-bar", "Segoe UI");
+pref("ui.font.status-bar.size", "12");
+pref("ui.font.-moz-pull-down-menu", "Segoe UI");
+pref("ui.font.-moz-pull-down-menu.size", "12");
+pref("ui.font.-moz-button", "Segoe UI");
+pref("ui.font.-moz-button.size", "12");
+pref("ui.font.-moz-list", "Segoe UI");
+pref("ui.font.-moz-list.size", "12");
+pref("ui.font.-moz-field", "Segoe UI");
+pref("ui.font.-moz-field.size", "12");
+
 // These are some selection-related colors which have no per platform
 // implementation.
 #if !defined(XP_MACOSX)
@@ -2712,19 +2764,23 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.sans-serif.ar", "sans-serif");
   pref("font.name-list.monospace.ar", "monospace");
   pref("font.name-list.cursive.ar", "cursive");
-  pref("font.size.monospace.ar", 12);
+   // STEALTH: upstream sets these to 12 on Unix while Windows keeps the
+   // global 13. This build claims Windows, and the difference is directly
+   // observable - a font-size-less monospace span measured 121.583px on
+   // Windows vs 112.233 on Linux (ratio 13/12). Kept at the Windows value.
+  pref("font.size.monospace.ar", 13);
 
   pref("font.name-list.serif.el", "serif");
   pref("font.name-list.sans-serif.el", "sans-serif");
   pref("font.name-list.monospace.el", "monospace");
   pref("font.name-list.cursive.el", "cursive");
-  pref("font.size.monospace.el", 12);
+  pref("font.size.monospace.el", 13);
 
   pref("font.name-list.serif.he", "serif");
   pref("font.name-list.sans-serif.he", "sans-serif");
   pref("font.name-list.monospace.he", "monospace");
   pref("font.name-list.cursive.he", "cursive");
-  pref("font.size.monospace.he", 12);
+  pref("font.size.monospace.he", 13);
 
   pref("font.name-list.serif.ja", "serif");
   pref("font.name-list.sans-serif.ja", "sans-serif");
@@ -2761,7 +2817,7 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.sans-serif.x-cyrillic", "sans-serif");
   pref("font.name-list.monospace.x-cyrillic", "monospace");
   pref("font.name-list.cursive.x-cyrillic", "cursive");
-  pref("font.size.monospace.x-cyrillic", 12);
+  pref("font.size.monospace.x-cyrillic", 13);
 
   pref("font.name-list.serif.x-devanagari", "serif");
   pref("font.name-list.sans-serif.x-devanagari", "sans-serif");
@@ -2832,13 +2888,13 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.sans-serif.x-unicode", "sans-serif");
   pref("font.name-list.monospace.x-unicode", "monospace");
   pref("font.name-list.cursive.x-unicode", "cursive");
-  pref("font.size.monospace.x-unicode", 12);
+  pref("font.size.monospace.x-unicode", 13);
 
   pref("font.name-list.serif.x-western", "serif");
   pref("font.name-list.sans-serif.x-western", "sans-serif");
   pref("font.name-list.monospace.x-western", "monospace");
   pref("font.name-list.cursive.x-western", "cursive");
-  pref("font.size.monospace.x-western", 12);
+  pref("font.size.monospace.x-western", 13);
 
   pref("font.name-list.serif.zh-CN", "serif");
   pref("font.name-list.sans-serif.zh-CN", "sans-serif");

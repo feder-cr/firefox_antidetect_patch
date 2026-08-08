@@ -2252,8 +2252,29 @@ gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
       return nullptr;
     }
     nsAutoCString name(aFamily->DisplayName().AsString(SharedFontList()));
-    return new gfxFontconfigFontEntry(name, aFace->mWeight, aFace->mStretch,
-                                      aFace->mStyle, std::move(face));
+    auto* fe = new gfxFontconfigFontEntry(name, aFace->mWeight, aFace->mStretch,
+                                          aFace->mStyle, std::move(face));
+    // Wire the entry back to its shared-list face, exactly as the non-stealth
+    // path below does and as the CoreText (CoreTextFontList.cpp:1795)
+    // bundle-only branch does. This branch omitted it - found 2026-08-07 -
+    // which left mShmemFace null for EVERY bundled face on Linux.
+    //
+    // The DWrite branch was named here too, citing gfxDWriteFontList.cpp:1211.
+    // That was WRONG: 1211 is in the host-collection branch, and the
+    // bundle-only branch above it omitted the call just like this one did,
+    // until 2026-08-08. So this comment asserted a symmetry that did not exist
+    // and would have kept anyone from looking - which is the whole reason a
+    // cross-reference in a comment has to be checked against the code it
+    // names, not trusted.
+    // Two consequences: gfxFont::SanitizeMetrics could not tell a bundled face
+    // from any other font, so the manifest's vertical metrics were silently
+    // never applied; and the entry's charmap could never be published back
+    // into the shared list (the mShmemFace->SetCharacterMap path), leaving
+    // families permanently not-fully-initialized, which is what lets the async
+    // cmap path record a codepoint in mCodepointsWithNoFonts and keep that
+    // verdict for the rest of the session.
+    fe->InitializeFrom(aFace, aFamily);
+    return fe;
   }
   nsAutoCString desc(aFace->mDescriptor.AsString(SharedFontList()));
   FcPattern* pattern = FcNameParse((const FcChar8*)desc.get());
@@ -2419,6 +2440,38 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
     gfxFontStyle* aStyle, nsAtom* aLanguage, gfxFloat aDevToCssSize) {
   nsAutoCString familyName(aFamily);
   ToLowerCase(familyName);
+
+  // STEALTH: no host fontconfig in name resolution, at all.
+  //
+  // Everything below this point asks the HOST's fontconfig what a name means -
+  // the "sans"/"mono" legacy aliases just after this comment, which exist on no
+  // Windows machine, and then the whole -moz-sentinel FcConfigSubstitute
+  // machinery further down, which resolves arbitrary names against
+  // /etc/fonts and ~/.config/fontconfig. Information goes into the host config
+  // and comes back out, which is exactly the shape this build exists to remove.
+  //
+  // It is not a theoretical leak. CreepJS reads the operating system off the
+  // font system, and measured 2026-08-07 on the shipped firefox-18 it reported
+  // `system_fonts: Segoe UI:Windows` on Windows and `system_fonts: Sans:Linux`
+  // on Linux - it named the platform outright. Probing the names directly:
+  // "Sans", "Serif", "Monospace" and "sans-serif" all resolved as families on
+  // Linux and none of them on Windows. No host font FILE leaked (DejaVu,
+  // Liberation, Ubuntu, Cantarell, Noto, FreeSans all failed to resolve, so the
+  // bundle-only family list itself is sealed) - what leaked was fontconfig's
+  // own alias NAMES, which no Windows install has.
+  //
+  // Delegating to the base class gives Windows' behaviour by construction: the
+  // manifest's canonical substitute table (see StealthBundleFontList::GetAlias,
+  // applied in gfxPlatformFontList::FindAndAddFamiliesLocked) and then the
+  // bundle family list, and nothing else. CSS generics do not depend on this
+  // path - AddGenericFonts already forces the base class under bundle-only, so
+  // serif/sans-serif/monospace/cursive resolve through
+  // StealthGenericWindowsFont.
+  if (mStealthBundleOnly) {
+    return gfxPlatformFontList::FindAndAddFamiliesLocked(
+        aFontVisibilityProvider, aGeneric, aFamily, aOutput, aFlags, aStyle,
+        aLanguage, aDevToCssSize);
+  }
 
   if (!(aFlags & FindFamiliesFlags::eQuotedFamilyName)) {
     // deprecated generic names are explicitly converted to standard generics

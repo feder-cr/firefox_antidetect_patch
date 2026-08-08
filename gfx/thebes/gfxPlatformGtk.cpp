@@ -419,6 +419,33 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
 void gfxPlatformGtk::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
                                             FontPresentation aPresentation,
                                             nsTArray<const char*>& aFontList) {
+  // Stealth: the bundled Windows faces come FIRST, mirroring the order
+  // gfxWindowsPlatform::GetCommonFallbackFonts uses, so a codepoint no
+  // requested family covers resolves to the same face on every host.
+  //
+  // Every name in the upstream Linux list below - Twemoji Mozilla, DejaVu,
+  // FreeSerif/Sans, Symbola, Noto Sans Symbols 1/2 - is absent from
+  // bundle-fonts.list, so under bundle-only this whole function was a
+  // guaranteed miss for EVERY codepoint, on every script, not just emoji.
+  // (Twemoji Mozilla ships in browser/fonts but is excluded from the manifest
+  // by the Microsoft-attribution filter and is registered as a family on
+  // neither OS, so naming it here has never resolved.) The upstream names are
+  // kept after ours: they cost nothing when absent and keep the non-bundle
+  // build working.
+  // The ORDER mirrors gfxWindowsPlatform::GetCommonFallbackFonts exactly -
+  // Segoe UI Emoji, then Arial, Segoe UI, Segoe UI Symbol, Cambria Math -
+  // because the order decides WHICH face covers a codepoint, and a different
+  // face means a different advance. Measured 2026-08-07: listing Segoe UI
+  // Symbol before Arial (an earlier version of this block) left five emoji
+  // widths apart from Windows even though every family already resolved.
+  if (PrefersColor(aPresentation)) {
+    aFontList.AppendElement("Segoe UI Emoji");
+  }
+  aFontList.AppendElement("Arial");
+  aFontList.AppendElement("Segoe UI");
+  aFontList.AppendElement("Segoe UI Symbol");
+  aFontList.AppendElement("Cambria Math");
+
   if (PrefersColor(aPresentation)) {
     aFontList.AppendElement(kFontTwemojiMozilla);
   }
