@@ -1848,9 +1848,9 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
     // Uniform bundle: build the shared family list + faces from our manifest,
     // skipping the fontconfig enumeration (host fonts never enter). Linux builds
     // faces eagerly, so AddFaces each family here.
-    auto* bundle = StealthBundleFontList::Get();
+    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     auto* list = SharedFontList();
-    if (bundle && list) {
+    if (list) {
       nsTArray<fontlist::Family::InitData> famData(bundle->Families().Clone());
       list->SetFamilyNames(famData);
       for (uint32_t i = 0; i < list->NumFamilies(); i++) {
@@ -2231,10 +2231,7 @@ gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
   if (mStealthBundleOnly) {
     // Instantiate the face straight from its bundle file via FreeType;
     // CloneFace takes the .ttc face index directly.
-    auto* bundle = StealthBundleFontList::Get();
-    if (!bundle) {
-      return nullptr;
-    }
+    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
     nsTArray<uint8_t> data;
     if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {

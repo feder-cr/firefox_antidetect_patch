@@ -28,6 +28,7 @@
 #include "mozilla/TaskQueue.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/UtilityMediaServiceParent.h"
+#include "StealthMediaDeclaration.h"
 #include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 #include "nsPrintfCString.h"
 
@@ -463,6 +464,32 @@ DecodeSupportSet PDMFactory::SupportsMimeType(
 DecodeSupportSet PDMFactory::Supports(
     const SupportDecoderParams& aParams,
     DecoderDoctorDiagnostics* aDiagnostics) const {
+  // Stealth: what this build reports it can decode is DECLARED, not derived
+  // from what the machine happens to have installed. This is the layer where
+  // the host-dependence lives and the key space is finite - see
+  // StealthMediaDeclaration.h for the measurement that put it here rather than
+  // in DecoderTraits, where it was a list of type strings that could never be
+  // complete. Everything above (container rules, the codec-list AND, the H.264
+  // profile and level windows) is Gecko's own logic and already identical on
+  // every platform.
+  //
+  // A query path only: MP4Decoder, MatroskaDecoder, WebMDecoder,
+  // MediaCapabilities and MFMediaEngineDecoderModule call this; decoder
+  // creation goes through GetDecoderModule and is untouched.
+  {
+    bool sw = false, hw = false;
+    if (StealthDeclaredDecodeSupport(aParams.MimeType(), sw, hw)) {
+      DecodeSupportSet declared{};
+      if (sw) {
+        declared += DecodeSupport::SoftwareDecode;
+      }
+      if (hw) {
+        declared += DecodeSupport::HardwareDecode;
+      }
+      return declared;
+    }
+  }
+
   if (mEMEPDM) {
     return mEMEPDM->Supports(aParams, aDiagnostics);
   }

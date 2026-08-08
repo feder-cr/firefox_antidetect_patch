@@ -2328,113 +2328,28 @@ static bool StealthSkipPrivilegedReadback(nsIPrincipal* aPrincipal) {
                         aPrincipal->SchemeIs("resource"));
 }
 
-// STEALTH: snap the alpha channel onto DirectWrite's coverage ladder.
+// STEALTH: the coverage ladder used to live here, applied to the composited
+// RGBA buffer, and it moved to the A8 GLYPH MASK on 2026-08-08 -
+// SkScalerContext::getImage, via mozilla/gfx/StealthGlyphCoverage.h.
 //
-// The alpha of an antialiased glyph edge IS the coverage the platform
-// rasteriser computed, and the substitution below deliberately preserves alpha
-// (it overwrites colour, not shape). So the rasteriser's signature passes
-// straight THROUGH that substitution - and the signature is structural, not
-// marginal. Measured 2026-08-07 over 48 family/size/weight combinations, black
-// text on transparent so alpha IS coverage:
+// It had to guess which pixels were text, and the test was that the three
+// colour channels agreed - greyscale-antialiased text has r==g==b, a colour
+// emoji's artwork does not. The guess is wrong for the commonest case there
+// is: coloured text. Measured on FingerprintJS Pro's own canvas, whose text is
+// #006699 and rgba(102,204,0,0.2), not one ink pixel had r==g==b, so the
+// ladder was a total no-op and the Times New Roman line read back 12 alpha
+// levels on Windows against 208 on Linux - the exact tell it existed to close.
 //
-//     Windows / DirectWrite :   9-19 distinct alpha levels per render
-//     Linux   / FreeType    : 193-256 distinct levels (16 of the 48 used all 256)
+// On the mask there is nothing to guess: kA8_Format IS greyscale coverage by
+// construction, a colour glyph is kARGB32_Format and never reaches it, and the
+// fill colour has not been applied yet. Blocking at birth instead of correcting
+// afterwards, and the correction was the half that was wrong.
 //
-// So a detector does not need to compare a hash to tell the two apart - it can
-// COUNT the levels. Counting is also the more robust tell, because two genuine
-// Windows machines produce DIFFERENT hashes anyway (the value moves with the
-// Windows build and the ClearType settings) while both land in the low tens of
-// levels.
-//
-// Snapping to the nearest ladder entry KEEPS THE REAL GLYPH SHAPE: this
-// quantises coverage, it does not replace it, so text read back is still the
-// text that was drawn, with the coarser edge Windows produces.
-//
-// The ladder comes from invisible_core, through
-// zoom.stealth.canvas.alpha_ladder. It used to be read from the font manifest,
-// which was the wrong home twice over: it is not a property of any font FILE -
-// it is what the rasteriser does to an edge - and living in the manifest meant
-// changing it required a Firefox rebuild.
-//
-// COLOUR GLYPHS ARE SKIPPED, and that omission was a measured regression rather
-// than a theoretical one. A colour emoji is a BITMAP: its alpha carries the
-// artwork, not an antialiasing ramp, so there is nothing to quantise and
-// quantising it destroys the image. Measured 2026-08-08 at 72px on U+1F600:
-// retail Windows 152 renders 159 distinct alpha levels, firefox-18 (no ladder)
-// renders 158, and this function applied to the whole buffer collapsed it to
-// 16 - manufacturing exactly the countable tell the ladder exists to remove.
-// The test used here is that the three colour channels agree: greyscale-
-// antialiased text drawn with a solid fill has R==G==B on every pixel, while an
-// emoji's artwork does not. It is a heuristic, so it is justified by
-// measurement and not by argument - see the regression numbers above and the
-// gate that pins them.
-//
-// 0 and 255 are the ladder's endpoints, so fully transparent and fully opaque
-// pixels never move - the clearRect trap and any solid reference render stay
-// byte-exact.
-static void ApplyStealthCanvasAlphaLadder(uint8_t* aBuf, size_t aSize) {
-  if (!aBuf || aSize < 4) return;
-  // DataMutexString: take the lock, copy out, drop it. Same shape as
-  // SpeechSynthesis.cpp does for zoom.stealth.voices.list.
-  nsAutoCString spec;
-  {
-    auto lock = mozilla::StaticPrefs::zoom_stealth_canvas_alpha_ladder();
-    spec = *lock;
-  }
-  if (spec.IsEmpty()) {
-    return;  // not configured: leave the rasteriser's own coverage alone
-  }
-  AutoTArray<uint8_t, 32> ladder;
-  for (const nsACString& part : spec.Split(',')) {
-    nsresult rv;
-    const int32_t v = PromiseFlatCString(part).ToInteger(&rv);
-    if (NS_FAILED(rv) || v < 0 || v > 255) {
-      return;  // malformed -> no snap at all, never a partial one
-    }
-    ladder.AppendElement(uint8_t(v));
-  }
-  if (ladder.Length() < 2) {
-    return;
-  }
-  // 256-entry lookup table. The inner loop runs per pixel over a canvas that
-  // can be millions of pixels, so a search per pixel is not worth paying when
-  // the domain is a single byte.
-  //
-  // Built on the STACK, per call, and deliberately not cached. Two earlier
-  // versions were caches and both were wrong: the first was a one-shot
-  // `static bool sMapReady`, correct only while the ladder came from the font
-  // manifest and was constant for the process; the second keyed a pair of
-  // function-local statics on the pref string, which fixed the staleness and
-  // introduced a DATA RACE - readback runs off the main thread for an
-  // OffscreenCanvas in a worker, and two threads writing sMap and sMapSpec
-  // unsynchronised is undefined behaviour that would surface as wrong pixels,
-  // rarely, and never reproducibly. Found by audit 2026-08-08.
-  //
-  // The cache was also saving the wrong half of the work: 256 * 17 comparisons
-  // is nothing beside the per-pixel loop below, which runs over a canvas that
-  // can be millions of pixels. There was no cost worth a shared mutable byte.
-  uint8_t map[256];
-  for (uint32_t a = 0; a < 256; ++a) {
-    uint8_t best = ladder[0];
-    int32_t bestErr = 256;
-    for (uint8_t lv : ladder) {
-      const int32_t err = std::abs(int32_t(a) - int32_t(lv));
-      if (err < bestErr) {
-        bestErr = err;
-        best = lv;
-      }
-    }
-    map[a] = best;
-  }
-  for (size_t i = 0; i + 3 < aSize; i += 4) {
-    // Colour glyph: leave the whole pixel alone. See the comment above for the
-    // measurement that made this necessary.
-    if (aBuf[i] != aBuf[i + 1] || aBuf[i + 1] != aBuf[i + 2]) {
-      continue;
-    }
-    aBuf[i + 3] = map[aBuf[i + 3]];
-  }
-}
+// It is not kept as a second pass. Quantising composited pixels after the mask
+// is already quantised is a heuristic guessing which results to adjust, which
+// is the pattern this codebase rejects, and it also reached path antialiasing,
+// where retail Windows produces the full 256 levels and we were producing 17.
+
 
 // Only kicks in when zoom.stealth.canvas.substitute_pixels is true.
 static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
@@ -2551,19 +2466,10 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
     if (stealthSeed > 0) {
       size_t bufSize =
           size_t(out_imageSize->width) * size_t(out_imageSize->height) * 4;
-      // COVERAGE FIRST, then colour, and the order is load-bearing.
-      //
-      // The ladder tells greyscale-antialiased text from a colour-emoji bitmap
-      // by the three colour channels agreeing, and the substitution below
-      // overwrites R, G and B with three INDEPENDENT hash bytes. Run after it,
-      // the guard matches on odds of 1 in 65536 per pixel, so over a few
-      // hundred ink pixels the ladder is a guaranteed no-op. Measured
-      // 2026-08-08: "A" at 72px read back 149 distinct alpha levels against
-      // Windows' 16, and no antialiasing mode could have fixed it - the colour
-      // channels were being destroyed one line earlier. Alpha is preserved by
-      // both colour passes ("alpha unchanged"), so quantising it first and
-      // scrambling colour afterwards is safe in a way the reverse is not.
-      ApplyStealthCanvasAlphaLadder(ret.get(), bufSize);
+      // The coverage ladder used to run here, ahead of the colour pass, because
+      // the colour pass destroys the r==g==b test it depended on. It runs on the
+      // glyph mask now, before any of this exists - see the note above
+      // StealthSkipPrivilegedReadback for why that guess was the wrong half.
       if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
         ApplyStealthCanvasPixelSubstitution(ret.get(), bufSize, stealthSeed);
       } else {
@@ -7191,11 +7097,8 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
       int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
       if (stealthSeed > 0 && !StealthSkipPrivilegedReadback(&aSubjectPrincipal)) {
         size_t bufSize = size_t(aWidth) * size_t(aHeight) * 4;
-        // Coverage first - see the twin call site in GetImageBuffer for why
-        // the order matters: the colour pass below overwrites R, G and B with
-        // independent hash bytes, and the ladder's colour-glyph guard needs
-        // them intact to tell text from an emoji bitmap.
-        ApplyStealthCanvasAlphaLadder(data, bufSize);
+        // The coverage ladder used to run here too. It is on the glyph mask
+        // now - see the twin call site in GetImageBuffer.
         if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
           ApplyStealthCanvasPixelSubstitution(data, bufSize, stealthSeed);
         } else {

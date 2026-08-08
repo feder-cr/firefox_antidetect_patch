@@ -92,10 +92,12 @@ class StealthBundleFontList final {
   // design; the code did something else, which is why the rule is to read the
   // literal the code compares and never the sentence beside it.
   //
-  // Those null checks are now unreachable. They are harmless and left for a
-  // mechanical pass, but the invariant lives HERE, at the one place that owns
-  // it, so that restoring a nullable Get() cannot quietly reopen thirteen
-  // fallbacks: it has to break this contract first.
+  // Those null checks are gone as of 2026-08-08: eleven of the thirteen were
+  // unreachable and were removed, and the two that survive in
+  // gfxDWriteFontList test `mStealthBundleOnly ? Get() : nullptr`, where the
+  // null comes from the FLAG and not from this function. The invariant lives
+  // HERE, at the one place that owns it, so that restoring a nullable Get()
+  // cannot quietly reopen them: it has to break this contract first.
   static StealthBundleFontList* Get();
 
   // The full family list, ready for SharedFontList()->SetFamilyNames().

@@ -1380,7 +1380,8 @@ already_AddRefed<gfxFont> gfxPlatformFontList::CommonFontFallback(
   // list it selects.
   bool fromManifest = false;
   if (mStealthBundleOnly) {
-    if (auto* bundle = StealthBundleFontList::Get()) {
+    {
+      auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
       const uint32_t b = aCh >> 8;
       const bool symbolish =
           aRunScript == Script::COMMON ||          // stray COMMON chars
@@ -1846,11 +1847,9 @@ bool gfxPlatformFontList::FindAndAddFamiliesLocked(
   // The platform tables are suppressed separately (see gfxDWriteFontList's
   // GetFontSubstitutes call site) so this is the ONLY source of aliases.
   if (mStealthBundleOnly) {
-    if (auto* bundle = StealthBundleFontList::Get()) {
-      nsAutoCString target;
-      if (bundle->GetAlias(key, target)) {
-        GenerateFontListKey(target, key);
-      }
+    nsAutoCString target;
+    if (StealthBundleFontList::Get()->GetAlias(key, target)) {
+      GenerateFontListKey(target, key);
     }
   }
 

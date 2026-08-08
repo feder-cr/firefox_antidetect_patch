@@ -20500,7 +20500,15 @@
 # compare a hash to separate those - it can COUNT. Empty disables the snap.
 # Delivered by invisible_core rather than the font manifest: it is not a
 # property of any font FILE, it is what the rasteriser does to an edge.
-- name: zoom.stealth.canvas.alpha_ladder
+#
+# Applied to the A8 GLYPH MASK, in SkScalerContext::getImage, where both the
+# DirectWrite and the FreeType scaler land and the mask is greyscale coverage by
+# construction. It was applied to the composited RGBA buffer at canvas readback
+# until 2026-08-08, where it had to guess which pixels were text by testing that
+# the three colour channels agreed - and coloured text has r != g != b, so on
+# FingerprintJS Pro's own canvas (#006699) it was a total no-op. The name still
+# says "canvas" in the docs of that era; the pref is spelled for what it does.
+- name: zoom.stealth.text.coverage_ladder
   type: DataMutexString
   value: ""
   mirror: always
@@ -20516,13 +20524,31 @@
   value: ""
   mirror: always
 
-# Declared answers for canPlayType / MediaSource.isTypeSupported, as
-# "mimetype|yes|maybe|no" entries separated by commas. Consulted before any
-# decoder is asked. The engine's own answer is HOST-dependent on Linux - it
-# turns on whether the user's machine has libavcodec - so two users of the same
-# build distinguish themselves from each other. Empty leaves the media stack
-# alone; a type not named falls through untouched.
-- name: zoom.stealth.media.mime_answers
+# What this build reports it can DECODE, as "trackmime|no|sw|hw|swhw" entries
+# separated by NEWLINES, consulted in PDMFactory::Supports before any platform
+# module is asked. The track mime types are Gecko's own small set - video/avc,
+# video/hevc, video/av1, video/vp9, audio/opus and a dozen more - so declaring
+# them covers every codec string that can be built out of them.
+#
+# This replaced a table of whole type STRINGS in DecoderTraits on 2026-08-08.
+# That table could only ever hold the strings somebody had seen: measured that
+# day it carried 3 of the 12 rows where our Linux build and retail Windows
+# actually disagreed, and the space it was trying to cover - profile x
+# constraint x level x container x the audio codec travelling along - is not
+# enumerable. Empty leaves the media stack alone; a type not named falls through.
+- name: zoom.stealth.media.decode_support
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# Declared mediaCapabilities.decodingInfo answers, as
+# "containermime|codecfamily|SSP" entries separated by NEWLINES, where the three
+# digits are supported, smooth and powerEfficient. Keyed by BOTH the container
+# and the codec family because powerEfficient is not a property of the track
+# mime alone: measured on retail Windows, vp09.00.10.08 in video/mp4 reports
+# powerEfficient true and a bare vp9 in video/webm reports false, and both build
+# a video/vp9 track. Empty leaves decodingInfo alone.
+- name: zoom.stealth.media.decoding_info
   type: DataMutexString
   value: ""
   mirror: always

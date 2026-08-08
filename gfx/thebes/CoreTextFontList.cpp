@@ -1245,9 +1245,9 @@ void CoreTextFontList::InitSharedFontListForPlatform() {
     // Uniform bundle: build the shared family list from our manifest (skipping
     // the CoreText enumeration; host fonts never enter). Faces are provided
     // lazily by GetFacesInitDataForFamily.
-    auto* bundle = StealthBundleFontList::Get();
+    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     auto* list = SharedFontList();
-    if (bundle && list) {
+    if (list) {
       nsTArray<fontlist::Family::InitData> families(bundle->Families().Clone());
       list->SetFamilyNames(families);
       InitAliasesForSingleFaceList();
@@ -1730,10 +1730,7 @@ gfxFontEntry* CoreTextFontList::CreateFontEntry(
     // Instantiate the face straight from its bundle file:
     // CTFontManagerCreateFontDescriptorsFromData yields one descriptor per face
     // of a .ttc, so pick the wanted index and wrap its CGFont in a CTFontEntry.
-    auto* bundle = StealthBundleFontList::Get();
-    if (!bundle) {
-      return nullptr;
-    }
+    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
     nsTArray<uint8_t> data;
     if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
@@ -1891,11 +1888,9 @@ void CoreTextFontList::GetFacesInitDataForFamily(
     const fontlist::Family* aFamily, nsTArray<fontlist::Face::InitData>& aFaces,
     bool aLoadCmaps) const {
   if (mStealthBundleOnly) {
-    if (auto* bundle = StealthBundleFontList::Get()) {
-      bundle->GetFaces(aFamily->DisplayName().AsString(SharedFontList()),
-                       aFaces);
-      return;
-    }
+    StealthBundleFontList::Get()->GetFaces(
+        aFamily->DisplayName().AsString(SharedFontList()), aFaces);
+    return;
   }
   auto name = aFamily->Key().AsString(SharedFontList());
   CrashReporter::AutoRecordAnnotation autoFontName(

@@ -15,6 +15,7 @@
 #include "MediaInfo.h"
 #include "MediaRecorder.h"
 #include "PDMFactory.h"
+#include "StealthMediaDeclaration.h"
 #include "VPXDecoder.h"
 #include "WindowRenderer.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -43,6 +44,69 @@ mozilla::LazyLogModule sMediaCapabilitiesLog("MediaCapabilities");
 namespace mozilla::dom {
 using mediacaps::IsValidMediaDecodingConfiguration;
 using mediacaps::IsValidMediaEncodingConfiguration;
+
+// Stealth: the declared decodingInfo triple for a whole configuration.
+//
+// Every codec named in the video configuration has to be declared, and the
+// three answers are ANDed across them - the same shape the engine uses one
+// screen further down, and the same shape canPlayType uses for a codec list.
+// One undeclared codec means the whole configuration is undeclared and falls
+// through to the real answer: an override, never a replacement.
+//
+// Audio is deliberately not consulted. Gecko answers true/true/true for every
+// audio track it can decode (see the kAudioTrack branch below, which is
+// upstream code), and audio decoding is bundled, so it carries no host
+// dependence to declare away.
+static bool StealthDeclaredDecodingInfoFor(
+    const MediaDecodingConfiguration& aConfiguration, bool& aSupported,
+    bool& aSmooth, bool& aPowerEfficient) {
+  if (!aConfiguration.mVideo.WasPassed()) {
+    return false;
+  }
+  Maybe<MediaContainerType> container =
+      MakeMediaContainerType(aConfiguration.mVideo.Value().mContentType);
+  if (!container) {
+    return false;
+  }
+  // Gecko's own gate first, and it is a precondition rather than a fallback:
+  // this is the compiled, host-independent part - IsAllowedH264Codec's profile
+  // set and its [1, 6.2] level window, the container/codec pairing rules - and
+  // it answers the same on every platform.
+  //
+  // Without it the family key would be too coarse in exactly one place and
+  // wrongly: avc1.424028 and avc1.6E4028 share the family "avc1", retail
+  // answers supported/smooth/powerEfficient for the first and nothing for the
+  // second, and a declaration keyed on the family alone would have claimed
+  // high10 support that no Firefox has. Splitting the key finer would mean
+  // declaring the profile space we just established is not ours to declare.
+  if (DecoderTraits::CanHandleContainerType(*container, nullptr) == CANPLAY_NO) {
+    return false;
+  }
+  const MediaCodecs& codecs = container->ExtendedType().Codecs();
+  if (codecs.IsEmpty()) {
+    return false;
+  }
+  bool supported = true, smooth = true, powerEfficient = true;
+  bool sawOne = false;
+  for (const auto& codec : codecs.Range()) {
+    bool s = false, m = false, p = false;
+    if (!StealthDeclaredDecodingInfo(container->Type().AsString(),
+                                     NS_ConvertUTF16toUTF8(codec), s, m, p)) {
+      return false;
+    }
+    sawOne = true;
+    supported &= s;
+    smooth &= m;
+    powerEfficient &= p;
+  }
+  if (!sawOne) {
+    return false;
+  }
+  aSupported = supported;
+  aSmooth = smooth;
+  aPowerEfficient = powerEfficient;
+  return true;
+}
 
 static bool
 MediaCapabilitiesKeySystemConfigurationToMediaKeySystemConfiguration(
@@ -524,43 +588,46 @@ void MediaCapabilities::CreateMediaCapabilitiesDecodingInfo(
               this](CapabilitiesPromise::AllPromiseType::ResolveOrRejectValue&&
                         aValue) {
                holder->Complete();
-               if (aValue.IsReject()) {
-                 // Stealth: the DECLARED answer wins over a rejection.
-                 //
-                 // decodingInfo asks two different questions - "is this type
-                 // supported" and "can the decoder actually handle this
-                 // stream" - and only the first goes through
-                 // DecoderTraits::CanHandleContainerType, which the declared
-                 // MIME table already covers. The second queries the real
-                 // decoder, so on a build with no H.264 it REJECTS and this
-                 // branch zeroes all three fields. Measured 2026-08-08, one
-                 // seed on both hosts: canPlayType, MediaSource
-                 // .isTypeSupported and MediaRecorder.isTypeSupported all
-                 // agreed, and only decodingInfo disagreed - supported, smooth
-                 // and powerEfficient true on Windows and false on Linux. One
-                 // declared surface out of four is worse than none, because
-                 // the disagreement BETWEEN them is itself the tell.
-                 //
-                 // Re-asking CanHandleContainerType is what keeps rule 7: a
-                 // type the table does not name falls through to the real
-                 // logic there and still earns its rejection. Only a type we
-                 // have declared playable is answered the way Windows answers
-                 // it.
-                 bool declared = false;
-                 if (aConfiguration.mVideo.WasPassed()) {
-                   Maybe<MediaContainerType> ct = MakeMediaContainerType(
-                       aConfiguration.mVideo.Value().mContentType);
-                   declared = ct && DecoderTraits::CanHandleContainerType(
-                                        *ct, nullptr) != CANPLAY_NO;
-                 }
-                 if (declared) {
+               // Stealth: the DECLARED answer, and it applies on BOTH branches.
+               //
+               // decodingInfo asks two questions - "is this type supported" and
+               // "can the decoder actually handle this stream" - and the second
+               // one queries a real decoder, so it is host-dependent twice
+               // over. It REJECTS on a build with no H.264, and its
+               // powerEfficient comes from whether a hardware decoder answered.
+               //
+               // The previous version of this hook ran ONLY on the reject
+               // branch and answered true/true/true, and it was wrong in both
+               // directions. It never reached Windows at all, where the engine
+               // resolves and computes the three fields itself. And on Linux it
+               // did nothing for av01 and vp09, which have real decoders there,
+               // so the promise resolved, powerEfficient came back false, and
+               // retail Windows says true. Measured 2026-08-08 against retail
+               // run HEADED - the mode a user's machine is in, and the mode
+               // that answers differently: 4 of 8 rows still differed with that
+               // hook in place. A declaration that only applies when the engine
+               // fails is not a declaration, it is a fallback.
+               //
+               // Declared here rather than at PDMFactory::Supports because
+               // powerEfficient is not a property of the track mime type: vp09
+               // in mp4 reports true and a bare vp9 in webm reports false, and
+               // both are video/vp9.
+               {
+                 bool dSupported = false, dSmooth = false, dPower = false;
+                 if (StealthDeclaredDecodingInfoFor(aConfiguration, dSupported,
+                                                    dSmooth, dPower)) {
                    MediaCapabilitiesDecodingInfo declaredInfo;
-                   declaredInfo.mSupported = true;
-                   declaredInfo.mSmooth = true;
-                   declaredInfo.mPowerEfficient = true;
+                   declaredInfo.mSupported = dSupported;
+                   declaredInfo.mSmooth = dSmooth;
+                   declaredInfo.mPowerEfficient = dPower;
+                   LOG("%s -> DECLARED %s",
+                       MediaDecodingConfigurationToStr(aConfiguration).get(),
+                       MediaCapabilitiesInfoToStr(declaredInfo).get());
                    promise->MaybeResolve(std::move(declaredInfo));
                    return;
                  }
+               }
+               if (aValue.IsReject()) {
                  MediaCapabilitiesDecodingInfo info;
                  info.mSupported = false;
                  info.mSmooth = false;

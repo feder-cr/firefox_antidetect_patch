@@ -4395,10 +4395,7 @@ static bool GetStealthBundleVMetrics(gfxFontEntry* aFontEntry,
   if (!sharedList) {
     return false;
   }
-  auto* bundle = StealthBundleFontList::Get();
-  if (!bundle) {
-    return false;
-  }
+  auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
   // A Face's mDescriptor is the bundle file name and mIndex the face within
   // it - the same pair every backend's CreateFontEntry uses to load the file.
   const nsCString file =

@@ -42,6 +42,9 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/utils/SkFloatUtils.h"
 #include "src/utils/SkMatrix22.h"
+// STEALTH: Gecko-owned, and deliberately the only Mozilla header here - it
+// declares one free function and includes nothing itself. See getImage().
+#include "mozilla/gfx/StealthGlyphCoverage.h"
 
 #include <algorithm>
 #include <cstring>
@@ -651,6 +654,27 @@ void SkScalerContext::getImage(const SkGlyph& origGlyph) {
             const bool hairline = origGlyph.pathIsHairline();
             GenerateImageFromPath(mask, *devPath, fPreBlend, doBGR, doVert, a8LCD, hairline);
         }
+    }
+
+    // STEALTH: quantise the coverage the rasteriser just produced.
+    //
+    // This is the one place both scalers meet. Above, generateImage() is
+    // DirectWrite on Windows and FreeType on Linux, and the third branch
+    // rasterises from a path; all three land here with the mask filled. And
+    // kA8_Format IS a greyscale coverage mask by construction - a colour glyph
+    // is kARGB32_Format and never takes this branch - so nothing here has to
+    // guess which pixels are text, which is what the readback-time version of
+    // this got wrong. See mozilla/gfx/StealthGlyphCoverage.h.
+    //
+    // BEFORE the mask filter and not after, deliberately: a mask filter is a
+    // blur, and on a real Windows machine the blur smooths an ALREADY quantised
+    // mask. Quantising the blurred result would produce a shape no Windows
+    // machine produces.
+    if (unfilteredGlyph->maskFormat() == SkMask::kA8_Format) {
+        mozilla::gfx::StealthQuantiseGlyphCoverage(
+                static_cast<uint8_t*>(unfilteredGlyph->fImage),
+                unfilteredGlyph->width(), unfilteredGlyph->height(),
+                unfilteredGlyph->rowBytes());
     }
 
     if (fMaskFilter) {

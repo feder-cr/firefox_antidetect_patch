@@ -1075,10 +1075,7 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
     // (the manifest family list drives everything; the DWrite collection is not
     // consulted). Like MakePlatformFont, but keeps multi-face .ttc files and
     // addresses the wanted face by index (mBundleFaceIndex).
-    auto* bundle = StealthBundleFontList::Get();
-    if (!bundle) {
-      return nullptr;
-    }
+    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
     nsTArray<uint8_t> data;
     if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
@@ -1399,11 +1396,9 @@ void gfxDWriteFontList::GetFacesInitDataForFamily(
     const fontlist::Family* aFamily, nsTArray<fontlist::Face::InitData>& aFaces,
     bool aLoadCmaps) const {
   if (mStealthBundleOnly) {
-    if (auto* bundle = StealthBundleFontList::Get()) {
-      bundle->GetFaces(aFamily->DisplayName().AsString(SharedFontList()),
-                       aFaces);
-      return;
-    }
+    StealthBundleFontList::Get()->GetFaces(
+        aFamily->DisplayName().AsString(SharedFontList()), aFaces);
+    return;
   }
   IDWriteFontCollection* collection =
 #ifdef MOZ_BUNDLED_FONTS
@@ -1725,9 +1720,7 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
       // collection enumeration (host fonts never enter). The collections above
       // are still set up so mGDIInterop etc. stay valid; CreateFontEntry
       // rasterizes each face straight from its bundle file.
-      if (auto* bundle = StealthBundleFontList::Get()) {
-        families = bundle->Families().Clone();
-      }
+      families = StealthBundleFontList::Get()->Families().Clone();
     } else {
       AppendFamiliesFromCollection(mSystemFonts, families, &forceClassicFams);
 #ifdef MOZ_BUNDLED_FONTS
