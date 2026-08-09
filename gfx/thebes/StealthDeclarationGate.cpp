@@ -7,6 +7,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Preferences.h"
+#include "nsXULAppAPI.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "nsString.h"
 
@@ -44,16 +45,30 @@ void StealthAssertDeclarationsComplete() {
     return;
   }
 
-  // Checked on FIRST USE, not at startup, and that is not a preference - it is
-  // the only place it can work. The first attempt put this in
-  // gfxPlatform::Init, which runs before the prefs exist on the production
-  // path: Playwright hands them over the connection once the process is
-  // already up, so a legitimate launch refused and hung. Same timing that
-  // forced the font manifest onto an environment variable.
+  // PARENT PROCESS ONLY, on first use. This is the THIRD placement and the two
+  // failures behind it are the reason it is written down rather than tidied.
   //
-  // First USE is still early enough to keep the promise, because it runs before
-  // the value is handed back, so no page can ever receive one that came from a
-  // compiled default. Once per process.
+  // Attempt 1, gfxPlatform::Init: every legitimate launch hung. On the
+  // production path Playwright hands the prefs over once the process is already
+  // up, so at gfx-init time they do not exist. Same timing that forced the font
+  // manifest onto an environment variable.
+  //
+  // Attempt 2, first use with no process guard: nsScreen::GetAvailRect runs in
+  // the CONTENT process, and a launch with all fifteen declarations present in
+  // the profile still killed that process on the first read of
+  // screen.availWidth, in a restart loop. The child's MOZ_CRASH text never
+  // reached the parent's stderr, so the refusal was wrong AND invisible - the
+  // worst of both. WHY those prefs read as missing in a content process is not
+  // established yet; that is the open follow-up, and guessing at it here would
+  // be the second mistake.
+  //
+  // The parent is where the check belongs regardless. Prefs travel parent to
+  // child, so a complete parent is the precondition for a complete child, and
+  // the parent is the process whose exit code the launcher can see. A refusal
+  // the parent converts into a silent child restart is not a refusal.
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
   static Atomic<bool> sChecked(false);
   if (sChecked.exchange(true)) {
     return;
