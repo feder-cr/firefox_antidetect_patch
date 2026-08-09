@@ -64,6 +64,7 @@ EXPORTS += [
     # STEALTH: exported because dom/canvas reads the coverage ladder from
     # it (the alpha-quantisation hook in CanvasRenderingContext2D).
     "StealthBundleFontList.h",
+    "StealthDeclarationGate.h",
     "ThebesRLBoxTypes.h",
     "VsyncSource.h",
 ]
@@ -239,6 +240,7 @@ UNIFIED_SOURCES += [
 # short-named file-static helpers that could collide in a unified blob.
 SOURCES += [
     "StealthBundleFontList.cpp",
+    "StealthDeclarationGate.cpp",
 ]
 
 UNIFIED_SOURCES += [

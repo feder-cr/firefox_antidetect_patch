@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsScreen.h"
+#include "StealthDeclarationGate.h"
 
 #include "mozilla/GeckoBindings.h"
 #include "mozilla/StaticPrefs_zoom.h"
@@ -128,19 +129,30 @@ CSSIntRect nsScreen::GetAvailRect() {
   // Stealth: spoof screen avail rect from prefs set by Python at launch.
   //
   // The strip availHeight is short of height is the Windows taskbar, and its
-  // height is DECLARED. It used to be the literal 48 here and a second literal
-  // 48 in the generator's Python, in two languages with nothing tying them
-  // together: a persona needing a different one (auto-hide, a second monitor,
-  // a scaled display) had to be changed in both, and nothing would have said so
-  // if only one moved. -1 keeps the 48 that was compiled in, so a browser
-  // launched without invisible_core is unchanged.
+  // height is DECLARED - by invisible_core, once, and by nothing else. It used
+  // to be the literal 48 here and a second literal 48 in the generator's
+  // Python, in two languages with nothing tying them together: a persona
+  // needing a different one (auto-hide, a second monitor, a scaled display) had
+  // to be changed in both, and nothing would have said so if only one moved.
+  //
+  // There is NO compiled floor under it any more (engine rule 7, 2026-08-09).
+  // The "-1 keeps the 48 that was compiled in" that used to sit here was the
+  // second source of truth the rule forbids: it made a browser launched with a
+  // half-written profile look like it was working. A missing declaration now
+  // refuses, in StealthDeclarationGate, on the FIRST USE of a declared value -
+  // not at startup, where the first attempt put it and where it hung every
+  // legitimate launch, because on the production path the prefs arrive over
+  // the connection after the process is already up.
   {
     int32_t w = mozilla::StaticPrefs::zoom_stealth_screen_width();
     int32_t h = mozilla::StaticPrefs::zoom_stealth_screen_height();
     if (w > 0 && h > 0) {
-      const int32_t declared = mozilla::StaticPrefs::zoom_stealth_screen_taskbar_px();
-      const int32_t taskbar = declared >= 0 ? declared : 48;
-      return {0, 0, w, h - taskbar};
+      // First use of a declared value in this process refuses if the set is
+      // incomplete. Cheap after the first call, and it runs BEFORE the value
+      // is handed back, so nothing can be served from a compiled default.
+      mozilla::gfx::StealthAssertDeclarationsComplete();
+      return {0, 0, w,
+              h - mozilla::StaticPrefs::zoom_stealth_screen_taskbar_px()};
     }
   }
   // Return window inner rect to prevent fingerprinting.

@@ -2472,46 +2472,6 @@ static bool StealthDeclaredGenericFont(StyleGenericFontFamily aGeneric,
   return false;
 }
 
-static const char* StealthGenericWindowsFont(StyleGenericFontFamily aGeneric,
-                                             const char* aLang) {
-  if (aGeneric != StyleGenericFontFamily::Serif &&
-      aGeneric != StyleGenericFontFamily::SansSerif &&
-      aGeneric != StyleGenericFontFamily::Monospace &&
-      aGeneric != StyleGenericFontFamily::Cursive) {
-    return nullptr;
-  }
-  // Comic Sans MS is the cursive face on every Windows install and has no
-  // per-script variants, so it answers before the CJK branches below.
-  if (aGeneric == StyleGenericFontFamily::Cursive) {
-    return "Comic Sans MS";
-  }
-  auto is = [&](const char* s) { return aLang && !strcmp(aLang, s); };
-  // Maths BEFORE the script branches. The `math` generic is rewritten to
-  // (Serif, x-math) before it gets here, so without this row the western Serif
-  // answer below wins and every MathML glyph is rendered by Times New Roman -
-  // on EVERY host, which is why no cross-OS gate could see it. A real Windows
-  // Firefox uses Cambria Math: `font.name-list.serif.x-math` names it, and this
-  // function's answer is inserted at index 0, AHEAD of that pref, so it was
-  // overriding the correct value with a wrong one.
-  //
-  // Measured 2026-08-08: found while explaining why a MathML <mi> measured
-  // differently on the two hosts. It is not that divergence - being wrong
-  // identically on both, it cancels - it is a realness bug the divergence hunt
-  // walked into.
-  if (is("x-math")) return "Cambria Math";
-  if (is("ja")) return "Yu Gothic UI";
-  if (is("ko")) return "Malgun Gothic";
-  if (is("zh-CN")) return "Microsoft YaHei UI";
-  if (is("zh-TW") || is("zh-HK")) return "Microsoft JhengHei UI";
-  // Default (Latin + any other non-CJK script; the default langgroup differs by
-  // platform - "x-western" on Windows, something else on Linux/fontconfig - so we
-  // do NOT gate on it): western Windows fonts. For a script the western font
-  // lacks, the bundled font that covers it is used as fallback.
-  if (aGeneric == StyleGenericFontFamily::Serif) return "Times New Roman";
-  if (aGeneric == StyleGenericFontFamily::SansSerif) return "Arial";
-  return "Consolas";  // Monospace
-}
-
 void gfxPlatformFontList::ResolveGenericFontNames(
     FontVisibilityProvider* aFontVisibilityProvider,
     StyleGenericFontFamily aGenericType, eFontPrefLang aPrefLang,
@@ -2541,13 +2501,15 @@ void gfxPlatformFontList::ResolveGenericFontNames(
   // host (prepend = highest priority), so they never resolve to a dropped host
   // font. No external font.name-list.* needed.
   if (mStealthBundleOnly) {
-    // The declared table first; the compiled one is the floor under it.
+    // ONE source: the declaration, and nothing under it. The compiled table
+    // that used to sit here as a floor was deleted on 2026-08-09 with engine
+    // rule 7 - two tables for one fact are two things that can disagree, which
+    // is how the taskbar height came to be written in four places. If the
+    // declaration is missing the process has already refused to start
+    // (StealthDeclarationGate), so reaching here means it is present.
     nsAutoCString declared;
     if (StealthDeclaredGenericFont(aGenericType, langGroupStr, declared)) {
       genericFamilies.InsertElementAt(0, declared);
-    } else if (const char* win =
-                   StealthGenericWindowsFont(aGenericType, langGroupStr)) {
-      genericFamilies.InsertElementAt(0, nsDependentCString(win));
     }
   }
 
