@@ -20489,9 +20489,16 @@
 # pixels (~12.5%). Set to 15 (= 1/16, ~6.25%) for low-variance GPU stacks
 # (Intel HD) where the default rate over-amplifies the FP Pro tampering ML
 # score; set to 31 for the most conservative noise.
+# -1 means NOT DECLARED, and that is the whole point of the value.
+# It used to be 7, which is a plausible number: the core declares 15, so the
+# two disagreed by a factor of two in noise density AND the declaration gate
+# could not tell a missing value from a deliberate 7. Every sibling here uses
+# -1 as its sentinel; this one was the exception, so it was the one hole the
+# gate could not see. Reached only with the engine on - the noise function
+# returns early when the seed is not positive - so a bare binary never reads it.
 - name: zoom.stealth.canvas.noise_skip_mask
   type: RelaxedAtomicInt32
-  value: 7
+  value: -1
   mirror: always
 
 # Synthetic speech voices (comma-separated entries, each "NAME|LANG|D|L").
