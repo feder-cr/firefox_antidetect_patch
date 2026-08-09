@@ -6,6 +6,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "nsString.h"
 
@@ -100,7 +101,46 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_screen_color_depth(); }, 1},
       {"zoom.stealth.max_touch_points",
        []() { return StaticPrefs::zoom_stealth_max_touch_points(); }, 0},
+      {"zoom.stealth.canvas.noise_skip_mask",
+       []() { return StaticPrefs::zoom_stealth_canvas_noise_skip_mask(); }, 0},
   };
+
+  // The rasterisation parameters are checked here too, and they are the reason
+  // this list is worth keeping rather than trusting the callers.
+  // gfxDWriteFont::UpdateClearTypeVars opens with five hard-coded values -
+  // ClearType level 1.0, contrast 1.0, gamma 2.2, RGB geometry, DEFAULT
+  // rendering mode - and only then lets these prefs override them, each on a
+  // -1 sentinel. With the engine on and one pref missing, the compiled value
+  // wins in silence, which is the second source of truth engine rule 7
+  // forbids. It is not hypothetical: the core declares rendering_mode 5 while
+  // the compiled default is DWRITE_RENDERING_MODE_DEFAULT, which is 0, so the
+  // two answers were never even the same number.
+  //
+  // Plain Preferences rather than StaticPrefs because that is how the
+  // rasteriser reads them, and a gate has to check the value the code will
+  // actually see. Both platforms' sets are required on both platforms: a
+  // profile is complete or it is not, and which half the host happens to use
+  // is not the profile's business.
+  static const char* const kRasterInts[] = {
+      "gfx.font_rendering.cleartype_params.gamma",
+      "gfx.font_rendering.cleartype_params.enhanced_contrast",
+      "gfx.font_rendering.cleartype_params.cleartype_level",
+      "gfx.font_rendering.cleartype_params.pixel_structure",
+      "gfx.font_rendering.cleartype_params.rendering_mode",
+      "gfx.font_rendering.freetype.gamma",
+      "gfx.font_rendering.freetype.enhanced_contrast",
+  };
+  for (const char* name : kRasterInts) {
+    if (Preferences::GetInt(name, -1) < 0) {
+      MOZ_CRASH_UNSAFE_PRINTF(
+          "stealth: %s is not declared. Engine rule 7 - a finite-domain value "
+          "lives only in invisible_core, and a missing declaration refuses "
+          "rather than falling back to a compiled default or to the host. "
+          "Launch through invisible_core, or clear zoom.stealth.fpp.hw_seed to "
+          "run as stock Firefox.",
+          name);
+    }
+  }
 
   for (const auto& d : kInts) {
     if (d.mGet() < d.mFloor) {

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsGlobalWindowOuter.h"
+#include "StealthDeclarationGate.h"
 
 #include <algorithm>
 
@@ -3541,9 +3542,16 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
     int32_t sw = mozilla::StaticPrefs::zoom_stealth_screen_width();
     int32_t sh = mozilla::StaticPrefs::zoom_stealth_screen_height();
     if (sw > 0 && sh > 0) {
-      const int32_t declared =
-          mozilla::StaticPrefs::zoom_stealth_screen_taskbar_px();
-      return CSSIntSize(sw, sh - (declared >= 0 ? declared : 48));
+      // No compiled floor (engine rule 7, 2026-08-09). The taskbar height is
+      // declared by invisible_core and by nothing else; the "? declared : 48"
+      // that used to close this line was the FOURTH copy of that number, after
+      // nsScreen, the generator's Python and the wrapper's launcher - and the
+      // wrapper's said 40 while the other three said 48, which is the whole
+      // argument for one source in one sentence. A missing declaration refuses
+      // in StealthDeclarationGate instead of being papered over here.
+      mozilla::gfx::StealthAssertDeclarationsComplete();
+      return CSSIntSize(
+          sw, sh - mozilla::StaticPrefs::zoom_stealth_screen_taskbar_px());
     }
   }
 

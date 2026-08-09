@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CanvasRenderingContext2D.h"
+#include "StealthDeclarationGate.h"
 
 #include <algorithm>
 #include <cmath>
@@ -2284,8 +2285,13 @@ static void ApplyStealthCanvasPixelNoise(uint8_t* aBuf, size_t aSize,
   // Skip-mask is configurable via pref (default 7 = 1/8 = ~12.5%).
   // Higher mask → lower noise density. Intel HD profiles use 15 (~6.25%) to
   // stay below FP Pro's tampering_ml threshold. Sanitize: must be 2^N-1.
-  int32_t maskPref = StaticPrefs::zoom_stealth_canvas_noise_skip_mask();
-  if (maskPref < 0) maskPref = 7;
+  // No compiled default (engine rule 7, 2026-08-09). The "if (maskPref < 0)
+  // maskPref = 7" that used to sit here was a rival to a declared value, and
+  // not even the same one: the core pins the mask at 15, the Intel rate, so
+  // the two answers differed by a factor of two in noise density. A missing
+  // declaration refuses in StealthDeclarationGate.
+  mozilla::gfx::StealthAssertDeclarationsComplete();
+  const int32_t maskPref = StaticPrefs::zoom_stealth_canvas_noise_skip_mask();
   uint32_t skipMask = uint32_t(maskPref);
   // Force to next-lower power-of-two-minus-1 if not already.
   uint32_t bit = 1u; while (bit && bit <= skipMask) bit <<= 1;

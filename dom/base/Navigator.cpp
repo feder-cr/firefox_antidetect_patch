@@ -4,6 +4,7 @@
 
 // Needs to be first.
 #include "Navigator.h"
+#include "StealthDeclarationGate.h"
 
 #include "Geolocation.h"
 #include "base/basictypes.h"
@@ -922,9 +923,12 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
   // invisible_core keeps exactly the previous behaviour.
   if (aCallerType != CallerType::System &&
       mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
-    const int32_t declared =
-        mozilla::StaticPrefs::zoom_stealth_max_touch_points();
-    return declared >= 0 ? uint32_t(declared) : 0;
+    // No compiled floor (engine rule 7, 2026-08-09). The "? ... : 0" that used
+    // to close this line was a second answer for a declared field, and at the
+    // call site a wrong one is indistinguishable from a right one. A missing
+    // declaration refuses in StealthDeclarationGate rather than resolving here.
+    mozilla::gfx::StealthAssertDeclarationsComplete();
+    return uint32_t(mozilla::StaticPrefs::zoom_stealth_max_touch_points());
   }
 
   // The maxTouchPoints is going to reveal the detail of users' hardware. So,
