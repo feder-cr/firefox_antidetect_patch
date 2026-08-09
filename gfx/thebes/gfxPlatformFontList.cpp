@@ -2420,6 +2420,58 @@ static void GetSystemUIFontFamilies(
 // `fantasy` is deliberately still excluded: it already agrees cross-OS (both
 // land on the sans-serif value), so forcing it would change behaviour without
 // closing a gap.
+// The DECLARED generic table, from zoom.stealth.fonts.generics, as
+// "generic|lang|family" records separated by newlines. Empty falls through to
+// the compiled table below, which stays as the floor for a browser launched
+// without invisible_core - the same arrangement the font manifest uses.
+//
+// It is a pref rather than ten rows of C++ because the domain is finite and
+// perfectly known (four generics x five langgroups), which is the condition
+// under which a value belongs to the core rather than to the engine. Changing
+// which face answers `font-family: serif` should not cost a browser rebuild.
+static bool StealthDeclaredGenericFont(StyleGenericFontFamily aGeneric,
+                                       const char* aLang, nsACString& aOut) {
+  const char* generic = nullptr;
+  switch (aGeneric) {
+    case StyleGenericFontFamily::Serif:      generic = "serif"; break;
+    case StyleGenericFontFamily::SansSerif:  generic = "sans-serif"; break;
+    case StyleGenericFontFamily::Monospace:  generic = "monospace"; break;
+    case StyleGenericFontFamily::Cursive:    generic = "cursive"; break;
+    default: return false;
+  }
+  nsAutoCString spec;
+  {
+    auto lock = mozilla::StaticPrefs::zoom_stealth_fonts_generics();
+    spec = *lock;
+  }
+  if (spec.IsEmpty()) {
+    return false;
+  }
+  const nsDependentCString wantGeneric(generic);
+  const nsDependentCString wantLang(aLang ? aLang : "");
+  // Two passes: an exact langgroup match wins over the default row, so the
+  // order of the records in the pref cannot change the answer.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (const nsACString& entry : spec.Split('\n')) {
+      nsCString rec(entry);
+      const int32_t bar1 = rec.FindChar('|');
+      if (bar1 <= 0) continue;
+      const int32_t bar2 = rec.FindChar('|', bar1 + 1);
+      if (bar2 <= bar1) continue;
+      if (!wantGeneric.Equals(Substring(rec, 0, bar1))) continue;
+      const nsDependentCSubstring lang(Substring(rec, bar1 + 1, bar2 - bar1 - 1));
+      const bool isDefault = lang.IsEmpty();
+      if (pass == 0 ? (isDefault || !wantLang.Equals(lang))
+                    : !isDefault) {
+        continue;
+      }
+      aOut.Assign(Substring(rec, bar2 + 1));
+      return !aOut.IsEmpty();
+    }
+  }
+  return false;
+}
+
 static const char* StealthGenericWindowsFont(StyleGenericFontFamily aGeneric,
                                              const char* aLang) {
   if (aGeneric != StyleGenericFontFamily::Serif &&
@@ -2489,7 +2541,12 @@ void gfxPlatformFontList::ResolveGenericFontNames(
   // host (prepend = highest priority), so they never resolve to a dropped host
   // font. No external font.name-list.* needed.
   if (mStealthBundleOnly) {
-    if (const char* win = StealthGenericWindowsFont(aGenericType, langGroupStr)) {
+    // The declared table first; the compiled one is the floor under it.
+    nsAutoCString declared;
+    if (StealthDeclaredGenericFont(aGenericType, langGroupStr, declared)) {
+      genericFamilies.InsertElementAt(0, declared);
+    } else if (const char* win =
+                   StealthGenericWindowsFont(aGenericType, langGroupStr)) {
       genericFamilies.InsertElementAt(0, nsDependentCString(win));
     }
   }

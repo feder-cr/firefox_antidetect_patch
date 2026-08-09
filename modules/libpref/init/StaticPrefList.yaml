@@ -20367,6 +20367,17 @@
 # both happen to be 24-bit, so it matched cross-OS by coincidence and not by
 # declaration. A user on a 30-bit display would report 30 under a Windows
 # persona that says nothing of the sort.
+# Height in CSS pixels of the strip screen.availHeight is short of
+# screen.height - the Windows taskbar. The engine subtracted a hardcoded 48 and
+# the generator computed avail_height with its own hardcoded 48, in two
+# languages with nothing tying them together, so a persona that ever needed a
+# different one (auto-hide, a second monitor, a scaled display) had to be
+# changed in both. -1 keeps the compiled 48.
+- name: zoom.stealth.screen.taskbar_px
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
 - name: zoom.stealth.screen.color_depth
   type: RelaxedAtomicInt32
   value: -1
@@ -20519,6 +20530,21 @@
 # rather than one per table, because the binary already parses this text.
 # Empty means "use the file", which is what keeps a browser launched without
 # that package rendering with fonts instead of none.
+# The CSS generic families, as "generic|lang|family" records separated by
+# NEWLINES: generic is one of serif/sans-serif/monospace/cursive, lang is a
+# Gecko langgroup ("x-math", "ja", "ko", "zh-CN", "zh-TW") or empty for the
+# default, and family is the Windows face that answers.
+#
+# It was a table compiled into gfxPlatformFontList.cpp - about ten rows, a
+# finite and perfectly known domain, and therefore exactly the kind of value
+# that belongs where every other declared surface lives rather than in C++
+# where changing it costs a browser rebuild. Empty keeps the compiled table,
+# which stays as the floor for a browser launched without invisible_core.
+- name: zoom.stealth.fonts.generics
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 - name: zoom.stealth.fonts.manifest
   type: DataMutexString
   value: ""
@@ -20553,12 +20579,14 @@
   value: ""
   mirror: always
 
-# IANA timezone override (e.g. "America/New_York"). Single source of truth for
-# StealthFox timezone spoofing. Takes priority over juggler.timezone.override.
-- name: zoom.stealth.timezone
-  type: String
-  value: ""
-  mirror: never
+# zoom.stealth.timezone WAS HERE and is gone. Nothing read it - not one C++,
+# JS or JSM file in the tree - while its own comment said "Single source of
+# truth for StealthFox timezone spoofing. Takes priority over
+# juggler.timezone.override". The comment was describing an intention; the code
+# never implemented it, and the real channel is juggler.timezone.override plus
+# the TZ environment variable. Removed 2026-08-09 after grepping for a reader
+# and finding none. A declared pref nobody reads is worse than no pref: the next
+# reader trusts the comment.
 
 # Storage quota override (megabytes). When > 0, navigator.storage.estimate()
 # returns exactly this value (in MB) to the page, overriding the disk-based

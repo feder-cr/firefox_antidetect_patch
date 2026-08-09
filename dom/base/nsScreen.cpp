@@ -126,11 +126,22 @@ CSSIntRect nsScreen::GetRect() {
 
 CSSIntRect nsScreen::GetAvailRect() {
   // Stealth: spoof screen avail rect from prefs set by Python at launch.
-  // -48px matches Windows default taskbar height at 100% DPI.
+  //
+  // The strip availHeight is short of height is the Windows taskbar, and its
+  // height is DECLARED. It used to be the literal 48 here and a second literal
+  // 48 in the generator's Python, in two languages with nothing tying them
+  // together: a persona needing a different one (auto-hide, a second monitor,
+  // a scaled display) had to be changed in both, and nothing would have said so
+  // if only one moved. -1 keeps the 48 that was compiled in, so a browser
+  // launched without invisible_core is unchanged.
   {
     int32_t w = mozilla::StaticPrefs::zoom_stealth_screen_width();
     int32_t h = mozilla::StaticPrefs::zoom_stealth_screen_height();
-    if (w > 0 && h > 0) return {0, 0, w, h - 48};
+    if (w > 0 && h > 0) {
+      const int32_t declared = mozilla::StaticPrefs::zoom_stealth_screen_taskbar_px();
+      const int32_t taskbar = declared >= 0 ? declared : 48;
+      return {0, 0, w, h - taskbar};
+    }
   }
   // Return window inner rect to prevent fingerprinting.
   if (ShouldResistFingerprinting(RFPTarget::ScreenAvailRect)) {

@@ -3528,15 +3528,22 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
 
   // Stealth: spoof outerWidth/outerHeight to match the spoofed screen.
   // outerWidth  = screen.width        (maximized window fills full screen width)
-  // outerHeight = screen.height - 48  (matches screen.availHeight — Windows
-  //                                    default taskbar height at 100% DPI)
+  // outerHeight = screen.height - taskbar (matches screen.availHeight)
   // Without this, the real OS window size leaks: outerWidth > screen.width is
   // physically impossible on a real machine and is flagged as spoofing.
+  //
+  // The taskbar height is DECLARED, and this is the third place that used to
+  // hardcode 48 - the other two being nsScreen::GetAvailRect and the
+  // generator's Python. It has to agree with availHeight or outerHeight and
+  // availHeight contradict each other, which is a check that needs nothing but
+  // arithmetic.
   {
     int32_t sw = mozilla::StaticPrefs::zoom_stealth_screen_width();
     int32_t sh = mozilla::StaticPrefs::zoom_stealth_screen_height();
     if (sw > 0 && sh > 0) {
-      return CSSIntSize(sw, sh - 48);
+      const int32_t declared =
+          mozilla::StaticPrefs::zoom_stealth_screen_taskbar_px();
+      return CSSIntSize(sw, sh - (declared >= 0 ? declared : 48));
     }
   }
 
