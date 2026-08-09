@@ -104,6 +104,15 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_http_accept_language();
          return lock->IsEmpty();
        }},
+      // The speech-synthesis voice list, added 2026-08-09 with the six ints
+      // below. When it is empty SpeechSynthesis::GetVoices falls through to
+      // nsSynthVoiceRegistry, i.e. the OS TTS registry - which names the real
+      // operating system and every language pack installed on it, in one
+      // `speechSynthesis.getVoices()`.
+      {"zoom.stealth.voices.list", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_voices_list();
+         return lock->IsEmpty();
+       }},
   };
 
   for (const auto& d : kStrings) {
@@ -150,6 +159,38 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_pointer_primary(); }, 1},
       {"zoom.stealth.pointer.all",
        []() { return StaticPrefs::zoom_stealth_pointer_all(); }, 1},
+      // Six that this gate did NOT cover until 2026-08-09, and every one of
+      // them is declared unconditionally by invisible_core. That is exactly
+      // what made the hole invisible: nothing is broken in normal operation,
+      // so no measurement could see it. What it costs is the refusal - if any
+      // of these six ever went missing (a refactor dropping a line from
+      // prefs.py, an older launcher, a direct launch), the engine would not
+      // stop. It would read the REAL MACHINE and carry on:
+      //
+      //   screen.width / height  -> nsScreen::GetRect falls to the real
+      //                             monitor, and GetAvailRect and
+      //                             GetOuterSize fall with it
+      //   hw_concurrency         -> the real CPU core count, on the main
+      //                             thread AND inside every Worker
+      //   audio.sample_rate      -> the real device rate through cubeb
+      //   audio.max_channel_count-> the real sound card's channel count
+      //   voices.list            -> the OS TTS registry, which names the
+      //                             installed language packs
+      //
+      // The floors say what "declared" means for each: a screen narrower than
+      // 320 or a machine with no cores is a bug, not a persona.
+      {"zoom.stealth.screen.width",
+       []() { return StaticPrefs::zoom_stealth_screen_width(); }, 320},
+      {"zoom.stealth.screen.height",
+       []() { return StaticPrefs::zoom_stealth_screen_height(); }, 240},
+      {"zoom.stealth.hw_concurrency",
+       []() { return StaticPrefs::zoom_stealth_hw_concurrency(); }, 1},
+      {"zoom.stealth.audio.sample_rate",
+       []() { return StaticPrefs::zoom_stealth_audio_sample_rate(); }, 8000},
+      {"zoom.stealth.audio.max_channel_count",
+       []() { return StaticPrefs::zoom_stealth_audio_max_channel_count(); }, 1},
+      {"zoom.stealth.audio.output_latency_ms",
+       []() { return StaticPrefs::zoom_stealth_audio_output_latency_ms(); }, 1},
   };
 
   // The rasterisation parameters are checked here too, and they are the reason
