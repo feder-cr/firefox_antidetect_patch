@@ -7650,11 +7650,26 @@ std::pair<uint64_t, uint64_t> QuotaManager::GetUsageAndLimitForEstimate(
 
   // Stealth: per-session storage quota override. When zoom.stealth.storage.quota_mb
   // is > 0, navigator.storage.estimate().quota returns exactly that value (in MB).
-  // Default -1 = no override, vanilla Firefox behavior (disk-based group/origin
-  // limit). Sampled by the Python Forge conditionally on gpu_class (workstation
-  // users tend to have larger SSDs, integrated_old smaller). This masks the
-  // real disk size — one of the cross-session fingerprint signals — while
-  // staying in a realistic range.
+  // Default -1 = no override, vanilla Firefox behavior.
+  //
+  // [CORRECTED 2026-08-09] This used to say the override "masks the real disk
+  // size - one of the cross-session fingerprint signals - while staying in a
+  // realistic range". Both halves were wrong, and the second one measurably.
+  //
+  // There was nothing to mask. GetGroupLimitForLimit, a few lines above, caps
+  // the group limit at 10 GB in so many words - "cap the group limit to 10GB" -
+  // so every Firefox on a machine with a disk of 100 GiB or more reports
+  // exactly 10737418240 and the disk size never reaches the page. Firefox had
+  // already closed this.
+  //
+  // And the "realistic range" was 40 GiB to 3 TB across 13 sampled values, not
+  // one of which a real Firefox can return. Measured against stock 151: stock
+  // 10737418240, ours 429496729600. One line of JavaScript, and our answer was
+  // outside the set of possible answers.
+  //
+  // The declaration is 10 GiB now, which is what every real machine reports.
+  // The override stays because the field stays pinnable, and because on a
+  // genuinely small disk the real rule is disk/10.
   const int32_t stealthQuotaMb =
       StaticPrefs::zoom_stealth_storage_quota_mb();
   const bool stealthOverride = (stealthQuotaMb > 0);

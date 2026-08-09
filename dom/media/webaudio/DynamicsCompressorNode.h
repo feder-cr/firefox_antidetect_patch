@@ -53,8 +53,13 @@ class DynamicsCompressorNode final : public AudioNode {
   void SetReduction(float aReduction) {
     MOZ_ASSERT(NS_IsMainThread());
     // Stealth: add per-session noise to compressorGainReduction so it varies.
+    //
+    // [CORRECTED 2026-08-09] The third of three sites that gated on the seed
+    // alone and so never saw zoom.stealth.audio.fp_noise, which the wrapper
+    // ships as FALSE. Known bug T3 in 70-known-bugs.md; the other two are in
+    // AnalyserNode.cpp.
     int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (seed > 0) {
+    if (seed > 0 && mozilla::StaticPrefs::zoom_stealth_audio_fp_noise()) {
       uint32_t h = uint32_t(seed) ^ 0xA5A5A5A5u;
       h ^= (h >> 16); h *= 0x45d9f3bu; h ^= (h >> 16);
       aReduction += (float(int32_t(h & 0xFFFFu) - 0x8000) / float(0x8000))

@@ -225,8 +225,17 @@ void AnalyserNode::GetFloatFrequencyData(const Float32Array& aArray) {
 
     // Stealth: per-session noise on frequency data so floatFrequencyDataSum
     // varies between sessions. Same Fibonacci hash as AudioDestinationNode.
+    //
+    // [CORRECTED 2026-08-09] This gated on the seed ALONE, so the
+    // zoom.stealth.audio.fp_noise kill-switch never reached it. The wrapper
+    // ships that switch as FALSE, because reverse engineering on 2026-06-22
+    // isolated the audio noise as the dominant driver of FP Pro's tampering_ml
+    // on Windows - 0.4349 to 0.0564 from disabling it alone. So in production
+    // this site kept adding noise while the switch said not to, and the 0.0564
+    // recorded as clean was measured with this path still running. Known bug
+    // T3 in 70-known-bugs.md, closed with the fix it proposed.
     int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (seed > 0) {
+    if (seed > 0 && mozilla::StaticPrefs::zoom_stealth_audio_fp_noise()) {
       float noiseScale = float((uint32_t(seed) % 2001u) + 500u) * 1.0e-4f;
       for (size_t i = 0; i < length; ++i) {
         uint32_t h = uint32_t(seed) ^ uint32_t(i) * 2654435761u;
@@ -270,8 +279,15 @@ void AnalyserNode::GetFloatTimeDomainData(const Float32Array& aArray) {
 
     // Stealth: per-session noise on time domain data so floatTimeDomainDataSum
     // varies between sessions.
+    //
+    // [CORRECTED 2026-08-09] Same defect as GetFloatFrequencyData above: gated
+    // on the seed alone, so the kill-switch the wrapper ships as FALSE never
+    // reached it. This one was the worse of the two, because it also has none
+    // of the guards AudioDestinationNode grew for CreepJS - silent channel,
+    // small buffer, first 100 samples - so it perturbed genuinely silent
+    // samples with no check at all.
     int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (seed > 0) {
+    if (seed > 0 && mozilla::StaticPrefs::zoom_stealth_audio_fp_noise()) {
       float noiseScale = float((uint32_t(seed) % 2001u) + 500u) * 1.0e-7f;
       for (size_t i = 0; i < length; ++i) {
         uint32_t h = uint32_t(seed) ^ (uint32_t(i) * 2246822519u);
