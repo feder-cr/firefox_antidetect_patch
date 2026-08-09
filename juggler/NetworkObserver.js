@@ -837,14 +837,22 @@ function appendExtraHTTPHeaders(httpChannel, headers) {
     let value = header.value;
     // STEALTHFOX: Playwright sets the Accept-Language from the `locale` option as a single
     // primary tag ("en-US"), which diverges from navigator.languages (the desktop-default
-    // 2-tag list ["en-US","en"]) — a fingerprint tell (browserscan 'language mismatch').
-    // Expand a single-tag Accept-Language to the Firefox-native q-valued form
-    // ("en-US" -> "en-US,en;q=0.5") so the wire header matches navigator.languages.
-    if (header.name.toLowerCase() === 'accept-language' && value &&
-        value.indexOf(',') === -1 && value.indexOf(';') === -1) {
-      const dash = value.indexOf('-');
-      if (dash > 0)
-        value = value + ',' + value.slice(0, dash) + ';q=0.5';
+    // 2-tag list ["en-US","en"]) - a fingerprint tell (browserscan 'language mismatch').
+    //
+    // This used to expand the single tag here, in JavaScript, appending a
+    // hardcoded ";q=0.5" and calling it "the Firefox-native q-valued form". It
+    // is not: stock Firefox 151 sends "en-US,en;q=0.9" (measured 2026-08-09),
+    // and the 0.5 went out on every request of every session. The number was
+    // copied from the stale doc block above PrepareAcceptLanguages in
+    // nsHttpHandler.cpp, while the code below it forwards to
+    // rust_prepare_accept_languages, which does 1.0/0.9/0.8.
+    //
+    // So the header is DECLARED now, by invisible_core, and read here verbatim
+    // (engine rule 7: one source, no compiled copy, no arithmetic on this side).
+    if (header.name.toLowerCase() === 'accept-language' && value) {
+      const declared = Services.prefs.getStringPref('zoom.stealth.http.accept_language', '');
+      if (declared)
+        value = declared;
     }
     httpChannel.setRequestHeader(header.name, value, false /* merge */);
   }

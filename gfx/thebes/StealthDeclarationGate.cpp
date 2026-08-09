@@ -95,6 +95,15 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_text_coverage_ladder();
          return lock->IsEmpty();
        }},
+      // The Accept-Language header, added 2026-08-09. Read from JavaScript
+      // (juggler/NetworkObserver.js) rather than from C++, which is exactly
+      // why it belongs here: nothing on that side can refuse, so the refusal
+      // has to happen at startup or not at all. It used to be synthesized in
+      // that file from a hardcoded ";q=0.5" while stock 151 sends ";q=0.9".
+      {"zoom.stealth.http.accept_language", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_http_accept_language();
+         return lock->IsEmpty();
+       }},
   };
 
   for (const auto& d : kStrings) {

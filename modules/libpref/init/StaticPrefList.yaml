@@ -20404,6 +20404,26 @@
 # 0 and mozInnerScreenX is simply window_x; if a persona ever pins a non-zero
 # one, splitting it evenly between the two sides is the only assumption
 # available, and it is written in the code rather than left implicit.
+# The Accept-Language header, as one declared string.
+#
+# juggler/NetworkObserver.js has to rewrite this header because Playwright sets
+# it from the `locale` option as a single tag ("en-US"), which then disagrees
+# with navigator.languages. It used to rebuild the q-values in JavaScript with
+# a hardcoded ";q=0.5", described in its own comment as "the Firefox-native
+# q-valued form". It is not: measured 2026-08-09, stock Firefox 151 sends
+# `en-US,en;q=0.9`, and the 0.5 went out on every request of every session on
+# both platforms.
+#
+# The 0.5 came from the stale doc block above PrepareAcceptLanguages in
+# nsHttpHandler.cpp, which still promises "en, ja" -> "en,ja;q=0.5" while the
+# function forwards to rust_prepare_accept_languages, whose comment says the
+# opposite ("emulate chrome behavior i.e languages should get q=1.0,0.9,0.8").
+# A patch written against a comment rather than against the code.
+- name: zoom.stealth.http.accept_language
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 - name: zoom.stealth.screen.window_x
   type: RelaxedAtomicInt32
   value: -1
