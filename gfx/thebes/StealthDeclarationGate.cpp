@@ -118,6 +118,21 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_max_touch_points(); }, 0},
       {"zoom.stealth.canvas.noise_skip_mask",
        []() { return StaticPrefs::zoom_stealth_canvas_noise_skip_mask(); }, 0},
+      // The window geometry, added 2026-08-09. Four values that three getters
+      // read in different combinations - screenX, mozInnerScreenX and
+      // outerWidth - which is exactly the shape that produced an impossible
+      // window when only some of them were declared: screenX + outerWidth came
+      // to 1924 on a 1920 screen. A floor of 0 on all four: a maximized window
+      // sits at the origin and stock reports no horizontal chrome, so 0 is a
+      // legal value here and the sentinel has to be -1.
+      {"zoom.stealth.screen.window_x",
+       []() { return StaticPrefs::zoom_stealth_screen_window_x(); }, 0},
+      {"zoom.stealth.screen.window_y",
+       []() { return StaticPrefs::zoom_stealth_screen_window_y(); }, 0},
+      {"zoom.stealth.screen.chrome_w",
+       []() { return StaticPrefs::zoom_stealth_screen_chrome_w(); }, 0},
+      {"zoom.stealth.screen.chrome_h",
+       []() { return StaticPrefs::zoom_stealth_screen_chrome_h(); }, 0},
   };
 
   // The rasterisation parameters are checked here too, and they are the reason

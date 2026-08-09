@@ -20372,13 +20372,54 @@
 # the generator computed avail_height with its own hardcoded 48, in two
 # languages with nothing tying them together, so a persona that ever needed a
 # different one (auto-hide, a second monitor, a scaled display) had to be
-# changed in both. -1 keeps the compiled 48.
+# changed in both. -1 is UNDECLARED and refuses in StealthDeclarationGate; it
+# used to mean "keep the compiled 48", which was the fallback engine rule 7
+# forbids since 2026-08-09.
 - name: zoom.stealth.screen.taskbar_px
   type: RelaxedAtomicInt32
   value: -1
   mirror: always
 
 - name: zoom.stealth.screen.color_depth
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
+# Where the window sits on the screen, and how much of it is not the page.
+#
+# outerWidth/outerHeight are already spoofed to the full screen (see
+# GetOuterSize), i.e. we claim a MAXIMIZED window. The position was not
+# declared at all, so it stayed whatever the OS gave the headless widget, and
+# on Windows that is (4,4). A maximized window 1920 wide starting at x=4 has
+# its right edge at 1924 on a 1920 screen, which is impossible on any real
+# machine and needs no fingerprint database to notice - one addition does it.
+#
+# Measured against stock Firefox 151 on 2026-08-09, which is coherent to the
+# pixel: screenX = screenY = 0, outerWidth - innerWidth = 0, and
+# mozInnerScreenY - screenY = 85 = outerHeight - innerHeight. Our build
+# reported screenX = 4, mozInnerScreenX = 15 (so 11px of left border) while
+# claiming 0 horizontal chrome - three numbers that cannot all be true.
+#
+# chrome_w is the TOTAL horizontal chrome. Stock reports 0, so both borders are
+# 0 and mozInnerScreenX is simply window_x; if a persona ever pins a non-zero
+# one, splitting it evenly between the two sides is the only assumption
+# available, and it is written in the code rather than left implicit.
+- name: zoom.stealth.screen.window_x
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
+- name: zoom.stealth.screen.window_y
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
+- name: zoom.stealth.screen.chrome_w
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
+- name: zoom.stealth.screen.chrome_h
   type: RelaxedAtomicInt32
   value: -1
   mirror: always

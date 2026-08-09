@@ -3610,6 +3610,20 @@ CSSIntPoint nsGlobalWindowOuter::GetScreenXY(CallerType aCallerType,
     return CSSIntPoint(0, 0);
   }
 
+  // Stealth: the window POSITION, which outerWidth/outerHeight above already
+  // depend on without ever saying so. They claim a maximized window filling the
+  // screen; the position stayed whatever the OS handed the headless widget, and
+  // on Windows that is (4,4), so screenX + outerWidth came to 1924 on a 1920
+  // screen. Stock 151 reports 0,0 for exactly this window shape.
+  {
+    const int32_t wx = mozilla::StaticPrefs::zoom_stealth_screen_window_x();
+    const int32_t wy = mozilla::StaticPrefs::zoom_stealth_screen_window_y();
+    if (wx >= 0 && wy >= 0) {
+      mozilla::gfx::StealthAssertDeclarationsComplete();
+      return CSSIntPoint(wx, wy);
+    }
+  }
+
   nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
   if (!treeOwnerAsWin) {
     aError.Throw(NS_ERROR_FAILURE);
@@ -3696,6 +3710,25 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
     return 0.0;
   }
 
+  // Stealth: the content area's screen position, derived from the SAME two
+  // declarations screenX and outerWidth use, so the three cannot disagree.
+  // They did: screenX said 4, this said 15 (11px of left border) and
+  // outerWidth - innerWidth said 0, on one window.
+  //
+  // An override, not a replacement (engine rule 7): GetInnerScreenRect has
+  // other callers - popup placement, coordinate conversion - and they keep the
+  // real rect. Only the two content-visible getters are answered from the
+  // declaration.
+  {
+    const int32_t wx = mozilla::StaticPrefs::zoom_stealth_screen_window_x();
+    const int32_t cw = mozilla::StaticPrefs::zoom_stealth_screen_chrome_w();
+    if (wx >= 0 && cw >= 0) {
+      mozilla::gfx::StealthAssertDeclarationsComplete();
+      // cw is the total horizontal chrome; half of it is the left border.
+      return float(wx) + float(cw) / 2.0f;
+    }
+  }
+
   nsRect r = GetInnerScreenRect();
   return nsPresContext::AppUnitsToFloatCSSPixels(r.x);
 }
@@ -3705,6 +3738,19 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
   if (nsIGlobalObject::ShouldResistFingerprinting(
           aCallerType, RFPTarget::WindowInnerScreenXY)) {
     return 0.0;
+  }
+
+  // Stealth: see GetMozInnerScreenXOuter. Vertically the whole chrome is above
+  // the content - tab strip plus navigation toolbar - so the content starts at
+  // window_y + chrome_h. Stock 151 measured 85 here and reports exactly
+  // mozInnerScreenY - screenY == outerHeight - innerHeight.
+  {
+    const int32_t wy = mozilla::StaticPrefs::zoom_stealth_screen_window_y();
+    const int32_t ch = mozilla::StaticPrefs::zoom_stealth_screen_chrome_h();
+    if (wy >= 0 && ch >= 0) {
+      mozilla::gfx::StealthAssertDeclarationsComplete();
+      return float(wy + ch);
+    }
   }
 
   nsRect r = GetInnerScreenRect();
