@@ -142,6 +142,14 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_screen_chrome_w(); }, 0},
       {"zoom.stealth.screen.chrome_h",
        []() { return StaticPrefs::zoom_stealth_screen_chrome_h(); }, 0},
+      // The CSS interaction media features, added 2026-08-09. Floor 1 rather
+      // than 0: PointerCapabilities::None is a legal value of the enum and a
+      // nonsensical value for a machine somebody is browsing from, so a zero
+      // here is a bug rather than a persona.
+      {"zoom.stealth.pointer.primary",
+       []() { return StaticPrefs::zoom_stealth_pointer_primary(); }, 1},
+      {"zoom.stealth.pointer.all",
+       []() { return StaticPrefs::zoom_stealth_pointer_all(); }, 1},
   };
 
   // The rasterisation parameters are checked here too, and they are the reason

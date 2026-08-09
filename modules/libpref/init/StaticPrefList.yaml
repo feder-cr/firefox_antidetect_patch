@@ -20404,6 +20404,28 @@
 # 0 and mozInnerScreenX is simply window_x; if a persona ever pins a non-zero
 # one, splitting it evenly between the two sides is the only assumption
 # available, and it is written in the code rather than left implicit.
+# The CSS interaction media features: `pointer`, `hover`, `any-pointer`,
+# `any-hover`. Bitmask of PointerCapabilities (ServoTypes.h): Coarse 1, Fine 2,
+# Hover 4. A desktop with a mouse is 6; a touch laptop is 7 for the union and
+# still 6 for the primary pointer.
+#
+# nsMediaFeatures.cpp compiled `Fine | Hover` for both, which was right about
+# the leak it was stopping - GetAllPointerCapabilities adds Coarse whenever the
+# HOST has touch - and wrong about being a second source: the core already says
+# how many touch points the persona has, and a touch-laptop persona could not
+# be expressed at all. Both are derived from hardware.max_touch_points now, so
+# any-pointer, dom.w3c_touch_events.enabled and navigator.maxTouchPoints move
+# together instead of contradicting each other, which on 2026-08-09 they did.
+- name: zoom.stealth.pointer.primary
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
+- name: zoom.stealth.pointer.all
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
 # The Accept-Language header, as one declared string.
 #
 # juggler/NetworkObserver.js has to rewrite this header because Playwright sets
