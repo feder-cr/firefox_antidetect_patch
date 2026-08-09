@@ -726,22 +726,27 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
     // design path, so doing the same here makes the two agree by construction
     // rather than by luck.
     //
-    // This is an override, not a replacement: a non-scalable face, a face with
-    // no units_per_EM, or an FT_Get_Advance that fails all fall through to the
-    // real FreeType value below, so the failure mode is "we did not disguise
-    // it" and never "the glyph came out wrong".
+    // THERE IS NO FALLBACK on the declared side, and that is deliberate
+    // (engine rule 7). The first version of this asked FreeType for the design
+    // advance and fell through to the rasterised one whenever the face was not
+    // scalable or the call failed - which is the same hole the ink box had, and
+    // the ink box's version of it was measured leaking on every CFF webfont.
+    //
+    // GetDesignAdvance asks HarfBuzz's own OpenType implementation, which reads
+    // glyf, CFF and CFF2 alike and needs no FreeType face at all, so a CFF or a
+    // bitmap-strike face is served by the same code as a bundled TrueType one.
     bool declaredAdvance = false;
     if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0 &&
-        FT_IS_SCALABLE(face.get()) && face.get()->units_per_EM > 0 &&
         GetAdjustedSize() > 0.0) {
-      FT_Fixed designAdvance = 0;
-      if (FT_Get_Advance(face.get(), aGID,
-                         FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING,
-                         &designAdvance) == FT_Err_Ok) {
-        // FT_LOAD_NO_SCALE makes FT_Get_Advance answer in font units, so this
-        // is the only place the unrounded size enters.
+      gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
+      const uint16_t upem = GetFontEntry()->UnitsPerEm();
+      int32_t designAdvance = 0;
+      if (shaper && upem && shaper->GetDesignAdvance(aGID, designAdvance)) {
+        // The design advance arrives in FONT UNITS, so this is the only place
+        // the unrounded size enters, and 65536 puts it in the 16.16 the rest of
+        // this block speaks.
         advance = NS_lround(double(designAdvance) * GetAdjustedSize() *
-                            65536.0 / double(face.get()->units_per_EM));
+                            65536.0 / double(upem));
         declaredAdvance = true;
       }
     }
@@ -868,18 +873,41 @@ bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
   // out-parameter, which gfxFont::SetupGlyphExtents default-constructs to an
   // empty rect, so on Windows that branch never runs.
   //
-  // A font with no glyf table falls through to FreeType below, unchanged: this
-  // overrides an answer, it does not replace the backend.
+  // THERE IS NO FALLBACK HERE, and that is the point (engine rule 7).
+  //
+  // This used to read the glyf table directly and return false for a font that
+  // has none, letting the caller fall through to FreeType. Every CFF webfont a
+  // page loads is exactly that case, and it was a live tell rather than a
+  // corner: measured 2026-08-09 on a purpose-built CFF face, 108 of 150
+  // measureText fields diverged between Windows and Linux, with Linux handing
+  // back whole integers because FreeType had grid-fitted them.
+  //
+  // GetDesignGlyphExtents asks HarfBuzz's own OpenType implementation, which
+  // reads glyf, CFF and CFF2 alike, so the declared path is TOTAL and there is
+  // no case left to fall through with. If it fails, the font has no usable
+  // unitsPerEm at all and the answer below would be meaningless too.
   if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
-    if (gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper()) {
-      int16_t xMin, yMin, xMax, yMax;
-      const uint16_t upem = mFontEntry->UnitsPerEm();
-      if (upem && shaper->GetGlyfBBox(aGID, xMin, yMin, xMax, yMax)) {
-        const float conv = float(GetAdjustedSize() / gfxFloat(upem));
-        *aBounds = gfxRect(xMin * conv, -yMax * conv, (xMax - xMin) * conv,
-                           (yMax - yMin) * conv);
-        return true;
-      }
+    gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
+    const uint16_t upem = mFontEntry->UnitsPerEm();
+    int32_t xb, yb, w, h;
+    if (shaper && upem && shaper->GetDesignGlyphExtents(aGID, xb, yb, w, h)) {
+      // The ORDER of operations is copied from gfxDWriteFont::GetGlyphBounds,
+      // not just the formula, and it has to be. DWrite builds the rect in font
+      // UNITS and calls gfxRect::Scale afterwards, so every product is a double
+      // times a float. Multiplying each component as int-times-float instead
+      // does the arithmetic in float precision and only then widens, which is
+      // close but not equal: measured, that alone left 22 of 150 fields
+      // differing in the eighth significant digit after the grid-fitting leak
+      // was already closed.
+      //
+      // HarfBuzz's y_bearing is the top extremum measured upward and its height
+      // is negative in a y-up system (hb-common.h says so), which is why both
+      // are negated here to reach gfxRect's y-down box.
+      const float conv = float(GetAdjustedSize() / gfxFloat(upem));
+      gfxRect bounds(double(xb), double(-yb), double(w), double(-h));
+      bounds.Scale(conv);
+      *aBounds = bounds;
+      return true;
     }
   }
 

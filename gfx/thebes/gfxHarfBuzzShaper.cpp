@@ -56,6 +56,7 @@ gfxHarfBuzzShaper::~gfxHarfBuzzShaper() {
   hb_blob_destroy(mLocaTable);
   hb_blob_destroy(mGlyfTable);
   hb_font_destroy(mHBFont);
+  hb_font_destroy(mDesignFont);  // null is fine, hb_font_destroy takes it
   hb_buffer_destroy(mBuffer);
 }
 
@@ -723,22 +724,91 @@ hb_bool_t gfxHarfBuzzShaper::GetGlyphExtents(
   return true;
 }
 
-bool gfxHarfBuzzShaper::GetGlyfBBox(uint16_t aGID, int16_t& aXMin,
-                                    int16_t& aYMin, int16_t& aXMax,
-                                    int16_t& aYMax) const {
-  bool emptyGlyf;
-  const Glyf* glyf = FindGlyf(aGID, &emptyGlyf);
-  if (!glyf) {
-    return false;  // no glyf table (CFF): the caller keeps its own answer
+hb_font_t* gfxHarfBuzzShaper::GetDesignFont() const {
+  // A second hb_font on the same face, used for nothing but design-space
+  // metrics, and deliberately NOT the shaping font: that one carries our own
+  // callbacks, which route back into the platform backend, which is the thing
+  // being avoided here.
+  //
+  // hb_ot_font_set_funcs is called EXPLICITLY rather than relying on whatever
+  // hb_font_create picks by default. That default comes from
+  // get_default_funcs_name() in hb-font.cc, which reads the environment
+  // variable HB_FONT_FUNCS, and "ft", "directwrite" and "coretext" are all
+  // accepted values. An environment variable that silently redirects our
+  // metrics to a host rasteriser is exactly the second source of truth engine
+  // rule 7 forbids, so the implementation is pinned rather than inherited.
+  //
+  // The scale is unitsPerEm, so every answer arrives in FONT UNITS and the
+  // caller multiplies by the unrounded size. That is what makes this path
+  // TOTAL: hb-ot-font reads glyf, CFF and CFF2 alike, so a PostScript-outline
+  // webfont is served by the same code as a bundled TrueType face and there is
+  // nothing left to fall through to. Measured before this existed: a CFF
+  // webfont diverged on 108 of 150 measureText fields between Windows and
+  // Linux, because the CFF case fell through to FreeType's grid-fitted bounds
+  // and came back as whole integers.
+  if (mDesignFont) {
+    return mDesignFont;
   }
-  if (emptyGlyf) {
-    aXMin = aYMin = aXMax = aYMax = 0;
+  const uint16_t upem = mFont->GetFontEntry()->UnitsPerEm();
+  if (!upem || upem == gfxFontEntry::kInvalidUPEM) {
+    return nullptr;
+  }
+  hb_face_t* face = mFont->GetFontEntry()->GetHBFace();
+  if (!face) {
+    return nullptr;
+  }
+  hb_font_t* font = hb_font_create(face);
+  hb_face_destroy(face);
+  if (!font) {
+    return nullptr;
+  }
+  hb_ot_font_set_funcs(font);
+  hb_font_set_scale(font, upem, upem);
+  hb_font_set_ppem(font, 0, 0);
+
+  // Variations travel too, or a variable font would be measured at its default
+  // instance while it renders at another.
+  AutoTArray<gfxFontVariation, 8> vars;
+  mFont->GetFontEntry()->GetVariationsForStyle(vars, *mFont->GetStyle());
+  if (vars.Length() > 0) {
+    static_assert(sizeof(gfxFontVariation) == sizeof(hb_variation_t),
+                  "gfxFontVariation and hb_variation_t must be compatible");
+    hb_font_set_variations(
+        font, reinterpret_cast<hb_variation_t*>(vars.Elements()), vars.Length());
+  }
+  mDesignFont = font;
+  return mDesignFont;
+}
+
+bool gfxHarfBuzzShaper::GetDesignGlyphExtents(uint16_t aGID, int32_t& aXBearing,
+                                              int32_t& aYBearing,
+                                              int32_t& aWidth,
+                                              int32_t& aHeight) const {
+  hb_font_t* font = GetDesignFont();
+  if (!font) {
+    return false;
+  }
+  hb_glyph_extents_t ext;
+  if (!hb_font_get_glyph_extents(font, aGID, &ext)) {
+    // A glyph with no outline at all - a space - has no extents, and an empty
+    // box is the honest answer rather than a failure.
+    aXBearing = aYBearing = aWidth = aHeight = 0;
     return true;
   }
-  aXMin = int16_t(glyf->xMin);
-  aYMin = int16_t(glyf->yMin);
-  aXMax = int16_t(glyf->xMax);
-  aYMax = int16_t(glyf->yMax);
+  aXBearing = ext.x_bearing;
+  aYBearing = ext.y_bearing;
+  aWidth = ext.width;
+  aHeight = ext.height;
+  return true;
+}
+
+bool gfxHarfBuzzShaper::GetDesignAdvance(uint16_t aGID,
+                                         int32_t& aAdvance) const {
+  hb_font_t* font = GetDesignFont();
+  if (!font) {
+    return false;
+  }
+  aAdvance = hb_font_get_glyph_h_advance(font, aGID);
   return true;
 }
 

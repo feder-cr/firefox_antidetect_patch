@@ -55,12 +55,12 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
                                      void* user_data);
 
  public:
-  // STEALTH: the DESIGN-space bounding box of a glyph, in FONT UNITS, read
-  // straight from the glyf table.
+  // STEALTH: glyph metrics in DESIGN space, in FONT UNITS, read from the font's
+  // own outlines by HarfBuzz and never by a platform rasteriser.
   //
-  // It exists so the FreeType backend can report the same ink box the
-  // DirectWrite one does. gfxDWriteFont::GetGlyphBounds calls
-  // GetDesignGlyphMetrics, which is this table and nothing else, while
+  // They exist so the FreeType backend reports the same ink box and the same
+  // advance the DirectWrite one does. gfxDWriteFont::GetGlyphBounds calls
+  // GetDesignGlyphMetrics, which is the outline and nothing else, while
   // gfxFT2FontBase asks FreeType for HINTED bounds - so the two disagree, and
   // the disagreement reaches the page through measureText's four
   // actualBoundingBox fields. Measured 2026-08-09 against stock Firefox 151:
@@ -71,10 +71,18 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
   // units per em, so at 16px the left edge is -0.796875, and that is exactly
   // what stock Firefox reports for actualBoundingBoxLeft.
   //
-  // False for a font with no glyf table (CFF), and the caller must then fall
-  // through to its own backend rather than invent a box.
-  bool GetGlyfBBox(uint16_t aGID, int16_t& aXMin, int16_t& aYMin,
-                   int16_t& aXMax, int16_t& aYMax) const;
+  // These replaced a glyf-only reader on 2026-08-09, and the replacement is the
+  // whole point rather than a tidy-up. The old one returned false for a font
+  // with no glyf table and the caller fell through to its own backend, which is
+  // every CFF webfont a page cares to load: measured, 108 of 150 measureText
+  // fields diverged between Windows and Linux on one, with Linux returning
+  // whole integers straight out of FreeType's grid fitting. hb-ot-font reads
+  // glyf, CFF and CFF2 alike, so there is no case left to fall through with -
+  // engine rule 7, make the declared path total rather than add a fallback.
+  bool GetDesignGlyphExtents(uint16_t aGID, int32_t& aXBearing,
+                             int32_t& aYBearing, int32_t& aWidth,
+                             int32_t& aHeight) const;
+  bool GetDesignAdvance(uint16_t aGID, int32_t& aAdvance) const;
 
   explicit gfxHarfBuzzShaper(gfxFont* aFont);
   virtual ~gfxHarfBuzzShaper();
@@ -189,6 +197,12 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
 
   // size-specific font object, owned by the gfxHarfBuzzShaper
   hb_font_t* mHBFont = nullptr;
+
+  // STEALTH: the design-space metrics font, built on demand by GetDesignFont
+  // and never used for shaping. Mutable because the two accessors above are
+  // const and a font that is only read has no business forcing them not to be.
+  mutable hb_font_t* mDesignFont = nullptr;
+  hb_font_t* GetDesignFont() const;
 
   // Held for the duration of ShapeText(): the shaper (and its hb_buffer_t)
   // is shared across threads via the global gfxFontCache, so concurrent
