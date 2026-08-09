@@ -707,11 +707,50 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
   // dealing with a variation font; also use it for scalable fonts when not
   // applying hinting. Otherwise, prefer hinted width from glyph->advance.x.
   if (aAdvance) {
-    FT_Fixed advance;
-    if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
-      advance = face.get()->glyph->linearHoriAdvance;
-    } else {
-      advance = face.get()->glyph->advance.x << 10;  // convert 26.6 to 16.16
+    FT_Fixed advance = 0;
+    // Stealth: FreeType scales the design advance by an INTEGER ppem.
+    // FT_Request_Metrics computes x_ppem = (scaled + 32) >> 6 and then derives
+    // x_scale from that already-rounded value, so linearHoriAdvance carries the
+    // rounding even though the comment at ComputeMetrics prefers x_scale
+    // precisely because "x_ppem does not have subpixel accuracy". DirectWrite
+    // scales by the size it was handed. Whole sizes therefore agree by
+    // construction and fractional ones cannot, which is the entire divergence
+    // measured on 2026-08-09: 112 of 3120 (family, size, string) combinations,
+    // every one of them at a fractional size.
+    //
+    // Courier New is the worked example. Its glyphs are 1229 units on a 2048
+    // em, and at a requested 13.383333px Windows reports 8.0313px per glyph
+    // while this path reports 7.8022 - which is 1229 * 13 / 2048, i.e. the
+    // right arithmetic on the wrong ppem. Scaling the DESIGN advance by the
+    // unrounded size is what gfxDWriteFont::MeasureGlyphWidth does on its
+    // design path, so doing the same here makes the two agree by construction
+    // rather than by luck.
+    //
+    // This is an override, not a replacement: a non-scalable face, a face with
+    // no units_per_EM, or an FT_Get_Advance that fails all fall through to the
+    // real FreeType value below, so the failure mode is "we did not disguise
+    // it" and never "the glyph came out wrong".
+    bool declaredAdvance = false;
+    if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0 &&
+        FT_IS_SCALABLE(face.get()) && face.get()->units_per_EM > 0 &&
+        GetAdjustedSize() > 0.0) {
+      FT_Fixed designAdvance = 0;
+      if (FT_Get_Advance(face.get(), aGID,
+                         FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING,
+                         &designAdvance) == FT_Err_Ok) {
+        // FT_LOAD_NO_SCALE makes FT_Get_Advance answer in font units, so this
+        // is the only place the unrounded size enters.
+        advance = NS_lround(double(designAdvance) * GetAdjustedSize() *
+                            65536.0 / double(face.get()->units_per_EM));
+        declaredAdvance = true;
+      }
+    }
+    if (!declaredAdvance) {
+      if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
+        advance = face.get()->glyph->linearHoriAdvance;
+      } else {
+        advance = face.get()->glyph->advance.x << 10;  // convert 26.6 to 16.16
+      }
     }
     if (advance) {
       advance += bold.x << 10;  // convert 26.6 to 16.16
@@ -720,10 +759,13 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
     // Round the advance here to approximate hinting as Cairo does. This must
     // happen BEFORE we apply the glyph extents scale, just like FT hinting
     // would.
-    if (hintMetrics && roundX && unhintedX) {
+    if (hintMetrics && roundX && unhintedX && !declaredAdvance) {
       advance = (advance + 0x8000) & 0xffff0000u;
     }
-    *aAdvance = NS_lround(advance * extentsScale);
+    // The declared advance was already computed at the desired size, so it must
+    // not go through GetAdjustedSize() / mFTSize a second time.
+    *aAdvance = declaredAdvance ? NS_lround(advance)
+                                : NS_lround(advance * extentsScale);
   }
 
   if (aBounds) {
