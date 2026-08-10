@@ -2285,11 +2285,29 @@ static void ApplyStealthCanvasPixelNoise(uint8_t* aBuf, size_t aSize,
   // Skip-mask is configurable via pref (default 7 = 1/8 = ~12.5%).
   // Higher mask → lower noise density. Intel HD profiles use 15 (~6.25%) to
   // stay below FP Pro's tampering_ml threshold. Sanitize: must be 2^N-1.
-  // No compiled default (engine rule 7, 2026-08-09). The "if (maskPref < 0)
-  // maskPref = 7" that used to sit here was a rival to a declared value, and
-  // not even the same one: the core pins the mask at 15, the Intel rate, so
-  // the two answers differed by a factor of two in noise density. A missing
-  // declaration refuses in StealthDeclarationGate.
+  // Il default compilato e' stato tolto DAL RAMO ESPLICITO (regola 7,
+  // 2026-08-09): l'"if (maskPref < 0) maskPref = 7" che stava qui era un
+  // rivale di un valore dichiarato, e nemmeno lo stesso - il core pinna la
+  // maschera a 15, il tasso Intel, quindi le due risposte differivano di un
+  // fattore due in densita' di rumore.
+  //
+  // MA UN 7 SOPRAVVIVE, ed e' la riga della normalizzazione qui sotto. Con la
+  // pref non dichiarata (-1) il cast a uint32_t da' 4294967295, il ciclo fa
+  // traboccare `bit` a zero e il ternario cade su `7u`: esattamente il valore
+  // che questo commento dichiarava rimosso. Trovato dalla revisione a sedici
+  // lenti il 2026-08-10, e il commento e' rimasto falso per un giorno.
+  //
+  // Misurato prima di decidere se toccarlo: nella configurazione reale la pref
+  // vale 15, quindi quel ramo NON e' raggiungibile e nessuna pagina puo'
+  // vederlo (regola 7-bis: cio' che non si osserva non si tocca). Resta come
+  // difetto latente e non come tell, ed e' scritto qui perche' un commento che
+  // afferma il falso e' esso stesso un difetto in un progetto che ricostruisce
+  // il proprio perche' dai commenti.
+  //
+  // Il rifiuto per dichiarazione mancante vive in StealthDeclarationGate, che
+  // pero' e' armato SOLO nel processo padre: qui siamo nel contenuto, quindi
+  // la chiamata sotto non puo' fermare nulla. E' il seguito aperto registrato
+  // in quel file.
   mozilla::gfx::StealthAssertDeclarationsComplete();
   const int32_t maskPref = StaticPrefs::zoom_stealth_canvas_noise_skip_mask();
   uint32_t skipMask = uint32_t(maskPref);
