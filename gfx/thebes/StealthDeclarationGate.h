@@ -5,6 +5,9 @@
 #ifndef GFX_STEALTHDECLARATIONGATE_H
 #define GFX_STEALTHDECLARATIONGATE_H
 
+#include "Units.h"
+#include "mozilla/Maybe.h"
+
 namespace mozilla {
 namespace gfx {
 
@@ -35,6 +38,50 @@ namespace gfx {
  * not an incomplete declaration, it is the absence of one.
  */
 void StealthAssertDeclarationsComplete();
+
+/**
+ * Where the window is, and where its content starts, in CSS pixels.
+ *
+ * These two exist so that the answer is computed ONCE and read by everyone who
+ * can be asked it, instead of each caller reading the prefs for itself. That is
+ * not tidiness. On 2026-08-09 three DOM getters were moved onto the
+ * declaration - screenX/screenY, mozInnerScreenX and mozInnerScreenY - and the
+ * event path was not, because nothing connected the two in the source. The
+ * result was a contradiction a page reads with one subtraction:
+ *
+ *     event.screenX - event.clientX === window.mozInnerScreenX
+ *
+ * holds on every real Firefox, because both sides come from the same widget.
+ * With the geometry declared in one place and the events still asking the
+ * widget, it held on NONE of 45 events on Windows and none of 20 on Linux,
+ * against 0 failures out of 6 on stock. Humanised movement made it worse, since
+ * it emits dozens of events per action and every one of them is a fresh sample
+ * of the same broken relation.
+ *
+ * So the invariant is restored the only way that keeps holding when somebody
+ * adds a new geometry-reading API next month: there is one function, everything
+ * calls it, and the relation is true by construction rather than by two callers
+ * happening to agree.
+ *
+ * Both return Nothing() when the engine is off, which is stock Firefox and not
+ * an incomplete declaration. When the engine is on they never fall back: a
+ * missing declaration goes to StealthAssertDeclarationsComplete(), and the gate
+ * has already refused at launch in the parent, so content processes cannot
+ * reach a state where these are undeclared.
+ *
+ * CSS pixels, deliberately. The widget layer underneath works in device pixels
+ * and does not know the CSS scale - `layout.css.devPixelsPerPx` is applied
+ * above it, in the device context - so declaring down there would have meant
+ * converting with a number the widget cannot see.
+ */
+Maybe<CSSIntPoint> StealthDeclaredWindowOrigin();
+
+/**
+ * The content origin: the window origin plus the chrome around it. Horizontal
+ * chrome is the TOTAL of both sides, so half of it sits to the left; vertical
+ * chrome is entirely above, which is the tab strip and the toolbar.
+ */
+Maybe<CSSIntPoint> StealthDeclaredContentOrigin();
 
 }  // namespace gfx
 }  // namespace mozilla

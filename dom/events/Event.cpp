@@ -44,6 +44,7 @@
 #include "nsLayoutUtils.h"
 #include "nsPIWindowRoot.h"
 #include "nsRFPService.h"
+#include "StealthDeclarationGate.h"
 
 namespace mozilla::dom {
 
@@ -652,12 +653,62 @@ Maybe<CSSDoublePoint> Event::GetScreenCoords(
   const LayoutDeviceIntPoint topLevelPoint = LayoutDeviceIntPoint::Round(
       guiEvent->mWidget->WidgetToTopLevelWidgetTransform().TransformPoint(
           aWidgetOrScreenRelativePoint));
+  const int32_t auPerDevPx =
+      aPresContext->DeviceContext()->AppUnitsPerDevPixel();
+
+  // Stealth: the origin comes from the SAME function mozInnerScreenX answers
+  // with, and that is the whole point of it being a function.
+  //
+  // This is the funnel: MouseEvent, UIEvent, Touch and EventStateManager all
+  // reach screen coordinates through here, so it is the one place where the
+  // relation a page checks is either true or false.
+  //
+  //     event.screenX - event.clientX === window.mozInnerScreenX
+  //
+  // It holds on every real Firefox because both sides come from this widget.
+  // When the window geometry became a declaration on 2026-08-09 the three DOM
+  // getters were moved and this line was not, so the two sides came from
+  // different places and the relation failed on 45 mouse events out of 45 on
+  // Windows and 20 of 20 on Linux, against 0 of 6 on stock. Humanised movement
+  // made it louder rather than quieter: dozens of events per action, each one a
+  // fresh sample of the same contradiction.
+  //
+  // Adding the declared origin HERE rather than teaching the widget to lie is
+  // deliberate. The widget works in device pixels and cannot see the CSS scale
+  // - layout.css.devPixelsPerPx is applied above it, in the device context - so
+  // a declaration down there would need a conversion factor the widget does not
+  // have. Up here the units are known and the arithmetic is the same one the
+  // getter does.
+  // Written as the relation itself - screen = client + content origin - and not
+  // as "the widget-relative point plus something", because the widget-relative
+  // point sits inside the REAL window and carries the real chrome height with
+  // it. That was the first attempt and it moved the declared amount while
+  // leaving the same gap: with chrome_h at 85 the offset was 800, and with
+  // chrome_h at 300 it was still 800, because both sides had moved together.
+  // The client point is the one the page already receives, so adding the origin
+  // to it makes the relation true by construction rather than by arithmetic
+  // that happens to line up.
+  if (const Maybe<CSSIntPoint> origin = gfx::StealthDeclaredContentOrigin()) {
+    const PresShell* const presShell = aPresContext->GetPresShell();
+    const nsIFrame* const rootFrame =
+        presShell ? presShell->GetRootFrame() : nullptr;
+    // No root frame means no laid-out content, i.e. nothing that could read
+    // either side of the relation. The line below then answers as stock, which
+    // is the only case in this function where that is not a leak.
+    if (rootFrame) {
+      const CSSPoint client =
+          CSSPixel::FromAppUnits(nsLayoutUtils::GetEventCoordinatesRelativeTo(
+              aEvent, LayoutDeviceIntPoint::Round(aWidgetOrScreenRelativePoint),
+              RelativeTo{rootFrame}));
+      return Some(CSSDoublePoint(double(client.x) + double(origin->x),
+                                 double(client.y) + double(origin->y)));
+    }
+  }
+
   const CSSPoint pt = CSSPixel::FromAppUnits(
+      LayoutDevicePixel::ToAppUnits(topLevelPoint, auPerDevPx) +
       LayoutDevicePixel::ToAppUnits(
-          topLevelPoint, aPresContext->DeviceContext()->AppUnitsPerDevPixel()) +
-      LayoutDevicePixel::ToAppUnits(
-          guiEvent->mWidget->TopLevelWidgetToScreenOffset(),
-          aPresContext->DeviceContext()->AppUnitsPerDevPixel()));
+          guiEvent->mWidget->TopLevelWidgetToScreenOffset(), auPerDevPx));
   return Some(CSSDoublePoint(pt.x, pt.y));
 }
 

@@ -243,5 +243,38 @@ void StealthAssertDeclarationsComplete() {
   }
 }
 
+Maybe<CSSIntPoint> StealthDeclaredWindowOrigin() {
+  if (StaticPrefs::zoom_stealth_fpp_hw_seed() <= 0) {
+    // Stock Firefox. Not an incomplete declaration, the absence of one.
+    return Nothing();
+  }
+  const int32_t x = StaticPrefs::zoom_stealth_screen_window_x();
+  const int32_t y = StaticPrefs::zoom_stealth_screen_window_y();
+  if (x < 0 || y < 0) {
+    // Unreachable in practice: the gate refuses at launch in the parent, so a
+    // process that is serving pages has these. Kept as a refusal rather than a
+    // fallback, because the day it becomes reachable the right behaviour is
+    // still to stop, not to answer with the machine's real window position.
+    StealthAssertDeclarationsComplete();
+    return Nothing();
+  }
+  return Some(CSSIntPoint(x, y));
+}
+
+Maybe<CSSIntPoint> StealthDeclaredContentOrigin() {
+  const Maybe<CSSIntPoint> window = StealthDeclaredWindowOrigin();
+  if (window.isNothing()) {
+    return Nothing();
+  }
+  const int32_t chromeW = StaticPrefs::zoom_stealth_screen_chrome_w();
+  const int32_t chromeH = StaticPrefs::zoom_stealth_screen_chrome_h();
+  if (chromeW < 0 || chromeH < 0) {
+    StealthAssertDeclarationsComplete();
+    return Nothing();
+  }
+  // chrome_w is the total across both sides; chrome_h is entirely above.
+  return Some(CSSIntPoint(window->x + chromeW / 2, window->y + chromeH));
+}
+
 }  // namespace gfx
 }  // namespace mozilla

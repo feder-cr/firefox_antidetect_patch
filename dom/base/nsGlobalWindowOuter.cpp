@@ -3615,13 +3615,8 @@ CSSIntPoint nsGlobalWindowOuter::GetScreenXY(CallerType aCallerType,
   // screen; the position stayed whatever the OS handed the headless widget, and
   // on Windows that is (4,4), so screenX + outerWidth came to 1924 on a 1920
   // screen. Stock 151 reports 0,0 for exactly this window shape.
-  {
-    const int32_t wx = mozilla::StaticPrefs::zoom_stealth_screen_window_x();
-    const int32_t wy = mozilla::StaticPrefs::zoom_stealth_screen_window_y();
-    if (wx >= 0 && wy >= 0) {
-      mozilla::gfx::StealthAssertDeclarationsComplete();
-      return CSSIntPoint(wx, wy);
-    }
+  if (const auto origin = mozilla::gfx::StealthDeclaredWindowOrigin()) {
+    return *origin;
   }
 
   nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
@@ -3710,23 +3705,19 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
     return 0.0;
   }
 
-  // Stealth: the content area's screen position, derived from the SAME two
-  // declarations screenX and outerWidth use, so the three cannot disagree.
-  // They did: screenX said 4, this said 15 (11px of left border) and
-  // outerWidth - innerWidth said 0, on one window.
+  // Stealth: the content origin, from the ONE function that answers it.
   //
-  // An override, not a replacement (engine rule 7): GetInnerScreenRect has
-  // other callers - popup placement, coordinate conversion - and they keep the
-  // real rect. Only the two content-visible getters are answered from the
-  // declaration.
-  {
-    const int32_t wx = mozilla::StaticPrefs::zoom_stealth_screen_window_x();
-    const int32_t cw = mozilla::StaticPrefs::zoom_stealth_screen_chrome_w();
-    if (wx >= 0 && cw >= 0) {
-      mozilla::gfx::StealthAssertDeclarationsComplete();
-      // cw is the total horizontal chrome; half of it is the left border.
-      return float(wx) + float(cw) / 2.0f;
-    }
+  // This used to read the two prefs here and do the arithmetic inline, and so
+  // did mozInnerScreenY, and so did screenX with its own pair - three copies of
+  // the same idea, and the EVENT path never got its copy because nothing in the
+  // source connected them. A page found that with one subtraction: on every
+  // mouse event, screenX - clientX must equal this value, and it did not, on 45
+  // events out of 45. See StealthDeclarationGate.h for the measurement.
+  //
+  // GetInnerScreenRect below keeps serving its other callers - popup placement,
+  // coordinate conversion - the real rect. Those are not content-visible.
+  if (const auto origin = mozilla::gfx::StealthDeclaredContentOrigin()) {
+    return float(origin->x);
   }
 
   nsRect r = GetInnerScreenRect();
@@ -3744,13 +3735,8 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
   // the content - tab strip plus navigation toolbar - so the content starts at
   // window_y + chrome_h. Stock 151 measured 85 here and reports exactly
   // mozInnerScreenY - screenY == outerHeight - innerHeight.
-  {
-    const int32_t wy = mozilla::StaticPrefs::zoom_stealth_screen_window_y();
-    const int32_t ch = mozilla::StaticPrefs::zoom_stealth_screen_chrome_h();
-    if (wy >= 0 && ch >= 0) {
-      mozilla::gfx::StealthAssertDeclarationsComplete();
-      return float(wy + ch);
-    }
+  if (const auto origin = mozilla::gfx::StealthDeclaredContentOrigin()) {
+    return float(origin->y);
   }
 
   nsRect r = GetInnerScreenRect();
