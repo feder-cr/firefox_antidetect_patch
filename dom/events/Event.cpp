@@ -688,27 +688,48 @@ Maybe<CSSDoublePoint> Event::GetScreenCoords(
   // The client point is the one the page already receives, so adding the origin
   // to it makes the relation true by construction rather than by arithmetic
   // that happens to line up.
-  if (const Maybe<CSSIntPoint> origin = gfx::StealthDeclaredContentOrigin()) {
-    const PresShell* const presShell = aPresContext->GetPresShell();
-    const nsIFrame* const rootFrame =
-        presShell ? presShell->GetRootFrame() : nullptr;
-    // No root frame means no laid-out content, i.e. nothing that could read
-    // either side of the relation. The line below then answers as stock, which
-    // is the only case in this function where that is not a leak.
-    if (rootFrame) {
-      const CSSPoint client =
-          CSSPixel::FromAppUnits(nsLayoutUtils::GetEventCoordinatesRelativeTo(
-              aEvent, LayoutDeviceIntPoint::Round(aWidgetOrScreenRelativePoint),
-              RelativeTo{rootFrame}));
-      return Some(CSSDoublePoint(double(client.x) + double(origin->x),
-                                 double(client.y) + double(origin->y)));
+  //
+  // Arithmetic only, and that is not an optimisation, it is a correctness
+  // requirement. THIS FUNCTION IS THE HOT PATH: EventStateManager::PreHandleEvent
+  // calls it for every trusted real mouse event and every wheel event, to store
+  // sLastScreenPoint, and then calls GetClientCoords right after. A first
+  // version of this branch derived the client point here with
+  // nsLayoutUtils::GetEventCoordinatesRelativeTo, which put a SECOND layout
+  // query on every mouse event - and humanised movement emits dozens per action.
+  // Measured: the full Windows e2e went from 2 mouse failures to 7, plus 4
+  // detector tests that had never failed, all of them timeouts, and all of them
+  // passing again when the same tests ran alone. A correctness fix that makes
+  // the browser too slow to click is not a fix.
+  //
+  // The identity used instead needs no layout at all:
+  //
+  //     screen_real     = topLevelRelative + topLevelWidgetOrigin
+  //     client          = screen_real - realContentOrigin
+  //     screen_declared = client + declaredContentOrigin
+  //                     = screen_real - realContentOrigin + declaredOrigin
+  //
+  // realContentOrigin is the root widget's screen offset - the very quantity
+  // mozInnerScreenX reported before it became a declaration - so the relation
+  // the gate checks holds by construction, and both terms are widget calls the
+  // original expression already made.
+  const Maybe<CSSIntPoint> declaredOrigin = gfx::StealthDeclaredContentOrigin();
+  nsPoint originShift;
+  if (declaredOrigin) {
+    if (nsCOMPtr<nsIWidget> rootWidget = aPresContext->GetRootWidget()) {
+      const nsPoint real = LayoutDevicePixel::ToAppUnits(
+          rootWidget->WidgetToScreenOffset(), auPerDevPx);
+      const nsPoint declared(
+          CSSPixel::ToAppUnits(CSSCoord(float(declaredOrigin->x))),
+          CSSPixel::ToAppUnits(CSSCoord(float(declaredOrigin->y))));
+      originShift = declared - real;
     }
   }
 
   const CSSPoint pt = CSSPixel::FromAppUnits(
       LayoutDevicePixel::ToAppUnits(topLevelPoint, auPerDevPx) +
       LayoutDevicePixel::ToAppUnits(
-          guiEvent->mWidget->TopLevelWidgetToScreenOffset(), auPerDevPx));
+          guiEvent->mWidget->TopLevelWidgetToScreenOffset(), auPerDevPx) +
+      originShift);
   return Some(CSSDoublePoint(pt.x, pt.y));
 }
 
