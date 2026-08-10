@@ -81,6 +81,16 @@ WEIGHT_WORD_TO_CLASS = {
 # The test that found it needs TWO different fallbacks (`"X", monospace` and
 # `"X", cursive`): a single monospace fallback calls Consolas unresolved,
 # because Consolas IS the monospace fallback.
+# [PROVATO E RITIRATO IL 2026-08-09.] Per qualche ora questo insieme ha
+# contenuto "Arial Black", per emettere quella famiglia separatamente invece di
+# ripiegarla. La misura che lo giustificava era presa contro
+# C:/tmp/ff151-win2, che riporta 151.0 ma NON e' un retail: non firmato,
+# ProductName "Nightly", IsPrivateBuild true. Contro un 151.0 scaricato da
+# archive.mozilla.org e verificato Authenticode come firmato Mozilla, la
+# risposta e' l'opposto: `font-weight:900` su Arial misura 277.5833, cioe' il
+# retail USA Arial Black come faccia a peso 900 - che e' esattamente cio' che il
+# ripiegamento riproduce, e che questa build faceva gia'. La riga sopra aveva
+# ragione; il "difetto" era la build di confronto.
 KEEP_GDI_NAME = set()
 
 # nameIDs that carry copyright / trademark / manufacturer / license text -

@@ -793,6 +793,14 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   mozilla::CSSIntSize GetOuterSize(mozilla::dom::CallerType aCallerType,
                                    mozilla::ErrorResult& aError);
   nsRect GetInnerScreenRect();
+
+  // L'origine REALE del contenuto di primo livello, in app units: e'
+  // l'offset su schermo del root widget, cioe' esattamente cio' che
+  // mozInnerScreenX riportava prima di diventare una dichiarazione, ed e'
+  // la stessa quantita' che Event.cpp usa per lo scarto. Serve perche' il
+  // valore dichiarato appartiene al primo livello: un sottoframe deve
+  // sommare lo scarto al PROPRIO rettangolo, non sostituirlo.
+  nsPoint GetRealTopLevelContentOrigin();
   static mozilla::Maybe<mozilla::CSSIntSize> GetRDMDeviceSize(
       const Document& aDocument);
 

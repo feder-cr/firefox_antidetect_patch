@@ -7,6 +7,7 @@
 
 #include "Units.h"
 #include "mozilla/Maybe.h"
+#include "nsPoint.h"
 
 namespace mozilla {
 namespace gfx {
@@ -82,6 +83,36 @@ Maybe<CSSIntPoint> StealthDeclaredWindowOrigin();
  * chrome is entirely above, which is the tab strip and the toolbar.
  */
 Maybe<CSSIntPoint> StealthDeclaredContentOrigin();
+
+/**
+ * Lo SCARTO fra le coordinate reali dello schermo e quelle dichiarate, in app
+ * units. Nothing() quando il motore e' spento.
+ *
+ * Esiste perche' la sostituzione secca non basta, e la prima versione di questa
+ * patch lo ha dimostrato sul campo. `mozInnerScreenX` restituiva l'origine
+ * dichiarata a OGNI finestra, iframe compresi: misurato il 2026-08-10, un
+ * iframe posizionato a (220, 150) nella pagina rispondeva (0, 85) esattamente
+ * come il documento di primo livello, e dentro quell'iframe l'invariante che
+ * questa patch esiste per difendere
+ *
+ *     event.screenX - event.clientX === window.mozInnerScreenX
+ *
+ * dava 220 contro 0. La contraddizione era stata tolta al primo livello e
+ * ricreata identica un livello sotto, e il gate non se ne accorgeva perche'
+ * guardava solo il primo livello.
+ *
+ * La forma giusta e' quella che Event.cpp usava gia': non si SOSTITUISCE il
+ * valore, si sposta l'ANCORA. Il chiamante passa la propria origine reale - per
+ * il documento di primo livello e' l'offset del root widget, per un sottoframe
+ * e' il rettangolo del suo root frame - e somma lo scarto. Cosi' l'offset
+ * relativo fra i frame resta quello vero, e la relazione fra eventi e geometria
+ * vale a QUALSIASI profondita' di annidamento per costruzione, invece che a un
+ * livello solo perche' due chiamanti si trovano d'accordo.
+ *
+ * Una funzione sola, perche' lo scarto e' un fatto e i fatti stanno in un posto:
+ * quando era calcolato in tre punti, il quarto consumatore fu dimenticato.
+ */
+Maybe<nsPoint> StealthDeclaredOriginShift(const nsPoint& aRealContentOrigin);
 
 }  // namespace gfx
 }  // namespace mozilla

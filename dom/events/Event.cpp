@@ -712,16 +712,16 @@ Maybe<CSSDoublePoint> Event::GetScreenCoords(
   // mozInnerScreenX reported before it became a declaration - so the relation
   // the gate checks holds by construction, and both terms are widget calls the
   // original expression already made.
-  const Maybe<CSSIntPoint> declaredOrigin = gfx::StealthDeclaredContentOrigin();
+  // Lo scarto lo calcola UNA funzione, la stessa che chiamano mozInnerScreenX e
+  // mozInnerScreenY. Quando l'aritmetica stava soltanto qui, la sostituzione
+  // secca in nsGlobalWindowOuter ha ricreato dentro gli iframe la contraddizione
+  // che questo blocco toglie al primo livello - misurato il 2026-08-10.
   nsPoint originShift;
-  if (declaredOrigin) {
-    if (nsCOMPtr<nsIWidget> rootWidget = aPresContext->GetRootWidget()) {
-      const nsPoint real = LayoutDevicePixel::ToAppUnits(
-          rootWidget->WidgetToScreenOffset(), auPerDevPx);
-      const nsPoint declared(
-          CSSPixel::ToAppUnits(CSSCoord(float(declaredOrigin->x))),
-          CSSPixel::ToAppUnits(CSSCoord(float(declaredOrigin->y))));
-      originShift = declared - real;
+  if (nsCOMPtr<nsIWidget> rootWidget = aPresContext->GetRootWidget()) {
+    const nsPoint real = LayoutDevicePixel::ToAppUnits(
+        rootWidget->WidgetToScreenOffset(), auPerDevPx);
+    if (const auto shift = gfx::StealthDeclaredOriginShift(real)) {
+      originShift = *shift;
     }
   }
 

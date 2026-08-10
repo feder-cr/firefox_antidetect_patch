@@ -3660,6 +3660,31 @@ nsRect nsGlobalWindowOuter::GetInnerScreenRect() {
   return rootFrame->GetScreenRectInAppUnits();
 }
 
+nsPoint nsGlobalWindowOuter::GetRealTopLevelContentOrigin() {
+  // La STESSA quantita' che Event.cpp passa allo scarto: l'offset su schermo
+  // del root widget. In un processo di contenuto e' il PuppetWidget, il cui
+  // offset e' l'origine dell'area di contenuto di primo livello - per il
+  // documento top coincide con GetInnerScreenRect(), per un sottoframe no, ed e'
+  // proprio quella differenza che va conservata.
+  if (!mDocShell) {
+    return nsPoint();
+  }
+  PresShell* presShell = mDocShell->GetPresShell();
+  if (!presShell) {
+    return nsPoint();
+  }
+  nsPresContext* pc = presShell->GetPresContext();
+  if (!pc) {
+    return nsPoint();
+  }
+  nsCOMPtr<nsIWidget> rootWidget = pc->GetRootWidget();
+  if (!rootWidget) {
+    return nsPoint();
+  }
+  return LayoutDevicePixel::ToAppUnits(rootWidget->WidgetToScreenOffset(),
+                                       pc->AppUnitsPerDevPixel());
+}
+
 Maybe<CSSIntSize> nsGlobalWindowOuter::GetRDMDeviceSize(
     const Document& aDocument) {
   // RDM device size should reflect the simulated device resolution, and
@@ -3716,11 +3741,18 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
   //
   // GetInnerScreenRect below keeps serving its other callers - popup placement,
   // coordinate conversion - the real rect. Those are not content-visible.
-  if (const auto origin = mozilla::gfx::StealthDeclaredContentOrigin()) {
-    return float(origin->x);
-  }
-
+  // Lo SCARTO, non la sostituzione. Sostituire risponde l'origine del PRIMO
+  // LIVELLO a ogni finestra: misurato il 2026-08-10, un iframe a (220, 150)
+  // nella pagina rispondeva (0, 85) come il top, e dentro quell'iframe
+  // screenX - clientX dava 220 contro un mozInnerScreenX di 0 - la stessa
+  // contraddizione che questa patch esiste per togliere, spostata di un
+  // livello. Sommando lo scarto al rettangolo REALE della finestra, l'offset
+  // fra i frame resta vero e la relazione vale a ogni profondita'.
   nsRect r = GetInnerScreenRect();
+  if (const auto shift = mozilla::gfx::StealthDeclaredOriginShift(
+          GetRealTopLevelContentOrigin())) {
+    return nsPresContext::AppUnitsToFloatCSSPixels(r.x + shift->x);
+  }
   return nsPresContext::AppUnitsToFloatCSSPixels(r.x);
 }
 
@@ -3735,11 +3767,11 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
   // the content - tab strip plus navigation toolbar - so the content starts at
   // window_y + chrome_h. Stock 151 measured 85 here and reports exactly
   // mozInnerScreenY - screenY == outerHeight - innerHeight.
-  if (const auto origin = mozilla::gfx::StealthDeclaredContentOrigin()) {
-    return float(origin->y);
-  }
-
   nsRect r = GetInnerScreenRect();
+  if (const auto shift = mozilla::gfx::StealthDeclaredOriginShift(
+          GetRealTopLevelContentOrigin())) {
+    return nsPresContext::AppUnitsToFloatCSSPixels(r.y + shift->y);
+  }
   return nsPresContext::AppUnitsToFloatCSSPixels(r.y);
 }
 

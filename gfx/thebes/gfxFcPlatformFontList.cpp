@@ -461,7 +461,12 @@ gfxFontconfigFontEntry::AutoHBFace gfxFontconfigFontEntry::GetHBFace() {
       NS_WARNING(nsPrintfCString("fallback to gfxFontEntry::GetHBFace for %s",
                                  Name().get())
                      .get());
-      face = hb_face_reference(gfxFontEntry::GetHBFace());
+      // Oggetto nominato, non temporaneo: la conversione di AutoHBFace e'
+      // ref-qualified `const&` proprio per rendere impossibile la forma che
+      // penzola. Questa chiamata era gia' corretta - il temporaneo sarebbe
+      // vissuto fino al punto e virgola - e cambia solo forma.
+      const auto autoFace(gfxFontEntry::GetHBFace());
+      face = hb_face_reference(autoFace);
       useTableCache = true;
     }
     AutoWriteLock lock(mLock);
@@ -604,7 +609,11 @@ hb_blob_t* gfxFontconfigFontEntry::GetFontTable(uint32_t aTableTag) {
     return gfxFontEntry::GetFontTable(aTableTag);
   }
 
-  auto* table = hb_face_reference_table(GetHBFace(), aTableTag);
+  // Come sopra: oggetto nominato invece del temporaneo. Era corretto anche
+  // prima (il temporaneo vive fino al punto e virgola), ma la conversione di
+  // AutoHBFace ora e' `const&` per impedire la forma che penzola.
+  const auto face(GetHBFace());
+  auto* table = hb_face_reference_table(face, aTableTag);
   return table != hb_blob_get_empty() ? table : nullptr;
 }
 

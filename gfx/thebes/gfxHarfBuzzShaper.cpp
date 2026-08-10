@@ -725,6 +725,21 @@ hb_bool_t gfxHarfBuzzShaper::GetGlyphExtents(
 }
 
 hb_font_t* gfxHarfBuzzShaper::GetDesignFont() const {
+  // Sotto mMutex, come OGNI altro stato mutabile di questa classe.
+  //
+  // L'intestazione lo dichiara a chiare lettere due membri piu' sotto: lo
+  // shaper "is shared across threads via the global gfxFontCache", e per questo
+  // esiste il mutex. mDesignFont era l'unico membro mutabile che quel contratto
+  // non rispettava - un controlla-e-assegna nudo. Due thread potevano vederlo
+  // nullo insieme, costruire entrambi un font e prendere entrambi un
+  // riferimento alla faccia: uno vince l'assegnazione, l'altro resta con un
+  // puntatore che nessuno distruggera' e che sta gia' usando. Il distruttore
+  // ne libera uno solo.
+  //
+  // E' ricorsivo apposta, quindi prenderlo qui e' sicuro anche quando il
+  // chiamante lo tiene gia'.
+  mozilla::RecursiveMutexAutoLock lock(mMutex);
+
   // A second hb_font on the same face, used for nothing but design-space
   // metrics, and deliberately NOT the shaping font: that one carries our own
   // callbacks, which route back into the platform backend, which is the thing
@@ -753,12 +768,30 @@ hb_font_t* gfxHarfBuzzShaper::GetDesignFont() const {
   if (!upem || upem == gfxFontEntry::kInvalidUPEM) {
     return nullptr;
   }
-  hb_face_t* face = mFont->GetFontEntry()->GetHBFace();
+  // `auto`, non `hb_face_t*`, e NIENTE hb_face_destroy a mano.
+  //
+  // GetHBFace() torna un AutoHBFace PER VALORE, che e' un oggetto RAII: se lo
+  // si assegna a un puntatore grezzo, il temporaneo viene convertito e poi
+  // DISTRUTTO alla fine di quella stessa istruzione, quindi il puntatore e'
+  // gia' penzolante alla riga dopo. hb_font_create prende il proprio
+  // riferimento scrivendo dentro memoria liberata, e il rilascio esplicito
+  // qui sotto era il terzo decremento sullo stesso oggetto morto: da li' in
+  // avanti l'allocatore e' corrotto e il segmentation fault arriva altrove,
+  // di solito molto dopo, dentro HarfBuzz che compone il testo.
+  //
+  // Misurato PRIMA di questa correzione: il processo di CONTENUTO moriva in 6
+  // sessioni di navigazione su 10 su Linux e 4 su 10 su Windows, contro 0 su
+  // 10 del firefox di Playwright sulla stessa macchina, e i core cadevano su
+  // hb_face_t::get_num_glyphs con la faccia gia' liberata.
+  //
+  // Gli altri TREDICI chiamanti di GetHBFace() nell'albero tengono vivo
+  // l'oggetto RAII; questo era l'unico che lo buttava via. Il proprietario
+  // dev'essere UNO, e qui e' l'AutoHBFace. Vedi 70-known-bugs.md, 2026-08-10.
+  const auto face(mFont->GetFontEntry()->GetHBFace());
   if (!face) {
     return nullptr;
   }
   hb_font_t* font = hb_font_create(face);
-  hb_face_destroy(face);
   if (!font) {
     return nullptr;
   }

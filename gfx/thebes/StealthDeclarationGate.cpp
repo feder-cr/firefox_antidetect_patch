@@ -276,5 +276,16 @@ Maybe<CSSIntPoint> StealthDeclaredContentOrigin() {
   return Some(CSSIntPoint(window->x + chromeW / 2, window->y + chromeH));
 }
 
+Maybe<nsPoint> StealthDeclaredOriginShift(const nsPoint& aRealContentOrigin) {
+  const Maybe<CSSIntPoint> declared = StealthDeclaredContentOrigin();
+  if (declared.isNothing()) {
+    return Nothing();
+  }
+  const nsPoint declaredAppUnits(
+      CSSPixel::ToAppUnits(CSSCoord(float(declared->x))),
+      CSSPixel::ToAppUnits(CSSCoord(float(declared->y))));
+  return Some(declaredAppUnits - aRealContentOrigin);
+}
+
 }  // namespace gfx
 }  // namespace mozilla
