@@ -73,11 +73,22 @@ jobs:
             win_disables: 'yes'
             extra_pkgs: 'msitools p7zip-full zip'
             asset: firefox-151.0-stealth-win-x86_64.zip
-          # Both mac legs run on the standard (free-on-public) macos-26 arm64 image:
-          # FF151 requires macOS SDK >= 26.4, which first appears on macos-26 (Xcode
-          # 26.4.1). macos-15 topped out at SDK 26.2 and the only macOS-26 Intel image
-          # is a billed large runner, so x86_64 is CROSS-compiled here on arm64 with the
-          # universal SDK (--target=x86_64-apple-darwin) and driven under Rosetta 2.
+          # Each mac leg builds on its OWN architecture, natively. FF151 needs macOS
+          # SDK >= 26.4, which first appears on the macos-26 images (Xcode 26.4.1,
+          # present at the same path on both), so macos-15 is out.
+          #
+          # x86_64 spent one release cross-built on the arm64 image and driven under
+          # Rosetta 2, because on 2026-07-23 the macOS-26 Intel image did not exist
+          # yet. It was published on 2026-07-29, six days later, as the standard
+          # `macos-26-intel` label - the same relationship `macos-15-intel` had to
+          # `macos-15-large`, and that one was free on public repos for us. Nobody
+          # re-checked, so the comment outlived the fact by two weeks.
+          #
+          # Native matters more here than it would elsewhere. Rosetta answers "yes,
+          # it runs" to a question only a real Intel CPU can answer, so the gate
+          # could not see an Intel-only defect even in principle - and this product
+          # SPOOFS hardware, so a fingerprint measured under translation is not the
+          # one an Intel user receives.
           - leg: macos-arm64
             runner: macos-26
             family: mac
@@ -87,7 +98,7 @@ jobs:
             extra_pkgs: ''
             asset: firefox-151.0-stealth-macos-arm64.tar.gz
           - leg: macos-x86_64
-            runner: macos-26
+            runner: macos-26-intel
             family: mac
             target: x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
@@ -174,12 +185,10 @@ jobs:
           echo "SDK_PATH=$SDKP" >> "$GITHUB_ENV"
           echo "macOS SDK $(xcrun --sdk macosx --show-sdk-version) at $SDKP"
 
-      # x86_64 is cross-built on this arm64 runner, so running it (the --version
-      # self-gate at package time, and the drive gate later) needs Rosetta 2. arm64
-      # is native and skips this.
-      - name: Install Rosetta 2 (macOS x86_64 cross leg)
-        if: matrix.leg == 'macos-x86_64'
-        run: sudo softwareupdate --install-rosetta --agree-to-license
+      # No Rosetta step here any more: each mac leg runs on its own architecture, so
+      # the --version self-gate at package time executes a native binary on a native
+      # CPU. The step this replaces installed Rosetta only on the x86_64 leg, which
+      # is the tell that the leg was not native.
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.rust_target }} || true
@@ -360,7 +369,7 @@ jobs:
             asset: firefox-151.0-stealth-macos-arm64.tar.gz
             extra: ''
           - leg: macos-x86_64
-            runner: macos-26
+            runner: macos-26-intel
             kind: mac
             asset: firefox-151.0-stealth-macos-x86_64.tar.gz
             extra: ''
@@ -376,9 +385,10 @@ jobs:
         with:
           name: asset-${{ matrix.leg }}
           path: art
-      - name: Install Rosetta 2 (macOS x86_64 cross leg — the binary is x86_64, the runner arm64)
-        if: matrix.leg == 'macos-x86_64'
-        run: sudo softwareupdate --install-rosetta --agree-to-license
+      # The Rosetta install that used to sit here is gone with the cross build: the
+      # x86_64 asset is now driven on macos-26-intel, a real Intel CPU. That is the
+      # only arrangement in which this gate can answer the question it is asked,
+      # since Rosetta says "it runs" for a binary a real Intel machine might refuse.
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: '3.11' }
@@ -418,7 +428,12 @@ jobs:
       # fonts. This is the ONLY place macOS/CoreText font handling is validated -
       # there is no local Mac - so a Mac-only regression (e.g. host fonts leaking
       # through CoreText, or the bundle-only skip not wired in) fails HERE, on the
-      # real macos-26 artifact (x86_64 driven under Rosetta), before anything ships.
+      # real artifact, each architecture on its own CPU, before anything ships.
+      #
+      # "Each on its own CPU" is load-bearing and was not true for one release: in
+      # firefox-18 the x86_64 asset was driven under Rosetta, so this gate ran
+      # against a translation layer rather than an Intel machine. It cannot see an
+      # Intel-only fault that way, and it stayed green.
       # Headless, no proxy, no secrets. See scripts/ci_font_gate.py in the wrapper.
       - name: FONT GATE - exactly the Windows font persona on this OS
         shell: bash
