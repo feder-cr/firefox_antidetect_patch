@@ -521,7 +521,7 @@ nsresult gfxFontconfigFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   if (NS_SUCCEEDED(rv)) {
     gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
     fontlist::FontList* sharedFontList = pfl->SharedFontList();
-    if (!IsUserFont() && mShmemFace) {
+    if (ShouldPublishCharacterMap()) {
       mShmemFace->SetCharacterMap(sharedFontList, charmap, mShmemFamily);
       if (TrySetShmemCharacterMap()) {
         setCharMap = false;
@@ -2279,6 +2279,11 @@ gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
     // families permanently not-fully-initialized, which is what lets the async
     // cmap path record a codepoint in mCodepointsWithNoFonts and keep that
     // verdict for the rest of the session.
+    //
+    // Setting mShmemFace here was necessary for that second consequence and NOT
+    // sufficient: ReadCMAP still refused to publish, because it asked
+    // `!IsUserFont()` and every bundled face is built from file data. That half
+    // is fixed separately, in gfxFontEntry::ShouldPublishCharacterMap.
     fe->InitializeFrom(aFace, aFamily);
     return fe;
   }

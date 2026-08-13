@@ -1538,19 +1538,11 @@ already_AddRefed<gfxFont> gfxPlatformFontList::GlobalFontFallback(
         if (!IsVisibleToCSS(family, level)) {
           continue;
         }
-        // Stealth: bundle-only must NOT take the async shortcut. Skipping a
-        // family whose charmap is not loaded yet makes the answer depend on
-        // what the process happens to have touched already, and that is
-        // observable: measured 2026-08-07, the regional-indicator pair through
-        // "Arial" gave 52.63 on BOTH platforms when it was the first thing a
-        // fresh page measured, and 63.53 (Windows) vs 80.07 (Linux) once other
-        // families had been measured first. Same binary, same page - the
-        // divergence was the load order. 68 bundled families is a small enough
-        // list to search synchronously, and a deterministic answer is the whole
-        // point of moving fallback into the manifest.
-        if (!family.IsFullyInitialized() && !mStealthBundleOnly &&
-            StaticPrefs::gfx_font_rendering_fallback_async() &&
-            !XRE_IsParentProcess()) {
+        // Stealth: the condition used to be spelled out here, and the same
+        // condition was MISSING at the other site that asks it
+        // (gfxFontGroup::FindFallbackFaceForChar). It now lives in one place -
+        // MayDeferCmapLoading - which carries the measurement and the reason.
+        if (!family.IsFullyInitialized() && MayDeferCmapLoading()) {
           // Start loading all the missing charmaps; but this is async,
           // so for now we just continue, ignoring this family.
           StartCmapLoadingFromFamily(i);
@@ -2080,6 +2072,21 @@ class InitializeFamilyRunnable : public mozilla::Runnable {
   bool mLoadCmaps;
 };
 
+bool gfxPlatformFontList::MayDeferCmapLoading() const {
+  // Never under bundle-only. Deferring means answering a fallback search from a
+  // partially loaded list, so the answer depends on what this process happens to
+  // have touched already - and that is observable: measured 2026-08-07, the
+  // regional-indicator pair through "Arial" gave 52.63 on BOTH platforms when it
+  // was the first thing a fresh page measured, and 63.53 (Windows) vs 80.07
+  // (Linux) once other families had been measured first. Same binary, same page;
+  // the divergence was the load order. 68 bundled families is a small enough list
+  // to search synchronously, and a deterministic answer is the whole point of
+  // moving fallback into the manifest.
+  return !mStealthBundleOnly &&
+         StaticPrefs::gfx_font_rendering_fallback_async() &&
+         !XRE_IsParentProcess();
+}
+
 bool gfxPlatformFontList::InitializeFamily(fontlist::Family* aFamily,
                                            bool aLoadCmaps) {
   MOZ_ASSERT(SharedFontList());
@@ -2107,55 +2114,64 @@ bool gfxPlatformFontList::InitializeFamily(fontlist::Family* aFamily,
     AutoTArray<fontlist::Face::InitData, 16> faceList;
     GetFacesInitDataForFamily(aFamily, faceList, aLoadCmaps);
     aFamily->AddFaces(list, faceList);
-  } else {
-    // The family's face list was already initialized, but if aLoadCmaps is
-    // true we also want to eagerly load character maps. This is used when a
-    // child process is doing SearchAllFontsForChar, to have the parent load
-    // all the cmaps at once and reduce IPC traffic (and content-process file
-    // access overhead, which is crippling for DirectWrite on Windows).
-    if (aLoadCmaps) {
-      if (auto* faces = aFamily->Faces(list)) {
-        for (size_t i = 0; i < aFamily->NumFaces(); i++) {
-          auto* face = faces[i].ToPtr<fontlist::Face>(list);
-          if (face && face->mCharacterMap.IsNull()) {
-            // We don't want to cache this font entry, as the parent will most
-            // likely never use it again; it's just to populate the charmap for
-            // the benefit of the child process.
-            RefPtr<gfxFontEntry> fe = CreateFontEntry(face, aFamily);
-            if (fe) {
-              fe->ReadCMAP();
-            }
+  }
+
+  // Load any character map that is still missing. This used to be the `else` of
+  // the branch above, i.e. it ran ONLY for a family whose face list already
+  // existed, on the assumption that a backend asked with aLoadCmaps=true fills
+  // Face::InitData::mCharMap while it enumerates. Our bundle path cannot do that
+  // without a SECOND cmap reader of its own, so under bundle-only a family
+  // initialized with aLoadCmaps=true came out with every face map null and
+  // stayed that way forever - the eager loader existed and was unreachable on
+  // the first call, which is the only call most families ever get.
+  //
+  // Moving it out of the `else` costs upstream nothing: the loop skips any face
+  // that already has a map, so a backend that filled InitData still does the
+  // work exactly once. It is used when a child process is doing
+  // SearchAllFontsForChar, to have the parent load all the cmaps at once and
+  // reduce IPC traffic (and content-process file access overhead, which is
+  // crippling for DirectWrite on Windows).
+  if (aLoadCmaps) {
+    if (auto* faces = aFamily->Faces(list)) {
+      for (size_t i = 0; i < aFamily->NumFaces(); i++) {
+        auto* face = faces[i].ToPtr<fontlist::Face>(list);
+        if (face && face->mCharacterMap.IsNull()) {
+          // We don't want to cache this font entry, as the parent will most
+          // likely never use it again; it's just to populate the charmap for
+          // the benefit of the child process.
+          RefPtr<gfxFontEntry> fe = CreateFontEntry(face, aFamily);
+          if (fe) {
+            fe->ReadCMAP();
           }
         }
       }
     }
   }
 
-  // Stealth: bundle-only must NOT stamp a family charmap, and this one line is
-  // why every character that needed system fallback rendered as a hex box.
+  // Stealth: this call used to carry `&& !mStealthBundleOnly`, and that deroga
+  // was CORRECT for as long as no bundled face had a character map: with every
+  // face map null, SetupFamilyCharMap takes its "unusable family" branch and
+  // stores the EMPTY map deliberately so it will not retry, and from there
+  // SearchAllFontsForChar returns on its second line for every codepoint, both
+  // CommonFontFallback and GlobalFontFallback funnel through it,
+  // SystemFindFontForChar returns null, and every character needing system
+  // fallback rendered as a hex box. Measured 2026-08-08: U+2764 through "Arial"
+  // gave 31.77 on Windows and 40.03 on Linux, and neither is a font - both are
+  // the hex box, whose advance is max(aveCharWidth, 13px) of the REQUESTED font,
+  // where retail Firefox gives 69.97 (Segoe UI Symbol, a family we bundle and
+  // could not reach).
   //
-  // The chain. StealthBundleFontList::GetFaces publishes each face with a null
-  // mCharMap, and the only other publisher is each backend's ReadCMAP, behind
-  // `if (!IsUserFont() && mShmemFace)`. Every bundled face IS a data user font
-  // - DWrite and fontconfig both construct them through the file/SharedFTFace
-  // path that sets mIsDataUserFont - so that guard is false on every platform
-  // and no face cmap ever reaches the shared list. SetupFamilyCharMap then
-  // takes its "unusable family" branch and stores the EMPTY map, deliberately,
-  // so it will not retry. From that point SearchAllFontsForChar returns on its
-  // second line for every codepoint, both CommonFontFallback and
-  // GlobalFontFallback funnel through it, SystemFindFontForChar returns null
-  // and records the codepoint in mCodepointsWithNoFonts - which is why the
-  // result was identical cold and warm.
-  //
-  // Measured 2026-08-08: U+2764 through "Arial" gave 31.77 on Windows and 40.03
-  // on Linux, and neither is a font - both are the hex box, whose advance is
-  // max(aveCharWidth, 13px) of the REQUESTED font. Retail Firefox gives 69.97,
-  // which is Segoe UI Symbol, a family we bundle and could never reach.
-  //
-  // Leaving the map null costs one thing: SearchAllFontsForChar can no longer
-  // skip a family cheaply, so fallback tests faces one by one. Over 68 families
-  // that is the correct trade against not resolving the character at all.
-  if (aLoadCmaps && aFamily->IsInitialized() && !mStealthBundleOnly) {
+  // The deroga is gone because its PREMISE is gone: gfxFontEntry::
+  // ShouldPublishCharacterMap now lets a bundled face publish into the shared
+  // list, so the union computed here is a real union and not an empty map. What
+  // the deroga cost while it stood is the whole reason this changed: with no
+  // family map, IsFullyInitialized() is false for all 68 families forever, so
+  // SearchAllFontsForChar could never reject a family cheaply AND every search
+  // re-ran InitializeFamily through IPC because nothing was ever cached.
+  // Measured 2026-08-13 on the cost bench: 176.9 ms per fallback lookup, and
+  // 206.7 ms on the SECOND page of the same session - it did not warm up,
+  // because there was nothing to warm.
+  if (aLoadCmaps && aFamily->IsInitialized()) {
     aFamily->SetupFamilyCharMap(list);
   }
 

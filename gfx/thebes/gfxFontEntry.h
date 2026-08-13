@@ -771,6 +771,14 @@ class gfxFontEntry {
   void InitializeFrom(mozilla::fontlist::Face* aFace,
                       const mozilla::fontlist::Family* aFamily);
 
+  // Stealth: does this entry's character map belong in the shared font list?
+  // Every backend's ReadCMAP asked `!IsUserFont() && mShmemFace`, four copies of
+  // one rule, and that rule is WRONG for a bundled face: it is constructed from
+  // file data (so IsUserFont() is true) while being one of the list's own faces.
+  // The consequence was that no bundled face's cmap ever reached shared memory.
+  // One predicate, four readers.
+  bool ShouldPublishCharacterMap() const;
+
   // Shaper-specific face objects, shared by all instantiations of the same
   // physical font, regardless of size.
   // Usually, only one of these will actually be created for any given font

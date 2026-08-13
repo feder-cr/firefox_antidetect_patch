@@ -435,6 +435,23 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   void InitializeFamily(uint32_t aGeneration, uint32_t aFamilyIndex,
                         bool aLoadCmaps);
 
+  // Stealth: the ONE place that decides whether a fallback search may skip a
+  // family whose character maps are not loaded yet, kicking off an async load
+  // and moving on. Two sites ask (GlobalFontFallback and
+  // gfxFontGroup::FindFallbackFaceForChar) and the answer has to be the same in
+  // both: skipping makes the result depend on what this process happens to have
+  // touched already, and that is observable in measureText widths. The condition
+  // was written out by hand at the first site and was simply MISSING at the
+  // second, so every text run took the deferring path while the code read as if
+  // bundle-only had been handled. One predicate, two readers.
+  bool MayDeferCmapLoading() const;
+
+  // Stealth: true in this patched build. Set in the constructor and never
+  // mutated, so it is safe to read without holding mLock. Needed outside this
+  // class because "is this face one of ours" cannot be answered by IsUserFont():
+  // every bundled face is constructed from file data and so reports true.
+  bool StealthBundleOnly() const { return mStealthBundleOnly; }
+
   // name lookup table methods
 
   void AddOtherFamilyNames(gfxFontFamily* aFamilyEntry,

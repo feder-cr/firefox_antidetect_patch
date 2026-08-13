@@ -127,6 +127,32 @@ void gfxFontEntry::InitializeFrom(fontlist::Face* aFace,
   mHasCmapTable = TrySetShmemCharacterMap();
 }
 
+bool gfxFontEntry::ShouldPublishCharacterMap() const {
+  if (!mShmemFace) {
+    // Not a face from the shared list: there is no slot to publish into. This
+    // alone excludes every downloaded @font-face, which is never built from a
+    // fontlist::Face and so never has an mShmemFace.
+    return false;
+  }
+  if (mIsLocalUserFont) {
+    // A `src: local()` reference borrows the list's face but carries the
+    // @font-face rule's own weight/stretch/style ranges; its cmap must not
+    // overwrite the slot the list's own face owns.
+    return false;
+  }
+  if (!mIsDataUserFont) {
+    // Upstream case: an installed system face, exactly what the old
+    // `!IsUserFont()` test meant to allow.
+    return true;
+  }
+  // Bundle-only: every face in the list is instantiated from its bundle file, so
+  // mIsDataUserFont is true for all of them and the old test rejected the entire
+  // font list. Publishing is what makes the family character map a real union
+  // instead of the deliberate empty "unusable family" map, and therefore what
+  // lets IsFullyInitialized() ever become true.
+  return gfxPlatformFontList::PlatformFontList()->StealthBundleOnly();
+}
+
 bool gfxFontEntry::TrySetShmemCharacterMap() {
   auto* pfl = gfxPlatformFontList::PlatformFontList();
   // Hold the platform-fontlist lock so InitFontList() cannot reset

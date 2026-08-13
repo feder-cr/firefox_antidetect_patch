@@ -3033,9 +3033,13 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFallbackFaceForChar(
 
   // If async fallback is enabled, and the family isn't fully initialized yet,
   // just start the async cmap loading and return.
-  if (!aFamily->IsFullyInitialized() &&
-      StaticPrefs::gfx_font_rendering_fallback_async() &&
-      !XRE_IsParentProcess()) {
+  //
+  // Stealth: this is the site the bundle-only condition was missing from. The
+  // twin site in GlobalFontFallback spelled it out by hand, this one did not, and
+  // under bundle-only NO family is ever fully initialized - so every text run
+  // that needed a fallback face within a family took this early return in the
+  // content process. MayDeferCmapLoading is now the single answer for both.
+  if (!aFamily->IsFullyInitialized() && pfl->MayDeferCmapLoading()) {
     pfl->StartCmapLoadingFromFamily(aFamily - list->Families());
     return nullptr;
   }
