@@ -46,13 +46,22 @@ gfxDWriteFontFileStream::gfxDWriteFontFileStream(const uint8_t* aData,
   }
 }
 
+gfxDWriteFontFileStream::gfxDWriteFontFileStream(const uint8_t* aData,
+                                                 uint32_t aLength,
+                                                 uint64_t aFontFileKey,
+                                                 Borrowed)
+    : mBorrowed(aData), mBorrowedLength(aLength), mFontFileKey(aFontFileKey) {
+  // Nothing to copy. The caller guarantees the bytes outlive this object; see
+  // the header for why that guarantee holds for the only caller.
+}
+
 gfxDWriteFontFileStream::~gfxDWriteFontFileStream() {
   sFontFileStreams.erase(mFontFileKey);
 }
 
 HRESULT STDMETHODCALLTYPE
 gfxDWriteFontFileStream::GetFileSize(UINT64* fileSize) {
-  *fileSize = mData.Length();
+  *fileSize = BytesLength();
   return S_OK;
 }
 
@@ -65,11 +74,11 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileStream::ReadFileFragment(
     const void** fragmentStart, UINT64 fileOffset, UINT64 fragmentSize,
     void** fragmentContext) {
   // We are required to do bounds checking.
-  if (fileOffset + fragmentSize > (UINT64)mData.Length()) {
+  if (fileOffset + fragmentSize > (UINT64)BytesLength()) {
     return E_FAIL;
   }
   // We should be alive for the duration of this.
-  *fragmentStart = &mData[fileOffset];
+  *fragmentStart = Bytes() + fileOffset;
   *fragmentContext = nullptr;
   return S_OK;
 }
@@ -97,11 +106,12 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileLoader::CreateStreamFromKey(
   return S_OK;
 }
 
-/* static */
-HRESULT
-gfxDWriteFontFileLoader::CreateCustomFontFile(
-    const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
-    gfxDWriteFontFileStream** aFontFileStream) {
+// Stealth: the body of the two entry points below, which differ ONLY in whether
+// the stream copies the bytes. Written as one function instead of two so the
+// registration, the key allocation and the locking cannot drift apart.
+static HRESULT CreateFontFileImpl(const uint8_t* aFontData, uint32_t aLength,
+                                  bool aBorrowed, IDWriteFontFile** aFontFile,
+                                  gfxDWriteFontFileStream** aFontFileStream) {
   MOZ_ASSERT(aFontFile);
   MOZ_ASSERT(aFontFileStream);
 
@@ -115,13 +125,17 @@ gfxDWriteFontFileLoader::CreateCustomFontFile(
   sFontFileStreamsMutex.Lock();
   uint64_t fontFileKey = sNextFontFileKey++;
   RefPtr<gfxDWriteFontFileStream> ffsRef =
-      new gfxDWriteFontFileStream(aFontData, aLength, fontFileKey);
+      aBorrowed ? new gfxDWriteFontFileStream(
+                      aFontData, aLength, fontFileKey,
+                      gfxDWriteFontFileStream::Borrowed::Yes)
+                : new gfxDWriteFontFileStream(aFontData, aLength, fontFileKey);
   sFontFileStreams[fontFileKey] = ffsRef;
   sFontFileStreamsMutex.Unlock();
 
   RefPtr<IDWriteFontFile> fontFile;
   HRESULT hr = factory->CreateCustomFontFileReference(
-      &fontFileKey, sizeof(fontFileKey), Instance(), getter_AddRefs(fontFile));
+      &fontFileKey, sizeof(fontFileKey),
+      gfxDWriteFontFileLoader::Instance(), getter_AddRefs(fontFile));
   if (FAILED(hr)) {
     NS_WARNING("Failed to load font file from data!");
     return hr;
@@ -131,6 +145,24 @@ gfxDWriteFontFileLoader::CreateCustomFontFile(
   ffsRef.forget(aFontFileStream);
 
   return S_OK;
+}
+
+/* static */
+HRESULT
+gfxDWriteFontFileLoader::CreateCustomFontFile(
+    const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
+    gfxDWriteFontFileStream** aFontFileStream) {
+  return CreateFontFileImpl(aFontData, aLength, /* aBorrowed */ false,
+                            aFontFile, aFontFileStream);
+}
+
+/* static */
+HRESULT
+gfxDWriteFontFileLoader::CreateBorrowedFontFile(
+    const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
+    gfxDWriteFontFileStream** aFontFileStream) {
+  return CreateFontFileImpl(aFontData, aLength, /* aBorrowed */ true,
+                            aFontFile, aFontFileStream);
 }
 
 size_t gfxDWriteFontFileLoader::SizeOfIncludingThis(

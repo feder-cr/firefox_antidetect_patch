@@ -283,32 +283,43 @@ void StealthBundleFontList::GetFaces(const nsACString& aFamilyName,
   }
 }
 
-bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,
-                                         nsTArray<uint8_t>& aData) {
+already_AddRefed<StealthBundleFontList::FileBlob>
+StealthBundleFontList::GetFaceBlob(const nsACString& aFile) {
   nsCString file(aFile);
   if (auto cached = mFileCache.Lookup(file)) {
-    aData.AppendElements(cached.Data());
-    return true;
+    return do_AddRef(cached.Data());
   }
   nsCOMPtr<nsIFile> path;
   if (NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(path))) ||
       NS_FAILED(path->Append(u"fonts"_ns)) ||
       NS_FAILED(path->Append(NS_ConvertUTF8toUTF16(file)))) {
-    return false;
+    return nullptr;
   }
   nsCOMPtr<nsIInputStream> stream;
   if (NS_FAILED(NS_NewLocalFileInputStream(getter_AddRefs(stream), path))) {
-    return false;
+    return nullptr;
   }
   nsCString bytes;
   if (NS_FAILED(NS_ConsumeStream(stream, UINT32_MAX, bytes))) {
-    return false;
+    return nullptr;
   }
   nsTArray<uint8_t> buf;
   buf.AppendElements(reinterpret_cast<const uint8_t*>(bytes.get()),
                      bytes.Length());
-  aData.AppendElements(buf);
-  mFileCache.InsertOrUpdate(file, std::move(buf));
+  RefPtr<FileBlob> blob = new FileBlob(std::move(buf));
+  mFileCache.InsertOrUpdate(file, blob);
+  return blob.forget();
+}
+
+bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,
+                                         nsTArray<uint8_t>& aData) {
+  // One more copy than GetFaceBlob, on purpose: the FreeType and CoreText
+  // paths hand ownership of the bytes to a platform object that frees them.
+  RefPtr<FileBlob> blob = GetFaceBlob(aFile);
+  if (!blob) {
+    return false;
+  }
+  aData.AppendElements(blob->Data(), blob->Length());
   return true;
 }
 

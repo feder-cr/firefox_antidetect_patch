@@ -111,9 +111,37 @@ class StealthBundleFontList final {
   void GetFaces(const nsACString& aFamilyName,
                 nsTArray<mozilla::fontlist::Face::InitData>& aFaces);
 
-  // Reads the raw bytes of a bundle file (aFile is a Face's mDescriptor, i.e.
-  // the file name under <GRE>/fonts) into aData. Cached: the same buffer is
-  // shared across all faces of a .ttc. Returns false if the file is unreadable.
+  // The bytes of one bundle file, read once and SHARED. Refcounted because the
+  // readers are more than one - every face of a .ttc, and the platform stream
+  // the rasteriser keeps alive for as long as the font exists - and because a
+  // refcounted object never moves: the cache below stores RefPtrs, so rehashing
+  // it cannot invalidate a pointer someone is already reading through.
+  class FileBlob final {
+   public:
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileBlob)
+
+    explicit FileBlob(nsTArray<uint8_t>&& aBytes) : mBytes(std::move(aBytes)) {}
+
+    const uint8_t* Data() const { return mBytes.Elements(); }
+    uint32_t Length() const { return mBytes.Length(); }
+
+   private:
+    ~FileBlob() = default;
+    const nsTArray<uint8_t> mBytes;
+  };
+
+  // The shared bytes of a bundle file (aFile is a Face's mDescriptor, i.e. the
+  // file name under <GRE>/fonts), or null if unreadable. Read once and cached
+  // for the life of the process.
+  //
+  // Prefer this to ReadFaceData: it hands out the ONE copy instead of making a
+  // new one. The bundle is 218.7 MB across 126 files and the largest is a
+  // 35.4 MB .ttc with two faces, so a copy per face is not a rounding error.
+  already_AddRefed<FileBlob> GetFaceBlob(const nsACString& aFile);
+
+  // Reads the raw bytes of a bundle file into aData. Kept for the callers that
+  // need to OWN their bytes (the FreeType and CoreText paths hand ownership to
+  // the platform object); it is a copy of what GetFaceBlob returns.
   bool ReadFaceData(const nsACString& aFile, nsTArray<uint8_t>& aData);
 
   // Returns the PostScript name of the face at (aFile, aIndex) via aOut, or
@@ -180,8 +208,10 @@ class StealthBundleFontList final {
   nsTArray<mozilla::fontlist::Family::InitData> mFamilies;
   // family lookup key (lowercased display name) -> its faces (raw, copyable)
   nsTHashMap<nsCStringHashKey, nsTArray<StealthBundleFace>> mFaces;
-  // file name -> its raw bytes, so the N faces of a .ttc share one read
-  nsTHashMap<nsCStringHashKey, nsTArray<uint8_t>> mFileCache;
+  // file name -> its bytes, so the N faces of a .ttc share ONE copy. Never
+  // cleared: this object is deliberately leaked and lives for the process, which
+  // is what lets a borrowed pointer into a blob stay valid without a keepalive.
+  nsTHashMap<nsCStringHashKey, RefPtr<FileBlob>> mFileCache;
   // lowercased alias name -> target family display name
   nsTHashMap<nsCStringHashKey, nsCString> mAliases;
 

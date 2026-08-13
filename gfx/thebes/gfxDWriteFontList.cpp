@@ -1077,20 +1077,22 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
     // addresses the wanted face by index (mBundleFaceIndex).
     auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
-    nsTArray<uint8_t> data;
-    if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
+    // Stealth: ONE copy of the file - the bundle cache's - lent to every face.
+    // This used to be three copies per instantiation (the cache's, a per-call
+    // nsTArray, and a malloc+memcpy) of which the DWrite stream then kept a
+    // fourth permanently, PER FACE. On the 35.4 MB .ttc with two faces that was
+    // 106 MB resident where 35.4 is enough, and the bundle is 218.7 MB over 126
+    // files. The borrow is safe because the cache is immortal by construction:
+    // StealthBundleFontList is deliberately leaked and never clears it.
+    RefPtr<StealthBundleFontList::FileBlob> blob = bundle->GetFaceBlob(file);
+    if (!blob || !blob->Length()) {
       return nullptr;
     }
-    uint8_t* buf = static_cast<uint8_t*>(malloc(data.Length()));
-    if (!buf) {
-      return nullptr;
-    }
-    memcpy(buf, data.Elements(), data.Length());
     RefPtr<gfxDWriteFontFileStream> stream;
     RefPtr<IDWriteFontFile> fontFile;
-    HRESULT hr = gfxDWriteFontFileLoader::CreateCustomFontFile(
-        buf, data.Length(), getter_AddRefs(fontFile), getter_AddRefs(stream));
-    free(buf);
+    HRESULT hr = gfxDWriteFontFileLoader::CreateBorrowedFontFile(
+        blob->Data(), blob->Length(), getter_AddRefs(fontFile),
+        getter_AddRefs(stream));
     if (FAILED(hr)) {
       return nullptr;
     }
