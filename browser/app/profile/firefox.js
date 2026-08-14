@@ -2382,13 +2382,34 @@ pref("media.videocontrols.picture-in-picture.enable-when-switching-tabs.enabled"
 // removed.
 pref("browser.translation.neverForLanguages", "");
 
-// Enable Firefox translations powered by the Bergamot translations
-// engine https://browser.mt/.
-pref("browser.translations.enable", true);
-
-// Enable Firefox Select translations powered by Bergamot translations
-// engine https://browser.mt/.
-pref("browser.translations.select.enable", true);
+// STEALTHFOX: le traduzioni restano al default di Gecko, che e' SPENTO
+// (`modules/libpref/init/all.js` le dichiara false; era questa riga di Firefox ad
+// accenderle). Un browser che pilota una pagina non traduce niente.
+//
+// Cosa costavano, misurato il 2026-08-14 su Linux con about:memory dumpato via
+// SIGRTMIN. TranslationsParent rileva la lingua di OGNI pagina caricata, e per
+// farlo istanzia il worker del rilevatore CLD2: `cld-worker.js` tiene **17,75 MB**
+// di ArrayBuffer nel processo padre, ed e' 17,3 dei 19,4 MB di tutti i worker
+// chrome messi insieme. Tre coppie di misure interlacciate sull'heap del padre -
+// 255,0/232,3, 276,0/276,0->229,0, 307,3/291,8 - danno tre differenze tutte
+// negative, media **-28,4 MB**, e la piu' piccola (-15,5) e' della dimensione del
+// worker stesso.
+//
+// ⛔ E qui la forma della correzione e' una PREF e non un taglio nel codice, al
+// contrario di about:newtab, per una ragione misurata e non per comodita': la
+// bandiera funziona. Con la pref al default il worker non nasce - 0,00 MB in tre
+// giri su tre - mentre browser.newtabpage.enabled lasciava about:home caricare
+// l'add-on lo stesso. Dove il flag di Firefox copre davvero la feature, tagliare
+// piu' a fondo aggiungerebbe divergenza dall'upstream per zero MB in piu'.
+//
+// Non osservabile da una pagina: la traduzione e' interfaccia chrome, nessuna API
+// web la espone, e non rilevare la lingua non cambia niente di cio' che la pagina
+// puo' leggere.
+//
+// Le due righe originali erano:
+//   pref("browser.translations.enable", true);
+//   pref("browser.translations.select.enable", true);
+pref("browser.translations.select.enable", false);
 
 // Enable the Translations QuickAction in the URL bar.
 pref("browser.translations.quickAction.enabled", true);
