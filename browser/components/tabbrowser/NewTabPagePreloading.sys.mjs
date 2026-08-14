@@ -34,11 +34,22 @@ export let NewTabPagePreloading = {
   },
 
   get enabled() {
-    return (
-      this.prefEnabled &&
-      this.newTabEnabled &&
-      !lazy.AboutNewTab.newTabURLOverridden
-    );
+    // STEALTHFOX: never. This preloads a whole content process to make the NEXT
+    // new tab open instantly - and there is no next new tab: this browser exists
+    // to drive one automated page, and Playwright creates its pages through
+    // Juggler rather than by opening a tab the user would see.
+    //
+    // Measured 2026-08-14 on Linux, counting the real process tree (the content
+    // processes are not direct children, so pgrep -P reports zero and lies): with
+    // the preload on, eleven processes; without, ten. The preloaded one is EMPTY
+    // - the memory report shows it holding no window object at all - and still
+    // costs about 15 MB of unique memory.
+    //
+    // It is cut here, in the one getter every caller goes through, and not by
+    // flipping browser.newtab.preload: the pref would leave the mechanism in
+    // place for anyone who set it back, and the point is that this build has no
+    // new-tab page to preload at all (see AboutNewTabRedirector.sys.mjs).
+    return false;
   },
 
   /**

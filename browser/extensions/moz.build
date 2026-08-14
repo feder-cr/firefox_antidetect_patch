@@ -2,6 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# STEALTHFOX: the built-in newtab add-on is NOT built and NOT packaged. Measured
+# 2026-08-14: it cost a whole extra content process and 75.4 MB of decoded
+# images per session, of which 34.9 MB was one 3024x3024 sponsored tile fetched
+# from ads-img.mozilla.org. about:home and about:newtab now resolve to the core
+# blank tab page - see AboutNewTabRedirector.sys.mjs, which is where the URL is
+# decided and therefore the only place that can make the page unreachable.
 DIRS += [
     "data-leak-blocker",
     "formautofill",
@@ -9,7 +15,6 @@ DIRS += [
     "webcompat",
     "pictureinpicture",
     "search-detection",
-    "newtab",
 ]
 
 JAR_MANIFESTS += ["jar.mn"]

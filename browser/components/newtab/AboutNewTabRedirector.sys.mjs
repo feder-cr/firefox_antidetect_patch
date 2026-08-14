@@ -537,25 +537,31 @@ export class AboutNewTabRedirectorParent extends BaseAboutNewTabRedirector {
   }
 
   newChannel(uri, loadInfo) {
-    let chromeURI = this.getChromeURI(uri);
-
-    if (
-      uri.spec.startsWith("about:home") ||
-      (uri.spec.startsWith("about:newtab") && lazy.BUILTIN_NEWTAB_ENABLED)
-    ) {
-      chromeURI = Services.io.newURI(this.defaultURL);
-    }
-
+    // STEALTHFOX: about:home and about:newtab resolve to the blank tab page that
+    // ships in the browser core, never to the built-in newtab add-on - which this
+    // build does not package at all (see browser/extensions/moz.build).
+    //
+    // Cut HERE and not at browser.newtabpage.enabled, and the measurement is the
+    // reason: that pref only guards about:NEWTAB. The line this replaces loaded
+    // the add-on for about:HOME unconditionally, and about:home is the default
+    // homepage - so the pref left the whole page reachable through the front
+    // door.
+    //
+    // What it cost, measured 2026-08-14 on Linux with about:memory dumped via
+    // SIGRTMIN: a whole extra content process (privilegedabout) and 75.4 MB of
+    // decoded images, of which 34.9 MB is one 3024x3024 SPONSORED tile fetched
+    // from ads-img.mozilla.org and counted twice because WebRender maps its own
+    // copy. A browser that exists to drive one automated page was downloading an
+    // advertisement on every launch.
+    //
+    // The suspended channel goes with it: it existed to hold the request until
+    // the built-in add-on finished initialising, and with no add-on to wait for
+    // it would wait forever.
     let resultChannel = Services.io.newChannelFromURIWithLoadInfo(
-      chromeURI,
+      this.getChromeURI(uri),
       loadInfo
     );
     resultChannel.originalURI = uri;
-
-    if (!this.#addonInitialized) {
-      return this.#getSuspendedChannel(resultChannel);
-    }
-
     return resultChannel;
   }
 
@@ -592,35 +598,15 @@ export class AboutNewTabRedirectorChild extends BaseAboutNewTabRedirector {
       );
     }
 
-    let pageURI;
-
-    if (uri.spec.startsWith("about:home")) {
-      let cacheChannel = AboutHomeStartupCacheChild.maybeGetCachedPageChannel(
-        uri,
-        loadInfo
-      );
-      if (cacheChannel) {
-        return cacheChannel;
-      }
-      pageURI = Services.io.newURI(this.defaultURL);
-    } else {
-      // The only other possibility is about:newtab.
-      //
-      // If about:newtab is being requested, then any subsequent request for
-      // about:home should _never_ request the cache (which might be woefully
-      // out of date compared to about:newtab), so we disqualify the cache if
-      // it still happens to be around.
-      AboutHomeStartupCacheChild.disqualifyCache();
-
-      if (lazy.BUILTIN_NEWTAB_ENABLED) {
-        pageURI = Services.io.newURI(this.defaultURL);
-      } else {
-        pageURI = this.getChromeURI(uri);
-      }
-    }
-
+    // STEALTHFOX: same cut as in the parent implementation above, for the same
+    // reason. The about:home branch consulted the startup CACHE first, and that
+    // cache exists to replay the add-on's page: with the add-on gone there is
+    // nothing to cache and nothing to replay, so the whole branch goes. The
+    // cache is disqualified explicitly on the way out, because leaving a stale
+    // entry alive would mean a later request could still be served the old page.
+    AboutHomeStartupCacheChild.disqualifyCache();
     let resultChannel = Services.io.newChannelFromURIWithLoadInfo(
-      pageURI,
+      this.getChromeURI(uri),
       loadInfo
     );
     resultChannel.originalURI = uri;
