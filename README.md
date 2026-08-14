@@ -1,6 +1,6 @@
 # firefox_antidetect_patch
 
-[![browser launches](https://raw.githubusercontent.com/feder-cr/invisible_playwright/main/docs/badges/launches.svg)](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
+[![browser launches](https://raw.githubusercontent.com/feder-cr/invisible_playwright/badges/docs/badges/launches.svg)](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
 
 Firefox, patched at the C++ source level so the browser fingerprint is produced by the
 engine instead of being injected into the page. This repository holds the patched
