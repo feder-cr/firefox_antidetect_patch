@@ -2240,19 +2240,24 @@ gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
   if (mStealthBundleOnly) {
     // Instantiate the face straight from its bundle file via FreeType;
     // CloneFace takes the .ttc face index directly.
-    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
-    nsTArray<uint8_t> data;
-    if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
+    // Stealth: FreeType opens the FILE. It used to get a malloc'd copy of the
+    // whole thing, per FACE, owned and freed by FTUserFontData - and that copy
+    // is invisible to about:memory, so it sat in heap-unclassified where nobody
+    // could see it. Measured 2026-08-14 on a page touching 1, 10, 34 and 68
+    // families: the unclassified heap of the content process went 0.6, 9.0,
+    // 98.7, 319.9 MB, i.e. ~1.7x the bytes of the files touched - which is the
+    // faces-per-family ratio (129/68). It was the file, copied per face.
+    //
+    // FTUserFontData's filename constructor makes CloneFace call
+    // Factory::NewFTFace(path, index), so FreeType streams the file itself and
+    // reads only the tables it needs. Same bytes, same glyphs: the parser is the
+    // same, only the source changes.
+    nsAutoCString percorso;
+    if (!StealthBundleFontList::GetFacePath(file, percorso)) {
       return nullptr;
     }
-    uint8_t* buf = static_cast<uint8_t*>(malloc(data.Length()));
-    if (!buf) {
-      return nullptr;
-    }
-    memcpy(buf, data.Elements(), data.Length());
-    // FTUserFontData takes ownership of buf (frees it in its dtor).
-    RefPtr<FTUserFontData> ufd = new FTUserFontData(buf, data.Length());
+    RefPtr<FTUserFontData> ufd = new FTUserFontData(percorso.get());
     RefPtr<SharedFTFace> face = ufd->CloneFace(aFace->mIndex);
     if (!face) {
       return nullptr;

@@ -283,18 +283,99 @@ void StealthBundleFontList::GetFaces(const nsACString& aFamilyName,
   }
 }
 
+StealthBundleFontList::FileBlob::~FileBlob() {
+  if (mMap) {
+    if (mMapped) {
+      PR_MemUnmap(const_cast<uint8_t*>(mMapped), mMappedLength);
+    }
+    PR_CloseFileMap(mMap);
+  }
+}
+
+size_t StealthBundleFontList::SizeOfIncludingThis(
+    mozilla::MallocSizeOf aMallocSizeOf) const {
+  size_t n = aMallocSizeOf(this);
+  // Only what this process's HEAP holds. A mapped blob reports zero on purpose:
+  // its pages belong to the file and are shared with every other process that
+  // mapped it, so charging them here would count the same physical memory once
+  // per process - which is exactly the inflation `resident` already has and USS
+  // exists to avoid.
+  for (const auto& blob : mFileCache.Values()) {
+    if (blob) {
+      n += sizeof(FileBlob) + blob->HeapBytes();
+    }
+  }
+  return n;
+}
+
+size_t StealthBundleFontList::MappedBytes() const {
+  size_t n = 0;
+  for (const auto& blob : mFileCache.Values()) {
+    if (blob) {
+      n += blob->MappedBytes();
+    }
+  }
+  return n;
+}
+
+// La sola funzione che sa dove stanno i file imbarcati. Prima la directory era
+// ricostruita a mano in ogni chiamante che ne aveva bisogno; adesso chi vuole i
+// byte e chi vuole il percorso passano di qui, quindi non possono divergere.
+static already_AddRefed<nsIFile> PercorsoDelFile(const nsACString& aFile) {
+  nsCOMPtr<nsIFile> path;
+  if (NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(path))) ||
+      NS_FAILED(path->Append(u"fonts"_ns)) ||
+      NS_FAILED(path->Append(NS_ConvertUTF8toUTF16(nsCString(aFile))))) {
+    return nullptr;
+  }
+  return path.forget();
+}
+
+bool StealthBundleFontList::GetFacePath(const nsACString& aFile,
+                                        nsACString& aOut) {
+  nsCOMPtr<nsIFile> path = PercorsoDelFile(aFile);
+  if (!path) {
+    return false;
+  }
+  // GetNativePath is XP_UNIX only - on Windows a native path is UTF-16 and the
+  // method does not exist at all, so this does not compile without the branch.
+  // The only caller today is the FreeType path, which is not built on Windows;
+  // the function still has to COMPILE there, and a caller that appears later
+  // must get a real answer rather than a stub.
+#ifdef XP_WIN
+  nsAutoString largo;
+  if (NS_FAILED(path->GetPath(largo))) {
+    return false;
+  }
+  CopyUTF16toUTF8(largo, aOut);
+#else
+  if (NS_FAILED(path->GetNativePath(aOut))) {
+    return false;
+  }
+#endif
+  return !aOut.IsEmpty();
+}
+
 already_AddRefed<StealthBundleFontList::FileBlob>
 StealthBundleFontList::GetFaceBlob(const nsACString& aFile) {
   nsCString file(aFile);
   if (auto cached = mFileCache.Lookup(file)) {
     return do_AddRef(cached.Data());
   }
-  nsCOMPtr<nsIFile> path;
-  if (NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(path))) ||
-      NS_FAILED(path->Append(u"fonts"_ns)) ||
-      NS_FAILED(path->Append(NS_ConvertUTF8toUTF16(file)))) {
+  nsCOMPtr<nsIFile> path = PercorsoDelFile(aFile);
+  if (!path) {
     return nullptr;
   }
+  // Map it read-only first. The pages are then the FILE's: shared by the OS
+  // with every other process that maps it, and evictable instead of swappable.
+  if (RefPtr<FileBlob> mapped = MapFile(path)) {
+    mFileCache.InsertOrUpdate(file, mapped);
+    return mapped.forget();
+  }
+
+  // Fallback: read it onto the heap. Same bytes, private pages. Reached only if
+  // the mapping fails, which on a local install directory means something is
+  // wrong with the machine rather than with the font.
   nsCOMPtr<nsIInputStream> stream;
   if (NS_FAILED(NS_NewLocalFileInputStream(getter_AddRefs(stream), path))) {
     return nullptr;
@@ -309,6 +390,35 @@ StealthBundleFontList::GetFaceBlob(const nsACString& aFile) {
   RefPtr<FileBlob> blob = new FileBlob(std::move(buf));
   mFileCache.InsertOrUpdate(file, blob);
   return blob.forget();
+}
+
+already_AddRefed<StealthBundleFontList::FileBlob>
+StealthBundleFontList::MapFile(nsIFile* aPath) {
+  PRFileDesc* fd = nullptr;
+  if (NS_FAILED(aPath->OpenNSPRFileDesc(PR_RDONLY, 0, &fd)) || !fd) {
+    return nullptr;
+  }
+  PRFileInfo64 info;
+  if (PR_GetOpenFileInfo64(fd, &info) != PR_SUCCESS || info.size <= 0 ||
+      info.size > int64_t(UINT32_MAX)) {
+    PR_Close(fd);
+    return nullptr;
+  }
+  const uint32_t len = uint32_t(info.size);
+  PRFileMap* map = PR_CreateFileMap(fd, info.size, PR_PROT_READONLY);
+  if (!map) {
+    PR_Close(fd);
+    return nullptr;
+  }
+  void* addr = PR_MemMap(map, 0, len);
+  // NSPR keeps what it needs from the descriptor; the mapping stays valid after
+  // the file is closed, which is what lets the whole thing be fire-and-forget.
+  PR_Close(fd);
+  if (!addr) {
+    PR_CloseFileMap(map);
+    return nullptr;
+  }
+  return MakeAndAddRef<FileBlob>(map, addr, len);
 }
 
 bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,

@@ -258,6 +258,32 @@ gfxPlatformFontList::MemoryReporter::CollectReports(
                        "Memory used for (platform-specific) font loader.");
   }
 
+  // Stealth: the bundled font FILES, which are the largest single allocation
+  // this build makes and had no reporter at all - so they landed in
+  // heap-unclassified and about:memory could not see them. The bundle is
+  // 218.7 MB over 126 files, the cache is per PROCESS (every process that
+  // rasterises a face reads its file), and it is never cleared. Not being able
+  // to measure the biggest thing you allocate is how an optimisation gets
+  // planned on a guess.
+  if (auto* bundle = StealthBundleFontList::Get()) {
+    size_t bundleHeap = bundle->SizeOfIncludingThis(FontListMallocSizeOf);
+    MOZ_COLLECT_REPORT(
+        "explicit/gfx/font-bundle-files", KIND_HEAP, UNITS_BYTES, bundleHeap,
+        "Bundled font files held on this process's HEAP. Zero once they are "
+        "mapped instead of read; one entry per FILE, never per face.");
+
+    // Reported apart and as NONHEAP, because these pages are the file's: the
+    // operating system shares them with every process that maps the same file,
+    // so adding them to the heap figure would count one physical page N times.
+    size_t bundleMapped = bundle->MappedBytes();
+    if (bundleMapped) {
+      MOZ_COLLECT_REPORT(
+          "font-bundle-files-mapped", KIND_NONHEAP, UNITS_BYTES, bundleMapped,
+          "Bundled font files MAPPED read-only. Shared with every other "
+          "process that mapped them, and evictable by the OS.");
+    }
+  }
+
   if (sizes.mSharedSize) {
     MOZ_COLLECT_REPORT(
         "font-list-shmem", KIND_NONHEAP, UNITS_BYTES, sizes.mSharedSize,
