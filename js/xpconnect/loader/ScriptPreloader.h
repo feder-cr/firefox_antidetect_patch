@@ -239,6 +239,22 @@ class ScriptPreloader : public nsIObserver,
       }
     }
 
+    // Sostituisce la copia sull'heap con gli stessi byte presi dal file di
+    // cache mappato. Dopo questa chiamata IsMemMapped() e' vero, quindi
+    // FreeData() torna a essere il no-op corretto e non c'e' piu' niente da
+    // liberare: la sola copia dei byte e' il file.
+    //
+    // Il chiamante deve avere gia' verificato che nessuno stencil stia
+    // PRENDENDO IN PRESTITO il buffer (JS::StencilIsBorrowed), altrimenti
+    // distruggerlo qui lascerebbe lo stencil con puntatori pendenti.
+    void AdoptMappedRange(const JS::TranscodeRange& aRange) {
+      mXDRRange.reset();
+      if (!mXDRData.empty()) {
+        mXDRData.destroy();
+      }
+      mXDRRange.emplace(aRange);
+    }
+
     void UpdateLoadTime(const TimeStamp& loadTime) {
       if (mLoadTime.IsNull() || loadTime < mLoadTime) {
         mLoadTime = loadTime;
@@ -432,6 +448,32 @@ class ScriptPreloader : public nsIObserver,
   // current profile.
   Result<nsCOMPtr<nsIFile>, nsresult> GetCacheFile(const nsAString& suffix);
 
+  // Walks the header of a mapped cache file and calls aOnScript once per
+  // entry, with its mXDRRange already pointing into the mapping.
+  //
+  // Esiste perche' l'aritmetica degli offset del file di cache deve stare in UN
+  // posto solo. Ha due chiamanti - InitCacheInternal all'avvio e
+  // AdoptWrittenCache dopo la scrittura - e ricopiarla nel secondo sarebbe
+  // stato particolarmente facile da sbagliare: chi SCRIVE calcola l'inizio
+  // della sezione dati come MAGIC + headerSize + header, senza i 4 byte del
+  // crc che pure scrive, mentre chi LEGGE li conta. Le due formule danno lo
+  // stesso risultato solo perche' l'allineamento e' un divisore di 4.
+  template <typename F>
+  Result<Ok, nsresult> WalkCacheHeader(AutoMemMap& aMap, F&& aOnScript);
+
+  // Dopo aver scritto il file di cache, adotta i byte del FILE al posto delle
+  // copie sull'heap: mappa il file appena scritto e ripunta ogni voce dentro la
+  // mappatura, liberando buffer e stencil che diventano ridondanti.
+  //
+  // Perche' esiste. Con un profilo CALDO questa cache e' una mappatura di file e
+  // non costa heap: mXDRRange punta dentro mCacheData, IsMemMapped() e' vero e
+  // FreeData() non ha niente da liberare. Con un profilo FRESCO gli stessi byte
+  // sono heap anonimo, perche' sono stati costruiti in memoria per la scrittura,
+  // e li' restano per tutta la sessione: misurato 16,52 MB nel processo padre,
+  // invariati fra 40 s e 180 s, con il file da 13.343.940 byte gia' su disco.
+  // Questo porta la prima sessione nello stesso stato della seconda.
+  Result<Ok, nsresult> AdoptWrittenCache(nsIFile* aCacheFile);
+
   // Waits for the given cached script to finish compiling off-thread, or
   // decodes it synchronously on the main thread, as appropriate.
   already_AddRefed<JS::Stencil> WaitForCachedStencil(
@@ -553,6 +595,16 @@ class ScriptPreloader : public nsIObserver,
   // fields, and its lifetime is guaranteed to be longer than ScriptPreloader
   // instance.
   AutoMemMap* mCacheData;
+
+  // La mappatura del file che abbiamo SCRITTO in questa sessione, dopo che
+  // AdoptWrittenCache l'ha adottata. Vive quanto l'istanza, perche' i
+  // mXDRRange delle voci puntano dentro di lei: distruggerla prima li
+  // renderebbe pendenti.
+  //
+  // E' un membro per valore e non un puntatore a una statica come mCacheData
+  // perche' non deve sopravvivere all'istanza - mCacheData lo fa solo per come
+  // e' costruito il singleton, non per un requisito di durata.
+  AutoMemMap mWrittenCacheData;
 
   Monitor mMonitor MOZ_ACQUIRED_AFTER(mSaveMonitor.Lock());
   MainThreadAndLockCapability<Monitor> mSaveMonitor;

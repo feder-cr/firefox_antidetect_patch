@@ -120,6 +120,17 @@ nsresult ScriptPreloader::CollectReports(nsIHandleReportCallback* aHandleReport,
                        "The memory-mapped startup script cache file.");
   }
 
+  // La mappatura del file scritto in QUESTA sessione, adottata al posto delle
+  // copie sull'heap (AdoptWrittenCache). Va riportata, altrimenti i megabyte
+  // spariscono dall'heap e non ricompaiono da nessuna parte, e un totale che non
+  // torna e' indistinguibile da un risparmio vero.
+  MOZ_COLLECT_REPORT(
+      "explicit/script-preloader/non-heap/memmapped-written-cache",
+      KIND_NONHEAP, UNITS_BYTES,
+      mWrittenCacheData.nonHeapSizeOfExcludingThis(),
+      "The cache file this session wrote, mapped read-only and adopted in "
+      "place of the heap copies of the same bytes.");
+
   return NS_OK;
 }
 
@@ -591,9 +602,10 @@ Result<Ok, nsresult> ScriptPreloader::InitCache(
   return InitCacheInternal();
 }
 
-Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
-    JS::HandleObject scope) {
-  auto size = mCacheData->size();
+template <typename F>
+Result<Ok, nsresult> ScriptPreloader::WalkCacheHeader(AutoMemMap& aMap,
+                                                     F&& aOnScript) {
+  auto size = aMap.size();
 
   uint32_t headerSize;
   uint32_t crc;
@@ -601,7 +613,7 @@ Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
     return Err(NS_ERROR_UNEXPECTED);
   }
 
-  auto data = mCacheData->get<uint8_t>();
+  auto data = aMap.get<uint8_t>();
   MOZ_RELEASE_ASSERT(JS::IsTranscodingBytecodeAligned(data.get()));
 
   auto end = data + size;
@@ -625,64 +637,137 @@ Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
     return Err(NS_ERROR_UNEXPECTED);
   }
 
+  Range<const uint8_t> header(data, data + headerSize);
+  data += headerSize;
+
+  // Reconstruct alignment padding if required.
+  size_t currentOffset = data - aMap.get<uint8_t>();
+  data += JS::AlignTranscodingBytecodeOffset(currentOffset) - currentOffset;
+
+  InputBuffer buf(header);
+
+  size_t offset = 0;
+  while (!buf.finished()) {
+    auto script = MakeUnique<CachedStencil>(*this, buf);
+    MOZ_RELEASE_ASSERT(script);
+
+    auto scriptData = data + script->mOffset;
+    if (!JS::IsTranscodingBytecodeAligned(scriptData.get())) {
+      return Err(NS_ERROR_UNEXPECTED);
+    }
+
+    if (scriptData + script->mSize > end) {
+      return Err(NS_ERROR_UNEXPECTED);
+    }
+
+    // Make sure offsets match what we'd expect based on script ordering and
+    // size, as a basic sanity check.
+    if (script->mOffset != offset) {
+      return Err(NS_ERROR_UNEXPECTED);
+    }
+    offset += script->mSize;
+
+    script->mXDRRange.emplace(scriptData, scriptData + script->mSize);
+
+    MOZ_TRY(aOnScript(std::move(script)));
+  }
+
+  if (buf.error()) {
+    return Err(NS_ERROR_UNEXPECTED);
+  }
+
+  return Ok();
+}
+
+Result<Ok, nsresult> ScriptPreloader::InitCacheInternal(
+    JS::HandleObject scope) {
   {
     auto cleanup = MakeScopeExit([&]() { mScripts.Clear(); });
 
     LinkedList<CachedStencil> scripts;
 
-    Range<const uint8_t> header(data, data + headerSize);
-    data += headerSize;
+    MOZ_TRY(WalkCacheHeader(
+        *mCacheData,
+        [&](UniquePtr<CachedStencil>&& script) -> Result<Ok, nsresult> {
+          // Don't pre-decode the script unless it was used in this process type
+          // during the previous session.
+          if (script->mOriginalProcessTypes.contains(CurrentProcessType())) {
+            scripts.insertBack(script.get());
+          } else {
+            script->mReadyToExecute = true;
+          }
 
-    // Reconstruct alignment padding if required.
-    size_t currentOffset = data - mCacheData->get<uint8_t>();
-    data += JS::AlignTranscodingBytecodeOffset(currentOffset) - currentOffset;
-
-    InputBuffer buf(header);
-
-    size_t offset = 0;
-    while (!buf.finished()) {
-      auto script = MakeUnique<CachedStencil>(*this, buf);
-      MOZ_RELEASE_ASSERT(script);
-
-      auto scriptData = data + script->mOffset;
-      if (!JS::IsTranscodingBytecodeAligned(scriptData.get())) {
-        return Err(NS_ERROR_UNEXPECTED);
-      }
-
-      if (scriptData + script->mSize > end) {
-        return Err(NS_ERROR_UNEXPECTED);
-      }
-
-      // Make sure offsets match what we'd expect based on script ordering and
-      // size, as a basic sanity check.
-      if (script->mOffset != offset) {
-        return Err(NS_ERROR_UNEXPECTED);
-      }
-      offset += script->mSize;
-
-      script->mXDRRange.emplace(scriptData, scriptData + script->mSize);
-
-      // Don't pre-decode the script unless it was used in this process type
-      // during the previous session.
-      if (script->mOriginalProcessTypes.contains(CurrentProcessType())) {
-        scripts.insertBack(script.get());
-      } else {
-        script->mReadyToExecute = true;
-      }
-
-      const auto& cachePath = script->mCachePath;
-      mScripts.InsertOrUpdate(cachePath, std::move(script));
-    }
-
-    if (buf.error()) {
-      return Err(NS_ERROR_UNEXPECTED);
-    }
+          const auto& cachePath = script->mCachePath;
+          mScripts.InsertOrUpdate(cachePath, std::move(script));
+          return Ok();
+        }));
 
     mDecodingScripts = std::move(scripts);
     cleanup.release();
   }
 
   StartDecodeTask(scope);
+  return Ok();
+}
+
+Result<Ok, nsresult> ScriptPreloader::AdoptWrittenCache(nsIFile* aCacheFile) {
+  // ⛔ Si adotta UNA volta sola, e non e' una precauzione teorica.
+  // AutoMemMap::init apre con MOZ_ASSERT(!fd): in debug scatta, in RELEASE
+  // l'assert non c'e' e la seconda init sovrascriverebbe fd e addr, lasciando
+  // PENDENTI i mXDRRange delle voci gia' adottate - cioe' puntatori dentro una
+  // regione smappata, che e' un crash e non un degrado.
+  //
+  // Una seconda scrittura puo' succedere: il commento in Run() dice che
+  // l'invalidazione della cache "can trigger a new write during shutdown". In
+  // quel caso le voci di allora tengono le loro copie sull'heap, che e' il
+  // comportamento di prima, e la mappatura vecchia resta viva finche' vive
+  // l'istanza.
+  if (mWrittenCacheData.initialized()) {
+    return Ok();
+  }
+
+  MOZ_TRY(mWrittenCacheData.init(aCacheFile));
+
+  mMonitor.AssertNotCurrentThreadOwns();
+  MonitorAutoLock mal(mMonitor);
+
+  size_t adottate = 0;
+  size_t inPrestito = 0;
+  MOZ_TRY(WalkCacheHeader(
+      mWrittenCacheData,
+      [&](UniquePtr<CachedStencil>&& scritto) -> Result<Ok, nsresult> {
+        auto* vivo = mScripts.Get(scritto->mCachePath);
+        if (!vivo) {
+          return Ok();
+        }
+
+        // Uno stencil che PRENDE IN PRESTITO il buffer non si puo' lasciare
+        // indietro: distruggere il buffer sotto di lui darebbe puntatori
+        // pendenti, e rilasciare la nostra referenza non basta, perche' qualcun
+        // altro puo' tenerne una. Questa voce resta com'e'.
+        if (vivo->mStencil && JS::StencilIsBorrowed(vivo->mStencil)) {
+          inPrestito++;
+          return Ok();
+        }
+
+        // I byte devono essere gli stessi, non solo la chiave.
+        if (vivo->mSize != scritto->mSize) {
+          return Ok();
+        }
+
+        vivo->AdoptMappedRange(scritto->Range());
+
+        // E lo stencil va via con loro. Non e' una perdita di cache: e'
+        // esattamente lo stato in cui questa voce si trova all'avvio SUCCESSIVO,
+        // dove mStencil e' nullo e GetStencil decodifica dal range mappato. La
+        // prima sessione smette di essere il caso speciale che paga due volte.
+        vivo->mStencil = nullptr;
+        adottate++;
+        return Ok();
+      }));
+
+  LOG(Info, "Adopted the written cache: %zu scripts, %zu left borrowed\n",
+      adottate, inPrestito);
   return Ok();
 }
 
@@ -886,6 +971,20 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
   }
 
   MOZ_TRY(cacheFile->MoveTo(nullptr, mBaseName + u".bin"_ns));
+
+  // I byte sono su disco: da qui in avanti tenerne una copia sull'heap vuol dire
+  // avere due volte la stessa cosa. MoveTo aggiorna `cacheFile` sulla nuova
+  // posizione, quindi e' lui il file da mappare.
+  //
+  // Se l'adozione non riesce non e' un errore della SCRITTURA: il file e' valido
+  // e la sessione continua col comportamento di prima, cioe' le copie
+  // sull'heap. Si registra e si va avanti, perche' far fallire la scrittura per
+  // un'ottimizzazione mancata sarebbe peggio del problema che risolve.
+  if (auto risultato = AdoptWrittenCache(cacheFile); risultato.isErr()) {
+    LOG(Info, "Could not adopt the written cache (0x%" PRIx32 "), keeping the "
+              "heap copies\n",
+        static_cast<uint32_t>(risultato.unwrapErr()));
+  }
 
   return Ok();
 }
