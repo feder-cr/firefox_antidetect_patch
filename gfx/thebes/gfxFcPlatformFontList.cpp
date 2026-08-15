@@ -334,7 +334,8 @@ gfxFontconfigFontEntry::gfxFontconfigFontEntry(const nsACString& aFaceName,
                                                WeightRange aWeight,
                                                StretchRange aStretch,
                                                SlantStyleRange aStyle,
-                                               RefPtr<SharedFTFace>&& aFace)
+                                               RefPtr<SharedFTFace>&& aFace,
+                                               const char* aFile, int aIndex)
     : gfxFT2FontEntryBase(aFaceName),
       mFontPattern(CreatePatternForFace(aFace->GetFace())),
       mFTFace(aFace.forget().take()),
@@ -344,6 +345,21 @@ gfxFontconfigFontEntry::gfxFontconfigFontEntry(const nsACString& aFaceName,
   mStyleRange = aStyle;
   mStretchRange = aStretch;
   mIsDataUserFont = true;
+  // STEALTH: rimettere il file che `CreatePatternForFace` ha appena tolto.
+  //
+  // Quella funzione passa a fontconfig un nome di file FINTO e poi cancella
+  // FC_FILE e FC_INDEX, perche' per un font scaricato da una pagina un file non
+  // esiste. Per le facce del nostro bundle esiste, e tacerlo costa: senza file
+  // nel pattern, `CreateScaledFont` costruisce un `UnscaledFont` senza percorso,
+  // `GetFontDescriptor` fallisce e Gecko manda a WebRender i BYTE del font
+  // invece del percorso. Misurati 65,9 MB nel processo padre contro 1,9 su una
+  // pagina vuota - `70-known-bugs.md` [B154].
+  //
+  // Chi non passa un file non vede nessuna differenza: il ramo non scatta.
+  if (aFile && *aFile) {
+    FcPatternAddString(mFontPattern, FC_FILE, ToFcChar8Ptr(aFile));
+    FcPatternAddInteger(mFontPattern, FC_INDEX, aIndex);
+  }
 }
 
 gfxFontconfigFontEntry::gfxFontconfigFontEntry(const nsACString& aFaceName,
@@ -999,18 +1015,32 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
   unsigned int synthFlags;
   PrepareFontOptions(renderPattern, &loadFlags, &synthFlags);
 
+  // STEALTH: si chiede al PATTERN se nomina un file, invece di dedurlo dal fatto
+  // che la faccia sia stata creata dalla memoria.
+  //
+  // Prima la condizione era `if (!face->GetData())`, cioe' un PROXY: "creata
+  // dalla memoria" stava per "non ha un file". Per le facce del nostro bundle
+  // quel proxy e' falso - i byte sono la mappatura DI un file, di cui
+  // conosciamo percorso e indice - e la conseguenza era che l'`UnscaledFont`
+  // nasceva senza percorso, `GetFontDescriptor` falliva, e Gecko mandava a
+  // WebRender i BYTE del font: 65,9 MB nel processo padre contro 1,9 su una
+  // pagina vuota (`70-known-bugs.md` [B154]).
+  //
+  // Il comportamento upstream non si muove, caso per caso: una faccia da dati
+  // SENZA file lascia `file` vuoto e prende il primo ramo come prima; una faccia
+  // normale col file prende il secondo come prima; e una faccia normale SENZA
+  // file continua a essere l'errore che era. L'unico caso che cambia e' il
+  // nostro, che prima non era previsto.
   std::string file;
   int index = 0;
-  if (!face->GetData()) {
-    const FcChar8* fcFile;
-    if (FcPatternGetString(renderPattern, FC_FILE, 0,
-                           const_cast<FcChar8**>(&fcFile)) != FcResultMatch ||
-        FcPatternGetInteger(renderPattern, FC_INDEX, 0, &index) !=
-            FcResultMatch) {
-      NS_WARNING("No file in Fontconfig pattern for font instance");
-      return nullptr;
-    }
+  const FcChar8* fcFile;
+  if (FcPatternGetString(renderPattern, FC_FILE, 0,
+                         const_cast<FcChar8**>(&fcFile)) == FcResultMatch &&
+      FcPatternGetInteger(renderPattern, FC_INDEX, 0, &index) == FcResultMatch) {
     file = ToCharPtr(fcFile);
+  } else if (!face->GetData()) {
+    NS_WARNING("No file in Fontconfig pattern for font instance");
+    return nullptr;
   }
 
   RefPtr<UnscaledFontFontconfig> unscaledFont;
@@ -1024,9 +1054,12 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
     // Here, we use the original mFTFace, not a potential clone with variation
     // settings applied.
     auto* ftFace = GetFTFace();
-    unscaledFont = ftFace->GetData() ? new UnscaledFontFontconfig(ftFace)
-                                     : new UnscaledFontFontconfig(
-                                           std::move(file), index, ftFace);
+    // STEALTH: si sceglie su `file`, non su `GetData()`. E' lo stesso proxy
+    // corretto qui sopra: cio' che decide se un UnscaledFont puo' descriversi
+    // con un percorso e' AVERE un percorso, non da dove sono arrivati i byte.
+    unscaledFont = file.empty() ? new UnscaledFontFontconfig(ftFace)
+                                : new UnscaledFontFontconfig(std::move(file),
+                                                             index, ftFace);
     mUnscaledFontCache.Add(unscaledFont);
   }
 
@@ -2280,9 +2313,21 @@ gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
     if (!face) {
       return nullptr;
     }
+    // Il PERCORSO va dichiarato insieme ai byte, o WebRender riceve i byte.
+    // Non e' una seconda fonte: e' la stessa funzione che risolve il blob qui
+    // sopra, `GetFacePath`, che risolve attraverso la stessa directory di
+    // `GetFaceBlob`. Se manca il percorso si prosegue lo stesso - il font
+    // disegna, si paga solo la copia - quindi qui NON si rifiuta.
+    nsAutoCString percorso;
+    if (!StealthBundleFontList::GetFacePath(file, percorso)) {
+      percorso.Truncate();
+    }
     nsAutoCString name(aFamily->DisplayName().AsString(SharedFontList()));
     auto* fe = new gfxFontconfigFontEntry(name, aFace->mWeight, aFace->mStretch,
-                                          aFace->mStyle, std::move(face));
+                                          aFace->mStyle, std::move(face),
+                                          percorso.IsEmpty() ? nullptr
+                                                             : percorso.get(),
+                                          aFace->mIndex);
     // Wire the entry back to its shared-list face, exactly as the non-stealth
     // path below does and as the CoreText (CoreTextFontList.cpp:1795)
     // bundle-only branch does. This branch omitted it - found 2026-08-07 -

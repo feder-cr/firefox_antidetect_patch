@@ -73,10 +73,17 @@ class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
 
   // used for data fonts where the fontentry takes ownership
   // of the font data and the FT_Face
+  //
+  // STEALTH: `aFile`/`aIndex` sono il file da cui quella faccia viene, quando
+  // ce n'e' uno. Per un font scaricato da una pagina non c'e' e restano vuoti,
+  // che e' il comportamento upstream; per le facce del nostro bundle c'e', e
+  // dichiararlo evita che WebRender riceva i BYTE al posto del percorso. Vedi
+  // `70-known-bugs.md` [B154]: erano 65,9 MB nel processo padre.
   explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
                                   WeightRange aWeight, StretchRange aStretch,
                                   SlantStyleRange aStyle,
-                                  RefPtr<mozilla::gfx::SharedFTFace>&& aFace);
+                                  RefPtr<mozilla::gfx::SharedFTFace>&& aFace,
+                                  const char* aFile = nullptr, int aIndex = 0);
 
   // used for @font-face local system fonts with explicit patterns
   explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
