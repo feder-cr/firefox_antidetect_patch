@@ -2430,7 +2430,39 @@ static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
     // Preserve alpha; if fully transparent, leave pixel (clearRect-zero trap).
     uint8_t alpha = aBuf[i + 3];
     if (alpha == 0) continue;
-    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
+    // IL PIXEL ORIGINALE ENTRA NELL'HASH, dal 2026-08-15. Prima non c'era, e la
+    // sostituzione era funzione del solo (seme, offset): su un canvas OPACO -
+    // dove l'alfa vale 255 ovunque e quindi non porta niente - l'uscita non
+    // dipendeva PER NIENTE da cio' che era stato disegnato. Misurato: cinque
+    // disegni diversi su 240x70 (il pangramma di FP Pro, una stringa opposta, la
+    // lettera A, la lettera B) davano lo STESSO identico md5 e lo stesso
+    // conteggio di colori.
+    //
+    // E' il tell piu' economico che esista da cercare: due fillText e un
+    // confronto, nessun corpus di riferimento, e nessun browser vero puo'
+    // produrre un canvas costante. Scattava sull'82% delle combinazioni misurate
+    // su Linux e sul 9% su Windows - e quel 9% e' il pangramma di FP Pro su
+    // Arial, Times New Roman, Courier New, Tahoma e Georgia.
+    //
+    // Non si e' TOLTA la sostituzione, che era la strada ovvia: senza di lei due
+    // SEMI diversi sulla stessa macchina darebbero lo stesso canvas, cioe' i
+    // profili diventerebbero collegabili fra loro - la famiglia dello stato
+    // condiviso fra sessioni, che questo progetto tratta come peggiore di un tell
+    // singolo. Il difetto non era che la sostituzione ci fosse: era che
+    // IGNORASSE IL PROPRIO INPUT.
+    //
+    // Cosa questo scambia, detto perche' e' uno scambio e non un miglioramento
+    // puro: su un canvas opaco l'uscita passa da indipendente dalla piattaforma
+    // (costante) a dipendente da essa. E' il verso giusto - distinguere il nostro
+    // canvas da quello di un Windows vero vuole un corpus di riferimento, e i
+    // canvas Windows veri variano gia' enormemente fra GPU, driver e versioni dei
+    // font, mentre accorgersi che e' COSTANTE non vuole niente. E sul canvas che
+    // il rilevatore usa davvero quella dipendenza c'era gia', perche' l'alfa
+    // passa intatta e con lei la forma del glifo: misurati 3656 colori contro
+    // 3711 fra le due build CON la sostituzione attiva.
+    const uint32_t orig = (uint32_t(aBuf[i + 0]) << 16) |
+                          (uint32_t(aBuf[i + 1]) << 8) | uint32_t(aBuf[i + 2]);
+    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u) ^ (orig * 0x9e3779b9u);
     x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
     x *= 0xc2b2ae35u; x ^= x >> 16;
     aBuf[i + 0] = uint8_t(x & 0xffu);
