@@ -167,6 +167,28 @@ export const AboutNewTab = {
    * onBrowserReady - Continues the initialization of Activity Stream after browser is ready.
    */
   async onBrowserReady() {
+    // ⛔ STEALTH: qui non c'e' piu' niente da inizializzare, e provarci LANCIA.
+    //
+    // L'estensione newtab e' stata tolta da `browser/extensions/moz.build`
+    // (`20-our-patches.md` §5.2n: ogni sessione scaricava un tile pubblicitario
+    // 3024x3024 - 34,9 MB decodificati piu' 34,9 in WebRender - dentro un
+    // processo `privilegedabout` tutto suo). Questo consumatore pero' era rimasto:
+    // il getter pigro punta a `resource://newtab/lib/ActivityStream.sys.mjs`, il
+    // modulo non esiste piu', il costruttore solleva e il `catch` piu' sotto
+    // **rilancia**.
+    //
+    // Cosa produceva, misurato il 2026-08-14 nei log di OGNI sessione riuscita:
+    // `console.error: Failed to load resource://newtab/lib/ActivityStream.sys.mjs`.
+    // Non e' un blocco - questa funzione arriva da `dispatchToMainThread`, quindi
+    // l'eccezione diventa una rejection non gestita - ma e' un errore stampato a
+    // ogni avvio, prodotto da una rimozione fatta a meta'.
+    //
+    // Uscire qui e' sicuro perche' l'unico consumatore gestisce gia' l'assenza:
+    // `getTopSites()` restituisce `[]` quando `activityStream` e' nullo, ed e'
+    // esattamente cio' che `UrlbarProviderTopSites` legge.
+    return;
+
+    // eslint-disable-next-line no-unreachable
     if (this.activityStream && this.activityStream.initialized) {
       return;
     }
