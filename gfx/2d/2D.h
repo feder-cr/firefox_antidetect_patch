@@ -1192,6 +1192,24 @@ class FTUserFontData final
       : mFontData(aData), mLength(aLength) {}
   explicit FTUserFontData(const char* aFilename) : mFilename(aFilename) {}
 
+  // STEALTH: i byte appartengono a QUALCUN ALTRO e non vanno liberati qui.
+  //
+  // Simmetrico al costruttore in prestito di `gfxDWriteFontFileStream` (§5.2l):
+  // su ENTRAMBE le piattaforme una sola mappatura per FILE viene prestata a
+  // tutte le facce di quel file, invece di una copia per faccia. Il prestito e'
+  // sicuro per la stessa ragione di la': la cache di `StealthBundleFontList` e'
+  // immortale per costruzione - l'oggetto e' volutamente leaked e non svuota mai
+  // `mFileCache` - e il valore della mappa e' un `RefPtr`, quindi se la tabella
+  // hash rialloca a spostarsi e' il puntatore e mai i byte.
+  //
+  // Serve un costruttore NUOVO invece di un parametro con default, perche' il
+  // distruttore qui sotto chiamava `free()` sul solo presupposto che
+  // `mFontData` fosse impostato: passare un puntatore mappato al costruttore
+  // esistente lo darebbe in pasto a `free`.
+  enum class Prestito { Si };
+  FTUserFontData(const uint8_t* aData, uint32_t aLength, Prestito)
+      : mFontData(aData), mLength(aLength), mPossiedeIDati(false) {}
+
   const uint8_t* FontData() const { return mFontData; }
   uint32_t FontDataLength() const { return mLength; }
 
@@ -1200,7 +1218,7 @@ class FTUserFontData final
 
  private:
   ~FTUserFontData() {
-    if (mFontData) {
+    if (mFontData && mPossiedeIDati) {
       free((void*)mFontData);
     }
   }
@@ -1208,6 +1226,7 @@ class FTUserFontData final
   std::string mFilename;
   const uint8_t* mFontData = nullptr;
   uint32_t mLength = 0;
+  bool mPossiedeIDati = true;
 };
 
 /** SharedFTFace is a shared wrapper around an FT_Face. It is ref-counted,

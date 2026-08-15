@@ -2241,23 +2241,41 @@ gfxFontEntry* gfxFcPlatformFontList::CreateFontEntry(
     // Instantiate the face straight from its bundle file via FreeType;
     // CloneFace takes the .ttc face index directly.
     const nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
-    // Stealth: FreeType opens the FILE. It used to get a malloc'd copy of the
-    // whole thing, per FACE, owned and freed by FTUserFontData - and that copy
-    // is invisible to about:memory, so it sat in heap-unclassified where nobody
-    // could see it. Measured 2026-08-14 on a page touching 1, 10, 34 and 68
-    // families: the unclassified heap of the content process went 0.6, 9.0,
-    // 98.7, 319.9 MB, i.e. ~1.7x the bytes of the files touched - which is the
-    // faces-per-family ratio (129/68). It was the file, copied per face.
+    // Stealth: UNA mappatura per FILE, prestata a ogni faccia - la stessa cosa
+    // che fa Windows, con lo stesso oggetto e la stessa vita.
     //
-    // FTUserFontData's filename constructor makes CloneFace call
-    // Factory::NewFTFace(path, index), so FreeType streams the file itself and
-    // reads only the tables it needs. Same bytes, same glyphs: the parser is the
-    // same, only the source changes.
-    nsAutoCString percorso;
-    if (!StealthBundleFontList::GetFacePath(file, percorso)) {
+    // Come si e' arrivati qui, in due passi. Prima FreeType riceveva una copia
+    // `malloc` dell'intero file PER FACCIA, posseduta e liberata da
+    // FTUserFontData, e invisibile ad about:memory: misurato 2026-08-14 su una
+    // pagina che tocca 1, 10, 34 e 68 famiglie, l'heap non classificato del
+    // processo di contenuto faceva 0,6, 9,0, 98,7 e 319,9 MB, cioe' ~1,7 volte i
+    // byte dei file toccati - che e' il rapporto facce/famiglia (129/68).
+    //
+    // Poi (§5.2m) si e' passati al costruttore per PERCORSO, che fa chiamare a
+    // CloneFace `Factory::NewFTFace(path, index)`: niente copia, ma una seconda
+    // implementazione. Windows mappava il file e lo prestava allo stream DWrite,
+    // Linux lasciava aprire il file a FreeType: due risposte diverse alla stessa
+    // domanda, e due rami di CloneFace che divergono anche in ALTRO - il ramo per
+    // percorso NON chiama `FT_Select_Charmap`, mentre quello in memoria seleziona
+    // UNICODE o MS_SYMBOL. Cioe' su Linux le facce nascevano con la charmap che
+    // FreeType sceglie da solo, divergendo non solo da Windows ma dall'upstream.
+    //
+    // Adesso le due piattaforme fanno la stessa cosa: `GetFaceBlob` mappa il file
+    // una volta e lo tiene in una cache immortale, `FT_New_Memory_Face` prende in
+    // prestito quei byte senza copiarli (e' il contratto della chiamata), e il
+    // ramo in memoria di CloneFace rimette la selezione della charmap. Le pagine
+    // diventano del FILE su entrambe: condivise dal sistema operativo fra i
+    // processi, e sfrattabili invece che swappabili.
+    auto* bundle = StealthBundleFontList::Get();
+    if (!bundle) {
       return nullptr;
     }
-    RefPtr<FTUserFontData> ufd = new FTUserFontData(percorso.get());
+    RefPtr<StealthBundleFontList::FileBlob> blob = bundle->GetFaceBlob(file);
+    if (!blob || !blob->Length()) {
+      return nullptr;
+    }
+    RefPtr<FTUserFontData> ufd = new FTUserFontData(
+        blob->Data(), blob->Length(), FTUserFontData::Prestito::Si);
     RefPtr<SharedFTFace> face = ufd->CloneFace(aFace->mIndex);
     if (!face) {
       return nullptr;
