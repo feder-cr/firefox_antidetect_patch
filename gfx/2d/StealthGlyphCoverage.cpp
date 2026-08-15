@@ -14,6 +14,32 @@
 namespace mozilla {
 namespace gfx {
 
+int32_t StealthDeclaredAntialiasMode() {
+  // Stessa forma della funzione qui sotto: si prende il lock, si copia, si
+  // molla. Vuoto = non configurato = binario nudo, che deve comportarsi come
+  // Firefox normale.
+  nsAutoCString spec;
+  {
+    auto lock = StaticPrefs::zoom_stealth_text_antialias_mode();
+    spec = *lock;
+  }
+  if (spec.IsEmpty()) {
+    return -1;
+  }
+  if (spec.EqualsLiteral("none")) {
+    return 0;
+  }
+  if (spec.EqualsLiteral("gray")) {
+    return 1;
+  }
+  if (spec.EqualsLiteral("subpixel")) {
+    return 2;
+  }
+  // Un valore che non conosciamo non e' una dichiarazione: si torna a -1 e il
+  // chiamante non tocca niente. Meglio nessuna modifica che una parziale, che
+  // e' la stessa scelta fatta sopra per una scala malformata.
+  return -1;
+}
 void StealthQuantiseGlyphCoverage(uint8_t* aImage, int32_t aWidth,
                                   int32_t aHeight, size_t aRowBytes) {
   if (!aImage || aWidth <= 0 || aHeight <= 0) {
