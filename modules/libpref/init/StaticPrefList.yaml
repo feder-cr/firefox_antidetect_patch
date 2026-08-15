@@ -20614,27 +20614,6 @@
   value: ""
   mirror: always
 
-# Come il rasterizzatore antialiasa il testo: "gray", "subpixel" o "none".
-#
-# Esiste perche' su Linux quel valore veniva dal FONTCONFIG DELL'HOST -
-# ScaledFontFontconfig legge FC_RGBA e, se dice RGB/BGR/VRGB/VBGR, mette
-# AntialiasMode::SUBPIXEL - quindi il testo su canvas dipendeva dalla macchina
-# dell'utente. Non era una differenza fra le nostre due build: era la fuga
-# verso l'host che la regola 7 vieta.
-#
-# Misurato il 2026-08-15 su una "A" nera in un canvas 200x60: 717 pixel con i
-# tre canali diversi su Linux contro ZERO su Windows, che porta i colori
-# distinti da 16 a 27. Sopra i 16 la sostituzione dei pixel del canvas smette
-# di saltare il buffer e lo riscrive per intero con byte che dipendono dal
-# seme e non dal contenuto: da li' stringhe diverse davano lo stesso hash.
-#
-# Vuoto = non configurato, cioe' il binario nudo si comporta come Firefox
-# normale. Il gate delle dichiarazioni lo pretende quando il motore e' acceso.
-- name: zoom.stealth.text.antialias_mode
-  type: DataMutexString
-  value: ""
-  mirror: always
-
 # The whole font manifest, carried by invisible_core and preferred over the
 # copy in NS_GRE_DIR/fonts/. Families, per-face vertical metrics, the alias
 # table, the coverage ladder and the per-script fallback lists - one pref

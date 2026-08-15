@@ -60,38 +60,6 @@ namespace gfx {
  * @param aHeight   rows
  * @param aRowBytes stride in bytes
  */
-/**
- * La modalita' di antialiasing DICHIARATA, o -1 se non lo e'.
- *
- * 0 = nessuno, 1 = scala di grigi, 2 = subpixel, **-1 = non dichiarata**. Il
- * tipo e' un intero con sentinella e non `Maybe<AntialiasMode>` perche' questo
- * header e' incluso da Skia: questo file dichiara in cima di tenersi fuori
- * `nsString`, `StaticPrefs` e `Types.h`, e `Maybe` sarebbe stato un quarto.
- *
- * ⛔ PERCHE' ESISTE. Su Linux quel valore veniva dal FONTCONFIG DELL'HOST:
- * `ScaledFontFontconfig` legge `FC_RGBA` e, se dice RGB/BGR/VRGB/VBGR, mette
- * `AntialiasMode::SUBPIXEL`. Quindi il testo su canvas della nostra build
- * dipendeva dalla configurazione della macchina dell'utente - la fuga verso
- * l'host che la regola 7 vieta, non una differenza fra le nostre due build.
- *
- * MISURATO il 2026-08-15, una "A" nera in un canvas 200x60: 717 pixel con i
- * tre canali diversi su Linux, ZERO su Windows. I colori distinti passano da
- * 16 a 27, e sopra i 16 `ApplyStealthCanvasPixelSubstitution` smette di
- * saltare il buffer e lo riscrive per intero con byte che dipendono dal SEME e
- * non dal contenuto: da li' stringhe diverse davano lo stesso hash, che e' un
- * tell che si legge con due `fillText` e un confronto.
- *
- * E LA CORREZIONE STA QUI E NON SULLA SOGLIA DEI 16 COLORI. Alzare la soglia
- * farebbe sparire il sintomo lasciando in piedi la fuga verso l'host, e
- * rimetterebbe in gioco le prove dei rilevatori che quel salto protegge. Si
- * impedisce al motore di produrre una maschera subpixel, che e' la regola 3:
- * si blocca alla nascita, non si corregge dopo.
- *
- * Due costruttori di `ScaledFontFontconfig` decidono quel campo, piu' il
- * percorso WebRender. Chiamano tutti questa: la relazione e' vera per
- * costruzione invece che perche' tre punti si trovano d'accordo (regola 16).
- */
-int32_t StealthDeclaredAntialiasMode();
 void StealthQuantiseGlyphCoverage(uint8_t* aImage, int32_t aWidth,
                                   int32_t aHeight, size_t aRowBytes);
 

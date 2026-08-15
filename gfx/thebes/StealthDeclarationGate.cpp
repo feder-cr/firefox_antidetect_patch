@@ -95,15 +95,6 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_text_coverage_ladder();
          return lock->IsEmpty();
        }},
-      // Come il testo viene antialiasato. Aggiunta il 2026-08-15, e la
-      // ragione per cui sta QUI e non in un default compilato: su Linux
-      // quel valore veniva dal fontconfig dell'host, quindi il canvas di
-      // testo dipendeva dalla macchina dell'utente. Un pavimento compilato
-      // avrebbe chiuso la fuga e aperto la seconda fonte di verita'.
-      {"zoom.stealth.text.antialias_mode", []() -> bool {
-         auto lock = StaticPrefs::zoom_stealth_text_antialias_mode();
-         return lock->IsEmpty();
-       }},
       // The Accept-Language header, added 2026-08-09. Read from JavaScript
       // (juggler/NetworkObserver.js) rather than from C++, which is exactly
       // why it belongs here: nothing on that side can refuse, so the refusal

@@ -6,7 +6,6 @@
 #include "UnscaledFontFreeType.h"
 #include "Logging.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/gfx/StealthGlyphCoverage.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
 #include "skia/include/ports/SkTypeface_cairo.h"
@@ -119,25 +118,6 @@ bool FcPatternAllowsBitmaps(FcPattern* aPattern, bool aAntialias,
   return true;
 }
 
-// La dichiarazione vince su qualunque cosa abbia deciso il fontconfig
-// dell'host o WebRender. Un punto solo, chiamato da entrambi i costruttori:
-// ricopiare la condizione in due posti e' come sono nati i difetti che la
-// regola 16 descrive.
-static void ApplyStealthDeclaredAntialias(AntialiasMode& aMode) {
-  switch (StealthDeclaredAntialiasMode()) {
-    case 0:
-      aMode = AntialiasMode::NONE;
-      break;
-    case 1:
-      aMode = AntialiasMode::GRAY;
-      break;
-    case 2:
-      aMode = AntialiasMode::SUBPIXEL;
-      break;
-    default:
-      break;  // non dichiarata: il binario nudo resta Firefox normale
-  }
-}
 ScaledFontFontconfig::InstanceData::InstanceData(FcPattern* aPattern)
     : mFlags(0),
       mAntialias(AntialiasMode::NONE),
@@ -247,7 +227,6 @@ ScaledFontFontconfig::InstanceData::InstanceData(FcPattern* aPattern)
       }
     }
   }
-  ApplyStealthDeclaredAntialias(mAntialias);
 }
 
 ScaledFontFontconfig::InstanceData::InstanceData(
@@ -307,7 +286,6 @@ ScaledFontFontconfig::InstanceData::InstanceData(
         break;
     }
   }
-  ApplyStealthDeclaredAntialias(mAntialias);
 }
 
 void ScaledFontFontconfig::InstanceData::SetupFontOptions(
