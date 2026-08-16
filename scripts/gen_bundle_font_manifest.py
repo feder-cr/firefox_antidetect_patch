@@ -517,6 +517,27 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
         gfx_dir = os.path.normpath(
             os.path.join(fonts_dir, "..", "..", "gfx", "thebes"))
     families: dict[str, list[dict]] = {}
+    # Legacy styled-face names: the GDI family name of a face that we file under
+    # a DIFFERENT family. Gecko exposes exactly these as aliases - families whose
+    # Face entries are already part of another family - and the shipped manifest
+    # had none of them, so every one fell to the generic fallback.
+    #
+    # Measured 2026-08-16, one name per BROWSER against a certified retail 151.0
+    # (one page cannot answer this: within a family only the FIRST name asked
+    # resolves, because alias population is lazy, and three earlier measurements
+    # were contaminated by exactly that). The retail resolves every legacy name
+    # tried and lands on the BASE family's regular face, so the alias costs no
+    # font file: `Arial Black` measures 231.3167, which is Arial; `Segoe UI
+    # Light`, `Semilight`, `Semibold` and `Black` all measure 227.4833, which is
+    # Segoe UI; `Franklin Gothic Medium` measures 223.2833, which is Franklin
+    # Gothic. Only `Arial Bold` falls back on the retail too, and it is not a
+    # Windows family name - bold is a face inside Arial.
+    #
+    # An alias resolves WITHOUT enumerating, which is the distinction the
+    # earlier removal was missing: dropping the compound from the family list
+    # was right (the family count is a tell), dropping it from resolution was
+    # not.
+    aliases_da_facce: dict[str, str] = {}
 
     def add_face(name, face):
         families.setdefault(name, []).append(face)
@@ -574,6 +595,8 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
             family = typo_name
 
         add_face(family, face)
+        if family != gdi_name:
+            aliases_da_facce[gdi_name] = family
 
         # WWS-base derivation: a compound name with no typographic-family record
         # of its own (Franklin Gothic Medium has neither nameID 16 nor 21) is
@@ -597,6 +620,7 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
                 if base:
                     families.pop(family, None)
                     add_face(base, dict(face))
+                    aliases_da_facce[gdi_name] = base
 
     result_families = []
     for name in sorted(families):
@@ -605,7 +629,22 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
 
     intl_dir = os.path.normpath(
         os.path.join(gfx_dir, "..", "..", "intl", "components", "src"))
-    return {"families": result_families, "aliases": build_aliases(gfx_dir),
+    # Le due sorgenti si fondono qui, e la tabella di Mozilla VINCE su un nome
+    # derivato dai file: se `kFontSubstitutes` dice gia' dove va un nome, quella
+    # e' la risposta di Windows e la nostra derivazione e' solo un'inferenza.
+    aliases = dict(aliases_da_facce)
+    for alias, target in build_aliases(gfx_dir):
+        aliases[alias] = target
+    # ⛔ NON si filtrano gli alias il cui bersaglio non e' una famiglia che
+    # dichiariamo. Nove ce ne sono (David, FangSong, Miriam, Fixedsys, KaiTi,
+    # Rod, Mistral, System e Miriam Fixed) e sono INERTI: `GetAlias` restituisce
+    # il nome bersaglio, il chiamante lo cerca fra le famiglie, non lo trova, e
+    # cade sul ripiego - esattamente come se l'alias non ci fosse. Toglierli
+    # sarebbe un cambiamento che non sposta nessuna misura, ed e' la categoria
+    # che questo progetto rifiuta per regola. Restano, e il fatto che siano
+    # inerti sta scritto in [B159].
+    return {"families": result_families,
+            "aliases": [(a, t) for a, t in sorted(aliases.items())],
             "script_fallback": build_script_fallback(gfx_dir, intl_dir)}
 
 
