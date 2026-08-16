@@ -718,8 +718,14 @@ gfxFont* gfxDWriteFontEntry::CreateFontInstance(
     // Only pass in the underlying IDWriteFont if the unscaled font doesn't
     // reflect a data font. This signals whether or not we can safely query
     // a descriptor to represent the font for various transport use-cases.
+    // STEALTH: il percorso di bundle viaggia con l'unscaled font. Senza,
+    // `GetFontDescriptor` fallisce e Gecko manda a WebRender i BYTE del font;
+    // e non puo' ricavarselo da solo perche' il nostro caricatore non e' un
+    // `IDWriteLocalFontFileLoader`. Per ogni altro font resta vuoto e il
+    // comportamento upstream non si muove.
     unscaledFont =
-        new UnscaledFontDWrite(fontFace, !mIsDataUserFont ? mFont : nullptr);
+        new UnscaledFontDWrite(fontFace, !mIsDataUserFont ? mFont : nullptr,
+                               mBundleFilePath);
     unscaledFontPtr = unscaledFont;
   }
   RefPtr<IDWriteFontFace> fontFace;
@@ -1104,6 +1110,15 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
                                          fontFile, stream, aFace->mWeight,
                                          aFace->mStretch, aFace->mStyle);
     entry->mBundleFaceIndex = aFace->mIndex;
+    // Il percorso va dichiarato insieme ai byte: e' la stessa funzione che
+    // risolve il blob qui sopra, quindi non e' una seconda fonte. Se manca si
+    // prosegue: il font disegna, si paga solo la copia verso WebRender.
+    nsAutoCString percorso;
+    if (StealthBundleFontList::GetFacePath(file, percorso)) {
+      // `get()` torna un `char16ptr_t`, che su Windows converte da solo a
+      // `const wchar_t*` (`mfbt/Char16.h:49`): niente reinterpret_cast.
+      entry->mBundleFilePath = std::wstring(NS_ConvertUTF8toUTF16(percorso).get());
+    }
     BOOL supported;
     DWRITE_FONT_FILE_TYPE fileType;
     UINT32 numFaces;

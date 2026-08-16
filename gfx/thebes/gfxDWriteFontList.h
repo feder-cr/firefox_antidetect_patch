@@ -5,6 +5,8 @@
 #ifndef GFX_DWRITEFONTLIST_H
 #define GFX_DWRITEFONTLIST_H
 
+#include <string>
+
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/MemoryReporting.h"
 #include "gfxDWriteCommon.h"
@@ -242,6 +244,15 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
   // Face index within a custom (bundle) font file; 0 for single-face files and
   // for system fonts. Lets a .ttc face be addressed by index in CreateFontFace.
   uint16_t mBundleFaceIndex = 0;
+
+  // STEALTH: il percorso del file di bundle, vuoto per ogni altro font.
+  //
+  // Il byte-serving verso WebRender passa da `UnscaledFontDWrite`, che il
+  // percorso non riesce a ricavarlo da solo: lo prende da un
+  // `IDWriteLocalFontFileLoader`, e il nostro caricatore presta byte in memoria.
+  // Dichiararlo qui e' l'unico modo di farlo arrivare la', ed evita che Gecko
+  // mandi i BYTE del font - 65,9 MB nel padre, misurati su Linux ([B154]).
+  std::wstring mBundleFilePath;
 
   mozilla::Atomic<FontTableCache*> mFontTableCache;
 

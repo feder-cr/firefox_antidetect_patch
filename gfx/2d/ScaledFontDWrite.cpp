@@ -275,6 +275,28 @@ bool UnscaledFontDWrite::GetFontDescriptor(FontDescriptorOutput aCb,
                                            void* aBaton) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  // STEALTH: se il percorso e' DICHIARATO, si usa quello e si salta il resto.
+  //
+  // La guardia `!mFont` qui sotto e' un PROXY: "non e' un font di sistema" sta
+  // per "non ha un file", e il commento al punto di costruzione lo dice
+  // esplicitamente ("this signals whether or not we can safely query a
+  // descriptor"). Per un font scaricato da una pagina e' corretto, perche' li'
+  // un file non esiste. Per le nostre facce imbarcate e' falso: il file esiste
+  // e lo conosciamo, e tacerlo fa mandare a WebRender i BYTE del font invece
+  // del percorso. Misurati 65,9 MB nel processo padre su Linux, dove la stessa
+  // correzione e' stata fatta per prima - `70-known-bugs.md` [B154].
+  //
+  // Non si passa da `GetFontFileName` perche' quella pretende un
+  // `IDWriteLocalFontFileLoader`, e il nostro caricatore presta byte in
+  // memoria: non e' locale e non lo sara'. La convenzione dei byte e' la stessa
+  // che usa lei, terminatore nullo compreso.
+  if (!mPercorsoDichiarato.empty()) {
+    aCb(reinterpret_cast<const uint8_t*>(mPercorsoDichiarato.c_str()),
+        (mPercorsoDichiarato.size() + 1) * sizeof(WCHAR), mFontFace->GetIndex(),
+        aBaton);
+    return true;
+  }
+
   if (!mFont) {
     return false;
   }

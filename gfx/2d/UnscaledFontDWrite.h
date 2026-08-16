@@ -7,6 +7,7 @@
 
 #include <dwrite.h>
 
+#include <string>
 #include <vector>
 
 #include "2D.h"
@@ -19,9 +20,22 @@ class ScaledFontDWrite;
 class UnscaledFontDWrite final : public UnscaledFont {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(UnscaledFontDWrite, override)
+  // STEALTH: `aFilePath` e' il file da cui questa faccia viene, quando esiste.
+  //
+  // Serve perche' `GetFontDescriptor` non riesce a ricavarlo da solo per le
+  // nostre facce: quel percorso passa da `IDWriteLocalFontFileLoader`, e il
+  // nostro caricatore presta byte in memoria, quindi non e' locale. Senza il
+  // percorso Gecko ripiega sui BYTE del font verso WebRender - misurati 65,9 MB
+  // nel processo padre su Linux, dove lo stesso difetto e' stato corretto per
+  // primo. Vedi `70-known-bugs.md` [B154].
+  //
+  // Chi non passa un percorso non vede nessuna differenza: resta il
+  // comportamento upstream, che per un font scaricato da una pagina e' quello
+  // giusto perche' li' un file non esiste davvero.
   UnscaledFontDWrite(const RefPtr<IDWriteFontFace>& aFontFace,
-                     const RefPtr<IDWriteFont>& aFont)
-      : mFontFace(aFontFace), mFont(aFont) {}
+                     const RefPtr<IDWriteFont>& aFont,
+                     const std::wstring& aFilePath = std::wstring())
+      : mFontFace(aFontFace), mFont(aFont), mPercorsoDichiarato(aFilePath) {}
 
   FontType GetType() const override { return FontType::DWRITE; }
 
@@ -52,6 +66,8 @@ class UnscaledFontDWrite final : public UnscaledFont {
   RefPtr<IDWriteFontFace> mFontFaceBold;
   RefPtr<IDWriteFont> mFont;
   std::vector<WCHAR> mFontFileName;
+  // STEALTH: vuoto per ogni font che non sia dei nostri imbarcati.
+  std::wstring mPercorsoDichiarato;
 };
 
 }  // namespace gfx
