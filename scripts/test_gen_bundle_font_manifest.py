@@ -23,7 +23,7 @@ FONTS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..",
                                       "browser", "fonts"))
 MANIFEST = os.path.join(FONTS, "bundle-fonts.list")
 
-# Le 68 famiglie del set Windows PIU' quella che Firefox imbarca di suo.
+# Le 68 famiglie del set Windows, i due font di ICONE e quella che Firefox imbarca di suo.
 #
 # "Twemoji Mozilla" non e' un font di Windows e per un anno e' stata esclusa
 # apposta: il predicato del generatore chiedeva "viene da Microsoft?". La
@@ -35,7 +35,7 @@ MANIFEST = os.path.join(FONTS, "bundle-fonts.list")
 # la famiglia non dichiarata una sequenza bandiera misurava 52,599998 (la somma
 # di due glifi separati, quindi nessuna legatura), con lei dichiarata misura
 # 72,0 come il giudice.
-EXPECTED_69 = {
+EXPECTED_71 = {
     "Arial","Bahnschrift","Calibri","Cambria","Cambria Math","Candara",
     "Comic Sans MS","Consolas","Constantia","Corbel","Courier New","Ebrima","Franklin Gothic",
     "Gabriola","Gadugi","Georgia","Impact","Ink Free","Javanese Text",
@@ -47,7 +47,7 @@ EXPECTED_69 = {
     "Palatino Linotype","Segoe Print","Segoe Script",
     "Segoe UI","Segoe UI Emoji","Segoe UI Historic","Segoe UI Symbol","SimSun","SimSun-ExtB",
     "Sitka Small","Sylfaen","Symbol","Tahoma","Times New Roman","Trebuchet MS","Verdana",
-    "Twemoji Mozilla",
+    "Segoe Fluent Icons","Segoe MDL2 Assets","Twemoji Mozilla",
     "Webdings","Wingdings","Wingdings 2","Wingdings 3","Yu Gothic","Yu Gothic UI",
 }
 
@@ -57,9 +57,9 @@ EXPECTED_69 = {
 FACE_FIELDS = 19
 
 
-def test_manifest_family_set_equals_the_69():
+def test_manifest_family_set_equals_the_71():
     names = {f["name"] for f in build_manifest(FONTS)["families"]}
-    assert names == EXPECTED_69, f"missing={EXPECTED_69-names} extra={names-EXPECTED_69}"
+    assert names == EXPECTED_71, f"missing={EXPECTED_71-names} extra={names-EXPECTED_71}"
 
 
 def test_every_face_references_an_existing_file():

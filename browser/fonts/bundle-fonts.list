@@ -180,6 +180,7 @@ A|Arial CE|Arial
 A|Arial CYR|Arial
 A|Arial Greek|Arial
 A|Arial TUR|Arial
+A|Calibri Light|Calibri
 A|Courier|Courier New
 A|Courier New (Arabic)|Courier New
 A|Courier New (Hebrew)|Courier New
@@ -196,18 +197,35 @@ A|Franklin Gothic Medium|Franklin Gothic
 A|Helv|Microsoft Sans Serif
 A|Helvetica|Arial
 A|KaiTi_GB2312|KaiTi
+A|Leelawadee UI Semilight|Leelawadee UI
 A|MS Sans Serif|Microsoft Sans Serif
 A|MS Sans Serif Greek|Microsoft Sans Serif
 A|MS Serif|Times New Roman
 A|MS Serif Greek|Times New Roman
 A|MS Shell Dlg|Microsoft Sans Serif
 A|MS Shell Dlg 2|Tahoma
+A|Malgun Gothic Semilight|Malgun Gothic
+A|Microsoft JhengHei Light|Microsoft JhengHei
+A|Microsoft JhengHei UI Light|Microsoft JhengHei UI
+A|Microsoft YaHei Light|Microsoft YaHei
+A|Microsoft YaHei UI Light|Microsoft YaHei UI
+A|MingLiU_HKSCS-ExtB|MingLiU-ExtB
 A|Miriam Transparent|Miriam
+A|Nirmala Text|Nirmala UI
+A|Nirmala UI Semilight|Nirmala UI
 A|Rod Transparent|Rod
 A|Roman|Times New Roman
 A|Script|Mistral
+A|Segoe UI Black|Segoe UI
 A|Segoe UI Light|Segoe UI
+A|Segoe UI Semibold|Segoe UI
 A|Segoe UI Semilight|Segoe UI
+A|SimSun-ExtG|SimSun
+A|Sitka Banner|Sitka Small
+A|Sitka Display|Sitka Small
+A|Sitka Heading|Sitka Small
+A|Sitka Subheading|Sitka Small
+A|Sitka Text|Sitka Small
 A|Small Fonts|Arial
 A|Small Fonts Greek|Arial
 A|System Greek|System
@@ -221,7 +239,11 @@ A|Times New Roman CYR|Times New Roman
 A|Times New Roman Greek|Times New Roman
 A|Times New Roman TUR|Times New Roman
 A|Tms Rmn|Times New Roman
+A|Yu Gothic Light|Yu Gothic
 A|Yu Gothic Medium|Yu Gothic
+A|Yu Gothic UI Light|Yu Gothic UI
+A|Yu Gothic UI Semibold|Yu Gothic UI
+A|Yu Gothic UI Semilight|Yu Gothic UI
 F|Arial
 f|arial7_04.ttf|0|400|400|100|100|normal|ArialMT|2048|1854|434|67|1062|1467|-217|150|530|102
 f|arialbd7_04.ttf|0|700|700|100|100|normal|Arial-BoldMT|2048|1854|434|67|1062|1466|-217|215|530|102
@@ -360,6 +382,10 @@ f|pala5_03.ttf|0|400|400|100|100|normal|PalatinoLinotype-Roman|2048|2150|613|0|1
 f|palab5_03.ttf|0|700|700|100|100|normal|PalatinoLinotype-Bold|2048|2150|613|0|1062|1466|-208|120|530|122
 f|palabi5_03.ttf|0|700|700|100|100|italic|PalatinoLinotype-BoldItalic|2048|2150|613|0|1062|1466|-256|103|530|120
 f|palai5_03.ttf|0|400|400|100|100|italic|PalatinoLinotype-Italic|2048|2150|613|0|1062|1466|-208|120|530|120
+F|Segoe Fluent Icons
+f|segoeicons1_44.ttf|0|400|400|100|100|normal|SegoeFluentIcons|2048|2048|0|0|1024|2048|-75|50|530|102
+F|Segoe MDL2 Assets
+f|segmdl21_86.ttf|0|400|400|100|100|normal|SegoeMDL2Assets|2048|2048|0|0|1024|2048|-178|119|530|102
 F|Segoe Print
 f|segoepr5_04.ttf|0|400|400|100|100|normal|SegoePrint|2048|2555|1014|46|1020|1392|-133|143|612|102
 f|segoeprb5_04.ttf|0|700|700|100|100|normal|SegoePrint-Bold|2048|2555|1014|46|1037|1394|-154|102|620|102

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 
 from fontTools.ttLib import TTCollection, TTFont
 
@@ -544,6 +545,95 @@ def build_script_fallback(gfx_dir: str, intl_dir: str) -> dict:
     }
 
 
+#: I nomi che un Windows standard espone e le cui FACCE non sono nel bundle.
+#:
+#: Non e' una lista derivata: e' una MISURA, e derivarla sarebbe sbagliato. La
+#: regola ovvia - "nome della lista standard meno la parola di stile, se la base
+#: e' dichiarata" - scatta anche su `Bahnschrift Light` e `Bahnschrift SemiBold`,
+#: e quei due sul retail NON risolvono (208,85 su entrambi, cioe' il ripiego
+#: generico): aliasarli creerebbe la divergenza che il rimedio vuole chiudere.
+#:
+#: Misurati il 2026-08-16 contro `judge151-frozen` (151.0, firma Valid,
+#: CN=Mozilla Corporation), UN BROWSER PER NOME, 32px su "Handgloves 123". La
+#: verifica di ogni riga e' che il nome legacy misuri sul giudice esattamente
+#: quanto la sua base, e vale per tutte:
+#:
+#:   Calibri = 206,5000 | Segoe UI = 227,4833 | Nirmala UI = 227,2833
+#:   Leelawadee UI = 227,2833 | Yu Gothic UI = 227,4833 | Yu Gothic = 234,9667
+#:   Malgun Gothic = 234,4333 | Microsoft JhengHei (UI) = 242,9167
+#:   Microsoft YaHei (UI) = 247,2833 | MingLiU-ExtB = SimSun = 224,0000
+#:   Sitka Small = 190,1500 sul giudice
+#:
+#: ⛔ E la lista da cui si pesca e' `StandardFonts-win10.inc`, MAI quello che il
+#: giudice risolve. Sui 743 nomi che i rilevatori sondano il giudice ne risolve
+#: 102 che noi no, ma 99 sono FUORI dalla lista standard: sono font di Office
+#: che quella macchina ha. Inseguirli vorrebbe dire dichiarare una macchina con
+#: Office installato.
+_ALIAS_WINDOWS_MISURATI = (
+    ("Calibri Light", "Calibri"),
+    ("Leelawadee UI Semilight", "Leelawadee UI"),
+    ("Malgun Gothic Semilight", "Malgun Gothic"),
+    ("Microsoft JhengHei Light", "Microsoft JhengHei"),
+    ("Microsoft JhengHei UI Light", "Microsoft JhengHei UI"),
+    ("Microsoft YaHei Light", "Microsoft YaHei"),
+    ("Microsoft YaHei UI Light", "Microsoft YaHei UI"),
+    ("MingLiU_HKSCS-ExtB", "MingLiU-ExtB"),
+    ("Nirmala Text", "Nirmala UI"),
+    ("Nirmala UI Semilight", "Nirmala UI"),
+    ("Segoe UI Black", "Segoe UI"),
+    ("Segoe UI Semibold", "Segoe UI"),
+    ("SimSun-ExtG", "SimSun"),
+    ("Sitka Banner", "Sitka Small"),
+    ("Sitka Display", "Sitka Small"),
+    ("Sitka Heading", "Sitka Small"),
+    ("Sitka Subheading", "Sitka Small"),
+    ("Sitka Text", "Sitka Small"),
+    ("Yu Gothic Light", "Yu Gothic"),
+    ("Yu Gothic UI Light", "Yu Gothic UI"),
+    ("Yu Gothic UI Semibold", "Yu Gothic UI"),
+    ("Yu Gothic UI Semilight", "Yu Gothic UI"),
+)
+
+#: Nomi della lista standard che sul RETAIL non risolvono, misurati.
+#: Stanno qui e non nel silenzio, cosi' il segnalatore non li ripropone ogni
+#: volta e chi legge sa che sono stati guardati.
+_NON_RISOLVONO_SUL_RETAIL = frozenset((
+    # Tutte e tre le istanze nominate di Bahnschrift: sul giudice misurano
+    # 208,85, che e' il ripiego generico. Bahnschrift stessa risolve (219,3333),
+    # quindi non e' la famiglia a mancare: sono i suoi nomi di istanza che un
+    # Firefox non espone. E' un font variabile, e le istanze nominate di un
+    # variabile non diventano famiglie.
+    "Bahnschrift Light",
+    "Bahnschrift SemiBold",
+    "Bahnschrift SemiLight",
+))
+
+
+def _standard_windows_families(gfx_dir: str) -> list[str]:
+    """I nomi di famiglia che Microsoft dichiara standard su Windows 10.
+
+    Letti da `StandardFonts-win10.inc`, che sta nell'albero Firefox: e' la
+    stessa fonte da cui vengono gli altri alias, quindi non c'e' una seconda
+    copia da tenere allineata a mano.
+    """
+    path = os.path.join(gfx_dir, "StandardFonts-win10.inc")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            testo = fh.read()
+    except OSError as exc:
+        raise SystemExit(
+            "gen_bundle_font_manifest: non riesco a leggere %s (%s). E' la "
+            "lista dei nomi che un Windows standard espone, e senza di lei gli "
+            "alias verso le famiglie base non si possono derivare. Rifiuto di "
+            "generare un manifest incompleto in silenzio." % (path, exc))
+    nomi, visti = [], set()
+    for n in re.findall(r'^\s*"([^"]+)",\s*$', testo, re.M):
+        if n not in visti:
+            visti.add(n)
+            nomi.append(n)
+    return nomi
+
+
 def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
     # The alias table belongs to the manifest, so ONE function produces the
     # whole file: building it separately in main() meant build_manifest() and
@@ -600,12 +690,20 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
         # static faces) - not itself a selectable Windows font family.
         if gdi_name.endswith(" Variable"):
             continue
-        # System ICON fonts. Measured 2026-08-07 against retail Firefox
-        # 152.0.6 on Windows: neither resolves as a family name for a page,
-        # so exposing them answered "present" where a real browser answers
-        # "absent". They carry glyphs for the shell UI, not text.
-        if gdi_name in ("Segoe Fluent Icons", "Segoe MDL2 Assets"):
-            continue
+        # I due font di ICONE restano dichiarati, e l'esclusione che c'era qui
+        # e' stata tolta il 2026-08-16.
+        #
+        # Diceva: "Measured 2026-08-07 against retail Firefox 152.0.6 on
+        # Windows: neither resolves as a family name for a page". Quel giudice
+        # e' un 152, e noi dichiariamo 151: e' la quinta volta che il progetto
+        # trova una major sbagliata dentro una decisione presa. Rimisurato
+        # contro un 151.0 firmato, un browser per nome, 32px:
+        # `Segoe MDL2 Assets` RISOLVE (209,6167 contro il ripiego generico
+        # 208,85) e `Segoe Fluent Icons` pure (210,2333).
+        #
+        # I due file erano gia' nella cartella dei font imbarcati e non
+        # dichiarati in nessuna famiglia: 743.840 byte spediti che nessuna
+        # pagina poteva raggiungere.
 
         typo_name = name_table.getDebugName(16)
         wws_name = name_table.getDebugName(21)
@@ -664,10 +762,76 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
 
     intl_dir = os.path.normpath(
         os.path.join(gfx_dir, "..", "..", "intl", "components", "src"))
-    # Le due sorgenti si fondono qui, e la tabella di Mozilla VINCE su un nome
-    # derivato dai file: se `kFontSubstitutes` dice gia' dove va un nome, quella
-    # e' la risposta di Windows e la nostra derivazione e' solo un'inferenza.
-    aliases = dict(aliases_da_facce)
+    # I nomi di famiglia che Windows ha e che noi NON dichiariamo, portati
+    # sulla famiglia base che dichiariamo.
+    #
+    # Gli alias derivati dalle facce (sopra) coprono solo i nomi le cui facce
+    # imbarchiamo. Ne restano altri che un Windows standard espone e le cui
+    # facce non sono nel bundle: un retail li risolve, noi cadevamo sul ripiego
+    # generico, e una pagina lo legge con un measureText.
+    #
+    # ⛔ LA LISTA E' `StandardFonts-win10.inc`, NON quello che il giudice
+    # risolve. Misurato il 2026-08-16 sui 743 nomi che
+    # `FingerprintedFonts.inc` dichiara sondati dai rilevatori: il giudice ne
+    # risolve 102 che noi no, ma **99 di quei 102 sono fuori dalla lista
+    # standard** - Century Gothic, Haettenschweiler, Monotype Corsiva, Papyrus,
+    # Rockwell e compagnia, cioe' font di Office che QUELLA macchina ha.
+    # Inseguirli vorrebbe dire dichiarare di essere una macchina con Office
+    # installato, che e' un'altra identita', non piu' realness.
+    #
+    # ⛔ E la misura va fatta UN BROWSER PER NOME. Dentro una pagina sola, in una
+    # famiglia risolve solo il nome chiesto per primo (la popolazione degli
+    # alias in Gecko e' pigra), e su 743 nomi nemmeno confrontare i due ordini
+    # basta: `Arial Black` risultava "di troppo" mentre per browser risolve.
+    #
+    # Il bersaglio si ricava togliendo la parola di stile finale, e la
+    # VERIFICA e' che sul giudice il nome legacy misuri esattamente quanto la
+    # base. Misurato a 32px su "Handgloves 123", un browser per nome:
+    # Calibri Light = Calibri = 206,5000; Segoe UI Black = Segoe UI Semibold =
+    # Segoe UI = 227,4833; Nirmala UI Semilight = Nirmala UI = 227,2833;
+    # Leelawadee UI Semilight = Leelawadee UI = 227,2833; le tre Yu Gothic UI =
+    # Yu Gothic UI = 227,4833; Malgun Gothic Semilight = Malgun Gothic =
+    # 234,4333; Microsoft JhengHei (UI) Light = 242,9167; Microsoft YaHei (UI)
+    # Light = 247,2833; Yu Gothic Light = Yu Gothic = 234,9667.
+    dichiarate = {f["name"] for f in result_families}
+    aliases_da_windows: dict[str, str] = {}
+    for nome, base in _ALIAS_WINDOWS_MISURATI:
+        if nome in dichiarate:
+            continue
+        if base not in dichiarate:
+            raise SystemExit(
+                "gen_bundle_font_manifest: l'alias misurato %r punta a %r, che "
+                "questo bundle non dichiara. Un alias verso una famiglia "
+                "assente non risolve, quindi la riga prometterebbe e non "
+                "manterrebbe." % (nome, base))
+        aliases_da_windows[nome] = base
+
+    # Il segnalatore: un nome standard che SEMBRA un candidato e che non e'
+    # nella tabella misurata non viene aliasato - viene detto. Cosi' un nome
+    # aggiunto da Microsoft domani si nota, invece di restare fuori in silenzio.
+    # `aliases_da_facce` conta come "gia' coperto": quei nomi risolvono perche'
+    # la faccia e' imbarcata, e senza questo il segnalatore gridava su tre nomi
+    # che erano gia' a posto - un allarme che grida sul verde smette di essere
+    # letto.
+    noti = ({n for n, _ in _ALIAS_WINDOWS_MISURATI}
+            | set(_NON_RISOLVONO_SUL_RETAIL)
+            | set(aliases_da_facce))
+    for nome in _standard_windows_families(gfx_dir):
+        if nome in dichiarate or nome in noti:
+            continue
+        parole = nome.split(" ")
+        if len(parole) > 1 and " ".join(parole[:-1]) in dichiarate:
+            sys.stderr.write(
+                "gen_bundle_font_manifest: %r somiglia a un nome di faccia "
+                "legacy e non e' nella tabella misurata. Misuralo un browser "
+                "per nome contro un retail certificato e mettilo nella tabella "
+                "giusta." % nome + chr(10))
+
+    # Le tre sorgenti si fondono qui, e l'ordine dice chi vince. La tabella di
+    # Mozilla batte tutto: se `kFontSubstitutes` dice gia' dove va un nome,
+    # quella e' la risposta di Windows e le nostre sono inferenze.
+    aliases = dict(aliases_da_windows)
+    aliases.update(aliases_da_facce)
     for alias, target in build_aliases(gfx_dir):
         aliases[alias] = target
     # ⛔ NON si filtrano gli alias il cui bersaglio non e' una famiglia che
