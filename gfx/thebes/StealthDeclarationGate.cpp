@@ -136,6 +136,24 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_max_touch_points(); }, 0},
       {"zoom.stealth.canvas.noise_skip_mask",
        []() { return StaticPrefs::zoom_stealth_canvas_noise_skip_mask(); }, 0},
+      // Lo stile di hinting e l'antialias di FreeType, aggiunti il 2026-08-16.
+      // Senza di loro `PrepareFontOptions` torna a chiedere al pattern
+      // fontconfig, cioe' alla macchina: stesso binario, stessa pagina, hash
+      // dei pixel diversi al variare di `/etc/fonts` - 3842037683 con l'host
+      // (che qui vale `hintslight`), 1512591551 con una configurazione vuota,
+      // 2489286717 con `hintnone`, misurati attraverso il prodotto.
+      //
+      // Il pavimento e' 0 e il sentinella e' -1, perche' 0 e' un valore legale
+      // per entrambi: `FC_HINT_NONE` vale 0 e l'antialias spento pure.
+      //
+      // Sono letti solo dal ramo GTK, e il gate li pretende su ogni
+      // piattaforma di proposito: una dichiarazione che vale per una sola
+      // build e' una dichiarazione che qualcuno dimentichera' di spedire, e la
+      // build che la dimentica non e' quella che se ne accorge.
+      {"zoom.stealth.font.freetype_hintstyle",
+       []() { return StaticPrefs::zoom_stealth_font_freetype_hintstyle(); }, 0},
+      {"zoom.stealth.font.freetype_antialias",
+       []() { return StaticPrefs::zoom_stealth_font_freetype_antialias(); }, 0},
       // The window geometry, added 2026-08-09. Four values that three getters
       // read in different combinations - screenX, mozInnerScreenX and
       // outerWidth - which is exactly the shape that produced an impossible

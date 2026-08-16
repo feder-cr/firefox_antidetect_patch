@@ -20496,6 +20496,33 @@
   value: ""
   mirror: always
 
+# Lo STILE DI HINTING con cui FreeType carica un glifo, e se l'antialias e'
+# acceso. Sono i due soli parametri, dei sei che `PrepareFontOptions` chiedeva
+# al pattern fontconfig, che spostano i pixel: misurato il 2026-08-16, un
+# parametro per volta, `rgba` `lcdfilter` e `embeddedbitmap` non ne muovono
+# nessuno.
+#
+# -1 = non dichiarato. Il gate delle dichiarazioni rifiuta l'avvio in quel caso,
+# perche' cadere sul pattern sarebbe chiedere alla macchina: stesso binario e
+# stessa pagina davano hash diversi al variare di `/etc/fonts`.
+#
+# hintstyle: 0 = none, 1 = slight, 2 = medium, 3 = full. Sono i valori di
+# `FC_HINT_*`, non una nostra numerazione, cosi' non c'e' una traduzione in
+# mezzo che possa divergere.
+#
+# Su Windows non esiste fontconfig e questi due non vengono letti: la
+# dichiarazione e' la stessa per le due piattaforme, ed e' il motore a leggere
+# quella che lo riguarda.
+- name: zoom.stealth.font.freetype_hintstyle
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
+- name: zoom.stealth.font.freetype_antialias
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
 # WebGL1 / WebGL2 supported-extensions whitelist (comma-separated).
 # Read by ClientWebGLContext::GetSupportedExtensions and IsSupported.
 # Empty = use native list (real driver extensions). Non-empty = return this

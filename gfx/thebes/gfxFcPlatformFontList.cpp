@@ -5,6 +5,8 @@
 #include "mozilla/Logging.h"
 
 #include "gfxFcPlatformFontList.h"
+
+#include "mozilla/StaticPrefs_zoom.h"
 #include "StealthBundleFontList.h"
 #include "gfxFont.h"
 #include "gfxFT2Utils.h"
@@ -1009,6 +1011,53 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
     // disable embedded bitmaps (mimics behavior in 90-synthetic.conf)
     FcPatternDel(renderPattern, FC_EMBEDDED_BITMAP);
     FcPatternAddBool(renderPattern, FC_EMBEDDED_BITMAP, FcFalse);
+  }
+
+  // STEALTH: la dichiarazione entra nel PATTERN, non nei lettori.
+  //
+  // I lettori di questi valori sono DUE, e correggerne uno lascia l'altro sulla
+  // macchina: `PrepareFontOptions` qui sotto costruisce i flag di caricamento
+  // FreeType, e `ScaledFontFontconfig::InstanceData` (gfx/2d, righe 140-185)
+  // rilegge lo STESSO pattern per costruire le opzioni che vanno a WebRender,
+  // che e' il percorso che rasterizza davvero. Corretto solo il primo, la
+  // misura non si muoveva di un bit: e' la regola 16 vista dal vivo, lo stesso
+  // fatto calcolato in due punti.
+  //
+  // Scrivendolo nel pattern il posto che decide torna a essere uno, e i due
+  // lettori restano il codice upstream che erano.
+  //
+  // Il pattern su cui lavorano ha gia' subito, lo dice il commento upstream in
+  // `PrepareFontOptions`, "user and system fontconfig configurations": quindi
+  // `/etc/fonts` decideva come rasterizziamo le facce che imbarchiamo NOI.
+  // Misurato il 2026-08-16 attraverso il prodotto, stesso binario e stessa
+  // pagina: hash dei pixel 3842037683 con il fontconfig dell'host (che su
+  // questa macchina vale `hintslight`), 1512591551 con una configurazione
+  // vuota, 2489286717 con `hintnone`. Una pagina legge quei byte con
+  // `getImageData`.
+  //
+  // Sono questi DUE e non sei: `FC_RGBA`, `FC_LCD_FILTER` e
+  // `FC_EMBEDDED_BITMAP` misurano identici in ogni configurazione provata, e
+  // restano dove sono.
+  //
+  // Nessun ripiego se la dichiarazione manca: sarebbe tornare a chiedere alla
+  // macchina, e `StealthDeclarationGate` rifiuta l'avvio prima di arrivare qui.
+  {
+    const int32_t hintstyle =
+        StaticPrefs::zoom_stealth_font_freetype_hintstyle();
+    if (hintstyle >= 0) {
+      FcPatternDel(renderPattern, FC_HINT_STYLE);
+      FcPatternDel(renderPattern, FC_HINTING);
+      FcPatternAddInteger(renderPattern, FC_HINT_STYLE, hintstyle);
+      FcPatternAddBool(renderPattern, FC_HINTING,
+                       hintstyle == FC_HINT_NONE ? FcFalse : FcTrue);
+    }
+    const int32_t antialias =
+        StaticPrefs::zoom_stealth_font_freetype_antialias();
+    if (antialias >= 0) {
+      FcPatternDel(renderPattern, FC_ANTIALIAS);
+      FcPatternAddBool(renderPattern, FC_ANTIALIAS,
+                       antialias ? FcTrue : FcFalse);
+    }
   }
 
   int loadFlags;
