@@ -115,7 +115,47 @@ void WebGLShader::CompileShader() {
     printf_stderr("\n==== end ====\n");
   }
 
+  mObjectCodePerLaPagina.clear();
+
   if (!success) return;
+
+  // La resa per la PAGINA, quando la lingua dichiarata non e' quella che il
+  // contesto GL impone.
+  //
+  // Si compila per il driver la traduzione di sopra, cosi' il rendering non
+  // cambia di un pixel, e si produce una seconda resa nella lingua dichiarata
+  // per chi legge `getTranslatedShaderSource`. Le due escono dallo stesso
+  // traduttore ANGLE imbarcato con le stesse risorse dichiarate, quindi la
+  // seconda e' identica a quella di una build Windows per COSTRUZIONE, non per
+  // coincidenza misurata.
+  //
+  // Su Windows il contesto passa da ANGLE, che si presenta come GLES, quindi la
+  // lingua dichiarata coincide con quella del contesto, il confronto qui sotto
+  // e' falso e non si traduce due volte. Il costo lo paga solo la piattaforma
+  // che ha il difetto, e solo per gli shader che vengono davvero compilati.
+  //
+  // ⛔ La stringa esposta non e' quella compilata. Nessuna pagina puo'
+  // accorgersene - il driver non e' osservabile da li' - ma va scritto, perche'
+  // e' vero.
+  {
+    const auto dichiarata = webgl::StealthDeclaredShaderOutput();
+    if (dichiarata && *dichiarata != webgl::ShaderOutputPerIlDriver(gl)) {
+      const auto perLaPagina = mContext->CreateShaderValidator(mType, true);
+      if (perLaPagina) {
+        const auto resa = perLaPagina->ValidateAndTranslate(mSource.c_str());
+        // Se la seconda traduzione fallisce si tiene quella del driver: una
+        // risposta nella lingua sbagliata e' un difetto di realness, una
+        // risposta vuota e' una pagina rotta.
+        if (resa && resa->mValid) {
+          mObjectCodePerLaPagina = resa->mObjectCode;
+        } else {
+          NS_WARNING(
+              "la resa nella lingua dichiarata non ha validato; "
+              "getTranslatedShaderSource restituira' quella del driver");
+        }
+      }
+    }
+  }
 
   const std::array<const char*, 1> parts = {
       mCompileResults->mObjectCode.c_str()};

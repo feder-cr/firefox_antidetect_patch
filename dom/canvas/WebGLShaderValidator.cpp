@@ -12,6 +12,8 @@
 #include "WebGLContext.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/StaticPrefs_zoom.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/gfx/Logging.h"
 #include "nsPrintfCString.h"
 
@@ -80,11 +82,12 @@ static ShCompileOptions ChooseValidatorCompileOptions(
   return options;
 }
 
-}  // namespace webgl
-
-////////////////////////////////////////
-
-static ShShaderOutput ShaderOutput(gl::GLContext* gl) {
+// La lingua che il CONTESTO GL impone, cioe' quella con cui si compila per il
+// driver. Era `static ShaderOutput`: e' diventata visibile perche' ha un secondo
+// lettore, `WebGLShader::CompileShader`, che deve sapere se la lingua dichiarata
+// coincide con questa. Esposta invece che ricopiata: due copie di questa
+// tabella divergerebbero al primo caso che qualcuno aggiunge a una sola.
+ShShaderOutput ShaderOutputPerIlDriver(gl::GLContext* gl) {
   if (gl->IsGLES()) {
     return SH_ESSL_OUTPUT;
   }
@@ -124,10 +127,41 @@ static ShShaderOutput ShaderOutput(gl::GLContext* gl) {
   return SH_GLSL_COMPATIBILITY_OUTPUT;
 }
 
+// L'UNICO posto che legge la lingua dichiarata, e l'unico che sa tradurre il
+// nome in una costante di ANGLE. Se questa conoscenza stesse in due punti, i
+// due potrebbero rispondere diverso e nessuno se ne accorgerebbe: e' la stessa
+// forma del difetto della geometria del mouse, dove la stessa aritmetica era
+// ricopiata in tre posti.
+//
+// `Nothing()` vuol dire "nessuna dichiarazione", e allora la lingua resta
+// quella che il contesto GL impone. Un nome dichiarato che non conosciamo e'
+// anch'esso `Nothing()` E un avviso: inventare un default sarebbe il ripiego
+// che la regola 7 vieta, e crashare qui spegnerebbe WebGL a un utente per un
+// errore di battitura in una pref.
+Maybe<ShShaderOutput> StealthDeclaredShaderOutput() {
+  auto lock = StaticPrefs::zoom_stealth_webgl_shader_output_language();
+  const nsCString declared(*lock);
+  if (declared.IsEmpty()) {
+    return Nothing();
+  }
+  if (declared.EqualsLiteral("essl")) {
+    return Some(SH_ESSL_OUTPUT);
+  }
+  NS_WARNING(
+      "zoom.stealth.webgl.shader_output_language dichiara una lingua che questa "
+      "build non conosce; la traduzione resta quella del contesto GL");
+  return Nothing();
+}
+
+}  // namespace webgl
+
 std::unique_ptr<webgl::ShaderValidator> WebGLContext::CreateShaderValidator(
-    GLenum shaderType) const {
+    GLenum shaderType, bool aPerLaPagina) const {
   const auto spec = (IsWebGL2() ? SH_WEBGL2_SPEC : SH_WEBGL_SPEC);
-  const auto outputLanguage = ShaderOutput(gl);
+  const auto dichiarata = webgl::StealthDeclaredShaderOutput();
+  const auto outputLanguage =
+      (aPerLaPagina && dichiarata) ? *dichiarata
+                                   : webgl::ShaderOutputPerIlDriver(gl);
 
   ShBuiltInResources resources;
   sh::InitBuiltInResources(&resources);

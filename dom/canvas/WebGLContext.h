@@ -954,8 +954,13 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   mutable GLenum mWebGLError = 0;
 
+  // `aPerLaPagina` chiede il validatore che produce la resa DESTINATA ALLA
+  // PAGINA, nella lingua dichiarata, invece di quella destinata al driver.
+  // Tutto il resto - risorse, opzioni, spec - e' identico per costruzione,
+  // perche' e' lo stesso corpo di funzione: se fossero due funzioni
+  // divergerebbero al primo limite che qualcuno aggiunge a una sola delle due.
   std::unique_ptr<webgl::ShaderValidator> CreateShaderValidator(
-      GLenum shaderType) const;
+      GLenum shaderType, bool aPerLaPagina = false) const;
 
   // some GL constants
   uint32_t mGLMaxFragmentUniformVectors = 0;

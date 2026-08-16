@@ -20476,6 +20476,26 @@
   value: ""
   mirror: always
 
+# La LINGUA in cui `getTranslatedShaderSource` risponde alla pagina. Dominio
+# finito e con un elemento solo: "essl". Vuota = nessuna dichiarazione, e la
+# lingua resta quella che il contesto GL impone.
+#
+# Non e' la STRINGA a essere dichiarata - quella ha dominio infinito, perche' lo
+# shader in ingresso e' arbitrario. E' la LINGUA, che ne ha uno. La stringa la
+# calcola il traduttore ANGLE imbarcato con le stesse risorse dichiarate, quindi
+# la risposta e' identica a quella di una build Windows per costruzione e non
+# per coincidenza misurata.
+#
+# Il motivo: su un contesto NON GLES (il GLX di Linux) il traduttore emette GLSL
+# desktop, e la pagina legge `#version 450` mentre `RENDERER` dichiara ANGLE.
+# ANGLE non emette mai GLSL desktop, quindi la risposta contraddice la persona
+# che dichiariamo NOI, e il confronto e' interno alla stessa pagina: non serve
+# sapere su che sistema operativo giriamo per vederlo.
+- name: zoom.stealth.webgl.shader_output_language
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # WebGL1 / WebGL2 supported-extensions whitelist (comma-separated).
 # Read by ClientWebGLContext::GetSupportedExtensions and IsSupported.
 # Empty = use native list (real driver extensions). Non-empty = return this

@@ -11,9 +11,24 @@
 
 #include "GLDefs.h"
 #include "GLSLANG/ShaderLang.h"
+#include "mozilla/Maybe.h"
 #include "nsString.h"
 
+namespace mozilla::gl {
+class GLContext;
+}
+
 namespace mozilla::webgl {
+
+// La lingua che il contesto GL impone: e' quella con cui si compila per il
+// driver, e non e' una nostra scelta.
+ShShaderOutput ShaderOutputPerIlDriver(gl::GLContext* gl);
+
+// La lingua che la PAGINA deve vedere, dichiarata da invisible_core con
+// `zoom.stealth.webgl.shader_output_language`. `Nothing()` = nessuna
+// dichiarazione, e allora vale quella del driver. Dominio finito con un
+// elemento solo: si dichiara la LINGUA, mai la stringa.
+Maybe<ShShaderOutput> StealthDeclaredShaderOutput();
 
 class ShaderValidatorResults final {
  public:

@@ -2772,7 +2772,15 @@ webgl::CompileResult WebGLContext::GetCompileResult(
       return;
     }
     // TODO: These could be large and should be made fallible.
-    ret.translatedSource = ToCString(info->mObjectCode);
+    //
+    // Quello che la PAGINA legge, quando la lingua e' dichiarata e non coincide
+    // con quella del contesto GL. Il driver ha gia' ricevuto `mObjectCode` in
+    // `WebGLShader::CompileShader` e non lo si tocca: i pixel non cambiano.
+    // Vuoto vuol dire "niente da dichiarare", che e' il caso di ogni build
+    // Windows, dove il contesto passa da ANGLE ed e' gia' nella lingua giusta.
+    const auto& perLaPagina = shader.ObjectCodePerLaPagina();
+    ret.translatedSource = ToCString(
+        perLaPagina.empty() ? info->mObjectCode : perLaPagina);
     ret.log = ToCString(shader.CompileLog());
     if (!shader.IsCompiled()) return;
     ret.success = true;

@@ -44,6 +44,20 @@ class WebGLShader final : public WebGLContextBoundObject {
   const auto& CompileLog() const { return mCompilationLog; }
   bool IsCompiled() const { return mCompilationSuccessful; }
 
+  // La resa destinata alla PAGINA, nella lingua dichiarata. Vuota quando non
+  // c'e' niente da dichiarare o quando la lingua dichiarata e' gia' quella che
+  // il contesto usa - cioe' su Windows, dove il contesto passa da ANGLE ed e'
+  // gia' GLES: li' questo campo resta vuoto e non si paga niente.
+  //
+  // Non e' una seconda fonte di verita' per la stessa cosa: sono due
+  // consumatori diversi dello stesso albero validato, il driver e la pagina.
+  // Cio' che si dichiara e' la LINGUA, che ha dominio finito con un elemento
+  // solo; la stringa resta calcolata dal traduttore, perche' il suo dominio e'
+  // infinito e una tabella sarebbe vietata.
+  const std::string& ObjectCodePerLaPagina() const {
+    return mObjectCodePerLaPagina;
+  }
+
  private:
   void BindAttribLocation(GLuint prog, const std::string& userName,
                           GLuint index) const;
@@ -66,6 +80,7 @@ class WebGLShader final : public WebGLContextBoundObject {
       mCompileResults;  // Never null.
   bool mCompilationSuccessful = false;
   std::string mCompilationLog;
+  std::string mObjectCodePerLaPagina;
 };
 
 }  // namespace mozilla
