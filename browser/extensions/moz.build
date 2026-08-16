@@ -2,12 +2,33 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# STEALTHFOX: the built-in newtab add-on is NOT built and NOT packaged. Measured
-# 2026-08-14: it cost a whole extra content process and 75.4 MB of decoded
-# images per session, of which 34.9 MB was one 3024x3024 sponsored tile fetched
-# from ads-img.mozilla.org. about:home and about:newtab now resolve to the core
-# blank tab page - see AboutNewTabRedirector.sys.mjs, which is where the URL is
-# decided and therefore the only place that can make the page unreachable.
+# STEALTHFOX: newtab viene COSTRUITO e IMPACCHETTATO, ma NON registrato fra i
+# builtin. Sono due cose separate, e separarle e' tutto il punto.
+#
+# Storia, perche' e' stata sbagliata una volta. Il 2026-08-14 la voce era tolta
+# da questa lista: l'add-on costava un intero processo di contenuto in piu' e
+# 75,4 MB di immagini decodificate per sessione, di cui 34,9 MB un solo riquadro
+# sponsorizzato da 3024x3024 scaricato a ogni avvio. Quel risparmio e' reale e
+# si tiene.
+#
+# ⛔ Ma togliere la voce toglieva anche i FILE, e quelli il retail li serve.
+# Misurato il 2026-08-16 contro un retail 151 certificato: 115 file sotto
+# `builtin-addons/newtab/` presenti da lui e assenti da noi, su una radice che
+# `browser/chrome/browser.manifest` registra `contentaccessible=yes`. Una pagina
+# li legge con `new Image().src = "resource://builtin-addons/newtab/..."`, e tre
+# di quei file sono JavaScript vero che uno `<script src>` ESEGUE definendo
+# globali che non abbiamo: un vettore a 115 bit che nessun Firefox produce.
+# Vedi `70-known-bugs.md` [B157].
+#
+# Quindi la directory torna qui - i file vengono impacchettati - e l'add-on
+# resta fuori perche' `gen_built_in_addons.py` scarta newtab quando costruisce
+# l'elenco dei builtin. Senza QUELLA modifica, rimettere la riga qui rimette
+# anche `newtab@mozilla.org` fra i builtin, l'AddonManager lo installa, e torna
+# il processo che la rimozione aveva eliminato: le due modifiche vanno insieme o
+# non vanno.
+#
+# about:home e about:newtab restano la pagina vuota del core: quella decisione
+# vive in AboutNewTabRedirector.sys.mjs e non passa da qui.
 DIRS += [
     "data-leak-blocker",
     "formautofill",
@@ -15,6 +36,7 @@ DIRS += [
     "webcompat",
     "pictureinpicture",
     "search-detection",
+    "newtab",
 ]
 
 JAR_MANIFESTS += ["jar.mn"]
