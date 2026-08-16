@@ -402,6 +402,8 @@ f|trebuc5_15.ttf|0|400|400|100|100|normal|TrebuchetMS|2048|1923|455|0|1071|1465|
 f|trebucbd5_15.ttf|0|700|700|100|100|normal|TrebuchetMS-Bold|2048|1923|455|0|1071|1465|-261|200|530|200
 f|trebucbi5_15.ttf|0|700|700|100|100|italic|Trebuchet-BoldItalic|2048|1923|455|0|1071|1465|-261|200|435|200
 f|trebucit5_15.ttf|0|400|400|100|100|italic|TrebuchetMS-Italic|2048|1923|455|0|1071|1465|-261|127|530|127
+F|Twemoji Mozilla
+f|TwemojiMozilla.ttf|0|400|400|100|100|normal|TwemojiMozilla|512|448|64|46|0|0|-37|25|132|25
 F|Verdana
 f|verdana5_33.ttf|0|400|400|100|100|normal|Verdana|2048|2059|430|0|1117|1489|-180|120|679|120
 f|verdanab5_33.ttf|0|700|700|100|100|normal|Verdana-Bold|2048|2059|430|0|1123|1489|-139|211|773|211

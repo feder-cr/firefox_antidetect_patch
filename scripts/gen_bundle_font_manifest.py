@@ -102,6 +102,31 @@ KEEP_GDI_NAME = set()
 # of this attribution at all.
 _ATTRIBUTION_NAME_IDS = (0, 7, 8, 9, 13, 14)
 
+# The fonts a STOCK Firefox ships itself, by file name.
+#
+# The attribution test above answers "did this come from Windows?". That is the
+# wrong question, and the comment above it says so out loud: it names Twemoji
+# Mozilla as something to EXCLUDE because Mozilla wrote it. The question that
+# decides realness is a different one - "does a real Firefox on Windows have
+# this?" - and the two answers differ on exactly one file in the whole bundle.
+#
+# Verified by opening two signed retail installs: their <install>/fonts/
+# directory contains ONE file, and it is this one. It is not a Windows font, it
+# is Firefox's own colour-emoji fallback, and a page reaches it.
+#
+# Measured 2026-08-16, 72px, one browser per case, against a certified retail
+# 151.0: with the family undeclared a flag sequence measured 52.599998 (the sum
+# of two separate Segoe UI Emoji glyphs, so no ligature) and a lone regional
+# indicator 23.066667; with it declared both measure 72.0, which is what the
+# judge answers. The manifest already NAMED it in the colour-fallback prefix
+# line (`P|Segoe UI Emoji|Twemoji Mozilla`), pointing at a family that did not
+# exist, so that half of the line was inert.
+#
+# By FILE NAME and not by attribution, because the file name is what upstream
+# controls; a rename upstream must break this loudly rather than silently drop
+# the family again.
+_FIREFOX_SUPPLIED_FILES = ("TwemojiMozilla.ttf",)
+
 
 def _is_microsoft_supplied(name_table) -> bool:
     for name_id in _ATTRIBUTION_NAME_IDS:
@@ -109,6 +134,16 @@ def _is_microsoft_supplied(name_table) -> bool:
         if value and "Microsoft" in value:
             return True
     return False
+
+
+def _ships_with_a_real_firefox(file_name, name_table) -> bool:
+    """Whether a real Firefox on Windows exposes this face to a page.
+
+    Two ways to be true, and they are not the same claim: the font is part of
+    the Windows font set (Microsoft attribution), or Firefox itself ships it.
+    """
+    return (file_name in _FIREFOX_SUPPLIED_FILES
+            or _is_microsoft_supplied(name_table))
 
 
 def _iter_faces(fonts_dir):
@@ -550,7 +585,7 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
         gdi_name = name_table.getDebugName(1)
         if not gdi_name:
             continue
-        if not _is_microsoft_supplied(name_table):
+        if not _ships_with_a_real_firefox(file_name, name_table):
             continue
 
         # Regional-variant aliases (e.g. "MingLiU_HKSCS-ExtB") are internal

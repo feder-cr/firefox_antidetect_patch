@@ -23,7 +23,19 @@ FONTS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..",
                                       "browser", "fonts"))
 MANIFEST = os.path.join(FONTS, "bundle-fonts.list")
 
-EXPECTED_68 = {  # verbatim from ci_font_gate.py EXPECTED
+# Le 68 famiglie del set Windows PIU' quella che Firefox imbarca di suo.
+#
+# "Twemoji Mozilla" non e' un font di Windows e per un anno e' stata esclusa
+# apposta: il predicato del generatore chiedeva "viene da Microsoft?". La
+# domanda che decide la realness e' un'altra, "un Firefox vero su Windows ce
+# l'ha?", e su questo file le due risposte divergono. Aperti due retail 151
+# firmati: la loro cartella fonts/ contiene UN file, ed e' questo.
+#
+# Misurato il 2026-08-16, un browser per caso, contro un retail certificato: con
+# la famiglia non dichiarata una sequenza bandiera misurava 52,599998 (la somma
+# di due glifi separati, quindi nessuna legatura), con lei dichiarata misura
+# 72,0 come il giudice.
+EXPECTED_69 = {
     "Arial","Bahnschrift","Calibri","Cambria","Cambria Math","Candara",
     "Comic Sans MS","Consolas","Constantia","Corbel","Courier New","Ebrima","Franklin Gothic",
     "Gabriola","Gadugi","Georgia","Impact","Ink Free","Javanese Text",
@@ -35,6 +47,7 @@ EXPECTED_68 = {  # verbatim from ci_font_gate.py EXPECTED
     "Palatino Linotype","Segoe Print","Segoe Script",
     "Segoe UI","Segoe UI Emoji","Segoe UI Historic","Segoe UI Symbol","SimSun","SimSun-ExtB",
     "Sitka Small","Sylfaen","Symbol","Tahoma","Times New Roman","Trebuchet MS","Verdana",
+    "Twemoji Mozilla",
     "Webdings","Wingdings","Wingdings 2","Wingdings 3","Yu Gothic","Yu Gothic UI",
 }
 
@@ -44,9 +57,9 @@ EXPECTED_68 = {  # verbatim from ci_font_gate.py EXPECTED
 FACE_FIELDS = 19
 
 
-def test_manifest_family_set_equals_the_68():
+def test_manifest_family_set_equals_the_69():
     names = {f["name"] for f in build_manifest(FONTS)["families"]}
-    assert names == EXPECTED_68, f"missing={EXPECTED_68-names} extra={names-EXPECTED_68}"
+    assert names == EXPECTED_69, f"missing={EXPECTED_69-names} extra={names-EXPECTED_69}"
 
 
 def test_every_face_references_an_existing_file():
