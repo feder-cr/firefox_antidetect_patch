@@ -1043,7 +1043,7 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
   // macchina, e `StealthDeclarationGate` rifiuta l'avvio prima di arrivare qui.
   {
     const int32_t hintstyle =
-        StaticPrefs::zoom_stealth_font_freetype_hintstyle();
+        StaticPrefs::zoom_stealth_text_freetype_hintstyle();
     if (hintstyle >= 0) {
       FcPatternDel(renderPattern, FC_HINT_STYLE);
       FcPatternDel(renderPattern, FC_HINTING);
@@ -1052,7 +1052,7 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
                        hintstyle == FC_HINT_NONE ? FcFalse : FcTrue);
     }
     const int32_t antialias =
-        StaticPrefs::zoom_stealth_font_freetype_antialias();
+        StaticPrefs::zoom_stealth_text_freetype_antialias();
     if (antialias >= 0) {
       FcPatternDel(renderPattern, FC_ANTIALIAS);
       FcPatternAddBool(renderPattern, FC_ANTIALIAS,

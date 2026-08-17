@@ -150,10 +150,10 @@ void StealthAssertDeclarationsComplete() {
       // piattaforma di proposito: una dichiarazione che vale per una sola
       // build e' una dichiarazione che qualcuno dimentichera' di spedire, e la
       // build che la dimentica non e' quella che se ne accorge.
-      {"zoom.stealth.font.freetype_hintstyle",
-       []() { return StaticPrefs::zoom_stealth_font_freetype_hintstyle(); }, 0},
-      {"zoom.stealth.font.freetype_antialias",
-       []() { return StaticPrefs::zoom_stealth_font_freetype_antialias(); }, 0},
+      {"zoom.stealth.text.freetype_hintstyle",
+       []() { return StaticPrefs::zoom_stealth_text_freetype_hintstyle(); }, 0},
+      {"zoom.stealth.text.freetype_antialias",
+       []() { return StaticPrefs::zoom_stealth_text_freetype_antialias(); }, 0},
       // The window geometry, added 2026-08-09. Four values that three getters
       // read in different combinations - screenX, mozInnerScreenX and
       // outerWidth - which is exactly the shape that produced an impossible

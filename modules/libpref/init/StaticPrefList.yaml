@@ -20513,12 +20513,12 @@
 # Su Windows non esiste fontconfig e questi due non vengono letti: la
 # dichiarazione e' la stessa per le due piattaforme, ed e' il motore a leggere
 # quella che lo riguarda.
-- name: zoom.stealth.font.freetype_hintstyle
+- name: zoom.stealth.text.freetype_hintstyle
   type: RelaxedAtomicInt32
   value: -1
   mirror: always
 
-- name: zoom.stealth.font.freetype_antialias
+- name: zoom.stealth.text.freetype_antialias
   type: RelaxedAtomicInt32
   value: -1
   mirror: always
