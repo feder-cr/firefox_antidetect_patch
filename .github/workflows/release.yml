@@ -455,10 +455,44 @@ jobs:
       - name: Install pyobjc Quartz (macOS — to read the cloak window alpha)
         if: matrix.kind == 'mac'
         run: python -m pip install --quiet pyobjc-framework-Quartz
+      # ⛔ THE CORE COMES FROM GIT, NOT FROM THE INDEX, and this is not a
+      # convenience. `pip install ".[dev]"` installs the WRAPPER, which pins
+      # invisible-core exactly, so pip resolves the PUBLISHED core - and during a
+      # release the published core is always one step behind by construction: its
+      # own version is derived from the seal, so it cannot exist until this binary
+      # has been built and the seal rolled onto it.
+      #
+      # That means the pairing this gate used to test - new binary, previous
+      # published core - IS ONE NO USER EVER GETS. A user installing core 19.14.0
+      # downloads the firefox-19 binary, because that is what its seal pins. The
+      # gate was validating an impossible combination.
+      #
+      # MEASURED on firefox-20, which is where it finally bit: the binary requires
+      # zoom.stealth.text.freetype_hintstyle AND freetype_antialias, the published
+      # core emits neither, and StealthDeclarationGate refuses. Not at startup -
+      # a direct headless launch is fine, which is why the first diagnosis went
+      # the wrong way - but on ctx.new_page(), where the browser dies with
+      # exitCode 0x80000003 (a deliberate MOZ_CRASH) and Playwright reports
+      # TargetClosedError. All five legs failed identically in about a minute,
+      # which is the shape of a setup fault and not of five product defects.
+      # Bisected with extra_prefs: either declaration alone is not enough, both
+      # together revive it, and the shader-language pref is not involved.
+      #
+      # --force-reinstall is REQUIRED and the reason is worth knowing: the core's
+      # version is derived from the seal, not bumped per commit, so git main and
+      # the index both call themselves 19.14.0 and pip would consider the pin
+      # already satisfied. Same version string, different code. --no-deps keeps
+      # pip from re-resolving and dragging the published one back in.
+      #
+      # No INVISIBLE_CORE_PIN escape is needed, and that follows from the same
+      # fact: the version does not move, so the wrapper's pin stays satisfied.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
         run: |
           python -m pip install --quiet ".[dev]"
+          python -m pip install --quiet --force-reinstall --no-deps \
+            "git+https://github.com/feder-cr/invisible_core@main"
+          python -c "from importlib.metadata import version; print('core under test:', version('invisible-core'))"
           python -m invisible_core seal --binary "$FF_EXE" \
             --tag "${{ github.event.inputs.release_tag || github.ref_name }}" \
             -o gate.seal.json
