@@ -67,16 +67,26 @@ def _app_ini(version: str, build_id: str) -> bytes:
             f"BuildID={build_id}\n").encode()
 
 
-def _juggler_files(marked: bool) -> dict:
+def _juggler_files(marked) -> dict:
     """The four entries make_seal counts, with or without a stealth marker.
 
     `marked=False` is a STOCK build: the files are there, so the "no juggler"
     check passes and the marker check is the one that has to fire. Two different
     refusals, and a fixture that conflated them would prove neither.
+
+    `marked` also takes an INT since 2026-08-17: how many of the four carry the
+    marker. Serve a un caso che prima non era esprimibile - una build NOSTRA che
+    ha perso dei marcatori - perche' la sbarra qui era 0/4 e un tutto-o-niente
+    non puo' distinguere "non e' nostra" da "e' nostra e si sgretola".
     """
-    body = b"// juggler\nconst zoom = 1;\n" if not marked else \
-           b"// juggler\nprefs.getBoolPref('zoom.stealth.humanize');\n"
-    return {e: body for e in m.JUGGLER_ENTRIES}
+    vero = b"// juggler\nprefs.getBoolPref('zoom.stealth.humanize');\n"
+    falso = b"// juggler\nconst zoom = 1;\n"
+    if isinstance(marked, bool):
+        quante = len(m.JUGGLER_ENTRIES) if marked else 0
+    else:
+        quante = int(marked)
+    return {e: (vero if i < quante else falso)
+            for i, e in enumerate(m.JUGGLER_ENTRIES)}
 
 
 def _archive(path: Path, *, version: str, build_id: str, marked: bool = True,
@@ -213,6 +223,45 @@ def test_a_stock_build_with_no_stealth_marker_is_refused(d: Path):
     conflated the two would prove neither."""
     _release(d, **{"win-x86_64_marked": False})
     _expect(d, "marker")
+
+
+@case
+def test_a_build_of_ours_that_lost_markers_is_refused(d: Path):
+    """L'input noto-cattivo della sbarra alzata il 2026-08-17: 1/4.
+
+    Prima passava. `make_seal` rifiutava solo a 0/4 - "e' una delle nostre?" -
+    mentre `seal.py` a runtime rifiuta sotto 2/4, quindi il produttore coniava
+    il sigillo per un binario che l'esecuzione avrebbe rifiutato su OGNI
+    macchina. Ed e' il caso che scotta su macOS, dove nessun percorso di
+    `validate_release.py` arriva e questo e' l'unico cancello.
+    """
+    _release(d, **{"win-x86_64_marked": 1})
+    _expect(d, "marker")
+
+
+@case
+def test_three_of_four_is_still_refused(d: Path):
+    """La sbarra e' 4/4, non "quasi": 3/4 e' una build che si sgretola.
+
+    Senza questo caso, un rifiuto scritto `marked < 2` passerebbe il test qui
+    sopra e lascerebbe passare 3/4, che e' esattamente la classe che
+    `validate_release.py` rifiuta gia' sulle altre gambe.
+    """
+    _release(d, **{"linux-x86_64_marked": 3})
+    _expect(d, "marker")
+
+
+@case
+def test_a_full_house_is_NOT_refused(d: Path):
+    """Il caso che deve NON scattare: un gate che rifiuta tutto e' inutile.
+
+    Ed e' misurato, non assunto: le due gambe mac di firefox-19 sono state
+    scaricate e aperte prima di alzare la sbarra, e segnano 4/4 entrambe.
+    Alzarla senza quel numero avrebbe potuto rompere il rilascio su una gamba
+    che non possiamo provare in locale.
+    """
+    seal, _ = _build(_release(d))
+    assert len(seal["assets"]) == 5, sorted(seal["assets"])
 
 
 @case

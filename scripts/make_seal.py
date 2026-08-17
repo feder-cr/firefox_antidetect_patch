@@ -174,12 +174,38 @@ def read_archive(archive: Path) -> dict:
         raise SealBuildError(
             f"{archive.name}: no {JUGGLER_DIR_REL}/ {where}. Playwright cannot drive this "
             f"build, and invisible_core would refuse every launch of it.")
-    if not marked:
+    # ⛔ La sbarra e' 4/4, la stessa di validate_release.py, e fino al 2026-08-17
+    # qui era 0/4. Non erano "tre soglie per lo stesso segnale": le tre
+    # rispondono a domande diverse e due sono legittime - questa chiede "e' una
+    # delle NOSTRE build?", validate_release chiede "e' INTEGRA?", seal.py a
+    # runtime chiede "posso LANCIARLA?" e tollera 2/4 apposta, perche' li' una
+    # rinomina upstream non deve diventare un rifiuto di avvio su ogni macchina.
+    #
+    # L'incoerenza era una sola e bastava: a 1/4 il produttore coniava il
+    # sigillo per un binario che l'esecuzione (soglia 2) avrebbe rifiutato
+    # OVUNQUE. Il produttore non deve poter sigillare cio' che nessuno lancia.
+    #
+    # E per macOS questo e' l'UNICO cancello che esiste: nessun percorso di
+    # validate_release.py copre quelle gambe, quindi la sbarra lasca non
+    # arrivava mai a un secondo controllo. Prima di alzarla la premessa e' stata
+    # verificata invece che assunta - scaricate e aperte le due gambe mac di
+    # firefox-19: layout omni.ja sotto Firefox.app/Contents/Resources/, 21 file
+    # juggler, 4/4 marcate su ENTRAMBE. Alzarla non rompe mac.
+    #
+    # La sbarra si scrive `len(JUGGLER_ENTRIES)` e non un numero, come fa
+    # validate_release.py: quella tupla e' gia' confrontata fra le tre copie da
+    # invisible_core/tests/test_juggler_contract.py, quindi non nasce un secondo
+    # posto che sappia quanto vale.
+    if marked < len(JUGGLER_ENTRIES):
+        perche = (
+            "A stock build scores 0: this leg is not one of our patched builds"
+            if not marked else
+            "This leg IS one of ours but has lost markers - an eroding build")
         raise SealBuildError(
             f"{archive.name}: {marked}/{len(JUGGLER_ENTRIES)} juggler entries carry a stealth "
-            f"marker ({b'/'.join(JUGGLER_MARKERS).decode()}) in the {layout} layout. A stock "
-            f"build scores 0: this leg is not one of our patched builds, and the launch-time "
-            f"provenance guard would refuse it on every machine.")
+            f"marker ({b'/'.join(JUGGLER_MARKERS).decode()}) in the {layout} layout. {perche}, "
+            f"and sealing it would hand the launch-time provenance guard a build it refuses "
+            f"on every machine.")
 
     return {
         "name": archive.name,
