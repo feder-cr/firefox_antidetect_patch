@@ -421,25 +421,19 @@ StealthBundleFontList::MapFile(nsIFile* aPath) {
   return MakeAndAddRef<FileBlob>(map, addr, len);
 }
 
-bool StealthBundleFontList::ReadFaceData(const nsACString& aFile,
-                                         nsTArray<uint8_t>& aData) {
-  // One more copy than GetFaceBlob, on purpose: the caller hands ownership of
-  // the bytes to a platform object that frees them.
-  //
-  // ⛔ SOLO macOS, dal 2026-08-16. Questo commento diceva "the FreeType and
-  // CoreText paths" e il ramo FreeType e' passato a GetFaceBlob con il
-  // costruttore in prestito, quindi la frase e' rimasta vera per meta' - che e'
-  // il modo in cui un commento inizia a mentire. L'unico chiamante e'
-  // CoreTextFontList.cpp:1736; Windows e Linux prendono UNA mappatura per file e
-  // la prestano. macOS resta com'era perche' non c'e' hardware su cui misurarlo,
-  // e non perche' sia stato deciso che vada bene cosi'.
-  RefPtr<FileBlob> blob = GetFaceBlob(aFile);
-  if (!blob) {
-    return false;
-  }
-  aData.AppendElements(blob->Data(), blob->Length());
-  return true;
-}
+// ⛔ `ReadFaceData` STAVA QUI e non c'e' piu', dal 2026-08-17. Copiava i byte del
+// blob nell'array del chiamante, "on purpose: the caller hands ownership of the
+// bytes to a platform object that frees them". Quella frase e' morta due volte:
+// il ramo FreeType passo' a `GetFaceBlob` prestando, e il 2026-08-17 anche
+// CoreText - dove peraltro non era mai stata vera, perche' `CFDataCreate` COPIA e
+// l'array moriva a fine scope senza che nessuno ne prendesse possesso.
+//
+// Rimossa invece di lasciata senza chiamanti: era la seconda via per gli stessi
+// byte, quella che copia, tenuta viva da una giustificazione scaduta. Lasciarla
+// li' significa che il prossimo la ritrova e reintroduce la copia senza
+// accorgersene, che e' esattamente cio' che la regola 16 vieta. Chi ha bisogno
+// dei byte chiama `GetFaceBlob` e li presta; chi ha bisogno di POSSEDERLI ne
+// faccia una copia sul posto e scriva perche'.
 
 bool StealthBundleFontList::GetPsname(const nsACString& aFile, uint16_t aIndex,
                                       nsACString& aOut) {

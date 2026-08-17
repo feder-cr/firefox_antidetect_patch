@@ -1732,12 +1732,30 @@ gfxFontEntry* CoreTextFontList::CreateFontEntry(
     // of a .ttc, so pick the wanted index and wrap its CGFont in a CTFontEntry.
     auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
     nsCString file(aFace->mDescriptor.AsString(SharedFontList()));
-    nsTArray<uint8_t> data;
-    if (!bundle->ReadFaceData(file, data) || data.IsEmpty()) {
+    // Borrow the ONE cached copy of the file instead of making two more per
+    // face - the same correction §5.2l applied to the DirectWrite path, here on
+    // CoreText. What was here copied in `ReadFaceData` and then copied AGAIN
+    // inside `CFDataCreate`, both per face: `mingliub.ttc` is 35.4 MB with two
+    // faces, so instantiating both cost ~106 MB where 35.4 are enough.
+    //
+    // The header's note that the CoreText path "hands ownership to the platform
+    // object" did not hold for this call site: `CFDataCreate` copies, so the
+    // nsTArray died at scope exit and nobody had taken ownership of anything.
+    //
+    // `kCFAllocatorNull` is the deallocator for the same reason the DirectWrite
+    // borrow is safe, and it is not an optimistic assumption: the blob lives in
+    // `mFileCache`, on a `StealthBundleFontList` that is leaked on purpose
+    // ("lives for the process") and never emptied. The bytes therefore outlive
+    // any CGFont CoreText derives from them, and CFData must NOT free them: they
+    // are not ours, and on a mapped blob they are the file's pages.
+    // `NativeFontResourceMac.cpp` builds a real deallocator instead, correctly -
+    // there the caller owns the bytes.
+    RefPtr<StealthBundleFontList::FileBlob> blob = bundle->GetFaceBlob(file);
+    if (!blob || !blob->Length()) {
       return nullptr;
     }
-    AutoCFTypeRef<CFDataRef> cfData(
-        CFDataCreate(kCFAllocatorDefault, data.Elements(), data.Length()));
+    AutoCFTypeRef<CFDataRef> cfData(CFDataCreateWithBytesNoCopy(
+        kCFAllocatorDefault, blob->Data(), blob->Length(), kCFAllocatorNull));
     if (!cfData) {
       return nullptr;
     }

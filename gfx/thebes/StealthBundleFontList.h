@@ -172,15 +172,17 @@ class StealthBundleFontList final {
   // file name under <GRE>/fonts), or null if unreadable. Read once and cached
   // for the life of the process.
   //
-  // Prefer this to ReadFaceData: it hands out the ONE copy instead of making a
-  // new one. The bundle is 218.7 MB across 126 files and the largest is a
-  // 35.4 MB .ttc with two faces, so a copy per face is not a rounding error.
+  // This is the ONLY way to the bytes, on all three platforms since 2026-08-17.
+  // It hands out the one cached copy; nothing copies per FACE any more. The
+  // bundle is 218.7 MB across 126 files and the largest is a 35.4 MB .ttc with
+  // two faces, so a copy per face was not a rounding error.
+  //
+  // `ReadFaceData` used to sit below and made that per-face copy for the callers
+  // that "own" their bytes. DirectWrite and FreeType had already moved to
+  // borrowing; CoreText moved on 2026-08-17, where the ownership claim had never
+  // been true (`CFDataCreate` copies). Removed rather than left callerless: see
+  // the tombstone in the .cpp for why an unused copier is worse than none.
   already_AddRefed<FileBlob> GetFaceBlob(const nsACString& aFile);
-
-  // Reads the raw bytes of a bundle file into aData. Kept for the callers that
-  // need to OWN their bytes (the FreeType and CoreText paths hand ownership to
-  // the platform object); it is a copy of what GetFaceBlob returns.
-  bool ReadFaceData(const nsACString& aFile, nsTArray<uint8_t>& aData);
 
   // Returns the PostScript name of the face at (aFile, aIndex) via aOut, or
   // false if unknown. macOS CreateFontEntry uses this to select the correct
