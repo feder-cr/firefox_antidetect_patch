@@ -386,23 +386,38 @@ BrowserGlue.prototype = {
   _beforeUIStartup: function BG__beforeUIStartup() {
     // STEALTHFOX: anonymous launch counter. Fires once per process at this
     // point in startup, before any tab is created and before any web content
-    // can possibly observe the network. The asset URL points to a fixed
-    // release on feder-cr/invisible_firefox whose download_count serves as
-    // a global launch counter (exposed via the README badge on THIS repo).
+    // can possibly observe the network. The target is a fixed release asset
+    // whose download_count IS the global launch counter (exposed via the
+    // README badge on THIS repo).
     // Gate via pref `invisible_firefox.usage_ping.enabled` (default true).
     // To permanently disable, remove this block and rebuild from source.
     // Full disclosure: "Anonymous launch counter" in this repo's README.
     //
-    // Do NOT repoint this URL. It is load-bearing for every binary already
-    // installed: they ask for this exact host and tag, and the asset is
-    // hosted to match. Moving it here counts only whoever upgrades and
-    // silently stops counting everyone else, which is precisely what happened
-    // from 2026-07-22 to 2026-08-01, when another repo took the name and the
-    // rename redirect this URL had been riding died with it.
+    // THE ADDRESS IS A PREF AND NOT A LITERAL, WHICH IS THE WHOLE POINT OF THIS
+    // BLOCK. This counter has died twice, and both deaths have one cause: the
+    // address was a repository NAME compiled into every shipped binary, with no
+    // way to redirect it afterwards.
+    //   * 2026-07-22 - another repo took the freed name, which killed the rename
+    //     redirect this URL had been riding. Ten days of launches, never counted.
+    //   * 2026-08-18 - the repo hosting the asset was deleted outright, so not
+    //     even recreating the asset was available: the name itself was gone.
+    // Each time, every binary in the field went on asking for an address that
+    // nobody could move, and the only repair was restoring that exact name. With
+    // the address declared instead of compiled, moving it is a pref rather than a
+    // rebuild, and invisible_core can point a whole fleet elsewhere without
+    // shipping a byte of engine.
+    //
+    // The compiled default remains because a binary launched WITHOUT the package
+    // must still count - a manual run is a real launch. It points at
+    // invisible_playwright, which is the flagship repo: it cannot be deleted
+    // without the product going with it, which is exactly the property the two
+    // previous hosts turned out to lack.
     try {
       if (Services.prefs.getBoolPref("invisible_firefox.usage_ping.enabled", true)) {
-        fetch("https://github.com/feder-cr/invisible_firefox/releases/download/usage-counter/launch.txt",
-              { method: "GET", credentials: "omit", cache: "no-store" })
+        const usagePingUrl = Services.prefs.getStringPref(
+          "invisible_firefox.usage_ping.url",
+          "https://github.com/feder-cr/invisible_playwright/releases/download/usage-counter/launch.txt");
+        fetch(usagePingUrl, { method: "GET", credentials: "omit", cache: "no-store" })
           .catch(() => {});
       }
     } catch (e) {}
