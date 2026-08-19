@@ -341,13 +341,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `extra: --full` adds the mouse/keyboard/canvas/navsurface interaction
-          # checks. Only on linux-x86_64 (historically the most reliable hosted
-          # runner): the interaction code is platform-identical JS (omni.ja), so
-          # one reliable full run catches a firefox-2-class regression for all
-          # platforms. The other legs run SMOKE (launch+http+UA+webdriver) — the
-          # firefox-8/juggler catcher — which is robust even on the flaky
-          # windows-latest runner. See scripts/ci_drive_gate.py.
+          # `extra: --full` adds mouse+keyboard+canvas+navsurface; `--click` adds
+          # ONE move and ONE click and nothing else; no flag is SMOKE.
+          #
+          # ⛔ THE COMMENT THAT STOOD HERE WAS WRONG AND WOULD HAVE SHIPPED A DEAD
+          # MOUSE. It said: the interaction code is platform-identical JS (omni.ja),
+          # so one reliable full run catches a firefox-2-class regression for all
+          # platforms. Measured 2026-08-19: a MOZILLA_OFFICIAL build shows the
+          # terms-of-use preonboarding modal, a full-viewport chrome overlay that
+          # swallows EVERY mouse event while the keyboard keeps working - and
+          # browser/app/profile/firefox.js disables preonboarding under
+          # `#ifdef XP_LINUX`, so Linux is IMMUNE. The single leg that tested the
+          # mouse was the single leg that could not see the defect: all five legs
+          # green, mouse dead on Windows and macOS - the target platform.
+          #
+          # So win and mac now run `--click`. It stays LIGHT on purpose: the
+          # flakiness that made --full linux-only came from a heavy interaction
+          # sequence, not from one click, and this defect class produces ZERO
+          # events rather than wrong ones. See scripts/ci_drive_gate.py.
           - leg: linux-x86_64
             runner: ubuntu-24.04
             kind: linux
@@ -357,22 +368,22 @@ jobs:
             runner: ubuntu-24.04-arm
             kind: linux
             asset: firefox-151.0-stealth-linux-arm64.tar.gz
-            extra: ''
+            extra: '--click'
           - leg: win-x86_64
             runner: windows-latest
             kind: win
             asset: firefox-151.0-stealth-win-x86_64.zip
-            extra: ''
+            extra: '--click'
           - leg: macos-arm64
             runner: macos-26
             kind: mac
             asset: firefox-151.0-stealth-macos-arm64.tar.gz
-            extra: ''
+            extra: '--click'
           - leg: macos-x86_64
             runner: macos-26-intel
             kind: mac
             asset: firefox-151.0-stealth-macos-x86_64.tar.gz
-            extra: ''
+            extra: '--click'
     steps:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

@@ -18,14 +18,37 @@ function generateId() {
 }
 
 // Stealth: JSON stringify helper source, re-evaluated on debugger re-attach.
-const _STEALTH_JSON_STRINGIFY_SRC = `((stringify, object) => {
-  const oldToJSON = Date.prototype?.toJSON;
-  if (oldToJSON)
-    Date.prototype.toJSON = undefined;
-  const oldArrayToJSON = Array.prototype.toJSON;
-  const oldArrayHadToJSON = Array.prototype.hasOwnProperty('toJSON');
-  if (oldArrayHadToJSON)
-    Array.prototype.toJSON = undefined;
+//
+// ⛔ SI LEGGE E SI RISCRIVE IL DESCRITTORE, MAI LA PROPRIETA'. MISURATO, NON
+// SUPPOSTO. La versione precedente faceva:
+//     const oldToJSON = Date.prototype?.toJSON;   // LETTURA   -> chiama il getter
+//     Date.prototype.toJSON = undefined;          // SCRITTURA -> chiama il setter
+//     ... Date.prototype.toJSON = oldToJSON;      // SCRITTURA -> chiama il setter
+// Se la PAGINA ha ridefinito `Date.prototype.toJSON` come accessore, quelle tre
+// operazioni entrano nel suo codice. La trappola sta in due righe:
+//     Object.defineProperty(Date.prototype, 'toJSON', {get(){...}, set(v){...}})
+// Misura 2026-08-19: registra `get, set:undefined, set:function` per OGNI
+// `evaluate` che ritorna un valore e ZERO per una che non serializza; sei scatti
+// dopo la prima, dodici dopo la seconda. Si accumula a ogni giro.
+//
+// `getOwnPropertyDescriptor` non invoca il getter e `defineProperty` non invoca
+// il setter, quindi nessuna delle tre operazioni tocca piu' il codice della
+// pagina. Il comportamento non cambia: durante la serializzazione `toJSON` e'
+// una proprieta' dato con valore `undefined` come prima, e alla fine il
+// descrittore originale torna identico, accessore compreso.
+//
+// Le tre native si catturano al momento della `bind`, cosi' un aggancio
+// installato DOPO non le intercetta. Residuo dichiarato: una pagina che
+// agganci `Object.defineProperty` PRIMA ci vedrebbe comunque - e' un aggancio
+// molto piu' invasivo, che rompe siti veri, e non e' stato misurato.
+const _STEALTH_JSON_STRINGIFY_SRC = `((stringify, getDesc, defProp, object) => {
+  const DESC_VUOTO = {value: undefined, writable: true, enumerable: false, configurable: true};
+  const dDate = getDesc(Date.prototype, 'toJSON');
+  if (dDate)
+    defProp(Date.prototype, 'toJSON', DESC_VUOTO);
+  const dArray = getDesc(Array.prototype, 'toJSON');
+  if (dArray)
+    defProp(Array.prototype, 'toJSON', DESC_VUOTO);
 
   let hasSymbol = false;
   const result = stringify(object, (key, value) => {
@@ -34,13 +57,13 @@ const _STEALTH_JSON_STRINGIFY_SRC = `((stringify, object) => {
     return value;
   });
 
-  if (oldToJSON)
-    Date.prototype.toJSON = oldToJSON;
-  if (oldArrayHadToJSON)
-    Array.prototype.toJSON = oldArrayToJSON;
+  if (dDate)
+    defProp(Date.prototype, 'toJSON', dDate);
+  if (dArray)
+    defProp(Array.prototype, 'toJSON', dArray);
 
   return hasSymbol ? undefined : result;
-}).bind(null, JSON.stringify.bind(JSON))`;
+}).bind(null, JSON.stringify.bind(JSON), Object.getOwnPropertyDescriptor, Object.defineProperty)`;
 
 const consoleLevelToProtocolType = {
   'dir': 'dir',

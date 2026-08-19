@@ -1816,7 +1816,51 @@ pref("browser.newtab.preload", true);
 // Version of the TOU that the user last accepted
 pref("termsofuse.acceptedVersion", 999);
 // Stringified timestamp of when the user last accepted the TOU
-pref("termsofuse.acceptedDate", "0");
+// STEALTHFOX: qui upstream mette "0", cioe' "mai accettato", e la
+// conseguenza su una build ufficiale e' un MODALE A TUTTO SCHERMO che
+// intercetta ogni evento di mouse.
+//
+// ⛔ COSA SUCCEDE SENZA QUESTA RIGA, misurato il 2026-08-19 sulla stessa
+// pagina servita da 127.0.0.1, unica differenza queste prefs:
+//   build NON ufficiale     fuoco=input  eventi=[mousedown,click]  114 mousemove
+//   build ufficiale         fuoco=BODY   eventi=[]                   0 mousemove
+//   ufficiale + accettato   fuoco=input  eventi=[click]
+// La TASTIERA continua a funzionare, ed e' cio' che rende il difetto
+// incomprensibile finche' non si separano i due percorsi: il mouse va alla
+// finestra chrome per coordinate e finisce sul modale, i tasti seguono il
+// fuoco e arrivano al contenuto.
+//
+// ⛔ PERCHE' NON SI BYPASSA. `termsofuse.bypassNotification` sarebbe una riga
+// sola, ma e' il percorso delle build NON UFFICIALI: spegnerebbe una macchina
+// che nel retail e' accesa, e ci farebbe somigliare a una build locale invece
+// che a un Firefox di una persona. Un utente vero ha bypass=false e ha
+// ACCETTATO. Questa e' la seconda cosa, non la prima.
+//
+// La condizione la detta `hasUserAcceptedCurrentTOU` in
+// toolkit/components/telemetry/app/TelemetryReportingPolicy.sys.mjs:536 e
+// vuole DUE cose: una data non nulla E acceptedVersion >= minimumVersion.
+// La seconda upstream la soddisfa gia' da sola - dichiara acceptedVersion
+// a 999 quindici righe piu' su - quindi mancava SOLO la data, ed e' l'unico
+// valore che questa patch tocca.
+//
+// Vale per Windows e macOS: due righe sopra, `#ifdef XP_LINUX` spegne il
+// preonboarding, quindi su Linux il modale non esiste e il mouse non si
+// rompe. Chi misura solo su Linux non vede niente di tutto questo.
+// Il valore e' una STRINGA con un timestamp in millisecondi - il tipo fa
+// parte del valore, e questo progetto ha gia' pagato una pref emessa con il
+// tipo sbagliato.
+//
+// ⛔ E NON SI PUO' FARE DA invisible_core. Le sue prefs viaggiano sul
+// protocollo e Browser.enable le applica DOPO l'avvio, mentre il modale nasce
+// con la finestra. Misurato: le stesse due prefs passate come
+// firefox_user_prefs NON riparano, scritte in un user.js prima del lancio
+// riparano. Per questo il valore vive qui e non nel core, in deroga
+// dichiarata alla regola "il core dichiara": non esiste un canale del core
+// che arrivi in tempo.
+//
+// La data e' fissa e sta nel passato: nessuna pagina puo' leggerla, e il
+// codice controlla solo che l'anno non sia troppo vecchio.
+pref("termsofuse.acceptedDate", "1785573000000");
 // Stringified timestamp of when the user first accepted the TOU, only set if
 // they have accepted more than one version.
 pref("termsofuse.firstAcceptedDate", "0");
