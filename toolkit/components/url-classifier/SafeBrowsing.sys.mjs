@@ -360,6 +360,20 @@ export var SafeBrowsing = {
     Services.prefs.addObserver("browser.safebrowsing", this);
     Services.prefs.addObserver("privacy.trackingprotection", this);
     Services.prefs.addObserver("urlclassifier", this);
+    // ⛔ STEALTHFOX: la chiave di Safe Browsing non e' piu' incisa nel binario,
+    // la DICHIARA invisible_core come pref (URLFormatter.sys.mjs,
+    // stealthDeclaredApiKey). Senza questa riga la dichiarazione che arriva DOPO
+    // l'avvio non verrebbe mai riletta, e questo e' il caso normale invece che
+    // l'eccezione: sul percorso Playwright le prefs del core viaggiano sul
+    // protocollo e `Browser.enable` le applica dopo il lancio, mentre `init()`
+    // qui gira all'avvio. Il provider resterebbe spento per sempre con la chiave
+    // presente, che e' il modo peggiore di sbagliare - silenzioso e permanente.
+    //
+    // `observe` cade su `readPrefs()`, che in coda rifa' `controlUpdateChecking()`
+    // e quindi `updateProviderURLs()` -> `checkGoogleSafeBrowsingKey()`: la
+    // chiave viene riletta e il provider si accende quando la dichiarazione
+    // arriva, da qualunque canale arrivi.
+    Services.prefs.addObserver("zoom.stealth.apikey", this);
 
     this.readPrefs();
 

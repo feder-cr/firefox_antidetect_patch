@@ -179,11 +179,32 @@ export var AppConstants = Object.freeze({
 
   MOZ_BING_API_CLIENTID: "@MOZ_BING_API_CLIENTID@",
   MOZ_BING_API_KEY: "@MOZ_BING_API_KEY@",
-#ifndef MOZ_WIDGET_ANDROID
-  MOZ_GOOGLE_LOCATION_SERVICE_API_KEY: "@MOZ_GOOGLE_LOCATION_SERVICE_API_KEY@",
-#endif
-  MOZ_GOOGLE_SAFEBROWSING_API_KEY: "@MOZ_GOOGLE_SAFEBROWSING_API_KEY@",
-  MOZ_MOZILLA_API_KEY: "@MOZ_MOZILLA_API_KEY@",
+
+  // ⛔ STEALTHFOX: QUI STAVANO LE TRE CHIAVI API, E SONO STATE TOLTE.
+  //
+  //   MOZ_GOOGLE_LOCATION_SERVICE_API_KEY   (dentro un #ifndef MOZ_WIDGET_ANDROID)
+  //   MOZ_GOOGLE_SAFEBROWSING_API_KEY
+  //   MOZ_MOZILLA_API_KEY
+  //
+  // I nomi sono scritti NUDI apposta: nella forma con le chiocciole sarebbero
+  // segnaposto veri per il preprocessore, che non trovando piu' i DEFINES
+  // corrispondenti li lascerebbe li' o si fermerebbe. Un commento non deve
+  // poter rompere la build che descrive.
+  //
+  // Erano incise da configure a tempo di compilazione leggendo tre keyfile.
+  // Adesso le dichiara invisible_core e arrivano come pref: il solo lettore e'
+  // stealthDeclaredApiKey() in URLFormatter.sys.mjs, che e' anche l'unico punto
+  // che sapeva leggerle da qui. Lasciarle come costanti avrebbe significato
+  // tenere DUE fonti per lo stesso valore, che e' cio' che la regola 7 vieta:
+  // non una fuga, ma due numeri per la stessa cosa che possono divergere.
+  //
+  // I DEFINES corrispondenti sono stati tolti da toolkit/modules/moz.build nello
+  // stesso cambiamento: se restassero li' senza queste righe non farebbero
+  // niente, e se restassero queste righe senza quei DEFINES la preelaborazione
+  // fallirebbe. Si muovono insieme.
+  //
+  // MOZ_BING_API_* restano perche' hanno un consumatore diverso e non sono state
+  // spostate: il dominio dichiarato e' quello delle tre chiavi, non di tutte.
 
   BROWSER_CHROME_URL: "@BROWSER_CHROME_URL@",
 
