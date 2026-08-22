@@ -253,3 +253,42 @@ mk_add_options MOZ_AUTOMATION_INSTALLER=0
 # funzionante e nessun errore da nessuna parte. Il rimedio in questo albero
 # c'e', ed e' verificato presente su entrambi i checkout - ma e' stato MISURATO
 # solo su Windows. La prima cosa da provare dopo la build Linux e' un `launch`.
+
+# ============================================================================
+# VELOCITA' DI BUILD (2026-08-22)
+# ============================================================================
+#
+# Fino a oggi non c'era NESSUNA cache di compilazione: ne' ccache ne' sccache,
+# e nessun parallelismo dichiarato. Era la leva piu' grossa disponibile e non
+# era mai stata toccata.
+#
+# sccache invece di ccache perche' cachea anche gli artefatti Rust, che in
+# Firefox sono una fetta grande. La documentazione Mozilla: dalla 0.7.4 la
+# modalita' preprocessor-cache e' il default e "decreases the build time by a
+# factor of 2 to 3" a cache calda. ⛔ La PRIMA build sara' piu' LENTA, per il
+# lavoro di popolamento: il guadagno arriva dalla seconda in poi, quindi non
+# si giudica questa scelta sul primo giro.
+#
+# Il nome e basta, senza percorso: `sccache` sta nel PATH di entrambe le
+# macchine (Windows ~/.cargo/bin, Linux ~/.local/bin) e il percorso e' una
+# proprieta' della macchina, non del sorgente - scriverlo qui rimetterebbe in
+# questo file una differenza per-OS, che e' esattamente cio' che il 2026-08-22
+# e' stato tolto.
+ac_add_options --with-ccache=sccache
+
+# --with-ccache copre C/C++ ma NON Rust: quello passa da RUSTC_WRAPPER, che
+# build/moz.configure/toolchain.configure tratta come opzione separata.
+mk_add_options 'export RUSTC_WRAPPER=sccache'
+
+# Il default di sccache e' 10 GB, che per un albero Firefox si riempie e
+# sfratta le voci che servono, cioe' vanifica la cache. Qui c'e' spazio.
+mk_add_options 'export SCCACHE_CACHE_SIZE=50G'
+
+# 16 core su questa macchina. La documentazione Mozilla dice che i ritorni
+# (calanti) arrivano fino a 1,5-2,0 volte il numero di core, quindi 24 e' il
+# basso di quella forbice. Non 32: questo file vale per ENTRAMBE le macchine e
+# WSL vede 31 GB di RAM contro i 63 dell'host, quindi il numero lo detta la
+# macchina piu' stretta. Se un giorno le due divergono, il posto giusto NON e'
+# un ramo per-OS qui dentro: e' MOZ_PARALLEL_BUILD nell'ambiente della singola
+# macchina, che vince su questa riga.
+mk_add_options MOZ_PARALLEL_BUILD=24
