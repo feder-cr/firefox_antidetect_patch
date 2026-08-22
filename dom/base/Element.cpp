@@ -62,6 +62,7 @@
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_full_screen_api.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/StaticString.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
@@ -1372,19 +1373,67 @@ void Element::SetSlot(const nsAString& aName, ErrorResult& aError) {
 void Element::GetSlot(nsAString& aName) { GetAttr(nsGkAtoms::slot, aName); }
 
 // https://dom.spec.whatwg.org/#dom-element-shadowroot
-ShadowRoot* Element::GetShadowRootForBindings() const {
+//
+// STEALTH: the closed-mode filter gets one exception, for the automation
+// sandbox only.
+//
+// Why here and not at the shadow root's birth: the mode is a fact the page
+// declared and can read back. Forcing a root open when it is created shows up
+// three separate ways - root.mode reads "open", !!el.shadowRoot becomes true,
+// and getHTML() writes shadowrootmode="open" - so the bit stays exactly as the
+// page set it. This is the single place in the whole tree where the mode is
+// filtered for content (GetOpenOrClosedShadowRoot below does not filter it and
+// is left alone), so one exception here covers everything without moving the
+// observable.
+//
+// Who gets the exception: Juggler's isolated world is a Cu.Sandbox built on an
+// ExpandedPrincipal, while the page always has a ContentPrincipal, so the two
+// are distinguishable for free and the page falls through to the spec answer.
+//
+// With the engine off this is byte-for-byte upstream behaviour.
+ShadowRoot* Element::GetShadowRootForBindings(nsIPrincipal& aSubject) const {
   /**
    * 1. Let shadow be context object's shadow root.
    * 2. If shadow is null or its mode is "closed", then return null.
    */
   ShadowRoot* shadowRoot = GetShadowRoot();
-  if (!shadowRoot || shadowRoot->IsClosed()) {
+  if (!shadowRoot) {
+    return nullptr;
+  }
+  if (!shadowRoot->IsClosed()) {
+    /**
+     * 3. Return shadow.
+     */
+    return shadowRoot;
+  }
+
+  // Content is the overwhelmingly common caller here and it must not pay for
+  // an exception it never takes, because what it pays is READABLE FROM JS. The
+  // first version asked nsIPrincipal::GetIsExpandedPrincipal(), which is an
+  // NS_IMETHOD - a virtual XPCOM dispatch with an nsresult out-param - and put
+  // it after the pref read, so a page reading .shadowRoot off its own closed
+  // root paid both. Measured against retail 151 that showed up as a ratio a
+  // page can compute without knowing anything about the machine: time a read
+  // on a closed root over a read on an element with no root, and retail says
+  // 1.13 while we said 1.95. Absolute nanoseconds are not a tell (nobody knows
+  // how fast this box is); a self-normalising ratio is. So the cheap form -
+  // one load and one compare off BasePrincipal::mKind - and it goes first, so
+  // content returns on it and never reaches the pref.
+  if (!BasePrincipal::Cast(aSubject).Is<ExpandedPrincipal>()) {
     return nullptr;
   }
 
-  /**
-   * 3. Return shadow.
-   */
+  // Only the sandbox gets this far, so the pref read is off the hot path.
+  // Measured 2026-08-22, which is why the parameter exists at all: that a
+  // sandbox access arrives carrying the ExpandedPrincipal was reasoned about
+  // before it was observed, so a printf_stderr sat on the refusal path until a
+  // locator reached an element inside a closed root - and inside a closed root
+  // nested in another one - while the page's own script still read null off
+  // the same host.
+  if (StaticPrefs::zoom_stealth_fpp_hw_seed() <= 0) {
+    return nullptr;  // stock Firefox
+  }
+
   return shadowRoot;
 }
 

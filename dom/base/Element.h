@@ -1657,7 +1657,9 @@ class Element : public FragmentOrElement {
   void SetSlot(const nsAString& aName, ErrorResult& aError);
   void GetSlot(nsAString& aName);
 
-  ShadowRoot* GetShadowRootForBindings() const;
+  // Takes the subject principal so the automation sandbox can be told apart
+  // from the page. The reasoning is on the definition, in Element.cpp.
+  ShadowRoot* GetShadowRootForBindings(nsIPrincipal& aSubject) const;
   ShadowRoot* GetOpenOrClosedShadowRoot(nsIPrincipal& aSubject) const;
   ShadowRoot* GetShadowRoot() const {
     const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();

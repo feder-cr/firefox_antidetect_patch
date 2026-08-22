@@ -289,7 +289,10 @@ partial interface Element {
   // Shadow DOM v1
   [Throws, UseCounter]
   ShadowRoot attachShadow(ShadowRootInit shadowRootInitDict);
-  [BinaryName="shadowRootForBindings"]
+  // STEALTH: NeedsSubjectPrincipal only. Same attribute, same name, same
+  // spec answer for the page - nothing new appears on Element.prototype, which
+  // is what makes this invisible where a new accessor would be the tell.
+  [NeedsSubjectPrincipal, BinaryName="shadowRootForBindings"]
   readonly attribute ShadowRoot? shadowRoot;
 
   [NeedsSubjectPrincipal, Func="Document::IsCallerChromeOrAddon"]
