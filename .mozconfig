@@ -11,8 +11,13 @@
 # lato Linux, per spegnere i tre agenti di Windows.
 #
 # ⛔ LE DUE CONFIGURAZIONI NON SONO ANCORA ALLINEATE, ed e' una decisione
-# aperta, non una svista: `.mozconfig-win` porta `MOZILLA_OFFICIAL=1`, il canale
-# `release` e il branding ufficiale, `.mozconfig-linux` no. Le due build quindi
+# aperta, non una svista: `.mozconfig-win` porta `MOZILLA_OFFICIAL=1` e il
+# canale `release`, `.mozconfig-linux` nessuno dei due. Sono DUE righe, non
+# tre: `--enable-official-branding` compare in questo file solo dentro dei
+# commenti e non e' attivo da nessuna delle due parti, perche' fu spento
+# apposta il 2026-08-20 - un binario che si dichiara Firefox senza la firma di
+# Mozilla lo rifiuta `scripts/check_branding.py`. Su quello le due build sono
+# gia' d'accordo. Le due build quindi
 # dichiarano identita' diverse - `browser.safebrowsing.id` e
 # `urlclassifier.phishTable` viaggiano dentro le richieste di rete - e la
 # regola 4 dice che si corregge Linux, mai Windows. Il seguito sta in
