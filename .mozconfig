@@ -291,4 +291,17 @@ mk_add_options 'export SCCACHE_CACHE_SIZE=50G'
 # macchina piu' stretta. Se un giorno le due divergono, il posto giusto NON e'
 # un ramo per-OS qui dentro: e' MOZ_PARALLEL_BUILD nell'ambiente della singola
 # macchina, che vince su questa riga.
-mk_add_options MOZ_PARALLEL_BUILD=24
+mk_add_options MOZ_PARALLEL_BUILD=32
+
+# ⛔ I SIMBOLI DI DEBUG SONO PRODOTTI DI DEFAULT ANCHE NELLE BUILD OPT, e sono
+# il costo piu' grosso di una build fredda: piu' lavoro al compilatore e un
+# link di libxul molto piu' pesante.
+#
+# Toglierli non ci allontana da cio' che spediamo - ci AVVICINA. `release.yml`
+# appende gia' `--disable-debug-symbols` a tutte e cinque le gambe, quindi gli
+# asset pubblicati non li hanno mai avuti: erano le build LOCALI a essere
+# diverse, oltre che piu' lente.
+#
+# Il prezzo, ed e' reale: un crash locale non avra' uno stack simbolizzato. Per
+# una diagnosi che li richiede si rimette la riga a mano per quella build.
+ac_add_options --disable-debug-symbols
