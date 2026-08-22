@@ -1544,6 +1544,40 @@ pref("intl.accept_languages",               "und");
 // OS locale set instead of the app locale set.
 pref("intl.regional_prefs.use_os_locales",  false);
 
+// ⛔ STEALTH: questa riga esiste PER FARE PROPAGARE LA PREF AI PROCESSI DI
+// CONTENUTO, e il valore vuoto non e' il punto: il punto e' che un default
+// ESISTA.
+//
+// `juggler.locale.override` la scrive invisible_core e la legge
+// `BrowsingContext::Attach` nel processo PADRE. Serve pero' anche nel processo
+// di CONTENUTO, perche' e' li' che nasce il realm di un Worker
+// (`WorkerPrivate::WorkerPrivate`, ramo senza parent) e li' l'override di
+// lingua va passato a `xpc::InitGlobalObjectOptions`.
+//
+// Senza questa riga la pref NON ARRIVA MAI al contenuto. La regola sta in
+// `modules/libpref/Preferences.cpp`, `ShouldSanitizePreference`:
+//
+//     if (aPref->Type() == PrefType::String && !aPref->HasDefaultValue()) {
+//       ... return true;   // sanificata: non si manda ai figli
+//     }
+//
+// cioe' ogni pref STRINGA senza valore di default e' trattata come
+// "dinamicamente denominata" e trattenuta nel padre. `juggler.` non e' nella
+// denylist `sRestrictFromWebContentProcesses`, quindi dichiarare il default e'
+// sufficiente e non serve toccare nessuna lista.
+//
+// ⛔ COME L'HO SCOPERTO, perche' e' la parte che conta: la correzione al worker
+// era gia' scritta, compilata e collegata (verificato: Unified_cpp_dom_workers1
+// ricompilato, xul.dll ricollegato) e la misura riportava le STESSE dieci
+// divergenze di prima. Una leva compilata e inerte. Leggeva una pref che nel
+// suo processo non esiste.
+//
+// `juggler.timezone.override` ha la stessa forma e lo stesso problema, ma NON
+// e' stata dichiarata qui: il fuso arriva ai worker per un'altra strada (per
+// processo, non per realm) ed e' misurato corretto. Dichiararla sarebbe una
+// riga che non sposta nessuna misura.
+pref("juggler.locale.override", "");
+
 pref("font.cjk_pref_fallback_order",        "zh-cn,zh-hk,zh-tw,ja,ko");
 
 // This pref controls pseudolocales for testing localization.

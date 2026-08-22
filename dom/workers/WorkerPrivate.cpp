@@ -32,6 +32,9 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/Mutex.h"
+// STEALTHFOX: serve a leggere juggler.locale.override alla nascita del realm del
+// worker. Vedi il blocco marcato STEALTHFOX in WorkerPrivate::WorkerPrivate.
+#include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Result.h"
@@ -2853,16 +2856,73 @@ WorkerPrivate::WorkerPrivate(
       JS::RealmOptions& chromeRealmOptions = mJSSettings.chromeRealmOptions;
       JS::RealmOptions& contentRealmOptions = mJSSettings.contentRealmOptions;
 
+      // ⛔ STEALTHFOX: qui c'erano DUE LETTERALI VUOTI al posto dell'override di
+      // lingua, ed erano il buco da cui usciva il locale VERO della macchina.
+      //
+      // MISURATO il 2026-08-20 sulla build vera, sessione che dichiara it-IT su
+      // una macchina il cui locale di sistema e' en-US, pagina servita da
+      // 127.0.0.1 che apre un Worker e legge le stesse sonde da entrambi i lati:
+      //
+      //   main thread   Intl.DateTimeFormat().resolvedOptions().locale  it-IT
+      //   nel worker    la stessa chiamata                              en-US
+      //
+      // e con lei TUTTA la famiglia: NumberFormat, Collator, PluralRules,
+      // RelativeTimeFormat, ListFormat, DisplayNames, Segmenter. Dieci
+      // divergenze in tutto, comprese le due che si vedono senza chiamare
+      // resolvedOptions(): `new Date(0).toLocaleString()` dava "01/01/1970,
+      // 01:00:00" nella pagina e "1/1/1970, 1:00:00 AM" nel worker, e
+      // `(1234.5).toLocaleString()` dava "1234,5" contro "1,234.5".
+      //
+      // PERCHE' PROPRIO QUI, e non a valle. Il campo LanguageOverride del
+      // BrowsingContext ha un DidSet che riapplica l'override per realm
+      // (BrowsingContext.cpp), ma cammina i WindowContext: un
+      // WorkerGlobalScope non e' un nodo di quell'albero, quindi nessuna
+      // riparazione a valle puo' raggiungerlo. Questo e' invece il punto in cui
+      // il realm del worker NASCE, chiama la stessa funzione della finestra e
+      // ha gia' il parametro nella firma: si riempie l'argomento che c'era.
+      // Verificato che nessun altro punto lo faccia: SetRealmLocaleOverride ha
+      // otto siti di produzione in tutto l'albero e ZERO in dom/workers/.
+      //
+      // La FONTE resta una sola, la stessa pref che legge
+      // BrowsingContext::Attach e che dichiara invisible_core. Due lettori
+      // della stessa pref non sono due fonti di verita': due PREF diverse per
+      // lo stesso fatto lo sarebbero.
+      //
+      // ⛔ IL FUSO RESTA VUOTO, ED E' DELIBERATO. Nella stessa misura
+      // `Intl.DateTimeFormat().resolvedOptions().timeZone` e' CORRETTO dentro
+      // il worker (Europe/Berlin da entrambi i lati): arriva per PROCESSO, non
+      // per realm, quindi riempire anche quell'argomento sarebbe una patch che
+      // compila e non sposta nessuna misura - e questo progetto ne ha gia'
+      // scritte cinque cosi'. Se un giorno il fuso divergesse nel worker, il
+      // rimedio e' qui accanto e il commento e' questo.
+      //
+      // ⛔ E QUESTA LETTURA DA SOLA ERA INERTE. La pref e' una STRINGA senza
+      // valore di default, e `ShouldSanitizePreference`
+      // (modules/libpref/Preferences.cpp) trattiene nel processo padre ogni
+      // pref di quella forma: qui siamo nel processo di CONTENUTO, dove non
+      // esisteva affatto. Misurato: con questo blocco compilato e collegato, le
+      // dieci divergenze erano identiche a prima. Il rimedio e' la riga
+      // `pref("juggler.locale.override", "")` in modules/libpref/init/all.js,
+      // che dandole un default la fa propagare. Le due modifiche si muovono
+      // INSIEME: togliendo quella riga questo codice torna a leggere il vuoto.
+      // Il conto per esteso in `71-bug-archive.md` [B165].
+      //
+      // Siamo su AssertIsOnMainThread(), quindi Preferences si puo' leggere.
+      nsAutoCString stealthLocale;
+      Preferences::GetCString("juggler.locale.override", stealthLocale);
+
       xpc::InitGlobalObjectOptions(
           chromeRealmOptions, UsesSystemPrincipal(), mIsSecureContext,
           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
-          ShouldResistFingerprinting(RFPTarget::JSLocale), ""_ns, u""_ns);
+          ShouldResistFingerprinting(RFPTarget::JSLocale), stealthLocale,
+          u""_ns);
       xpc::InitGlobalObjectOptions(
           contentRealmOptions, UsesSystemPrincipal(), mIsSecureContext,
           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
-          ShouldResistFingerprinting(RFPTarget::JSLocale), ""_ns, u""_ns);
+          ShouldResistFingerprinting(RFPTarget::JSLocale), stealthLocale,
+          u""_ns);
 
       // Check if it's a privileged addon executing in order to allow access
       // to SharedArrayBuffer
