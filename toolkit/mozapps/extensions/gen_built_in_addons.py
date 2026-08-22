@@ -85,28 +85,10 @@ def main(output, *args):
         "dictionaries": dicts,
     }
 
-    # STEALTHFOX: i FILE si impacchettano, l'add-on non si registra.
-    #
-    # newtab e' costruito e impacchettato apposta - il retail serve 115 file
-    # sotto `resource://builtin-addons/newtab/`, su una radice
-    # `contentaccessible=yes`, e non averli e' un vettore a 115 bit che una
-    # pagina legge con un `new Image()` ([B157] in `70-known-bugs.md`). Ma
-    # l'add-on non deve essere INSTALLATO: costava un processo di contenuto in
-    # piu' e 75,4 MB di immagini per sessione, ed e' cio' che la rimozione del
-    # 2026-08-14 aveva comprato.
-    #
-    # Questo e' il punto esatto in cui le due cose si separano, perche' e' qui
-    # che l'elenco dei builtin nasce, cercando i `manifest.json`. Scartarlo
-    # altrove vorrebbe dire non impacchettare i file, che e' il difetto da cui
-    # veniamo.
-    ESCLUSI_DAI_BUILTIN = ("newtab",)
-
     if args.builtinsdir:
         builtins = list()
         for p in registry.match("%s/*/manifest.json" % args.builtinsdir):
             dirname = mozpath.basename(get_child(args.builtinsdir, p))
-            if dirname in ESCLUSI_DAI_BUILTIN:
-                continue
             builtins_entry = dict()
             builtins_entry["res_url"] = f"resource://builtin-addons/{dirname}/"
             # collect addon id and version from each of the builtins manifest.json files.
