@@ -63,6 +63,37 @@ JSObject* SpeechSynthesisVoice::WrapObject(JSContext* aCx,
 nsISupports* SpeechSynthesisVoice::GetParentObject() const { return mParent; }
 
 void SpeechSynthesisVoice::GetVoiceURI(nsString& aRetval) const {
+  // QUI USCIVA IL NOSTRO FORMATO INTERNO, FINO ALLA PAGINA.
+  //
+  // `mUri` e' la nostra codifica di servizio, "stealth-voice:NOME|LANG|D|L", e
+  // ogni altro accessor di questo file la sa interpretare. Questo no: tornava
+  // `mUri` verbatim, quindi una pagina che chiama
+  // `speechSynthesis.getVoices()[0].voiceURI` leggeva una stringa che comincia
+  // con la parola "stealth". Misurato il 2026-08-23 sul prodotto:
+  //   a mano   -> urn:moz-tts:sapi:Microsoft David - English (United States)?en-US
+  //   prodotto -> stealth-voice:Microsoft David - English (United States)|en-US|1|1
+  // Non e' un camuffamento imperfetto: e' una firma che si autodenuncia, ed e'
+  // l'unica superficie di tutta la sessione di misure che nominava noi.
+  //
+  // Il formato retail non e' stato dedotto: e' copiato da
+  // `dom/media/webspeech/synth/windows/SapiService.cpp`, che costruisce
+  // `"urn:moz-tts:sapi:" + descrizione + "?" + locale`.
+  //
+  // E LO SCHEMA E' SEMPRE `sapi:`, ANCHE SU LINUX. Un Firefox Linux vero direbbe
+  // `speechd:` (`SpeechDispatcherService.cpp`) e uno macOS `osx:`
+  // (`OSXSpeechSynthesizerService.mm`), ma noi dichiariamo Windows sempre e
+  // ovunque: e' la regola 4, e ha l'effetto collaterale di rendere le due build
+  // identiche anche qui.
+  if (IsStealthVoiceURI(mUri)) {
+    nsAutoString name, lang;
+    GetStealthVoiceField(mUri, 0, name);
+    GetStealthVoiceField(mUri, 1, lang);
+    aRetval.AssignLiteral(u"urn:moz-tts:sapi:");
+    aRetval.Append(name);
+    aRetval.AppendLiteral(u"?");
+    aRetval.Append(lang);
+    return;
+  }
   aRetval = mUri;
 }
 
