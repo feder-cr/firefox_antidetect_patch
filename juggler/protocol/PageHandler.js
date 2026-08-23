@@ -563,6 +563,38 @@ export class PageHandler {
     return await this._pageTarget.setInitScripts(scripts);
   }
 
+  // TASTIERA E MOUSE PRENDEVANO STRADE DIVERSE, E LA DIFFERENZA SI VEDEVA DALLA
+  // PAGINA.
+  //
+  // `dispatchMouseEvent`, `dispatchWheelEvent`, `reload` e `bringToFront`
+  // passano tutti da `activateAndRun()`, che fa `window.focus()` e seleziona la
+  // scheda PRIMA di agire - il commento upstream sul percorso del mouse dice
+  // perche' ("We must switch to proper tab..."). Il percorso della tastiera no:
+  // andava dritto al processo di contenuto, quindi i tasti arrivavano a una
+  // pagina che NON aveva il fuoco. Un umano non puo' farlo: per digitare in una
+  // finestra bisogna prima portarla davanti, ed e' proprio quello che il nostro
+  // mouse gia' faceva.
+  //
+  // Misurato il 2026-08-23 sul prodotto, con `document.hasFocus()` letto DENTRO
+  // il gestore di keydown - cinque casi, e solo l'ultimo era sano:
+  //   1) una pagina sola, si digita            -> true    (il caso comune, sano)
+  //   2) due pagine, si digita in quella davanti -> true
+  //   3) due pagine, si digita in quella DIETRO  -> FALSE  <- il tell
+  //   4) stessa pagina dietro, ma col MOUSE      -> true   (activateAndRun)
+  //   5) tastiera subito dopo quel click         -> true   (l'aveva attivata il click)
+  // Cioe' il difetto non e' "manca il fuoco", e' l'ASIMMETRIA: la stessa pagina
+  // nello stesso istante risponde true al mouse e false alla tastiera, e basta
+  // un `document.hasFocus()` dentro un keydown per vederlo.
+  //
+  // Il rimedio e' all'origine e non e' una pezza: non si finge il fuoco e non si
+  // corregge `hasFocus`, si fa passare l'input della tastiera dalla STESSA
+  // attivazione che usa gia' quello del mouse. Se la scheda e' gia' quella
+  // selezionata, `activateAndRun` fa solo un `window.focus()` su una finestra
+  // gia' a fuoco, che non emette niente e non costa niente.
+  //
+  // Vale per tutto l'input diretto - tasti, testo inserito, tocco - non per il
+  // solo caso misurato: il difetto e' della classe, e correggerne un membro solo
+  // lascerebbe gli altri a divergere da soli (regola 16).
   async ['Page.dispatchKeyEvent']({type, keyCode, code, key, repeat, location, text}) {
     // key events don't fire if we are dragging.
     if (this._isDragging) {
@@ -578,15 +610,18 @@ export class PageHandler {
       }
       return;
     }
-    return await this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text});
+    return await this._pageTarget.activateAndRun(() =>
+      this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text}));
   }
 
   async ['Page.dispatchTouchEvent'](options) {
-    return await this._contentPage.send('dispatchTouchEvent', options);
+    return await this._pageTarget.activateAndRun(() =>
+      this._contentPage.send('dispatchTouchEvent', options));
   }
 
   async ['Page.dispatchTapEvent'](options) {
-    return await this._contentPage.send('dispatchTapEvent', options);
+    return await this._pageTarget.activateAndRun(() =>
+      this._contentPage.send('dispatchTapEvent', options));
   }
 
   async ['Page.dispatchMouseEvent']({type, x, y, button, clickCount, modifiers, buttons}) {
@@ -762,8 +797,11 @@ export class PageHandler {
     }, { muteNotificationsPopup: true });
   }
 
+  // Stessa classe di `Page.dispatchKeyEvent` sopra, e stessa ragione: e' input
+  // che arriva alla pagina, quindi deve trovare la finestra a fuoco.
   async ['Page.insertText'](options) {
-    return await this._contentPage.send('insertText', options);
+    return await this._pageTarget.activateAndRun(() =>
+      this._contentPage.send('insertText', options));
   }
 
   async ['Page.crash'](options) {
