@@ -520,20 +520,66 @@ class Frame {
     };
   }
 
-  _createIsolatedContext(name) {
-    const principal = [this.domWindow()]; // extended principal
-    const sandbox = Cu.Sandbox(principal, {
-      sandboxPrototype: this.domWindow(),
+  // STEALTHFOX: l'UNICO punto che sa come si costruisce un mondo. I due mondi
+  // differiscono per una bandiera sola, e prima erano due blocchi separati -
+  // uno qui e uno inline in _initializeWorlds - quindi la differenza fra loro
+  // era invisibile a chi leggeva.
+  //
+  // `wantXrays` decide COSA il mondo vede degli oggetti del contenuto:
+  //   true  = la vista NATIVA. Gli expando che la pagina appiccica a window e
+  //           ai nodi sono nascosti, e i getter che la pagina rimpiazza non
+  //           vengono invocati. E' cio' che serve al MACCHINARIO (i selettori,
+  //           l'actionability): un sito che rimpiazza Element.prototype.matches
+  //           non deve poterlo sviare.
+  //   false = la vista del CONTENUTO, cioe' esattamente quello che vede il
+  //           sito. E' cio' che serve al CODICE DELL'UTENTE, che chiede
+  //           `page.evaluate(() => window.__APP_STATE__)` e si aspetta il
+  //           valore del sito, non undefined.
+  //
+  // ⛔ E LA BANDIERA DA SOLA NON BASTA, misurato il 2026-08-23: una sandbox con
+  // `wantXrays: false` ma con la window NON waived come prototipo continua a
+  // vedere la vista Xray, perche' il principal della sandbox non e' quello del
+  // sito. In quella configurazione `page.evaluate(() => window.__STATO)` torna
+  // `undefined`, `document.title` torna il titolo nativo invece di quello che il
+  // getter della pagina produce, e le funzioni della pagina risultano "is not a
+  // function". Quello che apre la vista del contenuto e' il PROTOTIPO waived: e'
+  // la catena di scope a decidere, non la bandiera.
+  _createSandbox() {
+    const dw = this.domWindow();
+    const principal = [dw]; // extended principal
+    return Cu.Sandbox(principal, {
+      sandboxPrototype: dw,
       wantComponents: false,
       wantExportHelpers: false,
       wantXrays: true,
     });
-    const world = this._runtime.createExecutionContext(this.domWindow(), sandbox, {
+  }
+
+  // `wantXrays === null` vuol dire "il global della pagina", cioe' il mondo main.
+  //
+  // Il quarto argomento e' il global in cui si SERIALIZZANO i valori di ritorno,
+  // e non e' mai quello della pagina: il perche', con i numeri, sta nel
+  // costruttore di ExecutionContext in Runtime.js. E' una sandbox sola per
+  // frame, condivisa da tutti i mondi, creata pigramente perche' un mondo che
+  // non serializza non deve pagarla.
+  _createWorldContext(name, wantXrays) {
+    const global = wantXrays === null ? this.domWindow() : this._createSandbox();
+    const world = this._runtime.createExecutionContext(this.domWindow(), global, {
       frameId: this.id(),
       name,
-    });
+    }, this._ensureSerializationSandbox());
     this._worldNameToContext.set(name, world);
     return world;
+  }
+
+  _createIsolatedContext(name) {
+    return this._createWorldContext(name, true);
+  }
+
+  _ensureSerializationSandbox() {
+    if (!this._serializationSandbox)
+      this._serializationSandbox = this._createSandbox();
+    return this._serializationSandbox;
   }
 
   unsafeObject(objectId) {
@@ -549,6 +595,8 @@ class Frame {
     for (const context of this._worldNameToContext.values())
       this._runtime.destroyExecutionContext(context);
     this._worldNameToContext.clear();
+    // la sandbox di serializzazione appartiene al documento, come i contesti
+    this._serializationSandbox = null;
   }
 
   _addBinding(worldName, name, script) {
@@ -580,11 +628,32 @@ class Frame {
     for (const context of this._worldNameToContext.values())
       this._runtime.destroyExecutionContext(context);
     this._worldNameToContext.clear();
+    // la sandbox di serializzazione appartiene al documento, come i contesti
+    this._serializationSandbox = null;
 
-    this._worldNameToContext.set('', this._runtime.createExecutionContext(this.domWindow(), this.domWindow(), {
-      frameId: this._frameId,
-      name: '',
-    }));
+    // ⛔ IL MONDO "main" E' IL GLOBAL DELLA PAGINA, E SPOSTARLO IN UNA SANDBOX
+    // NON E' UNA BANDIERA: PROVATO IL 2026-08-23, MISURE IN 90-firefox-internals.md.
+    //
+    // Il secondo argomento e' il GLOBAL in cui il codice gira. Passando la
+    // window, `page.evaluate()` gira nel compartimento del sito. Sostituirlo con
+    // una sandbox isola davvero - misurato, cio' che l'automazione dichiara
+    // diventa invisibile alla pagina - ma rompe il contratto di `evaluate`, e
+    // rimetterlo in piedi costa piu' di una riga:
+    //
+    //   - `wantXrays: false` NON apre la vista del contenuto: il principal della
+    //     sandbox non e' quello del sito, quindi Gecko tiene l'Xray lo stesso.
+    //   - nemmeno passare la window WAIVED come `sandboxPrototype` la apre: il
+    //     waiver non sopravvive come legame strutturale, viene ri-avvolto al
+    //     confine del compartimento.
+    //   - il waiver funziona solo come VALORE esplicito, `window.wrappedJSObject`,
+    //     ed e' appiccicoso: due salti, gli expando sui nodi e i getter della
+    //     pagina continuano a funzionare da li'.
+    //   - restano due rotture vere: un identificatore nudo della pagina
+    //     (`page.evaluate(() => miaFunzioneGlobale())`) non risolve piu', e un
+    //     oggetto creato NELLA sandbox passato a codice della pagina viene
+    //     rifiutato con "Permission denied to access property". Il secondo non e'
+    //     un difetto: e' la stessa barriera che rende invisibili i nostri global.
+    this._createWorldContext('', null);
     for (const [name, world] of this._frameTree._isolatedWorlds) {
       if (name)
         this._createIsolatedContext(name);

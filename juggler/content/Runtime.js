@@ -334,9 +334,9 @@ class Runtime {
     return await promise;
   }
 
-  createExecutionContext(domWindow, contextGlobal, auxData) {
+  createExecutionContext(domWindow, contextGlobal, auxData, serializationGlobal) {
     // Note: domWindow is null for workers.
-    const context = new ExecutionContext(this, domWindow, contextGlobal, auxData);
+    const context = new ExecutionContext(this, domWindow, contextGlobal, auxData, serializationGlobal);
     this._executionContexts.set(context._id, context);
     if (domWindow)
       this._windowToExecutionContext.set(domWindow, context);
@@ -359,6 +359,8 @@ class Runtime {
       }
     }
     this._debugger.removeDebuggee(destroyedContext._contextGlobal);
+    if (destroyedContext._serializationGlobal)
+      this._debugger.removeDebuggee(destroyedContext._serializationGlobal);
     this._executionContexts.delete(destroyedContext._id);
     if (destroyedContext._domWindow)
       this._windowToExecutionContext.delete(destroyedContext._domWindow);
@@ -367,11 +369,39 @@ class Runtime {
 }
 
 class ExecutionContext {
-  constructor(runtime, domWindow, contextGlobal, auxData) {
+  constructor(runtime, domWindow, contextGlobal, auxData, serializationGlobal) {
     this._runtime = runtime;
     this._domWindow = domWindow;
     this._contextGlobal = contextGlobal;
     this._debuggee = runtime._debugger.addDebuggee(contextGlobal);
+    // ⛔ DOVE SI SERIALIZZA E' UNA DECISIONE, NON UN DETTAGLIO.
+    //
+    // Il valore di ritorno di `evaluate` veniva serializzato NEL REALM DELLA
+    // PAGINA, e `JSON.stringify` legge `toJSON` su ogni valore che tocca: se il
+    // sito ha messo un accessore su `Object.prototype.toJSON`, quelle letture
+    // sono sue e le puo' CONTARE. Misurato il 2026-08-23 su un flusso normale:
+    // click, `page.title()`, `page.content()`, i locator e una `evaluate` che
+    // torna un numero fanno **zero** attraversamenti; una `evaluate` che torna
+    // `{a:1, b:[1,2,3]}` ne fa **sei** su `toJSON` piu' **due** su
+    // `Object.defineProperty`. Erano l'unico attraversamento osservabile
+    // dell'intero flusso.
+    //
+    // I due `defineProperty` erano gia' un residuo DICHIARATO nel commento di
+    // `_STEALTH_JSON_STRINGIFY_SRC` ("una pagina che agganci Object.defineProperty
+    // PRIMA ci vedrebbe comunque - non e' stato misurato"). Adesso e' misurato.
+    //
+    // Il rimedio non e' spostare `evaluate`: e' serializzare in un global che
+    // NON e' quello del sito. Da li' un oggetto della pagina si legge attraverso
+    // un Xray, che non espone la catena dei prototipi, quindi
+    // `Object.prototype.toJSON` del sito non esiste per chi serializza e il
+    // getter non parte. `wantXrays` qui non e' una scelta: e' il meccanismo.
+    //
+    // Nei worker `serializationGlobal` e' assente e si ricade sul global del
+    // contesto, che nei worker e' gia' l'unico che c'e'.
+    this._serializationGlobal = serializationGlobal || null;
+    this._serializationDebuggee = serializationGlobal
+        ? runtime._debugger.addDebuggee(serializationGlobal)
+        : this._debuggee;
     this._remoteObjects = new Map();
     this._id = generateId();
     this._auxData = auxData;
@@ -385,7 +415,7 @@ class ExecutionContext {
 
   _ensureJsonStringify() {
     if (!this._jsonStringifyObject)
-      this._jsonStringifyObject = this._debuggee.executeInGlobal(_STEALTH_JSON_STRINGIFY_SRC).return;
+      this._jsonStringifyObject = this._serializationDebuggee.executeInGlobal(_STEALTH_JSON_STRINGIFY_SRC).return;
     return this._jsonStringifyObject;
   }
 
@@ -593,7 +623,7 @@ class ExecutionContext {
   }
 
   _serialize(obj) {
-    const result = this._debuggee.executeInGlobalWithBindings('stringify(e)', {e: obj, stringify: this._ensureJsonStringify()}, {useInnerBindings: true});
+    const result = this._serializationDebuggee.executeInGlobalWithBindings('stringify(e)', {e: obj, stringify: this._ensureJsonStringify()}, {useInnerBindings: true});
     if (result.throw)
       throw new Error('Object is not serializable');
     return result.return === undefined ? undefined : JSON.parse(result.return);
