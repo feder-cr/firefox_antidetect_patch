@@ -15,6 +15,10 @@ import sys
 from pathlib import Path
 
 # (src_path, dst_path) pairs. Each pair must have matching byte lengths.
+#
+# ORDER MATTERS: the specific paths come first and the bare home directory LAST,
+# as a catch-all. Reversed, the catch-all would rewrite the prefix of every
+# specific pattern and none of them would ever match again.
 REPLACEMENTS = [
     (
         b"/home/feder/ff-build/firefox-150",
@@ -27,6 +31,27 @@ REPLACEMENTS = [
     (
         b"/home/feder/.mozbuild/sysroot-x86_64-linux-gnu",
         b"/b/firefox-stealth/sysroot/linux-x86_64-gnu-10",
+    ),
+    # The catch-all, and it comes from a real leak. Listing the three paths
+    # above covered what existed on 2026-08-14; on 2026-08-23 a locally built
+    # Linux package still carried four personal paths in
+    # chrome/toolkit/content/global/buildconfig.html, which is the
+    # about:buildconfig page: clang and clang++ and sccache under ~/.mozbuild,
+    # and rustc under ~/.rustup. Two of those three arrived with the unified
+    # .mozconfig (--enable-bootstrap and --with-ccache=sccache), so an
+    # enumerated list goes stale every time the build configuration moves, and
+    # it goes stale silently.
+    #
+    # scripts/validate_release.py saw it and refused the package, which is the
+    # correct behaviour: it is the rule-4 gate. The fix belongs here and not
+    # there, because the origin is that this file knew three paths instead of
+    # knowing the home directory.
+    #
+    # Same length as every other pair: 11 bytes against 11, so offsets inside
+    # binaries do not move.
+    (
+        b"/home/feder",
+        b"/home/build",
     ),
 ]
 for a, b in REPLACEMENTS:
