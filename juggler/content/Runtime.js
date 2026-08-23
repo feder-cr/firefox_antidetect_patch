@@ -316,7 +316,24 @@ class Runtime {
     this._pendingPromises.set(promiseID, {resolve: null, reject, executionContext, exceptionDetails});
 
     const rawPromise = obj.unsafeDereference();
-    Cu.waiveXrays(rawPromise).then(
+    // NIENTE `Cu.waiveXrays` QUI, ED E' LA DIFFERENZA FRA UN `then` NATIVO E
+    // QUELLO DELLA PAGINA.
+    //
+    // Qui c'era `Cu.waiveXrays(rawPromise).then(...)`. Il waiver toglie l'Xray,
+    // quindi `.then` si risolveva sulla catena di prototipi VERA del sito: se
+    // una pagina rimpiazza `Promise.prototype.then`, il suo codice veniva
+    // eseguito e poteva CONTARE. Misurato il 2026-08-23 con
+    // `tests/gates/observable_crossings.py`: una `page.evaluate` asincrona
+    // faceva scattare la trappola **1 volta su 1**, ed era l'unico
+    // attraversamento rimasto dell'intero flusso.
+    //
+    // Senza waiver, `rawPromise` resta dietro l'Xray e `.then` risolve al
+    // metodo NATIVO, che il sito non puo' sviare. Il comportamento non cambia:
+    // `Promise.prototype.then` opera sullo slot interno, non sul prototipo.
+    // Verificato su 7 casi - valore, ritardo, oggetto, promise gia' risolta,
+    // catena di await, fetch, e il RIFIUTO col messaggio intatto - 7 su 7, e il
+    // gate torna a zero attraversamenti.
+    rawPromise.then(
       () => {
         this._pendingPromises.delete(promiseID);
         resolve({success: true, obj: obj.promiseValue});
