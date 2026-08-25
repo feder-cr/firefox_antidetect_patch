@@ -18,6 +18,7 @@
 
 #include "harfbuzz/hb.h"
 #include "mozilla/FontPropertyTypes.h"
+#include "StealthDeclarationGate.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -210,7 +211,7 @@ void gfxDWriteFont::UpdateClearTypeVars() {
   // that asymmetry is the reason the two platforms rasterise glyph coverage
   // differently, and it cannot be closed while either side reads its host.
   const bool stealthDeclared =
-      mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0;
+      mozilla::gfx::StealthEngineActive();
 
   // Override these from DWrite function if available.
   RefPtr<IDWriteRenderingParams> defaultRenderingParams;

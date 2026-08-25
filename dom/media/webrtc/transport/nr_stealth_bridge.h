@@ -21,23 +21,24 @@
 extern "C" {
 #endif
 
-/* Copy the pref value zoom.stealth.webrtc.public_ip into `buf` (NUL
- * terminated). Returns the number of bytes written excluding the NUL,
- * or 0 if the pref is empty. `buf_len` must be >= 1. Reads env var
- * STEALTHFOX_WEBRTC_PUBLIC_IP first, falls back to the pref. */
+/* UNA SOLA FONTE: la variabile d'ambiente, dichiarata da `invisible_core`.
+ * Il ramo che leggeva anche la pref `zoom.stealth.webrtc.*` e' stato tolto il
+ * 2026-08-25 - il perche' per esteso sta in cima al .cpp. Questa intestazione
+ * descriveva una precedenza (env prima, pref dopo) che il codice NON aveva:
+ * era gia' una terza versione della stessa cosa. */
+
+/* Copia il valore di STEALTHFOX_WEBRTC_PUBLIC_IP in `buf` (terminato da NUL).
+ * Torna i byte scritti escluso il NUL, 0 se la variabile e' assente o vuota.
+ * `buf_len` deve essere >= 1. Zero significa "non dichiarato": il chiamante
+ * non emette il candidato sintetico, e nessun valore viene inventato. */
 size_t nr_stealth_get_webrtc_public_ip(char* buf, size_t buf_len);
 
-/* Same for zoom.stealth.webrtc.host_ip. Reserved for Phase 2 (mDNS
- * host candidate). Currently unused. */
-size_t nr_stealth_get_webrtc_host_ip(char* buf, size_t buf_len);
-
-/* Returns 1 if IPv6 host candidates must be dropped from ICE gathering, else
- * 0. Reads env var STEALTHFOX_WEBRTC_DISABLE_IPV6 first ("0" = off, any other
- * non-empty value = on), then falls back to the pref
- * zoom.stealth.webrtc.disable_ipv6. The upstream
- * media.peerconnection.ice.disableIPv6 pref is dead in FF150 (read nowhere in
- * the ICE path), so this is the stealth path to stop the real global IPv6 host
- * candidate from leaking past a SOCKS proxy that only carries TCP. */
+/* Torna 1 se i candidati host IPv6 vanno tolti dall'ICE gathering, 0 altrimenti.
+ * Legge STEALTHFOX_WEBRTC_DISABLE_IPV6: "0" spegne esplicitamente, qualunque
+ * altro valore non vuoto accende, assente = spento. La pref upstream
+ * media.peerconnection.ice.disableIPv6 e' morta in FF150 (non la legge nessuno
+ * nel percorso ICE), quindi questa e' la strada per impedire che l'IPv6 host
+ * globale vero passi oltre un SOCKS che porta solo TCP. */
 int nr_stealth_webrtc_disable_ipv6(void);
 
 #ifdef __cplusplus

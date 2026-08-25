@@ -7,10 +7,40 @@
 
 #include "Units.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_zoom.h"
 #include "nsPoint.h"
 
 namespace mozilla {
 namespace gfx {
+
+/**
+ * Is the stealth engine on?
+ *
+ * THIS EXISTS BECAUSE THE ANSWER WAS BEING RE-DERIVED IN NINE PLACES, IN FOUR
+ * DIFFERENT SPELLINGS. Counted 2026-08-23: `hw_seed() > 0`, `hw_seed() <= 0`,
+ * `hw_seed() > 0 &&`, and a bare assignment - spread across Element.cpp,
+ * Navigator.cpp, CanvasRenderingContext2D.cpp, gfxDWriteFonts.cpp,
+ * gfxFT2FontBase.cpp, nsMediaFeatures.cpp, and this file twice.
+ *
+ * That is engine rule 16 in its purest shape - the same FACT computed in more
+ * than one place - and the failure mode is silent. The day "on" becomes two
+ * conditions instead of one, whoever adds the second has to find nine sites,
+ * and the tenth they miss raises no error: it keeps behaving like stock Firefox
+ * on one surface while every other surface is spoofed, which is exactly the
+ * kind of internal disagreement a detector looks for.
+ *
+ * The home is this header rather than a new one because the predicate is this
+ * gate's own precondition: the comment on StealthAssertDeclarationsComplete
+ * already says "only checked when the stealth engine is actually on", and two
+ * of the nine sites were in this very file.
+ *
+ * A bare binary launched with no seed is stock Firefox and must behave like
+ * stock Firefox. That is not an incomplete declaration, it is the absence of
+ * one.
+ */
+inline bool StealthEngineActive() {
+  return StaticPrefs::zoom_stealth_fpp_hw_seed() > 0;
+}
 
 /**
  * Refuse to run with an incomplete declaration.

@@ -5538,7 +5538,7 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
     // so the em and font boxes are the horizontal ones there too. All that
     // differs is the anchor, adjusted below exactly as the drawing path does.
     gfxFloat emA, emD, maxA, maxD;
-    if (StaticPrefs::zoom_stealth_fpp_hw_seed() > 0 &&
+    if (mozilla::gfx::StealthEngineActive() &&
         font->GetStealthHostIndepVMetrics(emA, emD, maxA, maxD)) {
       // Finish the job gfxDWriteFonts::ComputeMetrics does, which this branch
       // bypasses. GetStealthHostIndepVMetrics hands back usWinAscent/usWinDescent

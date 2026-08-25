@@ -103,24 +103,6 @@ class DownloadInterceptor {
   }
 }
 
-// Stealthfox 150: juggler/screencast disabled (libwebrtc API removed). Use a
-// no-op stub so module loads. Playwright video recording will not work.
-const screencastService = (() => {
-  try {
-    return Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
-  } catch (e) {
-    const noop = () => 0;
-    return {
-      startVideoRecording: noop,
-      stopVideoRecording: noop,
-      isStreamingActive: () => false,
-      addStreamingClient: noop,
-      removeStreamingClient: noop,
-      screencastReady: noop,
-    };
-  }
-})();
-
 export class TargetRegistry {
   static instance() {
     return TargetRegistry._instance || null;
@@ -197,8 +179,6 @@ export class TargetRegistry {
       target.updateOverridesForBrowsingContext(tab.linkedBrowser.browsingContext);
       if (!hasExplicitSize)
         target.updateViewportSize();
-      if (browserContext.videoRecordingOptions)
-        target._startVideoRecording(browserContext.videoRecordingOptions);
     };
 
     const onTabCloseListener = event => {
@@ -466,10 +446,7 @@ export class PageTarget {
     this._actor = undefined;
     this._actorSequenceNumber = 0;
     this._channel = new SimpleChannel(`browser::page[${this._targetId}]`, 'target-' + this._targetId);
-    this._videoRecordingInfo = undefined;
-    this._screencastRecordingInfo = undefined;
     this._dialogs = new Map();
-    this.forcedColors = 'none';
     this.disableCache = false;
     this.mediumOverride = '';
     this.crossProcessCookie = {
@@ -566,14 +543,10 @@ export class PageTarget {
   updateOverridesForBrowsingContext(browsingContext = undefined) {
     this.updateTouchOverride(browsingContext);
     this.updateUserAgent(browsingContext);
-    this.updatePlatform(browsingContext);
     this.updateDPPXOverride(browsingContext);
     this.updateZoom(browsingContext);
     this.updateEmulatedMedia(browsingContext);
     this.updateColorSchemeOverride(browsingContext);
-    this.updateReducedMotionOverride(browsingContext);
-    this.updateContrastOverride(browsingContext);
-    this.updateForcedColorsOverride(browsingContext);
     this.updateForceOffline(browsingContext);
     this.updateCacheDisabled(browsingContext);
   }
@@ -603,10 +576,6 @@ export class PageTarget {
     (browsingContext || this._linkedBrowser.browsingContext).customUserAgent = this._browserContext.defaultUserAgent;
   }
 
-  updatePlatform(browsingContext = undefined) {
-    (browsingContext || this._linkedBrowser.browsingContext).customPlatform = this._browserContext.defaultPlatform;
-  }
-
   updateDPPXOverride(browsingContext = undefined) {
     browsingContext ||= this._linkedBrowser.browsingContext;
     const dppx = this._zoom * (this._browserContext.deviceScaleFactor || this._initialDPPX);
@@ -625,7 +594,6 @@ export class PageTarget {
     for (const dialog of this._dialogs.values()) {
       if (!prompts.has(dialog.prompt())) {
         this._dialogs.delete(dialog.id());
-        this.emit(PageTarget.Events.DialogClosed, dialog);
       } else {
         prompts.delete(dialog.prompt());
       }
@@ -709,34 +677,6 @@ export class PageTarget {
     (browsingContext || this._linkedBrowser.browsingContext).prefersColorSchemeOverride = this.colorScheme || this._browserContext.colorScheme || 'none';
   }
 
-  setReducedMotion(reducedMotion) {
-    this.reducedMotion = fromProtocolReducedMotion(reducedMotion);
-    this.updateReducedMotionOverride();
-  }
-
-  updateReducedMotionOverride(browsingContext = undefined) {
-    (browsingContext || this._linkedBrowser.browsingContext).prefersReducedMotionOverride = this.reducedMotion || this._browserContext.reducedMotion || 'none';
-  }
-
-  setContrast(contrast) {
-    this.contrast = fromProtocolContrast(contrast);
-    this.updateContrastOverride();
-  }
-
-  updateContrastOverride(browsingContext = undefined) {
-    (browsingContext || this._linkedBrowser.browsingContext).prefersContrastOverride = this.contrast || this._browserContext.contrast || 'none';
-  }
-
-  setForcedColors(forcedColors) {
-    this.forcedColors = fromProtocolForcedColors(forcedColors);
-    this.updateForcedColorsOverride();
-  }
-
-  updateForcedColorsOverride(browsingContext = undefined) {
-    const isActive = this.forcedColors === 'active' || this._browserContext.forcedColors === 'active';
-    (browsingContext || this._linkedBrowser.browsingContext).forcedColorsOverride = isActive ? 'active' : 'none';
-  }
-
   async setInterceptFileChooserDialog(enabled) {
     this.crossProcessCookie.interceptFileChooserDialog = enabled;
     this._updateCrossProcessCookie();
@@ -746,14 +686,6 @@ export class PageTarget {
   async setViewportSize(viewportSize) {
     this._viewportSize = viewportSize;
     await this.updateViewportSize();
-  }
-
-  async setZoom(zoom) {
-    // This is default range from the ZoomManager.
-    if (zoom < 0.3 || zoom > 5)
-      throw new Error('Invalid zoom value, must be between 0.3 and 5');
-    this._zoom = zoom;
-    await this.updateZoom();
   }
 
   close(runBeforeUnload = false) {
@@ -817,90 +749,6 @@ export class PageTarget {
     return await this._channel.connect('').send('hasFailedToOverrideTimezone').catch(e => true);
   }
 
-  async _startVideoRecording({width, height, dir}) {
-    // On Mac the window may not yet be visible when TargetCreated and its
-    // NSWindow.windowNumber may be -1, so we wait until the window is known
-    // to be initialized and visible.
-    await this.windowReady();
-    const file = PathUtils.join(dir, helper.generateId() + '.webm');
-    if (width < 10 || width > 10000 || height < 10 || height > 10000)
-      throw new Error("Invalid size");
-
-    const docShell = this._gBrowser.ownerGlobal.docShell;
-    // Exclude address bar and navigation control from the video.
-    const rect = this.linkedBrowser().getBoundingClientRect();
-    const devicePixelRatio = this._window.devicePixelRatio;
-    let sessionId;
-    const registry = this._registry;
-    const screencastClient = {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIScreencastServiceClient]),
-      screencastFrame(data, deviceWidth, deviceHeight) {
-      },
-      screencastStopped() {
-        registry.emit(TargetRegistry.Events.ScreencastStopped, sessionId);
-      },
-    };
-    const viewport = this._viewportSize || this._browserContext.defaultViewportSize || { width: 0, height: 0 };
-    sessionId = screencastService.startVideoRecording(screencastClient, docShell, true, file, width, height, 0, viewport.width, viewport.height, devicePixelRatio * rect.top);
-    this._videoRecordingInfo = { sessionId, file };
-    this.emit(PageTarget.Events.ScreencastStarted);
-  }
-
-  _stopVideoRecording() {
-    if (!this._videoRecordingInfo)
-      throw new Error('No video recording in progress');
-    const videoRecordingInfo = this._videoRecordingInfo;
-    this._videoRecordingInfo = undefined;
-    screencastService.stopVideoRecording(videoRecordingInfo.sessionId);
-  }
-
-  videoRecordingInfo() {
-    return this._videoRecordingInfo;
-  }
-
-  async startScreencast({ width, height, quality }) {
-    // On Mac the window may not yet be visible when TargetCreated and its
-    // NSWindow.windowNumber may be -1, so we wait until the window is known
-    // to be initialized and visible.
-    await this.windowReady();
-    if (width < 10 || width > 10000 || height < 10 || height > 10000)
-      throw new Error("Invalid size");
-
-    const docShell = this._gBrowser.ownerGlobal.docShell;
-    // Exclude address bar and navigation control from the video.
-    const rect = this.linkedBrowser().getBoundingClientRect();
-    const devicePixelRatio = this._window.devicePixelRatio;
-
-    const self = this;
-    const screencastClient = {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIScreencastServiceClient]),
-      screencastFrame(data, deviceWidth, deviceHeight) {
-        if (self._screencastRecordingInfo)
-          self.emit(PageTarget.Events.ScreencastFrame, { data, deviceWidth, deviceHeight });
-      },
-      screencastStopped() {
-      },
-    };
-    const viewport = this._viewportSize || this._browserContext.defaultViewportSize || { width: 0, height: 0 };
-    const screencastId = screencastService.startVideoRecording(screencastClient, docShell, false, '', width, height, quality || 90, viewport.width, viewport.height, devicePixelRatio * rect.top);
-    this._screencastRecordingInfo = { screencastId };
-    return { screencastId };
-  }
-
-  screencastFrameAck({ screencastId }) {
-    if (!this._screencastRecordingInfo || this._screencastRecordingInfo.screencastId !== screencastId)
-      return;
-    screencastService.screencastFrameAck(screencastId);
-  }
-
-  stopScreencast() {
-    if (!this._screencastRecordingInfo)
-      throw new Error('No screencast in progress');
-    const { screencastId } = this._screencastRecordingInfo;
-    this._screencastRecordingInfo = undefined;
-    screencastService.stopVideoRecording(screencastId);
-  }
-
   ensureContextMenuClosed() {
     // Close context menu, if any, since it might capture mouse events on Linux
     // and prevent browser shutdown on MacOS.
@@ -919,10 +767,6 @@ export class PageTarget {
   dispose() {
     this.ensureContextMenuClosed();
     this._disposed = true;
-    if (this._videoRecordingInfo)
-      this._stopVideoRecording();
-    if (this._screencastRecordingInfo)
-      this.stopScreencast();
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._linkedBrowser.browsingContext.browserId);
@@ -940,11 +784,8 @@ export class PageTarget {
 }
 
 PageTarget.Events = {
-  ScreencastStarted: Symbol('PageTarget.ScreencastStarted'),
-  ScreencastFrame: Symbol('PageTarget.ScreencastFrame'),
   Crashed: Symbol('PageTarget.Crashed'),
   DialogOpened: Symbol('PageTarget.DialogOpened'),
-  DialogClosed: Symbol('PageTarget.DialogClosed'),
 };
 
 function fromProtocolColorScheme(colorScheme) {
@@ -953,30 +794,6 @@ function fromProtocolColorScheme(colorScheme) {
   if (colorScheme === null || colorScheme === 'no-preference')
     return undefined;
   throw new Error('Unknown color scheme: ' + colorScheme);
-}
-
-function fromProtocolReducedMotion(reducedMotion) {
-  if (reducedMotion === 'reduce' || reducedMotion === 'no-preference')
-    return reducedMotion;
-  if (reducedMotion === null)
-    return undefined;
-  throw new Error('Unknown reduced motion: ' + reducedMotion);
-}
-
-function fromProtocolContrast(contrast) {
-  if (contrast === 'more' || contrast === 'less' || contrast === 'custom' || contrast === 'no-preference')
-    return contrast;
-  if (contrast === null)
-    return undefined;
-  throw new Error('Unknown contrast: ' + contrast);
-}
-
-function fromProtocolForcedColors(forcedColors) {
-  if (forcedColors === 'active' || forcedColors === 'none')
-    return forcedColors;
-  if (!forcedColors)
-    return 'none';
-  throw new Error('Unknown forced colors: ' + forcedColors);
 }
 
 class BrowserContext {
@@ -998,21 +815,16 @@ class BrowserContext {
     this.removeOnDetach = removeOnDetach;
     this.extraHTTPHeaders = undefined;
     this.httpCredentials = undefined;
-    this.requestInterceptionEnabled = undefined;
     this.ignoreHTTPSErrors = undefined;
     this.downloadOptions = undefined;
     this.defaultViewportSize = undefined;
     this.deviceScaleFactor = undefined;
     this.defaultUserAgent = null;
-    this.defaultPlatform = null;
+    this.requestInterceptionEnabled = undefined;
     this.touchOverride = false;
     this.forceOffline = false;
     this.disableCache = false;
     this.colorScheme = 'none';
-    this.forcedColors = 'none';
-    this.reducedMotion = 'none';
-    this.contrast = 'none';
-    this.videoRecordingOptions = undefined;
     this.crossProcessCookie = {
       initScripts: [],
       bindings: [],
@@ -1030,24 +842,6 @@ class BrowserContext {
     this.colorScheme = fromProtocolColorScheme(colorScheme);
     for (const page of this.pages)
       page.updateColorSchemeOverride();
-  }
-
-  setReducedMotion(reducedMotion) {
-    this.reducedMotion = fromProtocolReducedMotion(reducedMotion);
-    for (const page of this.pages)
-      page.updateReducedMotionOverride();
-  }
-
-  setContrast(contrast) {
-    this.contrast = fromProtocolContrast(contrast);
-    for (const page of this.pages)
-      page.updateContrastOverride();
-  }
-
-  setForcedColors(forcedColors) {
-    this.forcedColors = fromProtocolForcedColors(forcedColors);
-    for (const page of this.pages)
-      page.updateForcedColorsOverride();
   }
 
   async destroy() {
@@ -1086,8 +880,18 @@ class BrowserContext {
       "@mozilla.org/security/certoverride;1"
     ].getService(Ci.nsICertOverrideService);
     if (ignoreHTTPSErrors) {
-      Preferences.set("network.stricttransportsecurity.preloadlist", false);
-      Preferences.set("security.cert_pinning.enforcement_level", 0);
+      // STEALTHFOX: qui c'erano due Preferences.set GLOBALI - la lista HSTS
+      // precaricata e il cert pinning - applicate solo in questo ramo e mai
+      // ripristinate nell'altro. Un solo contesto che chiedeva di ignorare gli
+      // errori di certificato lasciava tutto il browser senza HSTS e senza
+      // pinning per il resto della sessione.
+      // Il meccanismo vero della funzione e' la riga qui sotto, che e' PER
+      // CONTESTO e simmetrica; quelle due erano un colpo di accetta in piu'.
+      // Un browser senza la lista HSTS precaricata si comporta sul filo in modo
+      // diverso da ogni Firefox vero, e la differenza la vede il SERVER: e' la
+      // classe di divergenza che nessuna prova dal lato JavaScript trova.
+      // E resta anche piu' corretto: ignorare gli errori di CERTIFICATO non e'
+      // la stessa cosa che disattivare HSTS.
       certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyDataForUserContext(this.userContextId, true);
     } else {
       certOverrideService.setDisableAllSecurityChecksAndLetAttackersInterceptMyDataForUserContext(this.userContextId, false);
@@ -1098,12 +902,6 @@ class BrowserContext {
     this.defaultUserAgent = userAgent;
     for (const page of this.pages)
       page.updateUserAgent();
-  }
-
-  setDefaultPlatform(platform) {
-    this.defaultPlatform = platform;
-    for (const page of this.pages)
-      page.updatePlatform();
   }
 
   setTouchOverride(touchOverride) {
@@ -1268,18 +1066,6 @@ class BrowserContext {
     }
     return result;
   }
-
-  async setVideoRecordingOptions(options) {
-    this.videoRecordingOptions = options;
-    const promises = [];
-    for (const page of this.pages) {
-      if (options)
-        promises.push(page._startVideoRecording(options));
-      else if (page._videoRecordingInfo)
-        promises.push(page._stopVideoRecording());
-    }
-    await Promise.all(promises);
-  }
 }
 
 class Dialog {
@@ -1372,5 +1158,4 @@ TargetRegistry.Events = {
   TargetDestroyed: Symbol('TargetRegistry.Events.TargetDestroyed'),
   DownloadCreated: Symbol('TargetRegistry.Events.DownloadCreated'),
   DownloadFinished: Symbol('TargetRegistry.Events.DownloadFinished'),
-  ScreencastStopped: Symbol('TargetRegistry.ScreencastStopped'),
 };

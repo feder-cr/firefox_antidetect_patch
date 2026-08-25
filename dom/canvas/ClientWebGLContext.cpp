@@ -2760,9 +2760,25 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
 
       case LOCAL_GL_RENDERER: {
         if (!stealthRenderer.IsEmpty()) {
-          // Stealth: pass spoofed renderer through SanitizeRenderer().
-          // Real Firefox always sanitizes gl.RENDERER to a bucket — having
-          // gl.RENDERER match UNMASKED_RENDERER exactly would be detectable.
+          // Stealth: pass spoofed renderer through SanitizeRenderer(),
+          // because a real Firefox does exactly that.
+          //
+          // What used to be here added "having gl.RENDERER match
+          // UNMASKED_RENDERER exactly would be detectable", and that is FALSE.
+          // Measured 2026-08-24 against a retail Firefox 151.0 signed by
+          // Mozilla Corporation, updater off, throwaway profile:
+          //
+          //     masked   ANGLE (Intel, ... ps_5_0), or similar
+          //     unmasked ANGLE (Intel, ... ps_5_0), or similar   <- identical
+          //
+          // on both WebGL 1 and 2. They match because
+          // webgl.sanitize-unmasked-renderer defaults to true, so both sides
+          // go through the same SanitizeRenderer. Making them DIVERGE is what
+          // would be the tell.
+          //
+          // The code below was already right; the sentence beside it described
+          // a world that does not exist, and it held up a wrong diagnosis
+          // until the judge straightened it out.
           ret = Some(std::string{webgl::SanitizeRenderer(stealthRenderer.get())});
         } else {
           bool allowRenderer = StaticPrefs::webgl_enable_renderer_query();

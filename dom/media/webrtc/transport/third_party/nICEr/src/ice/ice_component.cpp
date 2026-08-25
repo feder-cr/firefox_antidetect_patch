@@ -53,6 +53,43 @@ static void nr_ice_stealth_srflx_fire_ready(NR_SOCKET s, int how, void *cb_arg)
 {
     nr_ice_candidate *cand = (nr_ice_candidate *)cb_arg;
     cand->ready_cb_timer = 0;
+
+    /* La porta esterna si decide ADESSO, non all'iniezione: un NAT vero mappa
+     * porte interne diverse su porte esterne diverse, e la porta interna (la
+     * base) esiste solo dopo il bind del socket - all'iniezione vale 0.
+     *
+     * Misurato sul Firefox retail installato il 2026-08-25: `host 59463 ->
+     * srflx 7884` sull'IPv4 (rimappato dal NAT) e `host 59464 -> srflx 59464`
+     * sull'IPv6 (nessun NAT, porta identica). In entrambi i casi la porta
+     * esterna e' funzione della base.
+     *
+     * Senza questo, il seme era il solo IP: costante per tutta la sessione,
+     * quindi OGNI componente e OGNI m-line ricevevano la STESSA porta. In un
+     * SDP reale si leggeva `host comp1=51236 comp2=51237` (diverse) accanto a
+     * `srflx comp1=55795 comp2=55795` (identiche) - una firma che nessun NAT
+     * produce, visibile a chiunque apra l'SDP. */
+    {
+        nr_ice_candidate *hc;
+        int porta_base = 0, porta_mia = 0;
+        TAILQ_FOREACH(hc, &cand->component->candidates, entry_comp) {
+            if (hc->type == HOST && hc->local_protocol == IPPROTO_UDP &&
+                hc->component_id == cand->component_id &&
+                nr_transport_addr_get_port(&hc->addr, &porta_base) == 0 &&
+                porta_base > 0) {
+                break;
+            }
+            porta_base = 0;
+        }
+        if (porta_base > 0 &&
+            nr_transport_addr_get_port(&cand->addr, &porta_mia) == 0) {
+            unsigned int seme = (unsigned int)porta_mia
+                              + (unsigned int)porta_base * 2654435761u;
+            UINT2 nuova = (UINT2)(49152 + (seme % 16384));
+            if (nr_transport_addr_set_port(&cand->addr, nuova) == 0)
+                nr_transport_addr_fmt_addr_string(&cand->addr);
+        }
+    }
+
     cand->state = NR_ICE_CAND_STATE_INITIALIZED;
     nr_ice_gather_finished_cb(0, 0, cand);
 }
@@ -64,8 +101,8 @@ static void nr_ice_stealth_srflx_fire_ready(NR_SOCKET s, int how, void *cb_arg)
  * profile (Scrapfly's frontendIps[0]==publicIp check).
  *
  * Returns 0 if a candidate was injected, non-zero otherwise. */
-static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
-                                                   nr_transport_addr *base_addr)
+int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
+                                           nr_transport_addr *base_addr)
 {
     int r, _status;
     char public_ip_buf[64];
@@ -79,12 +116,32 @@ static int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     if (nr_stealth_get_webrtc_public_ip(public_ip_buf, sizeof(public_ip_buf)) == 0)
         return R_NOT_FOUND;
 
-    /* Derive a deterministic ephemeral port from public IP octets.
-     * (We can't use base_addr's port — at this point addrs[i] is the
-     * interface address before socket binding, so port is 0.) */
+    /* La porta si deriva dall'IP **e dalla PORTA DELLA BASE**, non dal solo IP.
+     *
+     * Un NAT vero mappa porte interne diverse su porte esterne diverse.
+     * Misurato il 2026-08-25 sul Firefox retail installato: `host 54402 ->
+     * srflx 1798` sull'IPv4 (rimappato) e `host 54403 -> srflx 54403`
+     * sull'IPv6 (nessun NAT, porta identica). In entrambi i casi la porta
+     * esterna e' funzione della base.
+     *
+     * Col solo IP il seme era costante per l'intera sessione, quindi OGNI
+     * componente e OGNI m-line ricevevano la STESSA porta: in un SDP reale si
+     * vedeva `host comp1=51236 comp2=51237` (diverse) e
+     * `srflx comp1=55795 comp2=55795` (identiche). Nessun NAT si comporta
+     * cosi', ed e' visibile a chiunque legga l'SDP.
+     *
+     * Il commento che stava qui diceva che la porta della base non e'
+     * disponibile, e per `base_addr` e' vero - arriva dall'indirizzo
+     * dell'interfaccia, prima del bind. Ma il candidato HOST di questo
+     * componente e' gia' nella lista e la sua porta e' assegnata: e' quella la
+     * base di cui il nostro srflx dice di essere il riflesso. */
     sscanf(public_ip_buf, "%u.%u.%u.%u", &o1, &o2, &o3, &o4);
     port_seed = o1 * 7 + o2 * 13 + o3 * 19 + o4 * 31;
     srflx_port = (UINT2)(49152 + (port_seed % 16384));
+    /* Porta PROVVISORIA: qui la base non e' ancora legata (il commento
+     * originale su base_addr->port == 0 e' corretto, verificato provando a
+     * leggerla), quindi la porta definitiva si ricalcola nel timer, dove la
+     * base ha un numero vero. Vedi nr_ice_stealth_srflx_fire_ready. */
 
     if (!(cand = (nr_ice_candidate *)calloc(1, sizeof(nr_ice_candidate))))
         ABORT(R_NO_MEMORY);
@@ -451,15 +508,28 @@ static int nr_ice_component_initialize_udp(struct nr_ice_ctx_ *ctx,nr_ice_compon
           cand=0;
         }
 
-        /* Stealth fallback: always inject one synthetic srflx with the
-         * proxy egress IP (the inject function short-circuits if the
-         * public_ip pref is empty, i.e. no proxy configured). Fires
-         * regardless of iceServers config because some pages (Scrapfly)
-         * use TURN URLs with non-standard query params that nICEr fails
-         * to parse into stun_servers/turn_servers, leaving both counts
-         * at 0. When real srflx ALSO succeeds, both are emitted; the
-         * post-STUN address swap normalizes the real one to the same
-         * proxy IP, so duplicates are harmless. */
+        /* Stealth fallback: inject one synthetic srflx con l'IP di uscita del
+         * proxy SOLO se per questo indirizzo non e' stato creato nessun srflx
+         * reale - il caso in cui la pagina usa URL TURN con parametri che
+         * nICEr non sa interpretare, lasciando stun_servers/turn_servers a 0.
+         * (La funzione esce comunque da sola se l'IP non e' dichiarato.)
+         *
+         * ⛔ PRIMA QUESTA CHIAMATA ERA INCONDIZIONATA, e il commento diceva che
+         * quando anche il srflx reale riusciva "duplicates are harmless",
+         * perche' lo swap post-STUN porta il reale allo stesso IP. Misurato il
+         * 2026-08-25 contro il Firefox retail installato, sulla stessa
+         * connessione: il retail emette 3 candidati (host:2, srflx:1), noi
+         * dietro un proxy HTTP ne emettevamo 4 (host:2, **srflx:2**). Nessun
+         * leak - l'IP vero non compariva - ma la FORMA non era quella di un
+         * Firefox normale, ed e' la forma che ci deve rendere indistinguibili.
+         *
+         * L'iniezione resta INCONDIZIONATA - gattarla su `real_srflx_ct == 0`
+         * e' stato provato e rimandava il ripiego a dopo il fallimento dello
+         * STUN, cioe' secondi invece di ~200 ms: il sintetico non faceva piu'
+         * in tempo, ed e' il caso per cui esiste. A garantire che il srflx sia
+         * UNO SOLO ci pensa il lato opposto: quando lo STUN vero completa,
+         * `ice_candidate.cpp` non annuncia il reale se il sintetico c'e' gia'.
+         * Cosi' non c'e' ne' doppione ne' ritardo. */
         (void)nr_ice_component_inject_fallback_srflx(component, &addrs[i].addr);
       }
       else{

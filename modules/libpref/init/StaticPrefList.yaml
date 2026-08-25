@@ -20350,6 +20350,34 @@
   value: -1
   mirror: always
 
+# "C'e' un proxy: non risolvere niente in locale." Il core lo sa e lo dichiara;
+# il motore da solo non puo' saperlo, ed e' esattamente questo il punto.
+#
+# `DNSForbiddenByActiveProxy` blocca la risoluzione lato client solo se
+# `network.proxy.type` e' MANUAL E c'e' una versione SOCKS con la sua
+# `remote_dns`. Con un endpoint HTTP il wrapper non scrive nessuna
+# `network.proxy.*` - instrada Playwright, per canale, perche' e' l'unico che
+# sappia rispondere al 407 - quindi `type` resta 5 e il cancello non e' armato
+# affatto. Upstream lo sa: il TODO del bug 1890542 accanto a quel controllo dice
+# di usare `nsIProxyInfo` invece delle prefs.
+#
+# I canali stanno bene comunque (il filtro di Juggler mette
+# TRANSPARENT_PROXY_RESOLVES_HOST), ma tre superfici NON sono canali e chiamano
+# `AsyncResolveNative` diretto: `NetworkConnectivityService`, le sonde
+# dell'euristica DoH, e il resolver ICE. Misurato il 2026-08-25 dietro un proxy
+# HTTP, due giri identici: `example.org` 28, `ipv4only.arpa` 12,
+# `cloudflare-dns.com` 6 e - la peggiore - `stunprobe.invalid` 6, che e' un nome
+# scelto DALLA PAGINA via `iceServers`, quindi il server autoritativo del sito
+# vede il resolver di casa mentre l'HTTP esce dal proxy. Dietro SOCKS gli stessi
+# nomi fanno 0 e ne restano 3 in tutto.
+#
+# `false` di default: una build lanciata senza invisible_core si comporta
+# esattamente come prima.
+- name: zoom.stealth.dns.no_local_resolution
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # The declared navigator.maxTouchPoints. Was a literal 0 in Navigator.cpp: the
 # right value for the desktop personas we ship, but a constant buried in C++ is
 # not pinnable, not inspectable and not overridable from extra_prefs, and a
@@ -20735,28 +20763,22 @@
   value: -1
   mirror: always
 
-# Proxy egress IP to inject as synthetic srflx ICE candidate (WebRTC realism).
-# Set by the Python launcher from the proxy's egress IP. Empty = feature disabled.
-- name: zoom.stealth.webrtc.public_ip
-  type: DataMutexString
-  value: ""
-  mirror: always
+# zoom.stealth.webrtc.public_ip e zoom.stealth.webrtc.disable_ipv6 sono state
+# TOLTE il 2026-08-25. Non erano inutilizzate: erano la SECONDA fonte. Il ponte
+# nativo (nr_stealth_bridge.cpp) leggeva pref E variabile d'ambiente, con
+# precedenze diverse da funzione a funzione, e quale delle due decidesse
+# dipendeva dalla presenza del proxy - con proxy vinceva l'ambiente, senza
+# proxy la pref. Adesso la fonte e' una sola, l'ambiente, scritta sempre da
+# entrambi i percorsi di lancio di invisible_core. Non vanno reintrodotte: un
+# valore che il motore puo' leggere da due posti puo' divergere fra i due.
 
 # Optional fake LAN host IP for the synthetic host candidate base.
 # Empty = leave host gathering to native code (mDNS *.local obfuscation).
+# QUESTA RESTA: la legge PeerConnectionImpl.cpp, che non passa dal ponte, e
+# invisible_core la dichiara (derivata dal seed). Una fonte, un lettore.
 - name: zoom.stealth.webrtc.host_ip
   type: DataMutexString
   value: ""
-  mirror: always
-
-# Drop IPv6 host candidates from ICE gathering. The upstream
-# media.peerconnection.ice.disableIPv6 pref is dead in FF150, so this is the
-# stealth replacement: stops the real global IPv6 host (and any IPv6 srflx
-# derived from it) leaking past a TCP-only SOCKS proxy. Also readable via env
-# STEALTHFOX_WEBRTC_DISABLE_IPV6 (primary, for the socket process).
-- name: zoom.stealth.webrtc.disable_ipv6
-  type: bool
-  value: false
   mirror: always
 
 #---------------------------------------------------------------------------

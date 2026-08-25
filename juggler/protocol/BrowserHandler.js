@@ -27,32 +27,42 @@ export class BrowserHandler {
     this._startCompletePromise = startCompletePromise;
   }
 
-  async ['Browser.enable']({attachToDefaultContext, userPrefs = []}) {
+  // STEALTHFOX: questo comando non scrive piu' prefs, e le rifiuta.
+  //
+  // Qui c'era un ciclo che applicava una lista di prefs ricevuta dal
+  // protocollo con i setter di ramo UTENTE. Era l'unico posto in cui un
+  // processo esterno poteva cambiare qualunque pref del browser, ed era anche
+  // l'UNICA strada con cui le 204 prefs dello stealth arrivavano: per questo
+  // non si poteva togliere.
+  //
+  // Adesso il client le scrive nel PROFILO prima dell'avvio, quindi qui non
+  // arriva piu' niente. Il parametro pero' si rifiuta invece di essere
+  // ignorato: un client che continuasse a mandarlo otterrebbe altrimenti un
+  // browser senza le prefs che crede di aver impostato, e senza nessun errore.
+  //
+  // E il nuovo ordine vale di suo. Prima le prefs arrivavano DOPO l'avvio, e
+  // il commento in launcher.py ne misurava la conseguenza: il primo lancio
+  // inizializzava gfx e font con i default e il secondo con le prefs attive,
+  // due percorsi diversi, causa di [B150]. Quella asimmetria non esiste piu'.
+  async ['Browser.enable']({attachToDefaultContext, userPrefs}) {
+    if (userPrefs !== undefined && userPrefs !== null &&
+        !(Array.isArray(userPrefs) && userPrefs.length === 0)) {
+      throw new Error(
+          'Browser.enable no longer applies preferences. They are written into ' +
+          'the profile before startup, so a browser started this way already ' +
+          'has them. Remove userPrefs from the request.');
+    }
     if (this._enabled)
       return;
     await this._startCompletePromise;
     this._enabled = true;
     this._attachToDefaultContext = attachToDefaultContext;
 
-    for (const { name, value } of userPrefs) {
-      if (value === true || value === false)
-        Services.prefs.setBoolPref(name, value);
-      else if (typeof value === 'string')
-        Services.prefs.setStringPref(name, value);
-      else if (typeof value === 'number')
-        Services.prefs.setIntPref(name, value);
-      else
-        throw new Error(`Preference "${name}" has unsupported value: ${JSON.stringify(value)}`);
-    }
-
     this._eventListeners = [
       helper.on(this._targetRegistry, TargetRegistry.Events.TargetCreated, this._onTargetCreated.bind(this)),
       helper.on(this._targetRegistry, TargetRegistry.Events.TargetDestroyed, this._onTargetDestroyed.bind(this)),
       helper.on(this._targetRegistry, TargetRegistry.Events.DownloadCreated, this._onDownloadCreated.bind(this)),
       helper.on(this._targetRegistry, TargetRegistry.Events.DownloadFinished, this._onDownloadFinished.bind(this)),
-      helper.on(this._targetRegistry, TargetRegistry.Events.ScreencastStopped, sessionId => {
-        this._session.emitEvent('Browser.videoRecordingFinished', {screencastId: '' + sessionId});
-      })
     ];
 
     for (const target of this._targetRegistry.targets())
@@ -193,6 +203,7 @@ export class BrowserHandler {
     this._targetRegistry.browserContextForId(browserContextId).requestInterceptionEnabled = enabled;
   }
 
+
   ['Browser.setCacheDisabled']({browserContextId, cacheDisabled}) {
     this._targetRegistry.browserContextForId(browserContextId).setCacheDisabled(cacheDisabled);
   }
@@ -217,31 +228,9 @@ export class BrowserHandler {
   async ['Browser.setColorScheme']({browserContextId, colorScheme}) {
     await this._targetRegistry.browserContextForId(browserContextId).setColorScheme(nullToUndefined(colorScheme));
   }
-
-  async ['Browser.setReducedMotion']({browserContextId, reducedMotion}) {
-    await this._targetRegistry.browserContextForId(browserContextId).setReducedMotion(nullToUndefined(reducedMotion));
-  }
-
-  async ['Browser.setForcedColors']({browserContextId, forcedColors}) {
-    await this._targetRegistry.browserContextForId(browserContextId).setForcedColors(nullToUndefined(forcedColors));
-  }
-
-  async ['Browser.setContrast']({browserContextId, contrast}) {
-    await this._targetRegistry.browserContextForId(browserContextId).setContrast(nullToUndefined(contrast));
-  }
-
-  async ['Browser.setVideoRecordingOptions']({browserContextId, options}) {
-    await this._targetRegistry.browserContextForId(browserContextId).setVideoRecordingOptions(options);
-  }
-
   async ['Browser.setUserAgentOverride']({browserContextId, userAgent}) {
     await this._targetRegistry.browserContextForId(browserContextId).setDefaultUserAgent(userAgent);
   }
-
-  async ['Browser.setPlatformOverride']({browserContextId, platform}) {
-    await this._targetRegistry.browserContextForId(browserContextId).setDefaultPlatform(platform);
-  }
-
   async ['Browser.setBypassCSP']({browserContextId, bypassCSP}) {
     await this._targetRegistry.browserContextForId(browserContextId).applySetting('bypassCSP', nullToUndefined(bypassCSP));
   }

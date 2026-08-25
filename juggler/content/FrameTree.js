@@ -11,7 +11,30 @@ const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js'
 
 const helper = new Helper();
 
+// ⛔ MONDO SCRIPT - leva `STEALTHFOX_SCRIPT_WORLD=1`.
+//
+// E' una variabile d'AMBIENTE e non una pref perche' i mondi si costruiscono
+// prima che le prefs arrivino: su questo percorso Playwright non scrive niente
+// nel profilo, manda le prefs sul filo e `Browser.enable` le applica a browser
+// gia' avviato. Con una pref la leva risultava inerte, e la rilettura da dentro
+// il browser e' cio' che l'ha fatto vedere.
+let _mondoScript = null;
+
+function _leggiMondoScript() {
+  try {
+    return Services.env.get('STEALTHFOX_SCRIPT_WORLD') === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
 export class FrameTree {
+  static mondoScript() {
+    if (_mondoScript === null)
+      _mondoScript = _leggiMondoScript();
+    return _mondoScript;
+  }
+
   constructor(rootBrowsingContext) {
     helper.decorateAsEventEmitter(this);
 
@@ -537,48 +560,98 @@ class Frame {
   //           valore del sito, non undefined.
   //
   // ⛔ E LA BANDIERA DA SOLA NON BASTA, misurato il 2026-08-23: una sandbox con
-  // `wantXrays: false` ma con la window NON waived come prototipo continua a
-  // vedere la vista Xray, perche' il principal della sandbox non e' quello del
-  // sito. In quella configurazione `page.evaluate(() => window.__STATO)` torna
-  // `undefined`, `document.title` torna il titolo nativo invece di quello che il
-  // getter della pagina produce, e le funzioni della pagina risultano "is not a
-  // function". Quello che apre la vista del contenuto e' il PROTOTIPO waived: e'
-  // la catena di scope a decidere, non la bandiera.
-  _createSandbox() {
+  // `wantXrays: false` ma con l'ExpandedPrincipal continua a vedere la vista
+  // Xray, perche' il principal della sandbox non e' quello del sito. In quella
+  // configurazione `page.evaluate(() => window.__STATO)` torna `undefined`,
+  // `document.title` torna il titolo nativo invece di quello che il getter
+  // della pagina produce, e le funzioni della pagina risultano "is not a
+  // function". **A decidere e' il PRINCIPAL**, non la bandiera: con il
+  // principal della pagina la vista del contenuto si apre da sola, e infatti il
+  // mondo script non ha bisogno di nessun ponte.
+  //
+  // ⛔ E QUESTA FUNZIONE E' UNA SOLA APPOSTA. Il 2026-08-23 ne era stata
+  // aggiunta una seconda per il mondo script, che differiva per due argomenti:
+  // esattamente i due blocchi separati che il commento qui sopra racconta di
+  // aver eliminato una volta. Rifatta com'era: un posto solo, e la differenza
+  // fra i mondi si legge negli ARGOMENTI, dove e' visibile.
+  //
+  //   principal `[dw]` (esteso) + xray true  -> utility, serializzazione
+  //   principal `dw`            + xray false -> mondo script
+  // ⛔ IL MONDO SCRIPT, e perche' e' un DISEGNO e non una variante.
+  //
+  // Il conflitto che nessuna membrana poteva chiudere: l'invariante dei Proxy
+  // impone di restituire il valore CRUDO su una proprieta' non falsificabile,
+  // ma una funzione cruda chiamata con il Proxy come `this` viene rifiutata da
+  // WebIDL. Non e' un difetto dell'implementazione: "la pagina non deve
+  // vedermi" e "la pagina deve poter usare le mie cose" sono LA STESSA
+  // manopola, il principal, girata nei due versi.
+  //
+  // Qui si smette di girarla in tutti e due i versi nello stesso mondo: il
+  // mondo main prende il principal DELLA PAGINA, quindi niente Xray, niente
+  // waiver, niente conversione - tutto e' trasparente - e il codice utente
+  // resta comunque invisibile alla pagina, perche' il GLOBAL e' un altro.
+  // Misurato: un global dichiarato per sbaglio da un init script oggi la pagina
+  // lo vede, col mondo script no; e su undici banchi il comportamento e'
+  // identico riga per riga.
+  //
+  // Il prezzo, dichiarato: senza ExpandedPrincipal non si vedono le shadow root
+  // CHIUSE. Restano nel mondo utility, dove i locator gia' le vedono.
+
+  _creaMondo(esteso, xray) {
     const dw = this.domWindow();
-    const principal = [dw]; // extended principal
-    return Cu.Sandbox(principal, {
+    return Cu.Sandbox(esteso ? [dw] : dw, {
       sandboxPrototype: dw,
       wantComponents: false,
       wantExportHelpers: false,
-      wantXrays: true,
+      wantXrays: xray,
     });
   }
 
-  // `wantXrays === null` vuol dire "il global della pagina", cioe' il mondo main.
+  // Il MESTIERE del mondo si passa per nome ('main' / 'isolato'), non
+  // codificato dentro `wantXrays` con `null` a significare "e' il main":
+  // era un valore usato per dire un'altra cosa, e costringeva chi legge a
+  // ricordare una convenzione invece di leggere un nome.
   //
   // Il quarto argomento e' il global in cui si SERIALIZZANO i valori di ritorno,
   // e non e' mai quello della pagina: il perche', con i numeri, sta nel
   // costruttore di ExecutionContext in Runtime.js. E' una sandbox sola per
   // frame, condivisa da tutti i mondi, creata pigramente perche' un mondo che
   // non serializza non deve pagarla.
-  _createWorldContext(name, wantXrays) {
-    const global = wantXrays === null ? this.domWindow() : this._createSandbox();
+  // Quale global ospita un mondo. Il parametro dice il MESTIERE, non la
+  // configurazione: la configurazione e' la riga sotto ciascun mestiere, e si
+  // legge tutta insieme.
+  _globalPerMondo(tipo) {
+    if (tipo === 'isolato')
+      return this._creaMondo(true /* principal esteso */, true /* xray */);
+    // 'main' e' il mondo del codice dell'UTENTE.
+    return FrameTree.mondoScript()
+        ? this._creaMondo(false /* principal della pagina */, false /* niente xray */)
+        : this.domWindow();
+  }
+
+  _createWorldContext(name, tipo) {
+    const global = this._globalPerMondo(tipo);
     const world = this._runtime.createExecutionContext(this.domWindow(), global, {
       frameId: this.id(),
       name,
-    }, this._ensureSerializationSandbox());
+    // ⛔ La sandbox di serializzazione RESTA anche col mondo script. Sembra
+    // superflua - il mondo script non e' il realm della pagina - ma il valore
+    // reso puo' essere un oggetto DELLA PAGINA (`() => window.qualcosa`), e
+    // allora `JSON.stringify` ne percorre la catena di prototipi e chiama il
+    // suo `toJSON`. La sandbox di serializzazione guarda con l'Xray, che quella
+    // catena non la espone: e' §5.2x, e vale ancora.
+    }, () => this._ensureSerializationSandbox());
     this._worldNameToContext.set(name, world);
     return world;
   }
 
   _createIsolatedContext(name) {
-    return this._createWorldContext(name, true);
+    return this._createWorldContext(name, 'isolato');
   }
 
   _ensureSerializationSandbox() {
     if (!this._serializationSandbox)
-      this._serializationSandbox = this._createSandbox();
+      this._serializationSandbox = this._creaMondo(true, true);
     return this._serializationSandbox;
   }
 
@@ -653,7 +726,7 @@ class Frame {
     //     oggetto creato NELLA sandbox passato a codice della pagina viene
     //     rifiutato con "Permission denied to access property". Il secondo non e'
     //     un difetto: e' la stessa barriera che rende invisibili i nostri global.
-    this._createWorldContext('', null);
+    this._createWorldContext('', 'main');
     for (const [name, world] of this._frameTree._isolatedWorlds) {
       if (name)
         this._createIsolatedContext(name);

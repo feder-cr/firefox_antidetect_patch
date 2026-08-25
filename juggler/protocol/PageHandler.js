@@ -81,7 +81,11 @@ const _stealthfoxHumanize = {
       const dy = curve[i][1] - curve[i - 1][1];
       total += Math.sqrt(dx * dx + dy * dy);
     }
-    const maxSteps = Math.max(4, Math.floor((maxTimeS || 1.5) * 100));
+    // Il tetto dei passi si DERIVA dalla cadenza, non la ripete: il `100` che
+    // stava qui era "10 ms a passo" scritto una seconda volta, cioe' lo stesso
+    // fatto di `stepMs` in due punti. Alzare stepMs lasciando il 100 avrebbe
+    // sforato `maxTime` senza che niente lo dicesse.
+    const maxSteps = Math.max(4, Math.floor((maxTimeS || 1.5) * 1000 / this.stepMs()));
     const target = Math.min(maxSteps, Math.max(4, Math.floor(Math.pow(total, 0.25) * 20)));
     const out = [];
     for (let i = 0; i < target; i++) {
@@ -181,34 +185,26 @@ export class PageHandler {
     // to be ignored by the protocol clients.
     this._isPageReady = false;
 
-    if (this._pageTarget.videoRecordingInfo())
-      this._onVideoRecordingStarted();
-
     this._pageEventSink = {};
     helper.decorateAsEventEmitter(this._pageEventSink);
 
     this._pendingEventWatchers = new Set();
     this._eventListeners = [
       helper.on(this._pageTarget, PageTarget.Events.DialogOpened, this._onDialogOpened.bind(this)),
-      helper.on(this._pageTarget, PageTarget.Events.DialogClosed, this._onDialogClosed.bind(this)),
       helper.on(this._pageTarget, PageTarget.Events.Crashed, () => {
         this._session.emitEvent('Page.crashed', {});
       }),
-      helper.on(this._pageTarget, PageTarget.Events.ScreencastStarted, this._onVideoRecordingStarted.bind(this)),
-      helper.on(this._pageTarget, PageTarget.Events.ScreencastFrame, this._onScreencastFrame.bind(this)),
       helper.on(this._pageNetwork, PageNetwork.Events.Request, this._handleNetworkEvent.bind(this, 'Network.requestWillBeSent')),
       helper.on(this._pageNetwork, PageNetwork.Events.Response, this._handleNetworkEvent.bind(this, 'Network.responseReceived')),
       helper.on(this._pageNetwork, PageNetwork.Events.RequestFinished, this._handleNetworkEvent.bind(this, 'Network.requestFinished')),
       helper.on(this._pageNetwork, PageNetwork.Events.RequestFailed, this._handleNetworkEvent.bind(this, 'Network.requestFailed')),
       contentChannel.register('page', {
         pageBindingCalled: emitProtocolEvent('Page.bindingCalled'),
-        pageDispatchMessageFromWorker: emitProtocolEvent('Page.dispatchMessageFromWorker'),
         pageEventFired: emitProtocolEvent('Page.eventFired'),
         pageFileChooserOpened: emitProtocolEvent('Page.fileChooserOpened'),
         pageFrameAttached: this._onFrameAttached.bind(this),
         pageFrameDetached: emitProtocolEvent('Page.frameDetached'),
         pageLinkClicked: emitProtocolEvent('Page.linkClicked'),
-        pageWillOpenNewWindowAsynchronously: emitProtocolEvent('Page.willOpenNewWindowAsynchronously'),
         pageNavigationAborted: emitProtocolEvent('Page.navigationAborted'),
         pageNavigationCommitted: emitProtocolEvent('Page.navigationCommitted'),
         pageNavigationStarted: emitProtocolEvent('Page.navigationStarted'),
@@ -248,15 +244,6 @@ export class PageHandler {
     helper.removeListeners(this._eventListeners);
   }
 
-  _onVideoRecordingStarted() {
-    const info = this._pageTarget.videoRecordingInfo();
-    this._session.emitEvent('Page.videoRecordingStarted', { screencastId: info.sessionId, file: info.file });
-  }
-
-  _onScreencastFrame(params) {
-    this._session.emitEvent('Page.screencastFrame', params);
-  }
-
   _onPageReady(event) {
     this._isPageReady = true;
     this._session.emitEvent('Page.ready');
@@ -273,12 +260,6 @@ export class PageHandler {
       message: dialog.message(),
       defaultValue: dialog.defaultValue(),
     });
-  }
-
-  _onDialogClosed(dialog) {
-    if (!this._isPageReady)
-      return;
-    this._session.emitEvent('Page.dialogClosed', { dialogId: dialog.id(), });
   }
 
   _onWorkerCreated({workerId, frameId, url}) {
@@ -328,11 +309,6 @@ export class PageHandler {
   async ['Page.setViewportSize']({viewportSize}) {
     await this._pageTarget.setViewportSize(viewportSize === null ? undefined : viewportSize);
   }
-
-  async ['Page.setZoom']({zoom}) {
-    await this._pageTarget.setZoom(zoom);
-  }
-
   async ['Runtime.evaluate'](options) {
     return await this._contentPage.send('evaluate', options);
   }
@@ -354,10 +330,6 @@ export class PageHandler {
     Cu.forceGC();
     Services.obs.notifyObservers(null, "child-cc-request");
     Cu.forceCC();
-  }
-
-  async ['Network.getResponseBody']({requestId}) {
-    return this._pageNetwork.getResponseBody(requestId);
   }
 
   async ['Network.setExtraHTTPHeaders']({headers}) {
@@ -383,19 +355,30 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
-  async ['Accessibility.getFullAXTree'](params) {
-    return await this._contentPage.send('getFullAXTree', params);
-  }
 
   async ['Page.setFileInputFiles'](options) {
     return await this._contentPage.send('setFileInputFiles', options);
   }
 
+  async ['Page.dispatchTrustedInputEvents'](options) {
+    return await this._contentPage.send('dispatchTrustedInputEvents', options);
+  }
+
   async ['Page.setEmulatedMedia']({colorScheme, type, reducedMotion, forcedColors, contrast}) {
+    // Stealthfox: movimento ridotto, colori forzati e contrasto NON si impongono
+    // piu' da qui. Le loro dichiarazioni vivono in invisible_core come prefs, e
+    // l'override del BrowsingContext le cortocircuitava: Gecko guarda prima
+    // l'override e legge LookAndFeel solo quando quello e' None.
+    //
+    // Si RIFIUTA invece di ignorare in silenzio. Ignorare renderebbe questa API
+    // una bugia: il chiamante crede di aver cambiato una media feature e la
+    // pagina risponde un'altra cosa. Un rifiuto nomina la manopola vera.
+    const imposti = Object.entries({reducedMotion, forcedColors, contrast})
+        .filter(entry => entry[1] !== undefined && entry[1] !== null && entry[1] !== '')
+        .map(entry => entry[0]);
+    if (imposti.length)
+      throw new Error('Page.setEmulatedMedia: ' + imposti.join(', ') + ' non si impostano da qui; li dichiara invisible_core nel profilo');
     this._pageTarget.setColorScheme(colorScheme || null);
-    this._pageTarget.setReducedMotion(reducedMotion || null);
-    this._pageTarget.setForcedColors(forcedColors || null);
-    this._pageTarget.setContrast(contrast || null);
     this._pageTarget.setEmulatedMedia(type);
   }
 
@@ -406,11 +389,6 @@ export class PageHandler {
   async ['Page.setCacheDisabled']({cacheDisabled}) {
     return await this._pageTarget.setCacheDisabled(cacheDisabled);
   }
-
-  async ['Page.addBinding']({ worldName, name, script }) {
-    return await this._pageTarget.addBinding(worldName, name, script);
-  }
-
   async ['Page.adoptNode'](options) {
     return await this._contentPage.send('adoptNode', options);
   }
@@ -614,11 +592,6 @@ export class PageHandler {
       this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text}));
   }
 
-  async ['Page.dispatchTouchEvent'](options) {
-    return await this._pageTarget.activateAndRun(() =>
-      this._contentPage.send('dispatchTouchEvent', options));
-  }
-
   async ['Page.dispatchTapEvent'](options) {
     return await this._pageTarget.activateAndRun(() =>
       this._contentPage.send('dispatchTapEvent', options));
@@ -722,8 +695,16 @@ export class PageHandler {
                   win.windowUtils.DEFAULT_MOUSE_POINTER_ID, false);
             } catch (e) { /* ignore per-step errors */ }
             // Jittered inter-sample delay: a real human's pointer dt is non-uniform;
-            // a fixed stepMs was a behavioral tell. Gaussian around stepMs, floored at 2ms.
-            const d = Math.max(2, Math.round(_stealthfoxHumanize._gauss(stepDelayMs, stepDelayMs * 0.4)));
+            // a fixed stepMs was a behavioral tell. Gaussian around stepMs.
+            //
+            // Il pavimento e' UN FOTOGRAMMA a 60 Hz, non 2 ms. Firefox unisce i
+            // mousemove al ritmo di refresh, quindi una pagina su un 60 Hz vero
+            // non puo' vederne due a 2 ms di distanza: quel pavimento produceva
+            // intervalli che nessun hardware reale genera. Misurato il
+            // 2026-08-24 con stepMs=10: 79% dei dt sotto 16,7 ms, minimo 2 ms.
+            // Il generatore Python del wrapper, che e' il percorso predefinito e
+            // il riferimento, sulla stessa mossa da' media 31,9 ms e minimo 16.
+            const d = Math.max(16, Math.round(_stealthfoxHumanize._gauss(stepDelayMs, stepDelayMs * 0.4)));
             await new Promise(r => setTimeout(r, d));
           }
           this._humanizeFromX = x;
@@ -804,10 +785,6 @@ export class PageHandler {
       this._contentPage.send('insertText', options));
   }
 
-  async ['Page.crash'](options) {
-    return await this._contentPage.send('crash', options);
-  }
-
   async ['Page.handleDialog']({dialogId, accept, promptText}) {
     const dialog = this._pageTarget.dialog(dialogId);
     if (!dialog)
@@ -820,18 +797,6 @@ export class PageHandler {
 
   async ['Page.setInterceptFileChooserDialog']({ enabled }) {
     return await this._pageTarget.setInterceptFileChooserDialog(enabled);
-  }
-
-  async ['Page.startScreencast'](options) {
-    return await this._pageTarget.startScreencast(options);
-  }
-
-  async ['Page.screencastFrameAck'](options) {
-    await this._pageTarget.screencastFrameAck(options);
-  }
-
-  async ['Page.stopScreencast'](options) {
-    await this._pageTarget.stopScreencast(options);
   }
 
   async ['Page.sendMessageToWorker']({workerId, message}) {
