@@ -156,6 +156,32 @@ int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     if (nr_stealth_get_webrtc_public_ip(public_ip_buf, sizeof(public_ip_buf)) == 0)
         return R_NOT_FOUND;
 
+    /* ⛔ SOLO SE LA PAGINA HA CONFIGURATO ALMENO UN SERVER. Un candidato
+     * server-reflexive nasce dalla XOR-MAPPED-ADDRESS di una risposta STUN o
+     * TURN: senza nessuno a cui chiedere non puo' esistere, in nessun browser.
+     *
+     * MISURATO il 2026-08-25, dietro proxy, tre configurazioni nella stessa
+     * sessione: `new RTCPeerConnection()` senza argomenti, `{iceServers: []}`,
+     * e uno STUN vero. Tutte e tre producevano `host 2, srflx 1`. Le prime due
+     * sono impossibili per un Firefox reale.
+     *
+     * ⛔ E COSTA TRE RIGHE DI JAVASCRIPT VEDERLO. Niente rete, niente server,
+     * niente correlazione: si crea una connessione senza server e si guarda se
+     * arriva un srflx. E' molto piu' economico del banco che correla lato
+     * server (`docs_research/scrapfly-re/`), e non lascia scampo.
+     *
+     * Non e' il gate su `real_srflx_ct` che era stato provato e tolto: quello
+     * ASPETTAVA il fallimento dello STUN vero, quindi rimandava il ripiego di
+     * secondi e il sintetico non faceva piu' in tempo. Questo non aspetta
+     * niente - i contatori sono noti prima di iniziare - e non introduce
+     * nessun ritardo.
+     *
+     * Con zero server configurati non emettiamo piu' nessun srflx, che e'
+     * esattamente cio' che fa un Firefox qualunque nella stessa situazione. */
+    if (component->stream->stun_server_ct == 0 &&
+        component->stream->turn_server_ct == 0)
+        return R_NOT_FOUND;
+
     /* ⛔ UNO SOLO PER COMPONENTE. La chiamata a questa funzione sta dentro il
      * ciclo sugli indirizzi locali, quindi su una macchina con DUE interfacce
      * veniva eseguita due volte e nascevano DUE srflx sintetici: stesso
