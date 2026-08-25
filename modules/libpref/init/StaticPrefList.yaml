@@ -20383,6 +20383,11 @@
 # not pinnable, not inspectable and not overridable from extra_prefs, and a
 # touchscreen persona would have needed a browser rebuild. -1 keeps the
 # compiled behaviour so a build launched without invisible_core is unchanged.
+- name: zoom.stealth.webrtc.no_direct_udp
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 - name: zoom.stealth.max_touch_points
   type: RelaxedAtomicInt32
   value: -1
