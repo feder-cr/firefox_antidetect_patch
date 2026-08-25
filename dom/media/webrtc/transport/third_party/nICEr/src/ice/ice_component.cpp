@@ -71,14 +71,54 @@ static void nr_ice_stealth_srflx_fire_ready(NR_SOCKET s, int how, void *cb_arg)
     {
         nr_ice_candidate *hc;
         int porta_base = 0, porta_mia = 0;
+        /* ⛔ IL PROPRIO host, non il PRIMO della lista. L'iniezione avviene una
+         * volta per indirizzo locale, quindi su una macchina con DUE interfacce
+         * nascono DUE srflx sintetici; prendendo il primo host entrambi
+         * derivavano dalla stessa base e ricevevano la STESSA porta. E
+         * l'indirizzo coincide gia' per costruzione - e' l'uscita dichiarata,
+         * una sola - quindi il risultato erano due righe `typ srflx` identiche
+         * in tutto.
+         *
+         * Misurato il 2026-08-25 a occhio, headful, dietro un socks5 reale:
+         * `82.40.95.144 54976` DUE VOLTE nello stesso SDP. Nessun NAT mappa due
+         * socket locali distinti sulla stessa porta esterna. [B180]
+         *
+         * ⛔ Nessun banco l'aveva colto, e la ragione va ricordata: giravano
+         * headless con UNA sola interfaccia utilizzabile, dove l'iniezione
+         * avviene una volta e il difetto non esiste. Il numero di interfacce
+         * non era una variabile controllata da nessuna misura.
+         *
+         * `cand->base` porta gia' l'indirizzo dell'interfaccia da cui QUESTO
+         * srflx e' nato (copiato da `base_addr` all'iniezione). La sua porta
+         * li' vale 0, ma l'indirizzo basta a riconoscere il proprio host, che a
+         * questo punto e' legato e una porta ce l'ha. Il confronto usa
+         * MODE_ADDR apposta: ignora la porta, che e' cio' che stiamo cercando. */
         TAILQ_FOREACH(hc, &cand->component->candidates, entry_comp) {
             if (hc->type == HOST && hc->local_protocol == IPPROTO_UDP &&
                 hc->component_id == cand->component_id &&
+                !nr_transport_addr_cmp(&hc->addr, &cand->base,
+                                       NR_TRANSPORT_ADDR_CMP_MODE_ADDR) &&
                 nr_transport_addr_get_port(&hc->addr, &porta_base) == 0 &&
                 porta_base > 0) {
                 break;
             }
             porta_base = 0;
+        }
+        if (porta_base == 0) {
+            /* Nessun host corrisponde alla nostra base. Succede sul ramo senza
+             * indirizzi locali, dove la base e' quella sintetica `192.168.1.1`.
+             * Si ricade sul PRIMO host - il comportamento di prima, peggiore ma
+             * non rotto - invece di lasciare la porta PROVVISORIA, che e'
+             * funzione del solo IP e quindi identica per ogni candidato. */
+            TAILQ_FOREACH(hc, &cand->component->candidates, entry_comp) {
+                if (hc->type == HOST && hc->local_protocol == IPPROTO_UDP &&
+                    hc->component_id == cand->component_id &&
+                    nr_transport_addr_get_port(&hc->addr, &porta_base) == 0 &&
+                    porta_base > 0) {
+                    break;
+                }
+                porta_base = 0;
+            }
         }
         if (porta_base > 0 &&
             nr_transport_addr_get_port(&cand->addr, &porta_mia) == 0) {
@@ -115,6 +155,39 @@ int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
 
     if (nr_stealth_get_webrtc_public_ip(public_ip_buf, sizeof(public_ip_buf)) == 0)
         return R_NOT_FOUND;
+
+    /* ⛔ UNO SOLO PER COMPONENTE. La chiamata a questa funzione sta dentro il
+     * ciclo sugli indirizzi locali, quindi su una macchina con DUE interfacce
+     * veniva eseguita due volte e nascevano DUE srflx sintetici: stesso
+     * indirizzo per costruzione (l'uscita dichiarata e' una sola), stessa
+     * priorita', e - finche' non e' stato corretto - anche la stessa porta.
+     *
+     * MISURATO il 2026-08-25 contro il retail 151.0.4 FIRMATO, lanciato senza
+     * automazione su una pagina locale che si legge da sola, tre corse
+     * interleaved contro tre nostre: **con due interfacce il retail produce UN
+     * SOLO srflx**, 3 volte su 3, con priorita' `1685987327` - cioe' esattamente
+     * il valore che calcoliamo gia'. Non due con porte diverse: uno.
+     *
+     * Per COMPONENTE e non per sessione: un SDP con audio e video ha piu'
+     * componenti, e li' un browser vero ne mostra uno ciascuno con porte
+     * diverse fra loro. E' proprio il caso che la derivazione della porta dalla
+     * base esiste per servire.
+     *
+     * Il nostro si riconosce dal fatto che non ha `stun_server`: e' lo stesso
+     * discriminante che `ice_candidate.cpp` usa per sopprimere il srflx REALE
+     * quando il sintetico c'e' gia'.
+     *
+     * ⛔ La voce di [B180] diceva "il rimedio NON e' iniettarne uno solo,
+     * perche' un solo srflx con due interfacce e' anch'esso un profilo raro".
+     * Era un'affermazione SENZA MISURA, scritta con la stessa sicurezza dei
+     * fatti misurati accanto, e il confronto col retail la smentisce. */
+    {
+        nr_ice_candidate *esistente;
+        TAILQ_FOREACH(esistente, &component->candidates, entry_comp) {
+            if (esistente->type == SERVER_REFLEXIVE && !esistente->stun_server)
+                return R_ALREADY;
+        }
+    }
 
     /* La porta si deriva dall'IP **e dalla PORTA DELLA BASE**, non dal solo IP.
      *
@@ -231,6 +304,23 @@ int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     {
         UCHAR iface_pref = 126;  /* fallback if no host candidate is present yet */
         nr_ice_candidate *hc;
+        /* ⛔ QUI C'ERA UNA CORREZIONE, ED E' STATA TOLTA DOPO IL CONFRONTO COL
+         * RETAIL. Cercava l'host della PROPRIA interfaccia invece del primo,
+         * per dare priorita' diverse ai due srflx sintetici. Non serviva, e la
+         * ragione e' che i due srflx non dovrebbero esistere:
+         *
+         * Misurato il 2026-08-25 contro il retail 151.0.4 FIRMATO, lanciato
+         * senza automazione su una pagina locale, tre corse interleaved: con
+         * DUE interfacce il retail produce **UN SOLO srflx**, sempre, e la sua
+         * priorita' e' `1685987327` - cioe' esattamente il valore che
+         * calcoliamo gia'. Il valore era giusto; era il CONTEGGIO a essere
+         * sbagliato, e due candidati che condividono una priorita' corretta
+         * sono un problema solo perche' sono due.
+         *
+         * Togliere una correzione che non sposta la misura giusta e' meglio
+         * che tenerla: e' codice che diverge da upstream a ogni rebase per
+         * niente. Il conteggio si corregge dove nasce, cioe' nell'iniezione.
+         * Vedi `72-next-steps.md`. */
         TAILQ_FOREACH(hc, &component->candidates, entry_comp) {
             if (hc->type == HOST && hc->local_protocol == IPPROTO_UDP && hc->priority) {
                 iface_pref = (UCHAR)((hc->priority >> 16) & 0xFF);
