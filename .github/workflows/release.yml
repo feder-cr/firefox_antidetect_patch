@@ -195,6 +195,19 @@ jobs:
           echo "----- final .mozconfig -----"; cat .mozconfig
 
       - name: Build
+        # ⛔ Un tetto sul PASSO, non solo sul job. Il 2026-08-26 la gamba
+        # win-x86_64 si e' piantata sul download del toolchain Microsoft che
+        # `--enable-bootstrap` fa a inizio build: nessuna riga emessa per oltre
+        # tre ore, con il contatore di mach fermo a 0:29. Senza questo tetto la
+        # corsa avrebbe consumato le 6 ore del job prima di arrendersi, e il
+        # guasto si riconosce solo aprendo il log e notando che il contatore non
+        # si muove - cioe' a mano.
+        # 180 minuti sono il 48% sopra la piu' lenta build riuscita mai
+        # osservata su questa gamba (121 min il 2026-08-26; 105 e 106 il
+        # 2026-08-17), quindi non uccide una build lenta ma vera. Quando scatta,
+        # il job risulta FALLITO invece che appeso, e `rerun-failed-jobs`
+        # ricompila la sola gamba caduta riusando gli artefatti delle altre.
+        timeout-minutes: 180
         run: ./mach build
 
       # ── LINUX: dereference symlinks (issue #14) + strip + sanitize + tar@root + GATE
