@@ -146,6 +146,24 @@ jobs:
         run: |
           test -f .mozconfig || { echo "ERROR: no .mozconfig in source"; exit 1; }
           rm -f mozconfig
+          # VIA sccache SU QUESTI RUNNER, o mach build muore prima di compilare
+          # una riga: FileNotFoundError: 'sccache'.
+          #
+          # Il .mozconfig e' UNO SOLO per le due macchine di sviluppo e per la
+          # CI, e dichiara --with-ccache=sccache piu' RUSTC_WRAPPER=sccache
+          # senza percorso, apposta: il percorso e' una proprieta' della
+          # macchina, e sulle due macchine sccache sta nel PATH. Su un runner
+          # nudo non c'e', e nessuno se n'era accorto perche' release.yml non
+          # girava da firefox-20 mentre la riga e' entrata dopo.
+          #
+          # E qui non servirebbe comunque: un runner e' effimero, quindi la
+          # cache nasce VUOTA a ogni corsa, e la prima build con sccache e' piu'
+          # LENTA di una senza perche' deve popolarla. Installarlo sarebbe
+          # pagare un costo per un beneficio che non puo' esistere.
+          #
+          # Case-insensitive, perche' c'e' anche SCCACHE_CACHE_SIZE maiuscolo.
+          # Solo le righe ATTIVE: i commenti che spiegano il perche' restano.
+          sed -i -E '/^[^#]*sccache/Id' .mozconfig
           {
             echo ""
             echo "# --- release CI levers for ${{ matrix.leg }} (mold intentionally OFF — it segfaults libxul) ---"
