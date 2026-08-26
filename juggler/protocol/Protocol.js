@@ -412,6 +412,30 @@ const Browser = {
         colorScheme: t.Nullable(t.Enum(['dark', 'light', 'no-preference'])),
       },
     },
+    // I tre qui sotto erano spariti insieme alla potatura di TargetRegistry.js
+    // (28.4 di 20-our-patches.md documenta la conseguenza su
+    // Page.setEmulatedMedia, non questa). Playwright upstream li manda a OGNI
+    // creazione di contesto salvo un "no-override" esplicito, quindi senza la
+    // dichiarazione un `new_page()` qualsiasi muore con "method ... is not
+    // supported". Restano dichiarati; l'handler accetta solo il valore neutro.
+    'setReducedMotion': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        reducedMotion: t.Nullable(t.Enum(['reduce', 'no-preference'])),
+      },
+    },
+    'setForcedColors': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        forcedColors: t.Nullable(t.Enum(['active', 'none'])),
+      },
+    },
+    'setContrast': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        contrast: t.Nullable(t.Enum(['less', 'more', 'custom', 'no-preference'])),
+      },
+    },
     'cancelDownload': {
       params: {
         uuid: t.Optional(t.String),

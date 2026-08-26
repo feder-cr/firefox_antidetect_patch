@@ -228,6 +228,43 @@ export class BrowserHandler {
   async ['Browser.setColorScheme']({browserContextId, colorScheme}) {
     await this._targetRegistry.browserContextForId(browserContextId).setColorScheme(nullToUndefined(colorScheme));
   }
+
+  // Le tre media feature qui sotto NON hanno piu' un apparato dietro: la
+  // potatura di TargetRegistry.js si e' portata via i metodi di PageTarget, e
+  // non tornano. Ma il comando deve restare DICHIARATO, perche' Playwright
+  // upstream lo manda a ogni creazione di contesto e senza dichiarazione il
+  // binario non si pilota affatto (drive gate rosso su tutte e tre le gambe,
+  // firefox-21, primo giro).
+  //
+  // Il valore NEUTRO si accetta e non fa niente, e non e' una bugia: e'
+  // esattamente cio' che il browser riporta - la dichiarazione in
+  // invisible_core non chiede ne' reduce, ne' forced-colors, ne' contrasto. Un
+  // valore diverso si RIFIUTA nominando la manopola vera, che e' la stessa
+  // scelta gia' fatta in 28.4 per i parametri di Page.setEmulatedMedia: un
+  // override ignorato in silenzio farebbe credere al chiamante di aver
+  // cambiato una media feature mentre la pagina ne risponde un'altra.
+  _rifiutaSeNonNeutro(nome, valore, neutro) {
+    if (valore === null || valore === undefined || valore === neutro)
+      return;
+    throw new Error(
+        `Browser.${nome}: '${valore}' non si imposta dal protocollo. ` +
+        `L'apparato di override delle media feature non esiste piu' in questa ` +
+        `build; il solo valore accettato e' '${neutro}', che e' quello che il ` +
+        `browser riporta davvero. Per cambiarlo si dichiara la preferenza in ` +
+        `invisible_core, non si manda questo comando.`);
+  }
+
+  async ['Browser.setReducedMotion']({reducedMotion}) {
+    this._rifiutaSeNonNeutro('setReducedMotion', reducedMotion, 'no-preference');
+  }
+
+  async ['Browser.setForcedColors']({forcedColors}) {
+    this._rifiutaSeNonNeutro('setForcedColors', forcedColors, 'none');
+  }
+
+  async ['Browser.setContrast']({contrast}) {
+    this._rifiutaSeNonNeutro('setContrast', contrast, 'no-preference');
+  }
   async ['Browser.setUserAgentOverride']({browserContextId, userAgent}) {
     await this._targetRegistry.browserContextForId(browserContextId).setDefaultUserAgent(userAgent);
   }

@@ -313,6 +313,29 @@ def declared(proto: str, method: str) -> set[str] | None:
 #: piu', ed e' voluto". Tutto cio' che NON e' in questa mappa resta rosso.
 #: Aggiungere una riga qui e' una decisione: va fatta solo quando la rimozione
 #: e' gia' documentata, e il rimando serve a ritrovarne la ragione.
+#:
+#: ⛔ E "e' voluto" NON BASTA: la domanda vera e' SU QUALE PERCORSO il client lo
+#: manda. Misurato il 2026-08-26, al costo di una build intera di firefox-21.
+#: Questa mappa nacque con cinque voci; tre erano
+#: `Browser.setReducedMotion`, `setForcedColors` e `setContrast`, tolte dalla
+#: potatura di TargetRegistry e documentate in 20-our-patches.md 28.4. Tutte e
+#: tre le righe erano vere alla lettera. Ma quei tre comandi Playwright upstream
+#: li manda a OGNI creazione di contesto, salvo un "no-override" esplicito:
+#: quindi la loro assenza non degradava un'API poco usata, impediva
+#: `new_page()`. Il drive gate della CI e' uscito rosso su tutte e tre le gambe
+#: con "method 'Browser.setReducedMotion' is not supported", e il publish e'
+#: stato saltato - cioe' il difetto lo prese un cancello piu' a valle, dopo due
+#: ore di compilazione, mentre QUESTO gate lo aveva gia' visto e io gli avevo
+#: insegnato a tacere. Le tre voci sono uscite e i comandi sono tornati
+#: dichiarati, con l'handler che accetta il neutro e rifiuta un override.
+#:
+#: Il criterio, da applicare prima di aggiungere una riga: se il comando sta su
+#: un percorso che un client percorre SENZA chiederlo - creazione di contesto,
+#: apertura di pagina, navigazione - non e' una rimozione accettabile, e' una
+#: rottura della pilotabilita', e va rimessa la dichiarazione. Le due voci
+#: rimaste passano il criterio: `Network.getResponseBody` arriva solo se
+#: qualcuno chiama `response.body()`, `Page.screencastFrame` solo se qualcuno
+#: registra un video.
 RIMOSSI_APPOSTA = {
     # NetworkObserver ridotto "all'osso, non a zero" su richiesta del
     # proprietario: via tutta la copia dei corpi delle risposte. `response.body()`
@@ -321,16 +344,6 @@ RIMOSSI_APPOSTA = {
     #    consegue e' aperto in 70-known-bugs.md [B176].
     "Network.getResponseBody":
         "NetworkObserver all'osso [B170]; conseguenze in [B176]",
-    # La potatura di TargetRegistry ha tolto l'apparato degli override delle
-    # media feature. L'handler ora RIFIUTA i tre parametri invece di ignorarli,
-    # perche' ignorarli renderebbe l'API una bugia.
-    # -> 20-our-patches.md 28.4, piu' il gate tests/gates/juggler_wiring.py (AU).
-    "Browser.setContrast":
-        "override delle media feature tolti, l'handler rifiuta (20-our-patches 28.4)",
-    "Browser.setForcedColors":
-        "override delle media feature tolti, l'handler rifiuta (20-our-patches 28.4)",
-    "Browser.setReducedMotion":
-        "override delle media feature tolti, l'handler rifiuta (20-our-patches 28.4)",
     # Il sottosistema screencast non era compilato da nessuno: verificato
     # nell'objdir, `Cc['@mozilla.org/juggler/screencast;1']` lanciava sempre.
     # -> il commit "Il sottosistema screencast non era compilato da nessuno".
