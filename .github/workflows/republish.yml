@@ -1,9 +1,17 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # republish.yml — re-gate + publish an EXISTING build's artifacts WITHOUT rebuilding.
 #
-# When a release run's 5 builds all SUCCEEDED but the publish was blocked by a
-# GATE/TEST bug (not a binary defect), rebuilding all five targets (hours) just to
-# re-run a few-minute test is wasteful. This workflow downloads the binary artifacts
+# When a release run's builds all SUCCEEDED but the publish was blocked by a
+# GATE/TEST bug (not a binary defect), rebuilding every target (hours) just to
+# re-run a few-minute test is wasteful. Erano cinque fino a firefox-20, sono tre
+# dal 21: il numero non e' scritto qui apposta, la matrice sotto e' l'autorita'.
+#
+# ⛔ E il caso vero e' successo il 2026-08-26: le tre build di firefox-21 erano
+# verdi e i tre job `gate` sono usciti rossi per un comando di protocollo tolto
+# per sbaglio. Questo workflow sarebbe stato la via d'uscita - e non avrebbe
+# funzionato, perche' il suo assert pretendeva ancora i due archivi macOS che una
+# release a tre gambe non produce. La via d'uscita era rotta nel momento in cui
+# serviva, e nessuno poteva saperlo: questo workflow si lancia a mano. This workflow downloads the binary artifacts
 # from a prior `release` run, re-runs the (now-fixed) drive gate + cloak/WebGL guards
 # against those exact byte-identical binaries on their native runners, and — only if
 # green — publishes the DRAFT release. Same publish logic as release.yml (draft, notes,
@@ -41,6 +49,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Le due gambe macOS sono uscite il 2026-08-26 (fine supporto totale,
+          # decisione del proprietario). Nominavano anche macos-15 /
+          # macos-15-intel, immagini gia' abbandonate a firefox-19: stale due
+          # volte. Il mac resta LEGGIBILE dove serve alla storia - make_seal.py
+          # tiene darwin in ENTRY_REL e in NAME_RE apposta, perche' i tag fino a
+          # firefox-20 il mac ce l'avevano - ma qui si smette di pretenderlo.
           - leg: linux-x86_64
             runner: ubuntu-24.04
             kind: linux
@@ -55,16 +69,6 @@ jobs:
             runner: windows-latest
             kind: win
             asset: firefox-151.0-stealth-win-x86_64.zip
-            extra: ''
-          - leg: macos-arm64
-            runner: macos-15
-            kind: mac
-            asset: firefox-151.0-stealth-macos-arm64.tar.gz
-            extra: ''
-          - leg: macos-x86_64
-            runner: macos-15-intel
-            kind: mac
-            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
             extra: ''
     steps:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py — the FIXED gate)
@@ -98,7 +102,6 @@ jobs:
           case "${{ matrix.kind }}" in
             win)   python -c "import zipfile; zipfile.ZipFile('$A').extractall('ff')"; EXE="ff/firefox.exe";;
             linux) tar xzf "$A" -C ff; EXE="ff/firefox";;
-            mac)   tar xzf "$A" -C ff; EXE="ff/Firefox.app/Contents/MacOS/firefox";;
           esac
           [ -e "$EXE" ] || { echo "ERROR: firefox binary not found at $EXE"; exit 1; }
           chmod +x "$EXE" 2>/dev/null || true
@@ -107,9 +110,6 @@ jobs:
       - name: DRIVE GATE — Playwright launch via juggler + real page (+ interaction on --full)
         shell: bash
         run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
-      - name: Install pyobjc Quartz (macOS — to read the cloak window alpha)
-        if: matrix.kind == 'mac'
-        run: python -m pip install --quiet pyobjc-framework-Quartz
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
         run: |
@@ -157,20 +157,22 @@ jobs:
           path: src-meta
           run-id: ${{ github.event.inputs.build_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Assert all 5 target archives present (no silent partial release)
+      - name: Assert all 3 target archives present (no silent partial release)
         run: |
           cd dl
+          # Erano cinque fino a firefox-20. Con le due righe macOS ancora qui,
+          # questo passo rifiutava OGNI republish di una release a tre gambe -
+          # e republish e' la via d'uscita per "le build sono verdi ma un gate
+          # le ha bloccate", cioe' esattamente il caso di firefox-21.
           EXPECTED="
           firefox-151.0-stealth-linux-x86_64.tar.gz
           firefox-151.0-stealth-linux-arm64.tar.gz
           firefox-151.0-stealth-win-x86_64.zip
-          firefox-151.0-stealth-macos-arm64.tar.gz
-          firefox-151.0-stealth-macos-x86_64.tar.gz
           "
           for a in $EXPECTED; do
             [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
           done
-          echo "all 5 target archives present"
+          echo "all 3 target archives present"
       - name: Generate checksums.txt
         run: |
           cd dl; ls -la

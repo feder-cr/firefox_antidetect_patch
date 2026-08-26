@@ -38,6 +38,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Le due gambe macOS sono uscite il 2026-08-26 (fine supporto totale,
+          # decisione del proprietario). Nominavano anche macos-15 /
+          # macos-15-intel, immagini gia' abbandonate a firefox-19: stale due
+          # volte. Il mac resta LEGGIBILE dove serve alla storia - make_seal.py
+          # tiene darwin in ENTRY_REL e in NAME_RE apposta, perche' i tag fino a
+          # firefox-20 il mac ce l'avevano - ma qui si smette di pretenderlo.
           # --full (interaction) only on the reliable linux-x86_64 leg; others run
           # the robust SMOKE drive. Same rationale as release.yml's gate.
           - leg: linux-x86_64
@@ -54,16 +60,6 @@ jobs:
             runner: windows-latest
             kind: win
             asset: firefox-151.0-stealth-win-x86_64.zip
-            extra: ''
-          - leg: macos-arm64
-            runner: macos-15
-            kind: mac
-            asset: firefox-151.0-stealth-macos-arm64.tar.gz
-            extra: ''
-          - leg: macos-x86_64
-            runner: macos-15-intel
-            kind: mac
-            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
             extra: ''
     steps:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
@@ -103,7 +99,6 @@ jobs:
           case "${{ matrix.kind }}" in
             win)   python -c "import zipfile; zipfile.ZipFile('$A').extractall('ff')"; EXE="ff/firefox.exe";;
             linux) tar xzf "$A" -C ff; EXE="ff/firefox";;
-            mac)   tar xzf "$A" -C ff; EXE="ff/Firefox.app/Contents/MacOS/firefox";;
           esac
           [ -e "$EXE" ] || { echo "ERROR: firefox binary not found at $EXE"; exit 1; }
           chmod +x "$EXE" 2>/dev/null || true
