@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# release.yml — build all 5 patched-Firefox targets at $0 and publish them as
+# release.yml — build all 3 patched-Firefox targets (Win + Linux x2) at $0 and publish them as
 # DRAFT GitHub Release assets, named per the wrapper contract (constants.ARCHIVE_NAME).
 # DRAFT on purpose: a human runs the realness gate and only THEN un-drafts + bumps
 # BINARY_VERSION. Nothing auto-ships (issue #14 lesson).
@@ -73,41 +73,8 @@ jobs:
             win_disables: 'yes'
             extra_pkgs: 'msitools p7zip-full zip'
             asset: firefox-151.0-stealth-win-x86_64.zip
-          # Each mac leg builds on its OWN architecture, natively. FF151 needs macOS
-          # SDK >= 26.4, which first appears on the macos-26 images (Xcode 26.4.1,
-          # present at the same path on both), so macos-15 is out.
-          #
-          # x86_64 spent one release cross-built on the arm64 image and driven under
-          # Rosetta 2, because on 2026-07-23 the macOS-26 Intel image did not exist
-          # yet. It was published on 2026-07-29, six days later, as the standard
-          # `macos-26-intel` label - the same relationship `macos-15-intel` had to
-          # `macos-15-large`, and that one was free on public repos for us. Nobody
-          # re-checked, so the comment outlived the fact by two weeks.
-          #
-          # Native matters more here than it would elsewhere. Rosetta answers "yes,
-          # it runs" to a question only a real Intel CPU can answer, so the gate
-          # could not see an Intel-only defect even in principle - and this product
-          # SPOOFS hardware, so a fingerprint measured under translation is not the
-          # one an Intel user receives.
-          - leg: macos-arm64
-            runner: macos-26
-            family: mac
-            target: aarch64-apple-darwin
-            rust_target: aarch64-apple-darwin
-            win_disables: 'no'
-            extra_pkgs: ''
-            asset: firefox-151.0-stealth-macos-arm64.tar.gz
-          - leg: macos-x86_64
-            runner: macos-26-intel
-            family: mac
-            target: x86_64-apple-darwin
-            rust_target: x86_64-apple-darwin
-            win_disables: 'no'
-            extra_pkgs: ''
-            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
     steps:
       - name: Free disk + 16G swap (Linux runners)
-        if: matrix.family != 'mac'
         run: |
           # The GH-hosted 14GB-free disk is tight for a full Firefox build: objdir
           # (.o + libxul) + `mach package` (a second dist copy) + the archive, plus
@@ -168,27 +135,9 @@ jobs:
         with: { python-version: '3.11' }
 
       - name: Install Linux build tools
-        if: matrix.family != 'mac'
         run: |
           sudo apt-get update
           sudo apt-get install -y util-linux binutils ${{ matrix.extra_pkgs }}
-
-      - name: Select Xcode 26.4.1 + export SDK path (macOS)
-        if: matrix.family == 'mac'
-        run: |
-          # FF151 requires SDK >= 26.4. Pin 26.4.1 (the lowest that satisfies it) rather
-          # than the runner default (26.5) so we build against the minimum we claim to
-          # support, not a newer SDK that could pull in deprecations the tree hasn't
-          # adapted to (the FF150 NSGlassEffectView lesson, in reverse).
-          sudo xcode-select -s /Applications/Xcode_26.4.1.app
-          SDKP="$(xcrun --show-sdk-path)"
-          echo "SDK_PATH=$SDKP" >> "$GITHUB_ENV"
-          echo "macOS SDK $(xcrun --sdk macosx --show-sdk-version) at $SDKP"
-
-      # No Rosetta step here any more: each mac leg runs on its own architecture, so
-      # the --version self-gate at package time executes a native binary on a native
-      # CPU. The step this replaces installed Rosetta only on the x86_64 leg, which
-      # is the tell that the leg was not native.
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.rust_target }} || true
@@ -203,13 +152,12 @@ jobs:
             echo "ac_add_options --disable-debug-symbols"
           } >> .mozconfig
           if [ -n "${{ matrix.target }}" ]; then echo "ac_add_options --target=${{ matrix.target }}" >> .mozconfig; fi
-          if [ "${{ matrix.family }}" = "mac" ]; then echo "ac_add_options --with-macos-sdk=$SDK_PATH" >> .mozconfig; fi
           if [ "${{ matrix.win_disables }}" = "yes" ]; then
             { echo "ac_add_options --disable-default-browser-agent";
               echo "ac_add_options --disable-maintenance-service";
               echo "ac_add_options --disable-update-agent"; } >> .mozconfig
           fi
-          if [ "${{ matrix.family }}" = "mac" ]; then NCPU=$(sysctl -n hw.ncpu); else NCPU=4; fi
+          NCPU=4
           { echo "mk_add_options MOZ_PARALLEL_BUILD=$NCPU";
             echo "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-rel"; } >> .mozconfig
           echo "----- final .mozconfig -----"; cat .mozconfig
@@ -273,46 +221,6 @@ jobs:
           ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
           ls -la out/
 
-      # ── macOS: package .app, ad-hoc sign, verify relative-internal symlinks, --version gate, tar
-      - name: Package + validate (macOS)
-        if: matrix.family == 'mac'
-        run: |
-          set -e
-          ./mach package
-          APP="$(find obj-rel/dist -maxdepth 2 -name '*.app' -type d | head -1)"
-          [ -n "$APP" ] || { echo "ERROR: no .app produced"; exit 1; }
-          echo "built app: $APP"
-          # JUGGLER GATE: the .app's omni.ja must carry juggler (else Playwright can't drive it)
-          python3 -c "import zipfile,sys,glob; jas=glob.glob('$APP/Contents/Resources/omni.ja')+glob.glob('$APP/Contents/Resources/browser/omni.ja'); sys.exit(0 if jas and any(any('juggler' in n.lower() for n in zipfile.ZipFile(j).namelist()) for j in jas) else 1)" \
-            || { echo "ERROR: juggler missing from .app omni.ja — Playwright can't drive it"; exit 1; }
-          echo "juggler GATE OK (mac)"
-          codesign --force --deep --sign - --timestamp=none "$APP"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          echo "=== --version GATE ==="
-          "$APP/Contents/MacOS/firefox" --version
-          echo "=== critical files present ==="
-          for need in "Contents/MacOS/firefox" "Contents/Info.plist"; do
-            [ -e "$APP/$need" ] || { echo "ERROR: missing $need"; exit 1; }
-          done
-          echo "=== Info.plist well-formed + required keys (a malformed plist → Finder 'damaged') ==="
-          plutil -lint "$APP/Contents/Info.plist"
-          for key in CFBundleExecutable CFBundleIdentifier CFBundleShortVersionString; do
-            plutil -extract "$key" raw -o - "$APP/Contents/Info.plist" >/dev/null \
-              || { echo "ERROR: Info.plist missing $key"; exit 1; }
-          done
-          EXEC="$(plutil -extract CFBundleExecutable raw -o - "$APP/Contents/Info.plist")"
-          [ -e "$APP/Contents/MacOS/$EXEC" ] \
-            || { echo "ERROR: CFBundleExecutable '$EXEC' has no matching binary in Contents/MacOS"; exit 1; }
-          echo "=== verify NO absolute symlinks in the .app (relative-internal ones are fine) ==="
-          BAD="$(find "$APP" -type l -print0 | xargs -0 -I{} sh -c 't=$(readlink "{}"); case "$t" in /*) echo "{} -> $t";; esac')"
-          [ -z "$BAD" ] || { echo "ERROR: absolute symlinks in .app (break on user machines):"; echo "$BAD" | head -5; exit 1; }
-          echo "mac .app OK: critical files present, no absolute symlinks"
-          STABLE="$(dirname "$APP")/Firefox.app"
-          [ "$APP" = "$STABLE" ] || mv "$APP" "$STABLE"
-          mkdir -p out
-          tar -czf "out/${{ matrix.asset }}" -C "$(dirname "$STABLE")" Firefox.app   # preserves internal symlinks
-          ls -la out/
-
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -374,16 +282,6 @@ jobs:
             kind: win
             asset: firefox-151.0-stealth-win-x86_64.zip
             extra: '--click'
-          - leg: macos-arm64
-            runner: macos-26
-            kind: mac
-            asset: firefox-151.0-stealth-macos-arm64.tar.gz
-            extra: '--click'
-          - leg: macos-x86_64
-            runner: macos-26-intel
-            kind: mac
-            asset: firefox-151.0-stealth-macos-x86_64.tar.gz
-            extra: '--click'
     steps:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -396,10 +294,6 @@ jobs:
         with:
           name: asset-${{ matrix.leg }}
           path: art
-      # The Rosetta install that used to sit here is gone with the cross build: the
-      # x86_64 asset is now driven on macos-26-intel, a real Intel CPU. That is the
-      # only arrangement in which this gate can answer the question it is asked,
-      # since Rosetta says "it runs" for a binary a real Intel machine might refuse.
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: '3.11' }
@@ -463,9 +357,6 @@ jobs:
       # renders — the macOS leg is the only place the cocoa cloak patch gets RUN.
       # The webgl guard catches a regression of the gamma readPixels noise back to
       # the pixelscan-maskable ±1 spike form (covered on Linux + Windows).
-      - name: Install pyobjc Quartz (macOS — to read the cloak window alpha)
-        if: matrix.kind == 'mac'
-        run: python -m pip install --quiet pyobjc-framework-Quartz
       # ⛔ THE CORE COMES FROM GIT, NOT FROM THE INDEX, and this is not a
       # convenience. `pip install ".[dev]"` installs the WRAPPER, which pins
       # invisible-core exactly, so pip resolves the PUBLISHED core - and during a
@@ -537,20 +428,18 @@ jobs:
       - name: Download source-commit metadata
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { name: source-commit, path: src-meta }
-      - name: Assert all 5 target archives present (no silent partial release)
+      - name: Assert all 3 target archives present (no silent partial release)
         run: |
           cd dl
           EXPECTED="
           firefox-151.0-stealth-linux-x86_64.tar.gz
           firefox-151.0-stealth-linux-arm64.tar.gz
           firefox-151.0-stealth-win-x86_64.zip
-          firefox-151.0-stealth-macos-arm64.tar.gz
-          firefox-151.0-stealth-macos-x86_64.tar.gz
           "
           for a in $EXPECTED; do
             [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
           done
-          echo "all 5 target archives present"
+          echo "all 3 target archives present"
       - name: Generate checksums.txt
         run: |
           cd dl; ls -la
