@@ -300,6 +300,45 @@ def declared(proto: str, method: str) -> set[str] | None:
     return scheme_fields(plit, proto)
 
 
+#: ⛔ RIMOZIONI DELIBERATE, ognuna con la voce che la documenta.
+#:
+#: Questo gate esiste per la divergenza ACCIDENTALE - un campo che il client
+#: manda e noi non dichiariamo piu' dopo un rebase, che `checkScheme` rifiuta
+#: solo a RUNTIME e con la build verde. Ma dal 2026-08-24 il progetto ha tolto
+#: da Juggler dei comandi APPOSTA, con la decisione scritta, e da allora il gate
+#: era rosso su quelle scelte: cioe' rosso per sempre, che e' la condizione in
+#: cui un gate smette di essere letto e comincia a essere aggirato.
+#:
+#: Una voce qui dice "so che il client lo manda e so che noi non lo abbiamo
+#: piu', ed e' voluto". Tutto cio' che NON e' in questa mappa resta rosso.
+#: Aggiungere una riga qui e' una decisione: va fatta solo quando la rimozione
+#: e' gia' documentata, e il rimando serve a ritrovarne la ragione.
+RIMOSSI_APPOSTA = {
+    # NetworkObserver ridotto "all'osso, non a zero" su richiesta del
+    # proprietario: via tutta la copia dei corpi delle risposte. `response.body()`
+    # RIFIUTA chiaramente, ed e' il comportamento voluto.
+    # -> 71-bug-archive.md [B170]; il degrado silenzioso di tracing/HAR che ne
+    #    consegue e' aperto in 70-known-bugs.md [B176].
+    "Network.getResponseBody":
+        "NetworkObserver all'osso [B170]; conseguenze in [B176]",
+    # La potatura di TargetRegistry ha tolto l'apparato degli override delle
+    # media feature. L'handler ora RIFIUTA i tre parametri invece di ignorarli,
+    # perche' ignorarli renderebbe l'API una bugia.
+    # -> 20-our-patches.md 28.4, piu' il gate tests/gates/juggler_wiring.py (AU).
+    "Browser.setContrast":
+        "override delle media feature tolti, l'handler rifiuta (20-our-patches 28.4)",
+    "Browser.setForcedColors":
+        "override delle media feature tolti, l'handler rifiuta (20-our-patches 28.4)",
+    "Browser.setReducedMotion":
+        "override delle media feature tolti, l'handler rifiuta (20-our-patches 28.4)",
+    # Il sottosistema screencast non era compilato da nessuno: verificato
+    # nell'objdir, `Cc['@mozilla.org/juggler/screencast;1']` lanciava sempre.
+    # -> il commit "Il sottosistema screencast non era compilato da nessuno".
+    "Page.screencastFrame":
+        "screencast mai compilato, rimosso e verificato nell'objdir",
+}
+
+
 def main() -> int:
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ap = argparse.ArgumentParser()
@@ -320,12 +359,14 @@ def main() -> int:
 
     sent = sent_payloads(region)
     events = listened_events(region)
-    unheard = sorted(e for e in events if not declares_event(proto, e))
+    unheard = sorted(e for e in events if not declares_event(proto, e)
+                     and e not in RIMOSSI_APPOSTA)
     drift, unknown = [], []
     for method in sorted(sent):
         dec = declared(proto, method)
         if dec is None:
-            unknown.append(method)
+            if method not in RIMOSSI_APPOSTA:
+                unknown.append(method)
             continue
         missing = sorted(f for f in sent[method] if f not in dec)
         if missing:
@@ -335,6 +376,14 @@ def main() -> int:
 
     print("checked %d juggler commands and %d events from %s"
           % (len(sent), len(events), label))
+    # Un'esclusione silenziosa e' peggio di un rosso: si dice sempre cosa NON si
+    # sta guardando, e perche', cosi' il verdetto verde e' leggibile per intero.
+    visti = sorted(n for n in RIMOSSI_APPOSTA
+                   if n in sent or n in events)
+    if visti:
+        print("\nNON contati, perche' rimossi APPOSTA (%d):" % len(visti))
+        for n in visti:
+            print("  %-28s %s" % (n, RIMOSSI_APPOSTA[n]))
     if unheard:
         print("\nEvents the client waits for that Protocol.js does not declare:")
         for e in unheard:
