@@ -25,7 +25,7 @@ WHAT IS COVERED, and each case is a real refusal rather than a plausible one:
   5. an incomplete release, missing platforms;
   6. a tag that is not `firefox-N`;
   7. an archive with no `application.ini`;
-  8. and the POSITIVE case: a clean five-way set produces a seal whose fields
+  8. and the POSITIVE case: a clean three-way set produces a seal whose fields
      are the ones every downstream consumer reads.
 
 WHAT IS NOT COVERED, deliberately. The Playwright-range file has its own
@@ -131,13 +131,14 @@ _LEGS = {
     "win-x86_64": ".zip",
     "linux-x86_64": ".tar.gz",
     "linux-arm64": ".tar.gz",
-    "macos-x86_64": ".tar.gz",
-    "macos-arm64": ".tar.gz",
 }
 
 
 def _release(d: Path, version: str = "151.0", **overrides) -> Path:
-    """A clean five-way set, unless an override breaks one leg on purpose."""
+    """A clean three-way set (Win + Linux x2), unless an override breaks one leg.
+
+    Era a cinque fino a firefox-20: le due gambe macOS sono uscite il 2026-08-26
+    quando si e' smesso di rilasciare per Mac."""
     for i, (leg, ext) in enumerate(_LEGS.items()):
         v = overrides.get(f"{leg}_version", version)
         name = overrides.get(f"{leg}_name", f"firefox-{v}-stealth-{leg}{ext}")
@@ -170,22 +171,22 @@ def case(fn):
 
 
 @case
-def test_a_clean_five_way_set_produces_a_usable_seal(d: Path):
+def test_a_clean_three_way_set_produces_a_usable_seal(d: Path):
     """The positive case, and it is not decoration: every refusal below is only
     meaningful if the happy path actually builds something downstream can read."""
     seal, _ = _build(_release(d))
     assert seal["schema"] == m.SCHEMA, seal["schema"]
     assert seal["tag"] == "firefox-18"
     assert seal["upstream_version"] == "151.0"
-    assert len(seal["assets"]) == 5, sorted(seal["assets"])
+    assert len(seal["assets"]) == 3, sorted(seal["assets"])
     for name, rec in seal["assets"].items():
         assert "151.0" in name, name
         assert len(rec["sha256"]) == 64, rec["sha256"]
         assert rec["size"] > 0
         assert rec["build_id"], name
-    # Five independent CI runs give five BuildIDs. A seal-wide one matched
-    # exactly one platform and refused the other four.
-    assert len({r["build_id"] for r in seal["assets"].values()}) == 5
+    # Three independent CI runs give three BuildIDs. A seal-wide one matched
+    # exactly one platform and refused the other two.
+    assert len({r["build_id"] for r in seal["assets"].values()}) == 3
     assert seal["playwright"] == {"min": "1.55.0", "max": "1.61.0"}
     json.dumps(seal)          # it has to survive being written
 
@@ -255,20 +256,19 @@ def test_three_of_four_is_still_refused(d: Path):
 def test_a_full_house_is_NOT_refused(d: Path):
     """Il caso che deve NON scattare: un gate che rifiuta tutto e' inutile.
 
-    Ed e' misurato, non assunto: le due gambe mac di firefox-19 sono state
-    scaricate e aperte prima di alzare la sbarra, e segnano 4/4 entrambe.
-    Alzarla senza quel numero avrebbe potuto rompere il rilascio su una gamba
-    che non possiamo provare in locale.
+    Le tre gambe (Win + Linux x2) segnano 4/4 e non vanno rifiutate. Fino a
+    firefox-20 erano cinque, con le due mac scaricate e aperte prima di alzare
+    la sbarra; da firefox-21 il mac non si rilascia piu'.
     """
     seal, _ = _build(_release(d))
-    assert len(seal["assets"]) == 5, sorted(seal["assets"])
+    assert len(seal["assets"]) == 3, sorted(seal["assets"])
 
 
 @case
 def test_an_archive_with_no_application_ini_is_refused(d: Path):
     """A broken package. There is no version to cross-check and no version to
     compare the basename against, so everything downstream would be guessed."""
-    _release(d, **{"macos-arm64_app_ini": False})
+    _release(d, **{"linux-arm64_app_ini": False})
     _expect(d, "no application.ini")
 
 
@@ -277,7 +277,7 @@ def test_an_incomplete_release_is_refused(d: Path):
     """Four legs is not a release: the missing platform's users get a 404 from a
     seal that looks complete."""
     _release(d)
-    (d / "firefox-151.0-stealth-macos-arm64.tar.gz").unlink()
+    (d / "firefox-151.0-stealth-linux-arm64.tar.gz").unlink()
     _expect(d, "incomplete release")
 
 
@@ -286,9 +286,9 @@ def test_allow_partial_is_the_only_way_past_an_incomplete_release(d: Path):
     """The escape hatch exists for a re-cut of a single leg. It must be
     explicit - and it must still build, or it is not an escape hatch."""
     _release(d)
-    (d / "firefox-151.0-stealth-macos-arm64.tar.gz").unlink()
+    (d / "firefox-151.0-stealth-linux-arm64.tar.gz").unlink()
     seal, _ = _build(d, allow_partial=True)
-    assert len(seal["assets"]) == 4
+    assert len(seal["assets"]) == 2
 
 
 @case

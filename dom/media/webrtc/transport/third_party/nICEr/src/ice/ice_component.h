@@ -101,4 +101,13 @@ void nr_ice_component_refresh_consent_now(nr_ice_component *comp);
 void nr_ice_component_disconnected(nr_ice_component *comp);
 void nr_ice_component_dump_state(nr_ice_component *comp, int log_level);
 
+/* Stealthfox: sintetizza UN srflx con l'IP di uscita dichiarato, quando nessun
+ * srflx reale arrivera'. Torna 0 se l'ha iniettato, esce da sola se l'IP non e'
+ * dichiarato (nessun proxy). Ha DUE chiamanti, e sono i due soli momenti in cui
+ * si SA che il reale non arrivera': il gathering quando non e' stato creato
+ * nessun candidato srflx, e il ramo di fallimento dello STUN in
+ * ice_candidate.cpp. Chiamarla altrove rimette il doppio srflx. */
+int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
+                                           nr_transport_addr *base_addr);
+
 #endif

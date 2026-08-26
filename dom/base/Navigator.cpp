@@ -922,7 +922,7 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
   // (rule 6). The pref defaults to -1, so a build launched without
   // invisible_core keeps exactly the previous behaviour.
   if (aCallerType != CallerType::System &&
-      mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
+      mozilla::gfx::StealthEngineActive()) {
     // No compiled floor (engine rule 7, 2026-08-09). The "? ... : 0" that used
     // to close this line was a second answer for a declared field, and at the
     // call site a wrong one is indistinguishable from a right one. A missing

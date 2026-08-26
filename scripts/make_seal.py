@@ -60,13 +60,17 @@ ENTRY_REL = {
     "linux": "firefox",
     "darwin": "Firefox.app/Contents/MacOS/firefox",
 }
-# (platform, arch) -> the archive-name infix release.yml produces
+# (platform, arch) -> the archive-name infix release.yml produces.
+# macOS uscito il 2026-08-26: da firefox-21 la pipeline produce TRE gambe, non
+# cinque, e una release senza mac non e' piu' "incompleta". darwin resta pero'
+# in ENTRY_REL e in NAME_RE qui sotto, di proposito: republish.yml ri-sigilla i
+# tag STORICI (firefox-20 e giu') che il mac ce l'avevano, e senza saperlo
+# leggere quel workflow si romperebbe. Si smette di PRETENDERE il mac, non di
+# saperlo leggere.
 EXPECTED = {
     ("linux", "x86_64"): "-linux-x86_64.tar.gz",
     ("linux", "arm64"): "-linux-arm64.tar.gz",
     ("win32", "x86_64"): "-win-x86_64.zip",
-    ("darwin", "arm64"): "-macos-arm64.tar.gz",
-    ("darwin", "x86_64"): "-macos-x86_64.tar.gz",
 }
 NAME_RE = re.compile(r"^firefox-(?P<ver>[0-9.]+)-stealth-(?P<os>win|linux|macos)-(?P<arch>x86_64|arm64)\.(zip|tar\.gz)$")
 

@@ -437,7 +437,7 @@ static PointerCapabilities GetPointerCapabilities(const Document* aDocument,
   // interfaces present (the host has touch) with maxTouchPoints 0 and
   // `any-pointer: coarse` false: a machine that supports touch events, has no
   // touch points, and has no coarse pointer. No such machine exists.
-  if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
+  if (mozilla::gfx::StealthEngineActive()) {
     const int32_t declared =
         aID == LookAndFeel::IntID::PrimaryPointerCapabilities
             ? mozilla::StaticPrefs::zoom_stealth_pointer_primary()

@@ -5,7 +5,6 @@
 "use strict";
 
 const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
-const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
 const { ChannelEventSinkFactory } = ChromeUtils.importESModule("chrome://juggler/content/ChannelEventSink.sys.mjs");
 
 
@@ -18,13 +17,6 @@ const CC = Components.Constructor;
 const helper = new Helper();
 
 const UINT32_MAX = Math.pow(2, 32)-1;
-
-const BinaryInputStream = CC('@mozilla.org/binaryinputstream;1', 'nsIBinaryInputStream', 'setInputStream');
-const BinaryOutputStream = CC('@mozilla.org/binaryoutputstream;1', 'nsIBinaryOutputStream', 'setOutputStream');
-const StorageStream = CC('@mozilla.org/storagestream;1', 'nsIStorageStream', 'init');
-
-// Cap response storage with 100Mb per tracked tab.
-const MAX_RESPONSE_STORAGE_SIZE = 100 * 1024 * 1024;
 
 const pageNetworkSymbol = Symbol('PageNetwork');
 
@@ -44,7 +36,6 @@ export class PageNetwork {
     helper.decorateAsEventEmitter(this);
     this._target = target;
     this._extraHTTPHeaders = null;
-    this._responseStorage = new ResponseStorage(MAX_RESPONSE_STORAGE_SIZE, MAX_RESPONSE_STORAGE_SIZE / 10);
     this._requestInterceptionEnabled = false;
     // This is requestId => NetworkRequest map, only contains requests that are
     // awaiting interception action (abort, resume, fulfill) over the protocol.
@@ -83,12 +74,6 @@ export class PageNetwork {
 
   abortInterceptedRequest(requestId, errorCode) {
     this._takeIntercepted(requestId).abort(errorCode);
-  }
-
-  getResponseBody(requestId) {
-    if (!this._responseStorage)
-      throw new Error('Responses are not tracked for the given browser');
-    return this._responseStorage.getBase64EncodedResponse(requestId);
   }
 
   _takeIntercepted(requestId) {
@@ -154,8 +139,6 @@ class NetworkRequest {
       overrideRequestHeaders(httpChannel, this._overriddenHeadersForRedirect);
     else if (this._pageNetwork)
       appendExtraHTTPHeaders(httpChannel, this._pageNetwork.combinedExtraHTTPHeaders());
-
-    this._responseBodyChunks = [];
 
     httpChannel.QueryInterface(Ci.nsITraceableChannel);
     this._originalListener = httpChannel.setNewListener(this);
@@ -384,17 +367,11 @@ class NetworkRequest {
     // we do not get onResponse normally, but we do get nsIStreamListener notifications.
     this._sendOnResponse(false);
 
-    const iStream = new BinaryInputStream(aInputStream);
-    const sStream = new StorageStream(8192, aCount, null);
-    const oStream = new BinaryOutputStream(sStream.getOutputStream(0));
-
-    // Copy received data as they come.
-    const data = iStream.readBytes(aCount);
-    this._responseBodyChunks.push(data);
-
-    oStream.writeBytes(data, aCount);
+    // Stealthfox 2026-08-24: response.body() e' rifiutato (Network.getResponseBody
+    // non esiste piu'), quindi il corpo non lo legge mai nessuno - pass-through
+    // diretto, senza copiarlo.
     try {
-      this._originalListener.onDataAvailable(aRequest, sStream.newInputStream(0), aOffset, aCount);
+      this._originalListener.onDataAvailable(aRequest, aInputStream, aOffset, aCount);
     } catch (e) {
       // Be ready to original listener exceptions.
     }
@@ -432,16 +409,10 @@ class NetworkRequest {
       // For requests with internal redirect (e.g. intercepted by Service Worker),
       // we do not get onResponse normally, but we do get nsIRequestObserver notifications.
       this._sendOnResponse(false);
-      const body = this._responseBodyChunks.join('');
-      const pageNetwork = this._pageNetwork;
-      if (pageNetwork)
-        pageNetwork._responseStorage.addResponseBody(this, body);
       this._sendOnRequestFinished();
     } else {
       this._sendOnRequestFailed(aStatusCode);
     }
-
-    delete this._responseBodyChunks;
   }
 
   _shouldIntercept() {
@@ -490,7 +461,10 @@ class NetworkRequest {
       isIntercepted,
       requestId: this.requestId,
       redirectedFrom: this.redirectedFromId,
-      postData: readRequestPostData(this.httpChannel),
+      // Stealthfox 2026-08-24: mai letto - clonava lo stream e lo
+      // base64-codificava per ogni POST, e nessuno lo chiede senza
+      // page.route()/request.postData().
+      postData: undefined,
       headers: requestHeaders(this.httpChannel),
       method: this.httpChannel.requestMethod,
       navigationId: this.navigationId,
@@ -544,12 +518,11 @@ class NetworkRequest {
       // remoteAddress is not defined for cached requests.
     }
 
-    const fromServiceWorker = this._networkObserver._channelIdsFulfilledByServiceWorker.has(this.requestId);
-    this._networkObserver._channelIdsFulfilledByServiceWorker.delete(this.requestId);
-
     pageNetwork.emit(PageNetwork.Events.Response, {
       requestId: this.requestId,
-      securityDetails: getSecurityDetails(this.httpChannel),
+      // Stealthfox 2026-08-24: niente parsing del certificato per ogni
+      // risposta - nessuno lo chiede senza response.securityDetails().
+      securityDetails: null,
       fromCache,
       headers,
       remoteIPAddress,
@@ -557,7 +530,9 @@ class NetworkRequest {
       status,
       statusText,
       timing,
-      fromServiceWorker,
+      // Stealthfox 2026-08-24: sempre false, il rilevamento (l'observer
+      // service-worker-synthesized-response) e' sparito.
+      fromServiceWorker: false,
     }, this._frameId);
   }
 
@@ -598,19 +573,13 @@ class NetworkRequest {
 }
 
 export class NetworkObserver {
-  static instance() {
-    return NetworkObserver._instance || null;
-  }
-
   constructor(targetRegistry) {
     helper.decorateAsEventEmitter(this);
-    NetworkObserver._instance = this;
 
     this._targetRegistry = targetRegistry;
 
     this._channelToRequest = new Map();  // http channel -> network request
     this._expectedRedirect = new Map();  // expected redirect channel id (string) -> network request
-    this._channelIdsFulfilledByServiceWorker = new Set();  // http channel ids that were fulfilled by service worker
 
     const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
     this._channelProxyFilter = {
@@ -647,7 +616,6 @@ export class NetworkObserver {
       helper.addObserver(this._onResponse.bind(this, false /* fromCache */), 'http-on-examine-response'),
       helper.addObserver(this._onResponse.bind(this, true /* fromCache */), 'http-on-examine-cached-response'),
       helper.addObserver(this._onResponse.bind(this, true /* fromCache */), 'http-on-examine-merged-response'),
-      helper.addObserver(this._onServiceWorkerResponse.bind(this), 'service-worker-synthesized-response'),
     ];
   }
 
@@ -702,86 +670,6 @@ export class NetworkObserver {
       request._sendOnResponse(fromCache);
   }
 
-  _onServiceWorkerResponse(channel, topic) {
-    if (!(channel instanceof Ci.nsIHttpChannel))
-      return;
-    const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
-    const channelId = httpChannel.channelId + '';
-    this._channelIdsFulfilledByServiceWorker.add(channelId);
-  }
-
-  dispose() {
-    this._activityDistributor.removeObserver(this);
-    ChannelEventSinkFactory.unregister();
-    helper.removeListeners(this._eventListeners);
-  }
-}
-
-const protocolVersionNames = {
-  [Ci.nsITransportSecurityInfo.TLS_VERSION_1]: 'TLS 1',
-  [Ci.nsITransportSecurityInfo.TLS_VERSION_1_1]: 'TLS 1.1',
-  [Ci.nsITransportSecurityInfo.TLS_VERSION_1_2]: 'TLS 1.2',
-  [Ci.nsITransportSecurityInfo.TLS_VERSION_1_3]: 'TLS 1.3',
-};
-
-function getSecurityDetails(httpChannel) {
-  const securityInfo = httpChannel.securityInfo;
-  if (!securityInfo)
-    return null;
-  securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-  if (!securityInfo.serverCert)
-    return null;
-  return {
-    protocol: protocolVersionNames[securityInfo.protocolVersion] || '<unknown>',
-    subjectName: securityInfo.serverCert.commonName,
-    issuer: securityInfo.serverCert.issuerCommonName,
-    // Convert to seconds.
-    validFrom: securityInfo.serverCert.validity.notBefore / 1000 / 1000,
-    validTo: securityInfo.serverCert.validity.notAfter / 1000 / 1000,
-  };
-}
-
-function readRequestPostData(httpChannel) {
-  if (!(httpChannel instanceof Ci.nsIUploadChannel))
-    return undefined;
-  let iStream = httpChannel.uploadStream;
-  if (!iStream)
-    return undefined;
-  const isSeekableStream = iStream instanceof Ci.nsISeekableStream;
-  const isTellableStream = iStream instanceof Ci.nsITellableStream;
-
-  // For some reason, we cannot rewind back big streams,
-  // so instead we should clone them.
-  const isCloneable = iStream instanceof Ci.nsICloneableInputStream;
-  if (isCloneable)
-    iStream = iStream.clone();
-
-  let prevOffset;
-  // Surprisingly, stream might implement `nsITellableStream` without
-  // implementing the `tell` method.
-  if (isSeekableStream && isTellableStream && iStream.tell) {
-    prevOffset = iStream.tell();
-    iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
-  }
-
-  // Read data from the stream.
-  let result = undefined;
-  try {
-    const maxLen = iStream.available();
-    // Cap at 10Mb.
-    if (maxLen <= 10 * 1024 * 1024) {
-      const buffer = NetUtil.readInputStreamToString(iStream, maxLen);
-      result = btoa(buffer);
-    }
-  } catch (err) {
-  }
-
-  // Seek locks the file, so seek to the beginning only if necko hasn't
-  // read it yet, since necko doesn't seek to 0 before reading (at lest
-  // not till 459384 is fixed).
-  if (isSeekableStream && prevOffset == 0 && !isCloneable)
-    iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
-  return result;
 }
 
 function requestHeaders(httpChannel) {
@@ -858,56 +746,6 @@ function appendExtraHTTPHeaders(httpChannel, headers) {
   }
 }
 
-class ResponseStorage {
-  constructor(maxTotalSize, maxResponseSize) {
-    this._totalSize = 0;
-    this._maxResponseSize = maxResponseSize;
-    this._maxTotalSize = maxTotalSize;
-    this._responses = new Map();
-  }
-
-  addResponseBody(request, body) {
-    if (body.length > this._maxResponseSize) {
-      this._responses.set(request.requestId, {
-        evicted: true,
-        body: '',
-      });
-      return;
-    }
-    let encodings = [];
-    // Note: fulfilled request comes with decoded body right away.
-    if ((request.httpChannel instanceof Ci.nsIEncodedChannel) && request.httpChannel.contentEncodings && !request.httpChannel.applyConversion && !request._fulfilled) {
-      const encodingHeader = request.httpChannel.getResponseHeader("Content-Encoding");
-      encodings = encodingHeader.split(/\s*\t*,\s*\t*/);
-    }
-    this._responses.set(request.requestId, {body, encodings});
-    this._totalSize += body.length;
-    if (this._totalSize > this._maxTotalSize) {
-      for (let [requestId, response] of this._responses) {
-        this._totalSize -= response.body.length;
-        response.body = '';
-        response.evicted = true;
-        if (this._totalSize < this._maxTotalSize)
-          break;
-      }
-    }
-  }
-
-  getBase64EncodedResponse(requestId) {
-    const response = this._responses.get(requestId);
-    if (!response)
-      throw new Error(`Request "${requestId}" is not found`);
-    if (response.evicted)
-      return {base64body: '', evicted: true};
-    let result = response.body;
-    if (response.encodings && response.encodings.length) {
-      for (const encoding of response.encodings)
-        result = convertString(result, encoding, 'uncompressed');
-    }
-    return {base64body: btoa(result)};
-  }
-}
-
 function responseHead(httpChannel, opt_statusCode, opt_statusText) {
   const headers = [];
   let status = opt_statusCode || 0;
@@ -956,46 +794,6 @@ function setPostData(httpChannel, postData, headers) {
     }
   }
   httpChannel.explicitSetUploadStream(synthesized, contentType, -1, httpChannel.requestMethod, false);
-}
-
-function convertString(s, source, dest) {
-  const is = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
-    Ci.nsIStringInputStream
-  );
-  is.setByteStringData(s);
-  const listener = Cc["@mozilla.org/network/stream-loader;1"].createInstance(
-    Ci.nsIStreamLoader
-  );
-  let result = [];
-  listener.init({
-    onStreamComplete: function onStreamComplete(
-      loader,
-      context,
-      status,
-      length,
-      data
-    ) {
-      const array = Array.from(data);
-      const kChunk = 100000;
-      for (let i = 0; i < length; i += kChunk) {
-        const len = Math.min(kChunk, length - i);
-        const chunk = String.fromCharCode.apply(this, array.slice(i, i + len));
-        result.push(chunk);
-      }
-    },
-  });
-  const converter = Cc["@mozilla.org/streamConverters;1"].getService(
-    Ci.nsIStreamConverterService
-  ).asyncConvertData(
-    source,
-    dest,
-    listener,
-    null
-  );
-  converter.onStartRequest(null, null);
-  converter.onDataAvailable(null, is, 0, s.length);
-  converter.onStopRequest(null, null, null);
-  return result.join('');
 }
 
 const errorMap = {

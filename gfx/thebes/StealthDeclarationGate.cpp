@@ -41,7 +41,7 @@ struct IntDeclaration {
 void StealthAssertDeclarationsComplete() {
   // Stock behaviour when the engine is off: no seed, no declarations, nothing
   // to be complete about.
-  if (StaticPrefs::zoom_stealth_fpp_hw_seed() <= 0) {
+  if (!StealthEngineActive()) {
     return;
   }
 
@@ -262,7 +262,7 @@ void StealthAssertDeclarationsComplete() {
 }
 
 Maybe<CSSIntPoint> StealthDeclaredWindowOrigin() {
-  if (StaticPrefs::zoom_stealth_fpp_hw_seed() <= 0) {
+  if (!StealthEngineActive()) {
     // Stock Firefox. Not an incomplete declaration, the absence of one.
     return Nothing();
   }

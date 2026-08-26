@@ -96,6 +96,7 @@
 #include "mozilla/dom/FileSystemEntry.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIContentPrefService2.h"
+#include "nsIDocShell.h"
 #include "nsIFile.h"
 #include "nsIMIMEService.h"
 #include "nsIObserverService.h"
@@ -999,6 +1000,29 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
     // type=file opens a file picker.
     obs->NotifyObservers(ToSupports(this), "file-input-picker-opening",
                          nullptr);
+  }
+
+  // Stealthfox: quando l'automazione ha chiesto di intercettare il dialogo, il
+  // dialogo NATIVO non si apre - e la notifica qui sopra e' gia' l'evento che
+  // il lato JS ascolta (juggler/content/PageAgent.js), con l'elemento come
+  // subject, che e' esattamente cio' che gli serve.
+  //
+  // Il flag lo scrive juggler/content/main.js su richiesta di
+  // `Page.setInterceptFileChooserDialog`. Fino al 2026-08-25 nessuno lo
+  // LEGGEVA: era memorizzato e basta (il commento in nsDocShell.cpp lo dice,
+  // "storage only"), quindi `expect_file_chooser()` restava appeso mentre una
+  // finestra "Apri file" di Windows si apriva davvero e rubava il focus.
+  //
+  // Si esce PRIMA di entrambi i rami che aprono il picker, e senza toccare
+  // mPickerRunning/SetOpenState: nessun picker sta girando, e dichiarare il
+  // contrario impedirebbe l'apertura successiva ("Just one nsIFilePicker is
+  // allowed").
+  if (nsIDocShell* ds = doc->GetDocShell()) {
+    bool interceptFileChooser = false;
+    ds->GetFileInputInterceptionEnabled(&interceptFileChooser);
+    if (interceptFileChooser) {
+      return NS_OK;
+    }
   }
 
   if (!oldFiles.IsEmpty() && aType != FILE_PICKER_DIRECTORY) {

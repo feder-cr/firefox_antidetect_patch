@@ -20,6 +20,7 @@
 #include FT_TRUETYPE_TABLES_H
 #include FT_ADVANCES_H
 #include FT_MULTIPLE_MASTERS_H
+#include "StealthDeclarationGate.h"
 
 #ifndef FT_LOAD_COLOR
 #  define FT_LOAD_COLOR (1L << 20)
@@ -736,7 +737,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
     // glyf, CFF and CFF2 alike and needs no FreeType face at all, so a CFF or a
     // bitmap-strike face is served by the same code as a bundled TrueType one.
     bool declaredAdvance = false;
-    if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0 &&
+    if (mozilla::gfx::StealthEngineActive() &&
         GetAdjustedSize() > 0.0) {
       gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
       const uint16_t upem = GetFontEntry()->UnitsPerEm();
@@ -886,7 +887,7 @@ bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
   // reads glyf, CFF and CFF2 alike, so the declared path is TOTAL and there is
   // no case left to fall through with. If it fails, the font has no usable
   // unitsPerEm at all and the answer below would be meaningless too.
-  if (mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed() > 0) {
+  if (mozilla::gfx::StealthEngineActive()) {
     gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
     const uint16_t upem = mFontEntry->UnitsPerEm();
     int32_t xb, yb, w, h;

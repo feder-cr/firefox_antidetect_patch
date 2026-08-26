@@ -64,9 +64,15 @@ export function initialize(browsingContext, docShell) {
   const contextCrossProcessCookie = Services.cpmm.sharedData.get('juggler:context-cookie-' + browsingContext.originAttributes.userContextId) || { initScripts: [], bindings: [], settings: {} };
   const pageCrossProcessCookie = Services.cpmm.sharedData.get('juggler:page-cookie-' + browsingContext.browserId) || { initScripts: [], bindings: [], interceptFileChooserDialog: false };
 
-  // Enforce focused state for all top level documents.
-  docShell.overrideHasFocus = true;
-  docShell.forceActiveState = true;
+  // STEALTHFOX: qui c'erano docShell.overrideHasFocus e forceActiveState,
+  // messi su OGNI documento di primo livello. Sono codice morto: verificato in
+  // tutto l'albero che l'unico lettore e' la coppia getter/setter in
+  // nsDocShell.cpp:2891-2917, e che ne' Document::HasFocus() ne'
+  // ComputeVisibilityState() li guardano. Il commento in Document.cpp:17188 e'
+  // nostro e lo dice: "GetForceActiveState removed in 150".
+  //
+  // Misurato prima di toglierli, per non fidarsi del solo sorgente: su tre
+  // schede il fuoco resta UNO, come in un browser vero, sia con sia senza.
   // Stealth: keep BFCache enabled by default so pageshow event.persisted
   // behaves like a real user. Set zoom.stealth.juggler.disallow_bfcache=true
   // to restore Juggler's original behavior (needed for tests that expect
@@ -129,8 +135,6 @@ export function initialize(browsingContext, docShell) {
       });
     },
 
-    dispose() {
-    },
   });
 
   return data;

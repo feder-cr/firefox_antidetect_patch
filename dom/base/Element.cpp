@@ -205,6 +205,7 @@
 #include "nsThreadUtils.h"
 #include "nsWindowSizes.h"
 #include "nsXULElement.h"
+#include "StealthDeclarationGate.h"
 
 #ifdef DEBUG
 #  include "nsRange.h"
@@ -1430,7 +1431,7 @@ ShadowRoot* Element::GetShadowRootForBindings(nsIPrincipal& aSubject) const {
   // locator reached an element inside a closed root - and inside a closed root
   // nested in another one - while the page's own script still read null off
   // the same host.
-  if (StaticPrefs::zoom_stealth_fpp_hw_seed() <= 0) {
+  if (!mozilla::gfx::StealthEngineActive()) {
     return nullptr;  // stock Firefox
   }
 

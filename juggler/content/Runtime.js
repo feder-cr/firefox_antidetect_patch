@@ -415,10 +415,27 @@ class ExecutionContext {
     //
     // Nei worker `serializationGlobal` e' assente e si ricade sul global del
     // contesto, che nei worker e' gia' l'unico che c'e'.
-    this._serializationGlobal = serializationGlobal || null;
-    this._serializationDebuggee = serializationGlobal
-        ? runtime._debugger.addDebuggee(serializationGlobal)
-        : this._debuggee;
+    // ⛔ SI COSTRUISCE ALLA PRIMA SERIALIZZAZIONE, NON A OGNI FRAME.
+    //
+    // Prima il global arrivava gia' costruito, perche' era un ARGOMENTO: quindi
+    // una sandbox in piu' nasceva per ogni frame di ogni documento, anche dove
+    // nessuno serializzava mai niente. Su una pagina con cinquanta iframe sono
+    // cinquanta global pagati per nulla. Adesso arriva una FABBRICA e si chiama
+    // al primo uso vero.
+    //
+    // `_ensureJsonStringify` era gia' pigra per una ragione diversa e piu'
+    // stretta - non toccare gli intrinseci prima del primo script della pagina -
+    // ma la sandbox sotto di lei non lo era, quindi meta' del costo restava.
+    // ⛔ E' SEMPRE UNA FABBRICA, mai un global gia' costruito. La prima stesura
+    // accettava tutti e due e distingueva con `typeof === 'function'`: un
+    // parametro che significa due cose diverse a seconda del tipo e' esattamente
+    // cio' che questo progetto ha gia' pagato una volta - `push_range` che
+    // tornava uno o tre token senza dirlo - e prima o poi qualcuno lo legge
+    // nell'altro senso. I worker non ne passano nessuna e ricadono sul proprio
+    // global, che li' e' l'unico che esista.
+    this._fabbricaSerializzazione = serializationGlobal || null;
+    this._serializationGlobal = null;
+    this._serializationDebuggeeCache = null;
     this._remoteObjects = new Map();
     this._id = generateId();
     this._auxData = auxData;
@@ -430,9 +447,28 @@ class ExecutionContext {
     this._jsonStringifyObject = null;
   }
 
+  // Il debuggee della serializzazione, risolto al primo uso. Nei worker non
+  // c'e' nessuna fabbrica e si ricade sul global del contesto, che li' e' l'unico
+  // che esista.
+  _serializzatore() {
+    if (!this._serializationDebuggeeCache) {
+      const global = this._fabbricaSerializzazione
+          ? this._fabbricaSerializzazione()
+          : null;
+      if (global) {
+        this._serializationGlobal = global;
+        this._serializationDebuggeeCache =
+            this._runtime._debugger.addDebuggee(global);
+      } else {
+        this._serializationDebuggeeCache = this._debuggee;
+      }
+    }
+    return this._serializationDebuggeeCache;
+  }
+
   _ensureJsonStringify() {
     if (!this._jsonStringifyObject)
-      this._jsonStringifyObject = this._serializationDebuggee.executeInGlobal(_STEALTH_JSON_STRINGIFY_SRC).return;
+      this._jsonStringifyObject = this._serializzatore().executeInGlobal(_STEALTH_JSON_STRINGIFY_SRC).return;
     return this._jsonStringifyObject;
   }
 
@@ -532,6 +568,31 @@ class ExecutionContext {
     }, this._contextGlobal, {
       defineAs: name,
     });
+    // STEALTHFOX: non enumerabile.
+    //
+    // exportFunction crea la proprieta' ENUMERABILE, quindi finiva dentro
+    // for..in e Object.keys(window): la scansione piu' economica che un sito
+    // possa fare. Qui passa il TRASPORTO interno di Playwright, non il nome
+    // che l'utente ha scelto (quello lo crea il controller iniettato dal lato
+    // JavaScript), quindi nasconderlo non cambia nessuna API.
+    //
+    // Resta visibile a getOwnPropertyNames, e non puo' essere altrimenti: la
+    // pagina deve poterla chiamare. Misurato il 2026-08-24: un lancio normale
+    // non arriva mai qui, ci arriva solo chi chiama expose_function.
+    // ⛔ SENZA L'XRAY. La prima stesura leggeva il descrittore dal global
+    // avvolto, e l'Xray non lascia toccare la proprieta' sottostante: misurato,
+    // il controller diventava non enumerabile (quello lo definisce il JS
+    // iniettato, dal lato contenuto) e il canale restava dentro Object.keys.
+    // Il waiver serve a operare sull'oggetto vero, e vale solo qui: la
+    // proprieta' l'abbiamo appena creata noi, non e' del sito.
+    try {
+      const nudo = Cu.waiveXrays(this._contextGlobal);
+      const descr = Object.getOwnPropertyDescriptor(nudo, name);
+      if (descr && descr.enumerable) {
+        descr.enumerable = false;
+        Object.defineProperty(nudo, name, descr);
+      }
+    } catch (e) {}
     this.evaluateScriptSafely(script);
   }
 
@@ -640,7 +701,7 @@ class ExecutionContext {
   }
 
   _serialize(obj) {
-    const result = this._serializationDebuggee.executeInGlobalWithBindings('stringify(e)', {e: obj, stringify: this._ensureJsonStringify()}, {useInnerBindings: true});
+    const result = this._serializzatore().executeInGlobalWithBindings('stringify(e)', {e: obj, stringify: this._ensureJsonStringify()}, {useInnerBindings: true});
     if (result.throw)
       throw new Error('Object is not serializable');
     return result.return === undefined ? undefined : JSON.parse(result.return);

@@ -97,8 +97,15 @@ export class PageAgent {
     this._eventListeners = [
       helper.addObserver(this._linkClicked.bind(this, false), 'juggler-link-click'),
       helper.addObserver(this._linkClicked.bind(this, true), 'juggler-link-click-sync'),
-      helper.addObserver(this._onWindowOpenInNewContext.bind(this), 'juggler-window-open-in-new-context'),
-      helper.addObserver(this._filePickerShown.bind(this), 'juggler-file-picker-shown'),
+      // 'file-input-picker-opening' e' l'observer che Gecko notifica GIA' da
+      // se', con l'elemento come subject (upstream lo usa per WebDriver BiDi).
+      // Prima qui c'era 'juggler-file-picker-shown', che in tutto l'albero
+      // compariva SOLO su questa riga: nessuno lo notificava mai, quindi
+      // `page.on('filechooser')` non poteva scattare. Ascoltare quello di
+      // upstream invece di inventarne uno nostro toglie una divergenza a ogni
+      // rebase; la sola cosa che il nostro C++ aggiunge e' NON aprire il
+      // dialogo nativo quando l'intercettazione e' accesa.
+      helper.addObserver(this._filePickerShown.bind(this), 'file-input-picker-opening'),
       helper.addObserver(this._onDocumentOpenLoad.bind(this), 'juggler-document-open-loaded'),
       helper.on(this._frameTree, 'frameattached', this._onFrameAttached.bind(this)),
       helper.on(this._frameTree, 'framedetached', this._onFrameDetached.bind(this)),
@@ -144,17 +151,15 @@ export class PageAgent {
       this._runtime.events.onBindingCalled(this._onBindingCalled.bind(this)),
       browserChannel.register('page', {
         adoptNode: this._adoptNode.bind(this),
-        crash: this._crash.bind(this),
         describeNode: this._describeNode.bind(this),
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchDragEvent: this._dispatchDragEvent.bind(this),
-        dispatchTouchEvent: this._dispatchTouchEvent.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
         getContentQuads: this._getContentQuads.bind(this),
-        getFullAXTree: this._getFullAXTree.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
+        dispatchTrustedInputEvents: this._dispatchTrustedInputEvents.bind(this),
         evaluate: this._runtime.evaluate.bind(this._runtime),
         callFunction: this._runtime.callFunction.bind(this._runtime),
         getObjectProperties: this._runtime.getObjectProperties.bind(this._runtime),
@@ -222,14 +227,6 @@ export class PageAgent {
     if (anchorElement.ownerGlobal.docShell !== this._docShell)
       return;
     this._browserPage.emit('pageLinkClicked', { phase: sync ? 'after' : 'before' });
-  }
-
-  _onWindowOpenInNewContext(docShell) {
-    // TODO: unify this with _onWindowOpen if possible.
-    const frame = this._frameTree.frameForDocShell(docShell);
-    if (!frame)
-      return;
-    this._browserPage.emit('pageWillOpenNewWindowAsynchronously');
   }
 
   _filePickerShown(inputElement) {
@@ -364,6 +361,26 @@ export class PageAgent {
     if (!toPrincipal.subsumes(fromPrincipal))
       return { remoteObject: null };
     return { remoteObject: context.rawValueToRemoteObject(unsafeObject) };
+  }
+
+  async _dispatchTrustedInputEvents({objectId, frameId, types}) {
+    // Il chrome-side gemello del dispatch che lo script iniettato faceva da
+    // solo, lato contenuto, per select_option e fill non testuale. La
+    // differenza e' dispatchDOMEventViaPresShellForTesting invece di
+    // element.dispatchEvent: quella chiama SetTrusted(true) sull'evento
+    // prima di consegnarlo, questo no - ed e' il motivo per cui esisteva la
+    // divergenza misurata, non una scelta deliberata.
+    const frame = this._frameTree.frame(frameId);
+    if (!frame)
+      throw new Error('Failed to find frame with id = ' + frameId);
+    const unsafeObject = frame.unsafeObject(objectId);
+    if (!unsafeObject)
+      throw new Error('Object not found for id = ' + objectId);
+    const utils = frame.domWindow().windowUtils;
+    for (const type of types) {
+      const event = new (frame.domWindow().Event)(type, { bubbles: true, cancelable: true, composed: true });
+      utils.dispatchDOMEventViaPresShellForTesting(unsafeObject, event);
+    }
   }
 
   async _setFileInputFiles({objectId, frameId, files}) {
@@ -569,145 +586,6 @@ export class PageAgent {
   async _insertText({text}) {
     const frame = this._frameTree.mainFrame();
     frame.textInputProcessor().commitCompositionWith(text);
-  }
-
-  async _crash() {
-    dump(`Crashing intentionally\n`);
-    // This is to intentionally crash the frame.
-    // We crash by using js-ctypes and dereferencing
-    // a bad pointer. The crash should happen immediately
-    // upon loading this frame script.
-    const { ctypes } = ChromeUtils.importESModule('resource://gre/modules/ctypes.sys.mjs');
-    ChromeUtils.privateNoteIntentionalCrash();
-    const zero = new ctypes.intptr_t(8);
-    const badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
-    badptr.contents;
-  }
-
-  async _getFullAXTree({objectId}) {
-    let unsafeObject = null;
-    if (objectId) {
-      unsafeObject = this._frameTree.mainFrame().unsafeObject(objectId);
-      if (!unsafeObject)
-        throw new Error(`No object found for id "${objectId}"`);
-    }
-
-    const service = Cc["@mozilla.org/accessibilityService;1"]
-      .getService(Ci.nsIAccessibilityService);
-    const document = this._frameTree.mainFrame().domWindow().document;
-    const docAcc = service.getAccessibleFor(document);
-
-    while (docAcc.document.isUpdatePendingForJugglerAccessibility)
-      await new Promise(x => this._frameTree.mainFrame().domWindow().requestAnimationFrame(x));
-
-    async function waitForQuiet() {
-      let state = {};
-      docAcc.getState(state, {});
-      if ((state.value & Ci.nsIAccessibleStates.STATE_BUSY) == 0)
-        return;
-      let resolve, reject;
-      const promise = new Promise((x, y) => {resolve = x, reject = y});
-      let eventObserver = {
-        observe(subject, topic) {
-          if (topic !== "accessible-event") {
-            return;
-          }
-
-          // If event type does not match expected type, skip the event.
-          let event = subject.QueryInterface(Ci.nsIAccessibleEvent);
-          if (event.eventType !== Ci.nsIAccessibleEvent.EVENT_STATE_CHANGE) {
-            return;
-          }
-
-          // If event's accessible does not match expected accessible,
-          // skip the event.
-          if (event.accessible !== docAcc) {
-            return;
-          }
-
-          Services.obs.removeObserver(this, "accessible-event");
-          resolve();
-        },
-      };
-      Services.obs.addObserver(eventObserver, "accessible-event");
-      return promise;
-    }
-    function buildNode(accElement) {
-      let a = {}, b = {};
-      accElement.getState(a, b);
-      const tree = {
-        role: service.getStringRole(accElement.role),
-        name: accElement.name || '',
-      };
-      if (unsafeObject && unsafeObject === accElement.DOMNode)
-        tree.foundObject = true;
-      for (const userStringProperty of [
-        'value',
-        'description'
-      ]) {
-        tree[userStringProperty] = accElement[userStringProperty] || undefined;
-      }
-
-      const states = {};
-      for (const name of service.getStringStates(a.value, b.value))
-        states[name] = true;
-      for (const name of ['selected',
-        'focused',
-        'pressed',
-        'focusable',
-        'required',
-        'invalid',
-        'modal',
-        'editable',
-        'busy',
-        'checked',
-        'multiselectable']) {
-        if (states[name])
-          tree[name] = true;
-      }
-
-      if (states['multi line'])
-        tree['multiline'] = true;
-      if (states['editable'] && states['readonly'])
-        tree['readonly'] = true;
-      if (states['checked'])
-        tree['checked'] = true;
-      if (states['mixed'])
-        tree['checked'] = 'mixed';
-      if (states['expanded'])
-        tree['expanded'] = true;
-      else if (states['collapsed'])
-        tree['expanded'] = false;
-      if (!states['enabled'])
-        tree['disabled'] = true;
-
-      const attributes = {};
-      if (accElement.attributes) {
-        for (const { key, value } of accElement.attributes.enumerate()) {
-          attributes[key] = value;
-        }
-      }
-      for (const numericalProperty of ['level']) {
-        if (numericalProperty in attributes)
-          tree[numericalProperty] = parseFloat(attributes[numericalProperty]);
-      }
-      for (const stringProperty of ['tag', 'roledescription', 'valuetext', 'orientation', 'autocomplete', 'keyshortcuts', 'haspopup']) {
-        if (stringProperty in attributes)
-          tree[stringProperty] = attributes[stringProperty];
-      }
-      const children = [];
-
-      for (let child = accElement.firstChild; child; child = child.nextSibling) {
-        children.push(buildNode(child));
-      }
-      if (children.length)
-        tree.children = children;
-      return tree;
-    }
-    await waitForQuiet();
-    return {
-      tree: buildNode(docAcc)
-    };
   }
 }
 
