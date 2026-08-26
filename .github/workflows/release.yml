@@ -52,6 +52,15 @@ jobs:
           - leg: linux-x86_64
             runner: ubuntu-24.04
             family: linux
+            # ⛔ Il triplet HOST va detto a mano su questa gamba, o configure si
+            # ferma con "Don't know how to translate x86_64-pc-linux-gnu for
+            # rustc". L'immagine ubuntu-24.04 ora fa riportare al compilatore C
+            # `x86_64-pc-linux-gnu`, che Firefox non sa mappare sul nome che
+            # rustc usa (`x86_64-unknown-linux-gnu`) - ed e' lo stesso sistema,
+            # cambia solo come si chiama. A firefox-20 non serviva: la matrice
+            # qui e' identica, a cambiare e' stata l'immagine sotto.
+            # Le altre due gambe traducono da sole e restano intatte.
+            host: x86_64-unknown-linux-gnu
             target: ''
             rust_target: x86_64-unknown-linux-gnu
             win_disables: 'no'
@@ -170,6 +179,7 @@ jobs:
             echo "ac_add_options --disable-debug-symbols"
           } >> .mozconfig
           if [ -n "${{ matrix.target }}" ]; then echo "ac_add_options --target=${{ matrix.target }}" >> .mozconfig; fi
+          if [ -n "${{ matrix.host }}" ]; then echo "ac_add_options --host=${{ matrix.host }}" >> .mozconfig; fi
           if [ "${{ matrix.win_disables }}" = "yes" ]; then
             { echo "ac_add_options --disable-default-browser-agent";
               echo "ac_add_options --disable-maintenance-service";
