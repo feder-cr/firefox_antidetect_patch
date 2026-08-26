@@ -10,9 +10,6 @@
 #           in-pipeline gate (the exact battle-tested script from the source repo).
 #   Win   → mach package; zip the CONTENTS of dist/firefox (clean tree, NOT
 #           dist/bin) so firefox.exe sits at the zip ROOT.
-#   macOS → mach package; ad-hoc codesign the .app; PRESERVE its internal relative
-#           symlinks (a .app legitimately has them — cp -aL would break it); verify
-#           every symlink is relative+internal; tar the bundle. --version self-gate.
 #
 # DRIVE GATE (the firefox-8 catcher): after build, every binary is DRIVEN by
 # Playwright on its native runner (launch via juggler + real page + JS roundtrip,
@@ -48,18 +45,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # ⛔ `host:` NON e' una proprieta' della gamba, e' una proprieta' del
+        # RUNNER: ogni gamba che gira su `ubuntu-24.04` deve dichiarare il
+        # triplet host, o configure si ferma con
+        #     ERROR: Don't know how to translate x86_64-pc-linux-gnu for rustc
+        # L'immagine ubuntu-24.04 di oggi fa riportare al compilatore C
+        # `x86_64-pc-linux-gnu`, e Firefox non sa mappare quel nome su quello
+        # che rustc usa. E' lo stesso sistema: cambia solo come si chiama.
+        # Vale anche per win-x86_64, che si CROSS-COMPILA da quel runner linux:
+        # il suo --target dice dove va, non da dove parte, e a fermarsi e' la
+        # rilevazione dell'HOST. linux-arm64 gira su `ubuntu-24.04-arm`, host
+        # aarch64, che si traduce da solo - infatti e' l'unica delle tre che ha
+        # superato configure.
+        # A firefox-20 non serviva a nessuna: la matrice qui e' identica campo
+        # per campo, a cambiare e' stata l'immagine sotto.
         include:
           - leg: linux-x86_64
             runner: ubuntu-24.04
             family: linux
-            # ⛔ Il triplet HOST va detto a mano su questa gamba, o configure si
-            # ferma con "Don't know how to translate x86_64-pc-linux-gnu for
-            # rustc". L'immagine ubuntu-24.04 ora fa riportare al compilatore C
-            # `x86_64-pc-linux-gnu`, che Firefox non sa mappare sul nome che
-            # rustc usa (`x86_64-unknown-linux-gnu`) - ed e' lo stesso sistema,
-            # cambia solo come si chiama. A firefox-20 non serviva: la matrice
-            # qui e' identica, a cambiare e' stata l'immagine sotto.
-            # Le altre due gambe traducono da sole e restano intatte.
             host: x86_64-unknown-linux-gnu
             target: ''
             rust_target: x86_64-unknown-linux-gnu
@@ -77,6 +80,7 @@ jobs:
           - leg: win-x86_64
             runner: ubuntu-24.04
             family: win
+            host: x86_64-unknown-linux-gnu
             target: x86_64-pc-windows-msvc
             rust_target: x86_64-pc-windows-msvc
             win_disables: 'yes'
