@@ -32,6 +32,14 @@ on:
       release_tag:
         description: 'release tag to publish the draft under (e.g. firefox-9)'
         required: true
+      wrapper_ref:
+        description: >
+          invisible_playwright ref the gate runs against. Defaults to main,
+          which is what will be published next and therefore the right thing to
+          validate a new binary with. Set it to a published TAG while the
+          wrapper is mid-rewrite: otherwise unfinished work on main blocks a
+          binary release that has nothing to do with it.
+        default: 'main'
 
 env:
   SOURCE_REPO: feder-cr/firefox_antidetect_patch
@@ -332,7 +340,20 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: feder-cr/invisible_playwright
-          ref: main
+          # ⛔ NOT hardcoded to main. The gate validates the BINARY, and the
+          # wrapper is only the instrument it is driven with: unfinished work
+          # on the wrapper's main must not be able to block a binary release.
+          # Default stays main, because main is what gets published next and is
+          # therefore the honest pairing - this is an escape hatch, not a
+          # change of policy.
+          #
+          # ⛔ AND THIS IS NOT THE SAME QUESTION AS THE CORE, which is
+          # installed from git@main a few steps below and must STAY that way:
+          # during a release the published core is one step behind BY
+          # CONSTRUCTION, because its version derives from a seal that cannot
+          # exist until this binary is built. Pinning the core to the index
+          # tests a pairing no user ever gets, and it bit on firefox-20.
+          ref: ${{ github.event.inputs.wrapper_ref || 'main' }}
           fetch-depth: 1
       - name: Download asset
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -459,7 +480,20 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: feder-cr/invisible_playwright
-          ref: main
+          # ⛔ NOT hardcoded to main. The gate validates the BINARY, and the
+          # wrapper is only the instrument it is driven with: unfinished work
+          # on the wrapper's main must not be able to block a binary release.
+          # Default stays main, because main is what gets published next and is
+          # therefore the honest pairing - this is an escape hatch, not a
+          # change of policy.
+          #
+          # ⛔ AND THIS IS NOT THE SAME QUESTION AS THE CORE, which is
+          # installed from git@main a few steps below and must STAY that way:
+          # during a release the published core is one step behind BY
+          # CONSTRUCTION, because its version derives from a seal that cannot
+          # exist until this binary is built. Pinning the core to the index
+          # tests a pairing no user ever gets, and it bit on firefox-20.
+          ref: ${{ github.event.inputs.wrapper_ref || 'main' }}
           fetch-depth: 1
       - name: Checkout source repo (for scripts/make_seal.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
