@@ -446,7 +446,7 @@ export class PageTarget {
     // is a different process from the content: the page cannot see it, and
     // it is absent from `page.screenshot()` by construction. See
     // `StealthCursor.js` for why that is the point and not a limitation.
-    this._stealthCursor = new StealthCursor(win);
+    this._stealthCursor = StealthCursor.forWindow(win);
     this._initialDPPX = this._linkedBrowser.browsingContext.overrideDPPX;
     this._url = 'about:blank';
     this._openerId = opener ? opener.id() : undefined;
@@ -778,7 +778,7 @@ export class PageTarget {
     // listeners on it and a pref observer, and a listener left on a window
     // that is going away is a leak nobody will look for here.
     if (this._stealthCursor) {
-      this._stealthCursor.dispose();
+      StealthCursor.releaseWindow(this._window);
       this._stealthCursor = null;
     }
     this._browserContext.pages.delete(this);
