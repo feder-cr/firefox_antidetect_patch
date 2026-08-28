@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
+const {StealthCursor} = ChromeUtils.importESModule('chrome://juggler/content/StealthCursor.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("resource://gre/modules/ContextualIdentityService.sys.mjs");
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
@@ -440,6 +441,12 @@ export class PageTarget {
     this._browserContext = browserContext;
     this._viewportSize = undefined;
     this._zoom = 1;
+    // ⛔ The visible pointer overlay, OFF unless `stealthfox.showcursor`
+    // says otherwise. It lives in the chrome document of this window, which
+    // is a different process from the content: the page cannot see it, and
+    // it is absent from `page.screenshot()` by construction. See
+    // `StealthCursor.js` for why that is the point and not a limitation.
+    this._stealthCursor = new StealthCursor(win);
     this._initialDPPX = this._linkedBrowser.browsingContext.overrideDPPX;
     this._url = 'about:blank';
     this._openerId = opener ? opener.id() : undefined;
@@ -767,6 +774,13 @@ export class PageTarget {
   dispose() {
     this.ensureContextMenuClosed();
     this._disposed = true;
+    // ⛔ Before anything else touches the window: the overlay holds
+    // listeners on it and a pref observer, and a listener left on a window
+    // that is going away is a leak nobody will look for here.
+    if (this._stealthCursor) {
+      this._stealthCursor.dispose();
+      this._stealthCursor = null;
+    }
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._linkedBrowser.browsingContext.browserId);
