@@ -133,6 +133,17 @@ const NODE_ID = '__stealth_cursor__';
 // and `tests/gates/chrome_cursor_cost.py` caught it: 1 ms on the gap the PAGE
 // measures between its own mousemove events, p = 0.0005. The count is now
 // written once at the first event and once at teardown.
+//
+// ⛔ AND REMOVING IT DID NOT MAKE THE FEATURE FREE, WHICH IS WHAT THE GREEN
+// AFTERWARDS SAID. That run was taken on a machine with another browser
+// alive: noise inflates the variance and makes the permutation test less
+// sensitive, so a real difference read as 0.000 ms. Measured on 2026-08-28 on
+// a machine the gate itself certified idle, the SAME 1 ms shift was still
+// there - with the arrow, and with the circle that predates it, so it was
+// never about the drawing. The A/A control, where this file refuses to build
+// the overlay at all while the bench believes it is comparing on against off,
+// reports 0.000 ms and p = 1.0000: the statistic does not accuse itself.
+// A false green under load left two places claiming this cost nothing.
 
 /**
  * ⛔ ONE OVERLAY PER CHROME WINDOW, NOT PER PAGE, and the difference is
@@ -207,6 +218,11 @@ export class StealthCursor {
     this._win = win;
     this._dot = null;
     this._style = null;
+    //: L'ultima posizione vista, e il frame gia' chiesto. Il disegno e'
+    //: DIFFERITO: vedi `_onMove`.
+    this._pendingX = 0;
+    this._pendingY = 0;
+    this._frame = 0;
     this._listening = false;
     // ⛔ Counted for the gate, and it is the only reason this field exists.
     // A test that asserts "the dot moved" by looking at a style attribute is
@@ -288,6 +304,13 @@ export class StealthCursor {
     if (this._dot) {
       this._dot.remove();
       this._dot = null;
+    }
+    // ⛔ Il frame chiesto va ANNULLATO: una callback che scatta dopo che il
+    // nodo e' stato tolto scrive su un elemento staccato, e su una finestra
+    // che sta chiudendo e' un errore in console che nessuno spiega.
+    if (this._frame) {
+      try { this._win.cancelAnimationFrame(this._frame); } catch (e) {}
+      this._frame = 0;
     }
     if (this._style) {
       this._style.remove();
@@ -378,9 +401,41 @@ export class StealthCursor {
     }
     if (!this._dot)
       return;
-    this._dot.style.opacity = '1';
-    this._dot.style.transform =
-        `translate3d(${event.clientX}px, ${event.clientY}px, 0)`;
+    // ⛔ LA SCRITTURA DI STILE NON AVVIENE QUI, e questa e' la seconda volta
+    // che un lavoro dentro il percorso di consegna dell'input viene tolto da
+    // questo file. La prima era una pref scritta su timer; questa e' il
+    // `transform` scritto dentro il gestore del mousemove, cioe' nel processo
+    // padre mentre un evento di input e' in volo.
+    //
+    // Misurato il 2026-08-28 a macchina VERAMENTE ferma: con l'overlay acceso
+    // la distanza mediana fra i mousemove che LA PAGINA riceve si sposta di
+    // uno scalino intero (18 ms contro 17), p = 0,0005 - e succede col cerchio
+    // come con la freccia, quindi non e' il disegno. Il controllo A/A - il
+    // banco che crede di confrontare acceso contro spento mentre l'overlay non
+    // si accende mai - riporta 0,000 ms e p = 1,0000, quindi la statistica non
+    // accusa se stessa.
+    //
+    // ⛔ E LA MISURA PRECEDENTE CHE DICEVA "0,000 ms" ERA PRESA SOTTO CARICO.
+    // Il rumore gonfia la varianza e rende il test permutazionale meno
+    // sensibile: era un falso verde, e ha lasciato scritto in due posti che
+    // questa funzione costasse zero.
+    //
+    // La posizione si registra e basta; il disegno lo fa il frame successivo.
+    // ⛔ I NUMERI, NON L'EVENTO. Trattenere l'oggetto evento attraverso un
+    // frame lo tiene vivo insieme a cio' a cui punta, e questo file ha gia'
+    // pagato una volta per un oggetto che sopravviveva al suo giro.
+    this._pendingX = event.clientX;
+    this._pendingY = event.clientY;
+    if (this._frame)
+      return;
+    this._frame = this._win.requestAnimationFrame(() => {
+      this._frame = 0;
+      if (!this._dot)
+        return;
+      this._dot.style.opacity = '1';
+      this._dot.style.transform =
+          `translate3d(${this._pendingX}px, ${this._pendingY}px, 0)`;
+    });
   }
 
   _publishMoves() {
