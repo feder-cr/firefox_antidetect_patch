@@ -1424,6 +1424,35 @@ ShadowRoot* Element::GetShadowRootForBindings(nsIPrincipal& aSubject) const {
     return nullptr;
   }
 
+  // A UA WIDGET IS NOT AUTHOR CONTENT, AND HANDING ONE TO AUTOMATION BREAKS
+  // THE PAGE'S OWN DOM.
+  //
+  // The exception above was written for shadow roots the PAGE created and
+  // declared closed. Firefox also builds its own controls inside form
+  // elements - the calendar button of <input type=date|time>, the video
+  // controls, and so on - in a shadow root that is likewise closed, and
+  // nothing in the two conditions above tells the two apart. So a selector
+  // engine running in the sandbox, which pierces shadow roots by design and
+  // is right to, started collecting engine internals as if the page had
+  // written them: `page.locator("button")` returned two matches on a document
+  // containing one button, the extra one invisible and therefore never
+  // clickable.
+  //
+  // GetOpenOrClosedShadowRoot, forty lines below, has carried exactly this
+  // guard since upstream bug 2035665 refused UA widgets to extensions. The
+  // comment at the top of this function says that function "does not filter
+  // it and is left alone", and that was true of the filter it was talking
+  // about, the MODE one. It has a SECOND filter, and the new path needed that
+  // one too.
+  //
+  // Ordering: this sits after the principal compare, not before it, so the
+  // content path stays byte for byte what was measured against retail. Only
+  // the sandbox pays the extra test, and the sandbox is not what a page can
+  // time.
+  if (shadowRoot->IsUAWidget()) {
+    return nullptr;
+  }
+
   // Only the sandbox gets this far, so the pref read is off the hot path.
   // Measured 2026-08-22, which is why the parameter exists at all: that a
   // sandbox access arrives carrying the ExpandedPrincipal was reasoned about
