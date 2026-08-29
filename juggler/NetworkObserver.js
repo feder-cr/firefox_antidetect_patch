@@ -14,9 +14,18 @@ const Cu = Components.utils;
 const Cr = Components.results;
 const Cm = Components.manager;
 const CC = Components.Constructor;
+// Stealthfox 2026-08-30: rimessi con la copia dei corpi. Servono a leggere i
+// byte che arrivano e a rimetterne una copia identica nel flusso, cosi' il
+// consumatore vero non si accorge di niente.
+const BinaryInputStream = CC('@mozilla.org/binaryinputstream;1', 'nsIBinaryInputStream', 'setInputStream');
+const BinaryOutputStream = CC('@mozilla.org/binaryoutputstream;1', 'nsIBinaryOutputStream', 'setOutputStream');
+const StorageStream = CC('@mozilla.org/storagestream;1', 'nsIStorageStream', 'init');
 const helper = new Helper();
 
 const UINT32_MAX = Math.pow(2, 32)-1;
+
+// Cap response storage with 100Mb per tracked tab.
+const MAX_RESPONSE_STORAGE_SIZE = 100 * 1024 * 1024;
 
 const pageNetworkSymbol = Symbol('PageNetwork');
 
@@ -36,6 +45,12 @@ export class PageNetwork {
     helper.decorateAsEventEmitter(this);
     this._target = target;
     this._extraHTTPHeaders = null;
+    // Stealthfox 2026-08-30: rimesso. Costa memoria - fino a 100 MB per tab,
+    // 10 MB per singola risposta, con sfratto - e sono i limiti di upstream,
+    // non inventati qui. Il prezzo si paga perche' senza questo
+    // response.text() rifiuta, e i trace e gli HAR escono con i corpi vuoti
+    // senza dirlo a nessuno.
+    this._responseStorage = new ResponseStorage(MAX_RESPONSE_STORAGE_SIZE, MAX_RESPONSE_STORAGE_SIZE / 10);
     this._requestInterceptionEnabled = false;
     // This is requestId => NetworkRequest map, only contains requests that are
     // awaiting interception action (abort, resume, fulfill) over the protocol.
@@ -44,6 +59,12 @@ export class PageNetwork {
 
   setExtraHTTPHeaders(headers) {
     this._extraHTTPHeaders = headers;
+  }
+
+  getResponseBody(requestId) {
+    if (!this._responseStorage)
+      throw new Error('Responses are not tracked for the given browser');
+    return this._responseStorage.getBase64EncodedResponse(requestId);
   }
 
   combinedExtraHTTPHeaders() {
@@ -97,6 +118,9 @@ class NetworkRequest {
 
     this.requestId = httpChannel.channelId + '';
     this.navigationId = httpChannel.isMainDocumentChannel && loadInfo ? helper.toProtocolNavigationId(loadInfo.jugglerLoadIdentifier) : undefined;
+
+    // Stealthfox 2026-08-30: rimesso con la lettura dei corpi.
+    this._responseBodyChunks = [];
 
     this._redirectedIndex = 0;
     if (redirectedFrom) {
@@ -367,11 +391,21 @@ class NetworkRequest {
     // we do not get onResponse normally, but we do get nsIStreamListener notifications.
     this._sendOnResponse(false);
 
-    // Stealthfox 2026-08-24: response.body() e' rifiutato (Network.getResponseBody
-    // non esiste piu'), quindi il corpo non lo legge mai nessuno - pass-through
-    // diretto, senza copiarlo.
+    // Stealthfox 2026-08-30: la copia e' TORNATA. Dal 2026-08-24 al 2026-08-30
+    // qui c'era un pass-through diretto, perche' con Network.getResponseBody
+    // tolto il corpo non lo leggeva piu' nessuno. Lo leggeva: response.text(),
+    // e anche i trace e gli HAR, che pero' non protestavano.
+    const iStream = new BinaryInputStream(aInputStream);
+    const sStream = new StorageStream(8192, aCount, null);
+    const oStream = new BinaryOutputStream(sStream.getOutputStream(0));
+
+    // Copy received data as they come.
+    const data = iStream.readBytes(aCount);
+    this._responseBodyChunks.push(data);
+
+    oStream.writeBytes(data, aCount);
     try {
-      this._originalListener.onDataAvailable(aRequest, aInputStream, aOffset, aCount);
+      this._originalListener.onDataAvailable(aRequest, sStream.newInputStream(0), aOffset, aCount);
     } catch (e) {
       // Be ready to original listener exceptions.
     }
@@ -409,10 +443,17 @@ class NetworkRequest {
       // For requests with internal redirect (e.g. intercepted by Service Worker),
       // we do not get onResponse normally, but we do get nsIRequestObserver notifications.
       this._sendOnResponse(false);
+      // Stealthfox 2026-08-30: rimesso.
+      const body = this._responseBodyChunks.join('');
+      const pageNetwork = this._pageNetwork;
+      if (pageNetwork)
+        pageNetwork._responseStorage.addResponseBody(this, body);
       this._sendOnRequestFinished();
     } else {
       this._sendOnRequestFailed(aStatusCode);
     }
+
+    delete this._responseBodyChunks;
   }
 
   _shouldIntercept() {
@@ -820,3 +861,102 @@ PageNetwork.Events = {
   RequestFailed: Symbol('PageNetwork.Events.RequestFailed'),
 };
 
+// Stealthfox 2026-08-30: RIMESSE, identiche a com'erano prima del 2026-08-24.
+// Erano uscite portando NetworkObserver all'osso, insieme a
+// Network.getResponseBody. La conseguenza l'ha segnalata un utente: senza il
+// corpo delle risposte si perde una delle tre fonti - URL, header, corpo - con
+// cui si riconosce chi protegge un sito. E i trace e gli HAR uscivano con i
+// corpi vuoti senza sollevare niente, che era il difetto peggiore dei due.
+//
+// Il costo e' dichiarato: i limiti sono quelli di upstream, 100 MB per tab e
+// un decimo per singola risposta, con sfratto quando si supera.
+
+class ResponseStorage {
+  constructor(maxTotalSize, maxResponseSize) {
+    this._totalSize = 0;
+    this._maxResponseSize = maxResponseSize;
+    this._maxTotalSize = maxTotalSize;
+    this._responses = new Map();
+  }
+
+  addResponseBody(request, body) {
+    if (body.length > this._maxResponseSize) {
+      this._responses.set(request.requestId, {
+        evicted: true,
+        body: '',
+      });
+      return;
+    }
+    let encodings = [];
+    // Note: fulfilled request comes with decoded body right away.
+    if ((request.httpChannel instanceof Ci.nsIEncodedChannel) && request.httpChannel.contentEncodings && !request.httpChannel.applyConversion && !request._fulfilled) {
+      const encodingHeader = request.httpChannel.getResponseHeader("Content-Encoding");
+      encodings = encodingHeader.split(/\s*\t*,\s*\t*/);
+    }
+    this._responses.set(request.requestId, {body, encodings});
+    this._totalSize += body.length;
+    if (this._totalSize > this._maxTotalSize) {
+      for (let [requestId, response] of this._responses) {
+        this._totalSize -= response.body.length;
+        response.body = '';
+        response.evicted = true;
+        if (this._totalSize < this._maxTotalSize)
+          break;
+      }
+    }
+  }
+
+  getBase64EncodedResponse(requestId) {
+    const response = this._responses.get(requestId);
+    if (!response)
+      throw new Error(`Request "${requestId}" is not found`);
+    if (response.evicted)
+      return {base64body: '', evicted: true};
+    let result = response.body;
+    if (response.encodings && response.encodings.length) {
+      for (const encoding of response.encodings)
+        result = convertString(result, encoding, 'uncompressed');
+    }
+    return {base64body: btoa(result)};
+  }
+}
+
+function convertString(s, source, dest) {
+  const is = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
+    Ci.nsIStringInputStream
+  );
+  is.setByteStringData(s);
+  const listener = Cc["@mozilla.org/network/stream-loader;1"].createInstance(
+    Ci.nsIStreamLoader
+  );
+  let result = [];
+  listener.init({
+    onStreamComplete: function onStreamComplete(
+      loader,
+      context,
+      status,
+      length,
+      data
+    ) {
+      const array = Array.from(data);
+      const kChunk = 100000;
+      for (let i = 0; i < length; i += kChunk) {
+        const len = Math.min(kChunk, length - i);
+        const chunk = String.fromCharCode.apply(this, array.slice(i, i + len));
+        result.push(chunk);
+      }
+    },
+  });
+  const converter = Cc["@mozilla.org/streamConverters;1"].getService(
+    Ci.nsIStreamConverterService
+  ).asyncConvertData(
+    source,
+    dest,
+    listener,
+    null
+  );
+  converter.onStartRequest(null, null);
+  converter.onDataAvailable(null, is, 0, s.length);
+  converter.onStopRequest(null, null, null);
+  return result.join('');
+}

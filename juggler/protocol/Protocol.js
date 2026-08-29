@@ -533,6 +533,20 @@ const Network = {
         base64body: t.Optional(t.String),  // base64-encoded
       },
     },
+    // Stealthfox 2026-08-30: RIMESSO. Era stato tolto il 2026-08-24 portando
+    // NetworkObserver all'osso, e la conseguenza l'ha segnalata un utente:
+    // response.text() e response.body() sono una delle tre fonti - URL, header,
+    // corpo - con cui si riconosce chi protegge un sito, e senza il corpo ne
+    // restano due. Toglieva anche i corpi dai trace e dagli HAR, in silenzio.
+    'getResponseBody': {
+      params: {
+        requestId: t.String,
+      },
+      returns: {
+        base64body: t.String,
+        evicted: t.Optional(t.Boolean),
+      },
+    },
   },
 };
 

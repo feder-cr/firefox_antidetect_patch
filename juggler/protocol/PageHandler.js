@@ -355,6 +355,11 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
+  // Stealthfox 2026-08-30: rimesso insieme al comando nel protocollo.
+  async ['Network.getResponseBody']({requestId}) {
+    return this._pageNetwork.getResponseBody(requestId);
+  }
+
 
   async ['Page.setFileInputFiles'](options) {
     return await this._contentPage.send('setFileInputFiles', options);
