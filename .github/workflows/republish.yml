@@ -122,7 +122,14 @@ jobs:
         shell: bash
         run: |
           python -m pip install --quiet ".[dev]"
-          INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
+          # La chiave per il binario in prova. Senza, questo passo muore con
+          # EngineMismatch appena il wrapper che lo guida pinna un motore
+          # diverso da quello ri-gattato - che e' il caso NORMALE qui, perche'
+          # si ri-pubblica un tag nuovo con un client gia' pubblicato. Il drive
+          # gate sopra la generava gia'; questo passo no, e le tre gambe
+          # cadevano tutte senza dire niente sul binario. Misurato 2026-08-30.
+          python -m invisible_core seal --binary "$FF_EXE" -o gate.seal.json
+          INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_cloak.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             -m e2e -o addopts='' -q
