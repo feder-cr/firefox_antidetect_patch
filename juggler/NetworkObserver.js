@@ -633,10 +633,26 @@ export class NetworkObserver {
         }
         if (this._targetRegistry.shouldBustHTTPAuthCacheForProxy(proxy))
           Services.obs.notifyObservers(null, "net:clear-active-logins");
-        proxyFilter.onProxyFilterResult(protocolProxyService.newProxyInfo(
+        // ⛔ WITH_AUTH, and the plain `newProxyInfo` used to be on this line.
+        // It has no username or password parameters, so the credentials the
+        // client sends with `Browser.setBrowserProxy` reached this object and
+        // stopped here. For SOCKS that is not a cosmetic loss: the engine then
+        // offers method 0x00 only - measured 2026-08-30, 23 browser
+        // connections to an auth-requiring proxy, every one of them
+        // advertising "no authentication", and the proxy closed all 23.
+        //
+        // It went unnoticed for as long as a SECOND road delivered them: this
+        // project wrote `network.proxy.socks_username` / `_password`, which
+        // the pref path injects at `nsProtocolProxyService.cpp`,
+        // `NewProxyInfo_Internal`. Those prefs were removed with the other
+        // proxy roads, and this line is what makes one road sufficient - for
+        // every scheme, since the same two fields carry HTTP proxy auth.
+        proxyFilter.onProxyFilterResult(protocolProxyService.newProxyInfoWithAuth(
             proxy.type,
             proxy.host,
             proxy.port,
+            proxy.username || '',
+            proxy.password || '',
             '', /* aProxyAuthorizationHeader */
             '', /* aConnectionIsolationKey */
             Ci.nsIProxyInfo.TRANSPARENT_PROXY_RESOLVES_HOST, /* aFlags */
