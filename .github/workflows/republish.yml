@@ -1,0 +1,271 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# republish.yml — re-gate + publish an EXISTING build's artifacts WITHOUT rebuilding.
+#
+# When a release run's builds all SUCCEEDED but the publish was blocked by a
+# GATE/TEST bug (not a binary defect), rebuilding every target (hours) just to
+# re-run a few-minute test is wasteful. Erano cinque fino a firefox-20, sono tre
+# dal 21: il numero non e' scritto qui apposta, la matrice sotto e' l'autorita'.
+#
+# ⛔ E il caso vero e' successo il 2026-08-26: le tre build di firefox-21 erano
+# verdi e i tre job `gate` sono usciti rossi per un comando di protocollo tolto
+# per sbaglio. Questo workflow sarebbe stato la via d'uscita - e non avrebbe
+# funzionato, perche' il suo assert pretendeva ancora i due archivi macOS che una
+# release a tre gambe non produce. La via d'uscita era rotta nel momento in cui
+# serviva, e nessuno poteva saperlo: questo workflow si lancia a mano. This workflow downloads the binary artifacts
+# from a prior `release` run, re-runs the (now-fixed) drive gate + cloak/WebGL guards
+# against those exact byte-identical binaries on their native runners, and — only if
+# green — publishes the DRAFT release. Same publish logic as release.yml (draft, notes,
+# checksums, source-commit) so the human still runs the realness gate before un-drafting.
+#
+# Inputs:
+#   build_run_id : the `release` run whose `asset-*` + `source-commit` artifacts to reuse
+#                  (must be within the 7-day artifact retention window).
+#   release_tag  : tag to publish the draft under (e.g. firefox-11).
+# ─────────────────────────────────────────────────────────────────────────────
+name: republish
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'release run id whose built artifacts to reuse (no rebuild)'
+        required: true
+      release_tag:
+        description: 'release tag to publish the draft under (e.g. firefox-11)'
+        required: true
+
+env:
+  SOURCE_REPO: feder-cr/firefox_antidetect_patch
+
+jobs:
+  gate:
+    name: gate-${{ matrix.leg }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Le due gambe macOS sono uscite il 2026-08-26 (fine supporto totale,
+          # decisione del proprietario). Nominavano anche macos-15 /
+          # macos-15-intel, immagini gia' abbandonate a firefox-19: stale due
+          # volte. Il mac resta LEGGIBILE dove serve alla storia - make_seal.py
+          # tiene darwin in ENTRY_REL e in NAME_RE apposta, perche' i tag fino a
+          # firefox-20 il mac ce l'avevano - ma qui si smette di pretenderlo.
+          - leg: linux-x86_64
+            runner: ubuntu-24.04
+            kind: linux
+            asset: firefox-151.0-stealth-linux-x86_64.tar.gz
+            extra: '--full'
+          - leg: linux-arm64
+            runner: ubuntu-24.04-arm
+            kind: linux
+            asset: firefox-151.0-stealth-linux-arm64.tar.gz
+            extra: ''
+          - leg: win-x86_64
+            runner: windows-latest
+            kind: win
+            asset: firefox-151.0-stealth-win-x86_64.zip
+            extra: ''
+    steps:
+      - name: Checkout wrapper (for scripts/ci_drive_gate.py — the FIXED gate)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          fetch-depth: 1
+      - name: Download asset from the existing build run (no rebuild)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: asset-${{ matrix.leg }}
+          path: art
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Install Playwright driver (pinned, no bundled browser)
+        shell: bash
+        run: python -m pip install --quiet "playwright==$(cat scripts/playwright_pin.txt)"
+      - name: Linux system deps for headless firefox
+        if: matrix.kind == 'linux'
+        run: sudo "$(which python)" -m playwright install-deps firefox
+      - name: Extract + locate firefox binary
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ff
+          A="art/${{ matrix.asset }}"
+          case "${{ matrix.kind }}" in
+            win)   python -c "import zipfile; zipfile.ZipFile('$A').extractall('ff')"; EXE="ff/firefox.exe";;
+            linux) tar xzf "$A" -C ff; EXE="ff/firefox";;
+          esac
+          [ -e "$EXE" ] || { echo "ERROR: firefox binary not found at $EXE"; exit 1; }
+          chmod +x "$EXE" 2>/dev/null || true
+          echo "FF_EXE=$EXE" >> "$GITHUB_ENV"
+          echo "located: $EXE"
+      - name: DRIVE GATE — Playwright launch via juggler + real page (+ interaction on --full)
+        shell: bash
+        run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
+      - name: Cloak + WebGL-masking guards (headed)
+        shell: bash
+        run: |
+          python -m pip install --quiet ".[dev]"
+          INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
+            tests/test_cloak.py \
+            "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
+            -m e2e -o addopts='' -q
+
+  publish:
+    name: publish-draft-release
+    needs: [gate]
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout wrapper (for scripts/gen_release_notes.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          fetch-depth: 1
+      # Same checkout release.yml does, for the same reason: seal.json is
+      # generated here, from this repo's scripts/make_seal.py. Without it this
+      # job compared against, and uploaded, a dl/seal.json no step ever wrote.
+      - name: Checkout source repo (for scripts/make_seal.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: _src, fetch-depth: 1 }
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Download all build assets from the existing build run (no rebuild)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: asset-*
+          path: dl
+          merge-multiple: true
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download source-commit metadata from the existing build run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: source-commit
+          path: src-meta
+          run-id: ${{ github.event.inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Assert all 3 target archives present (no silent partial release)
+        run: |
+          cd dl
+          # Erano cinque fino a firefox-20. Con le due righe macOS ancora qui,
+          # questo passo rifiutava OGNI republish di una release a tre gambe -
+          # e republish e' la via d'uscita per "le build sono verdi ma un gate
+          # le ha bloccate", cioe' esattamente il caso di firefox-21.
+          EXPECTED="
+          firefox-151.0-stealth-linux-x86_64.tar.gz
+          firefox-151.0-stealth-linux-arm64.tar.gz
+          firefox-151.0-stealth-win-x86_64.zip
+          "
+          for a in $EXPECTED; do
+            [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
+          done
+          echo "all 3 target archives present"
+      - name: Generate checksums.txt
+        run: |
+          cd dl; ls -la
+          sha256sum firefox-151.0-stealth-* > checksums.txt
+          echo "----- checksums.txt -----"; cat checksums.txt
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.release_tag }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          N="${TAG#firefox-}"
+          echo "num=$N" >> "$GITHUB_OUTPUT"
+          case "$N" in (*[!0-9]*|'') echo "prevtag=" >> "$GITHUB_OUTPUT";;
+                        (*) echo "prevtag=firefox-$((N-1))" >> "$GITHUB_OUTPUT";; esac
+          echo "publishing DRAFT release for tag: $TAG"
+      # The seal is derived from the archives in dl/, so re-deriving it here from
+      # the SAME bytes is what makes "republish" mean republish: if it differs
+      # from what the tag already carries, the payload changed and the next step
+      # refuses. This step is a copy of release.yml's, and it has to be: it is
+      # what produces the dl/seal.json that the payload check reads and the
+      # release step uploads.
+      - name: Generate + gate seal.json
+        run: |
+          python3 _src/scripts/make_seal.py \
+            --tag "${{ steps.tag.outputs.tag }}" \
+            --assets dl \
+            --source-commit-file src-meta/source-commit.txt \
+            --playwright-range _src/browser/config/stealth_playwright_range.txt \
+            -o dl/seal.json
+          echo "----- seal.json -----"; cat dl/seal.json
+      - name: Build release notes from the source commits
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          CUR="$(cat src-meta/source-commit.txt 2>/dev/null | tr -d '[:space:]')"
+          echo "this build's source commit: ${CUR:-<none>}"
+          PREV=""
+          PREVTAG="${{ steps.tag.outputs.prevtag }}"
+          if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
+               --pattern source-commit.txt --dir prev 2>/dev/null; then
+            PREV="$(cat prev/source-commit.txt | tr -d '[:space:]')"
+            echo "previous ($PREVTAG) source commit: $PREV"
+          else
+            echo "no previous source-commit.txt — changelog section omitted this time"
+          fi
+          python scripts/gen_release_notes.py --tag "${{ steps.tag.outputs.tag }}" \
+            --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SOURCE_REPO }}" > body.md
+          echo "----- generated body.md -----"; cat body.md
+          cp src-meta/source-commit.txt dl/source-commit.txt
+      - name: Refuse a payload change under an existing tag
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          TAG: "${{ steps.tag.outputs.tag }}"
+        run: |
+          set -e
+          # cmp against a file that is not there reports "differs", and this step
+          # would then blame a payload change that never happened while the real
+          # fault is upstream. Name the real fault instead.
+          if [ ! -s dl/seal.json ]; then
+            echo "ERROR: dl/seal.json is missing or empty, so there is nothing to compare"
+            echo "the published seal against and nothing to upload. The 'Generate + gate"
+            echo "seal.json' step must run before this one."
+            exit 1
+          fi
+          if gh release download "$TAG" -R "${{ github.repository }}" \
+               --pattern seal.json --dir published 2>/dev/null; then
+            if ! cmp -s published/seal.json dl/seal.json; then
+              echo "ERROR: $TAG already has a published seal for a DIFFERENT payload."
+              echo "A new payload gets a new tag. Mint firefox-\$((N+1)) from the same artifacts."
+              diff <(python3 -m json.tool published/seal.json) <(python3 -m json.tool dl/seal.json) || true
+              exit 1
+            fi
+            echo "seal identical: metadata-only re-cut, proceeding"
+          else
+            echo "no seal published under $TAG yet (first seal), proceeding"
+          fi
+      - name: Create DRAFT release with all assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: firefox_antidetect_patch (151.0) rev ${{ steps.tag.outputs.num }}
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            dl/*.tar.gz
+            dl/*.zip
+            dl/checksums.txt
+            dl/source-commit.txt
+            dl/seal.json
+          body_path: body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
