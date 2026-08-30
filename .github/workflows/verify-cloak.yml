@@ -26,6 +26,13 @@ on:
       run_id:
         description: 'build run id whose asset-* artifacts to re-gate (e.g. 27346856197)'
         required: true
+      wrapper_ref:
+        description: >
+          invisible_playwright ref the guards run from. Defaults to main, which
+          is what release.yml validates against. Point it at a BRANCH to test a
+          wrapper-side fix against real binaries without merging it first.
+        required: false
+        default: 'main'
 
 permissions:
   contents: read
@@ -64,7 +71,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: feder-cr/invisible_playwright
-          ref: main
+          ref: ${{ github.event.inputs.wrapper_ref || 'main' }}
           fetch-depth: 1
       - name: Download build asset from the prior run (no rebuild)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -101,7 +108,13 @@ jobs:
         shell: bash
         run: |
           python -m pip install --quiet ".[dev]"
-          INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
+          # La chiave per il binario in prova, che qui non c'era: senza, ogni
+          # gamba muore con EngineMismatch appena si ri-gattano artefatti di un
+          # tag diverso da quello che il core impacchettato dichiara. Misurato
+          # il 2026-08-30 sui tre legs di firefox-24: tre rossi che non dicevano
+          # niente sul binario. release.yml lo faceva gia'.
+          python -m invisible_core seal --binary "$FF_EXE" -o gate.seal.json
+          INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_cloak.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             -m e2e -o addopts='' -q
