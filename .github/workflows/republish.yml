@@ -33,6 +33,14 @@ on:
       release_tag:
         description: 'release tag to publish the draft under (e.g. firefox-11)'
         required: true
+      wrapper_ref:
+        description: >
+          invisible_playwright ref the gate drives from. Defaults to main. Point
+          it at a published TAG when main carries a client-side defect that has
+          nothing to do with the binary under test: the gate then says whether
+          the BINARY is good, which is the question a release asks.
+        required: false
+        default: 'main'
 
 env:
   SOURCE_REPO: feder-cr/firefox_antidetect_patch
@@ -75,7 +83,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: feder-cr/invisible_playwright
-          ref: main
+          ref: ${{ github.event.inputs.wrapper_ref || 'main' }}
           fetch-depth: 1
       - name: Download asset from the existing build run (no rebuild)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -131,7 +139,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: feder-cr/invisible_playwright
-          ref: main
+          ref: ${{ github.event.inputs.wrapper_ref || 'main' }}
           fetch-depth: 1
       # Same checkout release.yml does, for the same reason: seal.json is
       # generated here, from this repo's scripts/make_seal.py. Without it this
