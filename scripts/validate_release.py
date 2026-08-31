@@ -310,23 +310,27 @@ def assert_no_updater(tree: Path) -> None:
     dist/bin tree.
     """
     import zipfile
-    root = _juggler_root(tree)
     found: list[str] = []
 
     for p in tree.rglob("*"):
         if p.is_file() and p.name in UPDATER_FILES:
             found.append(str(p.relative_to(tree)))
 
-    omni = root / "omni.ja"
-    if omni.exists():
+    # BOTH scans, always. The first draft did the loose one only when there was
+    # no omni.ja, and looked at the ROOT omni.ja alone - which a real Windows
+    # package immediately falsified: it ships two (omni.ja and
+    # browser/omni.ja), and toolkit/mozapps/update modules can land in either.
+    # A package can also carry an archive and loose modules at once.
+    for omni in sorted(tree.rglob("omni.ja")):
+        rel = str(omni.relative_to(tree))
         with zipfile.ZipFile(omni) as zf:
             for n in zf.namelist():
                 if n.rsplit("/", 1)[-1] in UPDATER_MODULES:
-                    found.append("omni.ja!" + n)
-    else:
-        for p in tree.rglob("*.sys.mjs"):
-            if p.name in UPDATER_MODULES:
-                found.append(str(p.relative_to(tree)))
+                    found.append(rel + "!" + n)
+
+    for p in tree.rglob("*.sys.mjs"):
+        if p.name in UPDATER_MODULES:
+            found.append(str(p.relative_to(tree)))
 
     if found:
         raise ValidationError(
@@ -455,7 +459,7 @@ def _selftest() -> int:
     import tempfile
     import zipfile
 
-    def tree(*extra, omni_members=()):
+    def tree(*extra, omni_members=(), nested_omni=()):
         d = Path(tempfile.mkdtemp(prefix="vr-selftest-"))
         (d / "chrome" / "juggler").mkdir(parents=True)
         (d / "modules").mkdir()
@@ -468,6 +472,11 @@ def _selftest() -> int:
         if omni_members:
             with zipfile.ZipFile(d / "omni.ja", "w") as zf:
                 for m in omni_members:
+                    zf.writestr(m, "x")
+        if nested_omni:
+            (d / "browser").mkdir(exist_ok=True)
+            with zipfile.ZipFile(d / "browser" / "omni.ja", "w") as zf:
+                for m in nested_omni:
                     zf.writestr(m, "x")
         return d
 
@@ -483,6 +492,13 @@ def _selftest() -> int:
          lambda: tree("modules/UpdateListener.sys.mjs"), True),
         ("UpdateService packed INSIDE omni.ja",
          lambda: tree(omni_members=("modules/UpdateService.sys.mjs",)), True),
+        # A real Windows package ships two archives, and the first draft of this
+        # check read only the one at the root.
+        ("BackgroundUpdate inside the NESTED browser/omni.ja",
+         lambda: tree(nested_omni=("modules/BackgroundUpdate.sys.mjs",)), True),
+        ("a loose module BESIDE a clean omni.ja",
+         lambda: tree("modules/AppUpdater.sys.mjs",
+                      omni_members=("modules/AppConstants.sys.mjs",)), True),
         # The omni.ja arm must not be blind to what sits beside it, and the
         # loose arm must not fire on a build that legitimately has an omni.ja.
         ("an omni.ja with nothing of ours in it",
