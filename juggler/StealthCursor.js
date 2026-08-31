@@ -121,6 +121,11 @@ function _arrowSvg() {
 // channel a test can read after shutdown. Inventing a protocol command instead
 // would add a field `checkScheme` validates only at runtime - the failure class
 // a rebase reintroduces in silence.
+//: Quanti anelli al massimo restano in coda per il frame successivo. Vedi
+//: `_onDown`: e' un tetto contro l'accumulo quando rAF non scatta, non una
+//: scelta estetica.
+const MAX_PENDING_RINGS = 3;
+
 const PREF_MOVES = 'stealthfox.showcursor.moves';
 // ⛔ How many overlays are alive. Same channel and same reason as the counter
 // above, and it exists because the property it reports cannot be checked any
@@ -218,10 +223,22 @@ export class StealthCursor {
     this._win = win;
     this._dot = null;
     this._style = null;
-    //: L'ultima posizione vista, e il frame gia' chiesto. Il disegno e'
-    //: DIFFERITO: vedi `_onMove`.
+    //: L'ultima posizione vista, e il frame gia' chiesto. NESSUN gestore di
+    //: input tocca il DOM: registrano numeri, e disegna `_paint` sul frame.
+    //: Vedi il commento sopra `_schedule`.
     this._pendingX = 0;
     this._pendingY = 0;
+    this._pendingVisible = false;
+    this._pendingPressed = false;
+    //: Una pressione VISTA da quando si e' dipinto l'ultima volta. Serve
+    //: perche' un click veloce apre e chiude dentro lo stesso frame: senza
+    //: questo, `pressed` non verrebbe mai dipinta e la pressione sparirebbe
+    //: dal disegno invece che dal percorso dell'input.
+    this._sawDown = false;
+    //: Quanti anelli spawnare al prossimo frame. Un contatore, non un nodo:
+    //: creare l'elemento qui rimetterebbe nel gestore esattamente il lavoro
+    //: che questa modifica toglie.
+    this._pendingRings = 0;
     this._frame = 0;
     this._listening = false;
     // ⛔ Counted for the gate, and it is the only reason this field exists.
@@ -426,16 +443,56 @@ export class StealthCursor {
     // pagato una volta per un oggetto che sopravviveva al suo giro.
     this._pendingX = event.clientX;
     this._pendingY = event.clientY;
+    this._pendingVisible = true;
+    this._schedule();
+  }
+
+  // ⛔ UN SOLO POSTO CHE TOCCA IL DOM, e questa e' la ragione per cui la
+  // correzione del 2026-08-28 non e' bastata. Quella differi' il `transform`
+  // del solo `_onMove` e lascio' gli altri tre gestori a scrivere sincroni
+  // dentro la consegna dell'input: `_onDown` aggiungeva una classe, CREAVA UN
+  // NODO, gli attaccava un listener e lo appendeva avviando un'animazione,
+  // cioe' piu' lavoro di quello che era stato tolto; `_onUp` toglieva una
+  // classe; `_onLeave` scriveva l'opacita'. Correggere solo `_onDown` sarebbe
+  // stata una pezza: dopo la correzione i posti che scrivono sarebbero stati
+  // ancora piu' di uno.
+  //
+  // La regola adesso e' una e vale per tutti: **un gestore registra numeri e
+  // chiede il frame, non tocca niente**. Chi disegna e' `_paint`, e chi lo
+  // chiama e' il frame.
+  _schedule() {
     if (this._frame)
       return;
     this._frame = this._win.requestAnimationFrame(() => {
       this._frame = 0;
-      if (!this._dot)
-        return;
-      this._dot.style.opacity = '1';
-      this._dot.style.transform =
-          `translate3d(${this._pendingX}px, ${this._pendingY}px, 0)`;
+      this._paint();
     });
+  }
+
+  _paint() {
+    if (!this._dot)
+      return;
+    this._dot.style.opacity = this._pendingVisible ? '1' : '0';
+    this._dot.style.transform =
+        `translate3d(${this._pendingX}px, ${this._pendingY}px, 0)`;
+    // ⛔ Una pressione vista dentro questo frame si dipinge ANCHE se il
+    // rilascio e' gia' arrivato: un click veloce nasce e muore fra due frame,
+    // e senza questo la classe non comparirebbe mai. Il rilascio lo fa il
+    // frame dopo, che viene chiesto qui sotto.
+    const press = this._pendingPressed || this._sawDown;
+    this._dot.classList.toggle('pressed', press);
+    while (this._pendingRings > 0) {
+      this._pendingRings--;
+      const ring = this._win.document.createElement('div');
+      ring.className = 'ring';
+      ring.addEventListener('animationend', () => ring.remove(), {once: true});
+      this._dot.appendChild(ring);
+    }
+    if (this._sawDown) {
+      this._sawDown = false;
+      if (!this._pendingPressed)
+        this._schedule();
+    }
   }
 
   _publishMoves() {
@@ -444,38 +501,44 @@ export class StealthCursor {
   }
 
   _onDown(event) {
-    if (!this._dot)
-      return;
-    this._dot.classList.add('pressed');
-    // ⛔ IT IS NO LONGER A RING YOU CAN SEE, and saying so is the point. Two
-    // pixels of green expanding inside a twenty-pixel green halo have no edge
-    // to read: measured 2026-08-28, a press reads as the halo SWELLING - 802
-    // glow pixels against 715 at rest, +12% - and not as an outline moving
-    // outwards. That is the direct consequence of the halo being one colour,
-    // which is the shipped decision; giving the ring contrast would mean a
-    // second colour, which was rejected. It is kept because it measurably
-    // contributes to that swell, not because it draws what its name says.
+    // ⛔ NIENTE DOM QUI. Fino al 2026-08-31 questo gestore girava sincrono
+    // dentro la consegna del mousedown e creava un nodo, gli attaccava un
+    // listener e lo appendeva avviando un'animazione - piu' lavoro di quel
+    // `transform` che il rimedio del 2026-08-28 aveva tolto da `_onMove`
+    // perche' spostava di uno scalino intero i tempi che LA PAGINA misura.
+    // La stessa forma, sul percorso del click, non era misurata da nessun
+    // gate: `chrome_cursor_cost.py` inietta e ascolta solo `mousemove`, cioe'
+    // il ramo gia' corretto. Il banco che guarda questo e'
+    // `chrome_cursor_click_cost.py`.
     //
-    // ⛔ Removed on `animationend` rather than on a timer: a timer that
-    // outlives the window leaks a node, and one that fires early removes it
-    // mid-animation. This is also the part Camoufox does not have.
-    const ring = this._win.document.createElement('div');
-    ring.className = 'ring';
-    ring.addEventListener('animationend', () => ring.remove(), {once: true});
-    this._dot.appendChild(ring);
+    // L'anello resta, con il suo perche' misurato: una pressione si legge
+    // come l'alone che GONFIA - 802 pixel di bagliore contro 715 a riposo,
+    // +12% - e non come un contorno che si allarga, perche' l'alone e' di un
+    // colore solo. Cambia solo QUANDO viene costruito: al frame, non
+    // nell'evento.
+    this._pendingPressed = true;
+    this._sawDown = true;
+    // ⛔ Con un tetto: se la finestra chrome va in background rAF smette di
+    // scattare, e senza questo ogni pressione accumulerebbe un anello da
+    // costruire tutto insieme al ritorno. Se ne vede uno per volta comunque -
+    // l'animazione dura meno della distanza fra due click - quindi il tetto
+    // non toglie niente di visibile e toglie una raffica di nodi.
+    if (this._pendingRings < MAX_PENDING_RINGS)
+      this._pendingRings++;
+    this._schedule();
   }
 
   _onUp(event) {
-    if (this._dot)
-      this._dot.classList.remove('pressed');
+    this._pendingPressed = false;
+    this._schedule();
   }
 
   _onLeave(event) {
     // ⛔ Without this the dot stays frozen wherever the pointer left the
     // window, which looks exactly like a stuck automation and is the opposite
     // of what a person watching wants to see.
-    if (this._dot)
-      this._dot.style.opacity = '0';
+    this._pendingVisible = false;
+    this._schedule();
   }
 
   dispose() {
