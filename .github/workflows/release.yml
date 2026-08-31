@@ -193,9 +193,9 @@ jobs:
           if [ -n "${{ matrix.target }}" ]; then echo "ac_add_options --target=${{ matrix.target }}" >> .mozconfig; fi
           if [ -n "${{ matrix.host }}" ]; then echo "ac_add_options --host=${{ matrix.host }}" >> .mozconfig; fi
           if [ "${{ matrix.win_disables }}" = "yes" ]; then
-            { echo "ac_add_options --disable-default-browser-agent";
-              echo "ac_add_options --disable-maintenance-service";
-              echo "ac_add_options --disable-update-agent"; } >> .mozconfig
+            # The maintenance service and the update agent have no options left:
+            # the update machinery is out of update-programs.configure entirely.
+            echo "ac_add_options --disable-default-browser-agent" >> .mozconfig
           fi
           NCPU=4
           { echo "mk_add_options MOZ_PARALLEL_BUILD=$NCPU";

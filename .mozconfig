@@ -161,10 +161,22 @@ ac_add_options --enable-update-channel=release
 # non si carica. Juggler e' compilato dentro e non e' un'estensione, quindi il
 # percorso del prodotto non cambia; cambia per chi carica estensioni proprie.
 
-# L'updater: il retail lo ha compilato e CONTROLLA all'avvio. Noi controlliamo
-# come lui, ma `app.update.auto=false` in invisible_core impedisce download e
-# installazione - installare distruggerebbe il binario pinnato dal sigillo.
-# (`app.update.enabled` non esiste piu' in 151: era una pref morta.)
+# L'UPDATER NON ESISTE PIU', e non e' un `--disable-`: le opzioni sono state
+# TOLTE da build/moz.configure/update-programs.configure il 2026-08-31, su
+# richiesta del proprietario ("tutto quello che riguarda aggiornamenti"),
+# proprio perche' non restasse una leva da riaccendere. Due delle sei righe
+# qui sopra - --disable-maintenance-service e --disable-update-agent - oggi
+# non sono nemmeno piu' opzioni valide, e nemmeno --disable-updater lo e'.
+#
+# Conseguenza dichiarata invece che scoperta dopo: niente badge "Update
+# available", e nessuna richiesta ad aus5.mozilla.org, che il retail invece fa
+# all'avvio. E' una divergenza di RETE accettata con la decisione
+# (27-retail-network-parity.md sezione 2, che diceva il contrario fino a oggi).
+#
+# `app.update.auto=false` RESTA in invisible_core: qui non ha piu' niente da
+# fermare, ma get_default_stealth_prefs serve anche chi guida un Firefox suo,
+# e li' quella pref e' l'unica cosa che impedisca a un binario di aggiornarsi
+# sotto il sigillo che lo pinna.
 
 ac_add_options --enable-bootstrap
 

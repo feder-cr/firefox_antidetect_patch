@@ -282,6 +282,65 @@ def assert_juggler_provenance(tree: Path) -> None:
           f"{layout} layout)")
 
 
+UPDATER_FILES = (
+    "updater.exe", "updater", "updater.ini", "update-settings.ini",
+    "maintenanceservice.exe", "maintenanceservice_installer.exe", "updateagent",
+)
+UPDATER_MODULES = (
+    "UpdateService.sys.mjs", "UpdateListener.sys.mjs", "UpdateServiceStub.sys.mjs",
+    "AppUpdater.sys.mjs", "BackgroundUpdate.sys.mjs",
+)
+
+
+def assert_no_updater(tree: Path) -> None:
+    """No update machinery may be inside a shipped archive.
+
+    It is not switched off by a pref or by a policy: the build OPTIONS were
+    removed from build/moz.configure/update-programs.configure on 2026-08-31, so
+    MOZ_UPDATER is never set and toolkit/mozapps/update never enters the build.
+
+    That makes it a BUILD-SYSTEM fact, which is exactly the kind a rebase can
+    undo in silence - one conflict on that file resolved towards upstream and
+    the updater is back, the browser still starts, every JavaScript test still
+    passes, and the only symptom is the badge the owner asked to remove, plus a
+    binary able to overwrite the engine its own seal pins.
+
+    Two layouts, the same split the juggler check already handles: the Windows
+    zip packs modules into omni.ja, the Linux tarball carries the loose
+    dist/bin tree.
+    """
+    import zipfile
+    root = _juggler_root(tree)
+    found: list[str] = []
+
+    for p in tree.rglob("*"):
+        if p.is_file() and p.name in UPDATER_FILES:
+            found.append(str(p.relative_to(tree)))
+
+    omni = root / "omni.ja"
+    if omni.exists():
+        with zipfile.ZipFile(omni) as zf:
+            for n in zf.namelist():
+                if n.rsplit("/", 1)[-1] in UPDATER_MODULES:
+                    found.append("omni.ja!" + n)
+    else:
+        for p in tree.rglob("*.sys.mjs"):
+            if p.name in UPDATER_MODULES:
+                found.append(str(p.relative_to(tree)))
+
+    if found:
+        raise ValidationError(
+            "the update machinery is back in this build: "
+            + ", ".join(sorted(found)[:8])
+            + ". It is removed at the BUILD level - build/moz.configure/"
+              "update-programs.configure declares no --enable-updater at all - "
+              "so this means a rebase restored that file, or a mozconfig "
+              "re-added the option. Do not publish it: it brings back the "
+              "'Update available' badge and a binary that can overwrite the "
+              "engine its seal pins.")
+    print("    no updater in the package (files and modules both absent)")
+
+
 def smoke_linux(extracted: Path) -> None:
     """Run `firefox --version` inside WSL when invoked from Windows."""
     firefox = extracted / "firefox"
@@ -351,6 +410,7 @@ def validate_linux_tarball(archive: Path) -> None:
         extract_tar(archive, td)
         check_critical_files(td, CRITICAL_LINUX)
         assert_juggler_provenance(td)
+        assert_no_updater(td)
 
         print("  [4/4] smoke (firefox --version)...")
         smoke_linux(td)
@@ -370,6 +430,7 @@ def validate_windows_zip(archive: Path) -> None:
         extract_zip(archive, td)
         check_critical_files(td, CRITICAL_WIN)
         assert_juggler_provenance(td)
+        assert_no_updater(td)
 
         print("  [3/4] no-symlinks check (zip cannot store them, but verify)...")
         for p in td.rglob("*"):
@@ -383,8 +444,82 @@ def validate_windows_zip(archive: Path) -> None:
             print("    smoke SKIPPED (not on Windows; run on Windows to verify)")
 
 
+def _selftest() -> int:
+    """Known-bad inputs for assert_no_updater, and the near-misses that must NOT fire.
+
+    A check that has only ever printed its OK line is not a gate. This one is
+    cheap to exercise because it is a pure function of a directory: no archive,
+    no browser, no network.
+    """
+    import shutil
+    import tempfile
+    import zipfile
+
+    def tree(*extra, omni_members=()):
+        d = Path(tempfile.mkdtemp(prefix="vr-selftest-"))
+        (d / "chrome" / "juggler").mkdir(parents=True)
+        (d / "modules").mkdir()
+        (d / "firefox.exe").write_bytes(b"x")
+        (d / "modules" / "AppConstants.sys.mjs").write_bytes(b"x")
+        for rel in extra:
+            f = d / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(b"x")
+        if omni_members:
+            with zipfile.ZipFile(d / "omni.ja", "w") as zf:
+                for m in omni_members:
+                    zf.writestr(m, "x")
+        return d
+
+    #: (name, factory, must_raise)
+    cases = [
+        ("a clean tree", lambda: tree(), False),
+        ("updater.exe at the root", lambda: tree("updater.exe"), True),
+        ("a bare linux updater", lambda: tree("updater"), True),
+        ("updater.ini", lambda: tree("updater.ini"), True),
+        ("update-settings.ini", lambda: tree("update-settings.ini"), True),
+        ("the maintenance service", lambda: tree("maintenanceservice.exe"), True),
+        ("the loose UpdateListener module",
+         lambda: tree("modules/UpdateListener.sys.mjs"), True),
+        ("UpdateService packed INSIDE omni.ja",
+         lambda: tree(omni_members=("modules/UpdateService.sys.mjs",)), True),
+        # The omni.ja arm must not be blind to what sits beside it, and the
+        # loose arm must not fire on a build that legitimately has an omni.ja.
+        ("an omni.ja with nothing of ours in it",
+         lambda: tree(omni_members=("modules/AppConstants.sys.mjs",)), False),
+        # Near-misses. A gate that refuses everything is as useless as one that
+        # passes everything.
+        ("a file merely NAMED like an update", lambda: tree("updates.txt"), False),
+        ("a directory called updater", lambda: tree("updater/keep.txt"), False),
+    ]
+
+    bad = 0
+    for name, factory, must_raise in cases:
+        d = factory()
+        try:
+            assert_no_updater(d)
+            raised = False
+        except ValidationError:
+            raised = True
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        ok = raised == must_raise
+        bad += 0 if ok else 1
+        verdict = "ok" if ok else "GATE WRONG"
+        expect = "must refuse" if must_raise else "must pass"
+        print(f"  [{verdict:9}] {name}: {expect}, "
+              f"{'refused' if raised else 'passed'}")
+
+    fired = sum(1 for _, _, m in cases if m)
+    print(f"[selftest] {len(cases)} cases ({fired} known-bad, "
+          f"{len(cases) - fired} that must not fire), {bad} wrong")
+    return 1 if bad else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--selftest", action="store_true",
+                    help="run the known-bad inputs for the no-updater check and exit")
     ap.add_argument("tag", nargs="?", help="release tag, e.g. firefox-4 (resolves to release/binary/<tag>/)")
     ap.add_argument("--linux", type=Path, help="explicit path to the Linux tar.gz (overrides tag)")
     ap.add_argument("--win", type=Path, help="explicit path to the Windows zip (overrides tag)")
@@ -398,6 +533,9 @@ def main() -> int:
               f"stay out of this repository. NEVER for the pre-publish run: the "
               f"whole point of that run is the scan this flag turns off."))
     args = ap.parse_args()
+
+    if args.selftest:
+        return _selftest()
 
     # Resolved first, so the operator reads what will be scanned before the
     # scanning starts, and so the verdict below is decided even if every archive
