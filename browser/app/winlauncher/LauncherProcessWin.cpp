@@ -20,6 +20,7 @@
 
 #include <windows.h>
 #include <io.h>
+#include <stdlib.h>
 #include <processthreadsapi.h>
 #include <shlwapi.h>
 
@@ -494,19 +495,36 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[]) {
 
   attrs.AddInheritableHandles(stdHandles);
 
-  // Playwright juggler-pipe: the parent process (e.g., Playwright/node)
-  // inherits FDs 3 and 4 to us via the Node.js stdio array. Forward those
-  // pipe handles to the browser child process so the juggler pipe code in
-  // xul.dll can read/write them. FF146 patch ported for FF150.
+  // Juggler pipe: forward the two pipe handles to the browser child, so the
+  // pipe code in xul.dll can read and write them.
+  //
+  // The handles come from PW_PIPE_READ / PW_PIPE_WRITE and from nowhere
+  // else. `wmain` (nsWindowsWMain.cpp) has already resolved them into those
+  // variables before this runs: from CRT descriptors 3 and 4 when a Node.js
+  // parent passes the pipe through its stdio array, or left exactly as the
+  // parent set them when it names the handles itself. Reading the
+  // descriptors here again was a second resolution of the same fact, and it
+  // disagreed with the first. A parent that names the handles opens no CRT
+  // descriptor 3, `_get_osfhandle(3)` on a closed descriptor trips the CRT's
+  // invalid-parameter handler, and this process died with 0xC0000409 before
+  // creating any browser. It happened on the FIRST launch from every new
+  // install path and never again: the second launch found a launcher
+  // timestamp with no browser timestamp and disabled the launcher process.
   bool hasJugglerPipe =
       mozilla::CheckArg(argc, argv, "juggler-pipe", nullptr,
                         mozilla::CheckArgFlag::None) == mozilla::ARG_FOUND;
   if (hasJugglerPipe) {
-    intptr_t stdio3 = _get_osfhandle(3);
-    intptr_t stdio4 = _get_osfhandle(4);
-    HANDLE pipeHandles[] = {reinterpret_cast<HANDLE>(stdio3),
-                            reinterpret_cast<HANDLE>(stdio4)};
-    attrs.AddInheritableHandles(pipeHandles);
+    char pipeRead[20] = {0};
+    char pipeWrite[20] = {0};
+    if (::GetEnvironmentVariableA("PW_PIPE_READ", pipeRead,
+                                  sizeof(pipeRead)) &&
+        ::GetEnvironmentVariableA("PW_PIPE_WRITE", pipeWrite,
+                                  sizeof(pipeWrite))) {
+      HANDLE pipeHandles[] = {
+          reinterpret_cast<HANDLE>(static_cast<intptr_t>(atoi(pipeRead))),
+          reinterpret_cast<HANDLE>(static_cast<intptr_t>(atoi(pipeWrite)))};
+      attrs.AddInheritableHandles(pipeHandles);
+    }
   }
 
   DWORD creationFlags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
