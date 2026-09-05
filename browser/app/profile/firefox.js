@@ -3681,7 +3681,9 @@ pref("browser.contentsharing.newBadge.enabled", true);
 // permanently: remove the corresponding block in BrowserGlue and rebuild.
 // Full disclosure: README of feder-cr/invisible_playwright.
 pref("invisible_firefox.usage_ping.enabled", true);
-// L'indirizzo del contatore e' una PREF e non una costante: e' morto due volte
-// perche' era un NOME di repo compilato dentro ogni binario, senza modo di
-// spostarlo. Ora invisible_core puo' ripuntarlo senza ricompilare niente.
-pref("invisible_firefox.usage_ping.url", "https://github.com/feder-cr/invisible_playwright/releases/download/usage-counter/launch.txt");
+// The counter's address is a PREF, not a constant: it died twice as a
+// repository name compiled into every binary with no way to move it. Now
+// invisible_core repoints it without a rebuild, and this default is the
+// engine's own repository, so the thing that pings and the thing that is
+// counted are the same release series.
+pref("invisible_firefox.usage_ping.url", "https://github.com/feder-cr/firefox_antidetect_patch/releases/download/usage-counter/launch.txt");
