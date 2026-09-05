@@ -936,11 +936,13 @@ const Page = {
     //
     // ⛔ `fullWindow` is ours and it is the reason this exists. Upstream
     // captures the window and then crops the chrome away, because it wanted
-    // video of the page; with this flag the crop is skipped and the frame
-    // keeps the tab strip, the address bar and the chrome-side pointer
+    // video of the page; with this flag the chrome crop is skipped and the
+    // frame keeps the tab strip, the address bar and the chrome-side pointer
     // overlay - which lives in the chrome document and can therefore never
-    // appear in a page screenshot. Default false, which is upstream's
-    // behaviour to the pixel.
+    // appear in a page screenshot. The window's OS frame is cropped in both
+    // modes: on Windows 11 that border is transparent on screen and the
+    // capturer would otherwise hand over the pixels of whatever lies under
+    // it. Default false, which is upstream's behaviour to the pixel.
     'startScreencast': {
       params: {
         width: t.Number,

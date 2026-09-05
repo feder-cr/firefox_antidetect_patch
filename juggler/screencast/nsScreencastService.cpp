@@ -367,14 +367,20 @@ NS_IMETHODIMP nsScreencastService::StartScreencast(
 
   // What to crop off. Screen bounds are the widget on the screen; client
   // bounds are the content area in the parent's coordinates, so they are
-  // walked up to screen coordinates before subtracting.
+  // walked up to screen coordinates before subtracting. The difference is the
+  // window's OS frame.
   //
-  // With fullWindow this stays zero, and that is the whole difference: we are
-  // not capturing anything extra, we are keeping what the capturer already
-  // handed us. The window frame, the tab strip, the address bar and the
-  // chrome-side pointer overlay are in those pixels.
+  // ⛔ THE FRAME IS CROPPED IN BOTH MODES, and the first version of this file
+  // did not: with fullWindow it left the margin at zero, and the frames opened
+  // from the firefox-28 build carried a strip of a few pixels on the right
+  // and at the bottom showing whatever window lay UNDERNEATH. Windows 11
+  // draws its resize border transparent on screen, but the capturer hands
+  // those pixels over like any others. Nobody sitting at the machine sees
+  // that border, so a "full window" frame should not either. What fullWindow
+  // skips is only the CHROME crop below: the tab strip, the address bar and
+  // the chrome-side pointer overlay are what it exists to keep.
   gfx::IntMargin margin;
-  if (!aFullWindow) {
+  {
     auto screenBounds = widget->GetScreenBounds().ToUnknownRect();
     auto clientBounds = widget->GetClientBounds().ToUnknownRect();
     for (auto parent = widget->GetParent(); parent;
@@ -383,6 +389,8 @@ NS_IMETHODIMP nsScreencastService::StartScreencast(
       clientBounds.MoveBy(parentBounds.X(), parentBounds.Y());
     }
     margin = screenBounds - clientBounds;
+  }
+  if (!aFullWindow) {
     margin.top += int32_t(aOffsetTop);
   }
 
