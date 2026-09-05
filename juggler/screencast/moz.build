@@ -1,0 +1,42 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# The JPEG half of Playwright's screencast, on the stock capture module.
+# Playwright's version also built a video encoder here - libvpx frames into a
+# WebM container through mkvmuxer - and none of it is in this file: nothing in
+# this product records videos, and every line of it would be a line to carry
+# through the next rebase.
+
+XPIDL_SOURCES = [
+    "nsIScreencastService.idl",
+]
+
+XPIDL_MODULE = "jugglerscreencast"
+
+SOURCES = [
+    "nsScreencastService.cpp",
+]
+
+XPCOM_MANIFESTS = [
+    "components.conf",
+]
+
+LOCAL_INCLUDES += [
+    # DesktopCaptureImpl and the CaptureDeviceType enum.
+    "!/dist/include/libwebrtc_overrides",
+    "/dom/media/systemservices",
+    "/media/libyuv/libyuv/include",
+    "/third_party/abseil-cpp",
+    "/third_party/libwebrtc",
+]
+
+# WEBRTC_WIN / WEBRTC_LINUX and friends. The libwebrtc headers included above
+# read them, and a header compiled with a different answer than the library it
+# talks to is the kind of mismatch that links and then misbehaves.
+include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
+include("/ipc/chromium/chromium-config.mozbuild")
+
+FINAL_LIBRARY = "xul"

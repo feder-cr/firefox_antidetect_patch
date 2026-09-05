@@ -332,10 +332,17 @@ def declared(proto: str, method: str) -> set[str] | None:
 #: Il criterio, da applicare prima di aggiungere una riga: se il comando sta su
 #: un percorso che un client percorre SENZA chiederlo - creazione di contesto,
 #: apertura di pagina, navigazione - non e' una rimozione accettabile, e' una
-#: rottura della pilotabilita', e va rimessa la dichiarazione. Le due voci
-#: rimaste passano il criterio: `Network.getResponseBody` arriva solo se
-#: qualcuno chiama `response.body()`, `Page.screencastFrame` solo se qualcuno
-#: registra un video.
+#: rottura della pilotabilita', e va rimessa la dichiarazione. La voce rimasta
+#: passa il criterio: `Network.getResponseBody` arriva solo se qualcuno chiama
+#: `response.body()`.
+#:
+#: ⛔ `Page.screencastFrame` E' USCITA DA QUESTA MAPPA il 2026-09-05, ed e' il
+#: modo in cui una riga qui dentro deve finire: non perche' qualcuno abbia
+#: cambiato idea sul criterio, ma perche' la CAPACITA' e' tornata. Lo
+#: screencast e' compilato - `juggler/moz.build` dichiara la directory - e
+#: l'evento e' di nuovo in `Protocol.js`, quindi non c'e' piu' niente da
+#: scusare. Una scusa che sopravvive alla ragione che l'ha prodotta e' un
+#: buco permanente in un gate.
 RIMOSSI_APPOSTA = {
     # NetworkObserver ridotto "all'osso, non a zero" su richiesta del
     # proprietario: via tutta la copia dei corpi delle risposte. `response.body()`
@@ -344,11 +351,6 @@ RIMOSSI_APPOSTA = {
     #    consegue e' aperto in 70-known-bugs.md [B176].
     "Network.getResponseBody":
         "NetworkObserver all'osso [B170]; conseguenze in [B176]",
-    # Il sottosistema screencast non era compilato da nessuno: verificato
-    # nell'objdir, `Cc['@mozilla.org/juggler/screencast;1']` lanciava sempre.
-    # -> il commit "Il sottosistema screencast non era compilato da nessuno".
-    "Page.screencastFrame":
-        "screencast mai compilato, rimosso e verificato nell'objdir",
 }
 
 

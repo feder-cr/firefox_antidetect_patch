@@ -723,6 +723,19 @@ const Page = {
       opcode: t.Number,
       data: t.String,
     },
+    // One JPEG frame of the browser window, base64 encoded. deviceWidth and
+    // deviceHeight are the captured area BEFORE the scale-to-fit, so a viewer
+    // can map a point on the image back onto the window.
+    //
+    // `timestamp` is declared because the Playwright client READS it and it
+    // was never declared: the frame number computed from it came out NaN.
+    // Seconds, like every other timestamp on this protocol.
+    'screencastFrame': {
+      data: t.String,
+      deviceWidth: t.Number,
+      deviceHeight: t.Number,
+      timestamp: t.Number,
+    },
   },
 
   methods: {
@@ -917,6 +930,37 @@ const Page = {
         workerId: t.String,
         message: t.String,
       },
+    },
+    // Live JPEG frames of the browser window. width and height BOUND the
+    // frame: it is scaled down to fit and never up.
+    //
+    // ⛔ `fullWindow` is ours and it is the reason this exists. Upstream
+    // captures the window and then crops the chrome away, because it wanted
+    // video of the page; with this flag the crop is skipped and the frame
+    // keeps the tab strip, the address bar and the chrome-side pointer
+    // overlay - which lives in the chrome document and can therefore never
+    // appear in a page screenshot. Default false, which is upstream's
+    // behaviour to the pixel.
+    'startScreencast': {
+      params: {
+        width: t.Number,
+        height: t.Number,
+        quality: t.Optional(t.Number),
+        fullWindow: t.Optional(t.Boolean),
+        fps: t.Optional(t.Number),
+      },
+      returns: {
+        screencastId: t.String,
+      },
+    },
+    // Flow control: one frame is in flight until this is called, so a slow
+    // consumer sees fewer frames rather than a growing queue.
+    'screencastFrameAck': {
+      params: {
+        screencastId: t.String,
+      },
+    },
+    'stopScreencast': {
     },
   },
 };

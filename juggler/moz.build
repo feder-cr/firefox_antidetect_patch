@@ -4,6 +4,14 @@
 
 DIRS += ["components", "pipe"]
 
+# The screencast rests on DesktopCaptureImpl, which dom/media/systemservices
+# only builds when webrtc is in. Without the directory the XPCOM class is not
+# registered and TargetRegistry.js falls back to refusing the three commands,
+# which is what this whole subsystem did for its first year: it was never in
+# this list, so it was never compiled, and the contract id always threw.
+if CONFIG["MOZ_WEBRTC"]:
+    DIRS += ["screencast"]
+
 JAR_MANIFESTS += ["jar.mn"]
 with Files("**"):
     BUG_COMPONENT = ("Testing", "Juggler")

@@ -194,6 +194,9 @@ export class PageHandler {
       helper.on(this._pageTarget, PageTarget.Events.Crashed, () => {
         this._session.emitEvent('Page.crashed', {});
       }),
+      helper.on(this._pageTarget, PageTarget.Events.ScreencastFrame, params => {
+        this._session.emitEvent('Page.screencastFrame', params);
+      }),
       helper.on(this._pageNetwork, PageNetwork.Events.Request, this._handleNetworkEvent.bind(this, 'Network.requestWillBeSent')),
       helper.on(this._pageNetwork, PageNetwork.Events.Response, this._handleNetworkEvent.bind(this, 'Network.responseReceived')),
       helper.on(this._pageNetwork, PageNetwork.Events.RequestFinished, this._handleNetworkEvent.bind(this, 'Network.requestFinished')),
@@ -470,7 +473,7 @@ export class PageHandler {
       // This is the same check that verifies browser-side if this is the same-document navigation.
       // See CanonicalBrowsingContext::SupportsLoadingInParent.
       // equalsExceptRef can throw if currentURI is a special/incompatible type (e.g. during
-      // proxy auth error or initial page load) — treat as cross-document navigation in that case.
+      // proxy auth error or initial page load) - treat as cross-document navigation in that case.
       sameDocumentNavigation = browsingContext.currentURI && _uri.hasRef && _uri.equalsExceptRef(browsingContext.currentURI);
     } catch (e) {
       sameDocumentNavigation = false;
@@ -809,5 +812,17 @@ export class PageHandler {
     if (!worker)
       throw new Error('ERROR: cannot find worker with id ' + workerId);
     return await worker.sendMessage(JSON.parse(message));
+  }
+
+  async ['Page.startScreencast'](options) {
+    return await this._pageTarget.startScreencast(options);
+  }
+
+  async ['Page.screencastFrameAck'](options) {
+    this._pageTarget.screencastFrameAck(options);
+  }
+
+  async ['Page.stopScreencast']() {
+    this._pageTarget.stopScreencast();
   }
 }

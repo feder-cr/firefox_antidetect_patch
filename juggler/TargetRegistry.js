@@ -104,6 +104,26 @@ class DownloadInterceptor {
   }
 }
 
+/**
+ * The window capture service, or null when this build has none.
+ *
+ * ⛔ NULL, NEVER A STUB OF FUNCTIONS THAT RETURN 0. That is what stood here
+ * until this subsystem was rebuilt, and it is why a caller asking for a video
+ * got a white file and no error: the contract id always threw, because
+ * `juggler/screencast` was not in any `DIRS` and so was never compiled, and
+ * the stub then swallowed every call. A missing capability has to be
+ * ANNOUNCED - the three commands below refuse with a sentence naming the
+ * cause - because a silent no-op is indistinguishable from a working feature
+ * right up until somebody opens the output.
+ */
+const screencastService = (() => {
+  try {
+    return Cc['@mozilla.org/juggler/screencast;1'].getService(Ci.nsIScreencastService);
+  } catch (e) {
+    return null;
+  }
+})();
+
 export class TargetRegistry {
   static instance() {
     return TargetRegistry._instance || null;
@@ -441,6 +461,9 @@ export class PageTarget {
     this._browserContext = browserContext;
     this._viewportSize = undefined;
     this._zoom = 1;
+    // { screencastId } while a screencast is running on this page, undefined
+    // otherwise. One per window: the capture module holds a single sink.
+    this._screencastInfo = undefined;
     // ⛔ The visible pointer overlay, OFF unless `stealthfox.showcursor`
     // says otherwise. It lives in the chrome document of this window, which
     // is a different process from the content: the page cannot see it, and
@@ -756,6 +779,73 @@ export class PageTarget {
     return await this._channel.connect('').send('hasFailedToOverrideTimezone').catch(e => true);
   }
 
+  /**
+   * Starts streaming JPEG frames of this page's window.
+   *
+   * `fullWindow` keeps the browser chrome in the frame instead of cropping it
+   * away. It is the reason this exists: the visible pointer is drawn in the
+   * chrome document, so it is in these pixels and in no page screenshot.
+   *
+   * Nothing here reaches the content process. The capture runs in the parent,
+   * on the operating system's window capture, and the page is not told.
+   */
+  async startScreencast({ width, height, quality, fullWindow, fps }) {
+    if (!screencastService)
+      throw new Error('ERROR: this build has no screencast service (juggler/screencast was not compiled)');
+    if (this._screencastInfo)
+      throw new Error('ERROR: a screencast is already running on this page');
+    // On Mac the window may not be visible yet when the target is created and
+    // its NSWindow.windowNumber can be -1, so wait until it is known good.
+    await this.windowReady();
+    if (width < 10 || width > 10000 || height < 10 || height > 10000)
+      throw new Error('ERROR: invalid screencast size');
+
+    const docShell = this._gBrowser.ownerGlobal.docShell;
+    // How much chrome sits above the content, in device pixels. The service
+    // IGNORES it when fullWindow is set - it is computed either way so that
+    // the two paths differ in one place only, which is the C++ that decides
+    // whether to crop at all.
+    const rect = this.linkedBrowser().getBoundingClientRect();
+    const devicePixelRatio = this._window.devicePixelRatio;
+    const offsetTop = Math.round(devicePixelRatio * rect.top);
+    const viewport = this._viewportSize || this._browserContext.defaultViewportSize || { width: 0, height: 0 };
+    // ⛔ The viewport clamp is for the CONTENT crop, where an oversized window
+    // would otherwise show a strip of chrome. Applied to a full-window frame
+    // it would cut the window down to the page again, undoing the flag.
+    const clampWidth = fullWindow ? 0 : viewport.width;
+    const clampHeight = fullWindow ? 0 : viewport.height;
+
+    const self = this;
+    const screencastClient = {
+      QueryInterface: ChromeUtils.generateQI([Ci.nsIScreencastServiceClient]),
+      screencastFrame(data, deviceWidth, deviceHeight) {
+        if (self._screencastInfo)
+          self.emit(PageTarget.Events.ScreencastFrame, { data, deviceWidth, deviceHeight, timestamp: Date.now() / 1000 });
+      },
+      screencastStopped() {
+      },
+    };
+    const screencastId = screencastService.startScreencast(
+        screencastClient, docShell, width, height, quality || 90,
+        clampWidth, clampHeight, offsetTop, !!fullWindow, fps || 25);
+    this._screencastInfo = { screencastId };
+    return { screencastId };
+  }
+
+  screencastFrameAck({ screencastId }) {
+    if (!this._screencastInfo || this._screencastInfo.screencastId !== screencastId)
+      return;
+    screencastService.screencastFrameAck(screencastId);
+  }
+
+  stopScreencast() {
+    if (!this._screencastInfo)
+      throw new Error('ERROR: no screencast is running on this page');
+    const { screencastId } = this._screencastInfo;
+    this._screencastInfo = undefined;
+    screencastService.stopScreencast(screencastId);
+  }
+
   ensureContextMenuClosed() {
     // Close context menu, if any, since it might capture mouse events on Linux
     // and prevent browser shutdown on MacOS.
@@ -781,6 +871,15 @@ export class PageTarget {
       StealthCursor.releaseWindow(this._window);
       this._stealthCursor = null;
     }
+    // Same reasoning, one layer down: a live screencast owns a capture thread
+    // reading a window that is about to stop existing.
+    if (this._screencastInfo) {
+      try {
+        this.stopScreencast();
+      } catch (e) {
+        dump('failed to stop the screencast while disposing: ' + e.message + '\n');
+      }
+    }
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._linkedBrowser.browsingContext.browserId);
@@ -800,6 +899,7 @@ export class PageTarget {
 PageTarget.Events = {
   Crashed: Symbol('PageTarget.Crashed'),
   DialogOpened: Symbol('PageTarget.DialogOpened'),
+  ScreencastFrame: Symbol('PageTarget.ScreencastFrame'),
 };
 
 function fromProtocolColorScheme(colorScheme) {
