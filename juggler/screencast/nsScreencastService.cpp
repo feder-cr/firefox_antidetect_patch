@@ -28,6 +28,7 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/gfx/Rect.h"
 #include "nsIDocShell.h"
 #include "nsIRandomGenerator.h"
@@ -50,7 +51,46 @@ namespace {
 // the main thread never grows, and neither does the base64 held in memory.
 const uint32_t kMaxFramesInFlight = 1;
 
+// A capture that ended on its own is started again after this long, and again
+// after the same interval for as long as the window cannot be captured.
+//
+// ⛔ THE CAPTURE MODULE ENDS FOR GOOD ON A WINDOW THAT IS ONLY TEMPORARILY
+// UNCAPTURABLE, AND SAYS SO TO NOBODY WHO LISTENS. Measured 2026-09-14: a
+// headed window minimised for a moment. The GDI capturer answers a 1x1 black
+// frame for an iconic window, the blank detector passes the turn to the WGC
+// capturer Firefox keeps as a fallback, and that one - built with the delayed
+// capturability check - reports the minimised window as a PERMANENT error.
+// DesktopCaptureImpl then cancels its timer and fires CaptureEndedEvent, which
+// this file did not subscribe to. The client kept serving the last frame it
+// held, and a person watched a search page while the browser was two sites
+// on. Restoring the window changed nothing: nothing was asking any more.
+const uint32_t kRetryDelayMs = 1000;
+
+// A window whose capturer reports nothing new is answered with the last frame
+// again at this interval, so the client can tell a quiet window from a dead
+// capture by the frame's age alone.
+//
+// Measured on the same day: a headed window that is fully visible on screen
+// is captured through the SCREEN capturer, which delivers a frame only when
+// the screen changed - one frame in four seconds on a still page - while the
+// same window occluded, or a cloaked one, is captured through the window
+// capturer at the requested rate: 48 and 65 frames in four seconds. So
+// silence meant two different things, and a client that restarted the
+// capture after two silent seconds was right for the dead capture and wrong
+// for the quiet window. Repeating the last frame makes silence mean one thing.
+//
+// The age is checked more often than it is allowed to grow, or a tick that
+// lands just short of the age lets it run to two ticks: measured with one
+// constant for both, 6 frames in 4 s where 16 were meant.
+const uint32_t kHeartbeatMs = 250;
+const uint32_t kHeartbeatTickMs = 100;
+
 StaticRefPtr<nsScreencastService> gScreencastService;
+
+int32_t NextModuleId() {
+  static int32_t sModuleId = 0;
+  return ++sModuleId;
+}
 
 nsresult GenerateUid(nsString& aUid) {
   nsresult rv = NS_OK;
@@ -70,13 +110,17 @@ nsresult GenerateUid(nsString& aUid) {
 
 }  // namespace
 
-// One capture session: one window, one capture module, one client.
+// One capture session: one window, one capture module at a time, one client.
 //
 // The module is Firefox's own DesktopCaptureImpl, the code path behind
 // getDisplayMedia's window sharing. It hands us I420 frames on its capture
 // thread; we crop and scale in one step, convert to ARGB, encode a JPEG,
 // base64 it and hop to the main thread to give the string to the JavaScript
 // client. Nothing here touches the content process or the page.
+//
+// The module is replaced when it ends on its own, and the last frame is
+// repeated while the module is quiet: the two constants above say why. Both
+// happen on the main thread, where the module is created and stopped.
 class nsScreencastService::Session final
     : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
@@ -84,11 +128,13 @@ class nsScreencastService::Session final
 
   Session(nsIScreencastServiceClient* aClient, nsIWidget* aWidget,
           webrtc::scoped_refptr<webrtc::DesktopCaptureImpl> aModule,
-          int aWidth, int aHeight, int aViewportWidth, int aViewportHeight,
-          gfx::IntMargin aMargin, uint32_t aQuality, uint32_t aFps)
+          const nsACString& aWindowId, int aWidth, int aHeight,
+          int aViewportWidth, int aViewportHeight, gfx::IntMargin aMargin,
+          uint32_t aQuality, uint32_t aFps)
       : mClient(aClient),
         mWidget(aWidget),
         mModule(std::move(aModule)),
+        mWindowId(aWindowId),
         mWidth(aWidth),
         mHeight(aHeight),
         mViewportWidth(aViewportWidth),
@@ -101,21 +147,13 @@ class nsScreencastService::Session final
 
   // Main thread. The module was created on this thread, and DesktopCaptureImpl
   // asserts that StartCapture and StopCapture come from the thread that
-  // created it.
+  // created it. A failure of the FIRST start is the caller's answer; a module
+  // that ends later is replaced without anybody being asked.
   bool Start() {
-    webrtc::VideoCaptureCapability capability;
-    // The desktop capturer takes its size from the window; the frame rate is
-    // the only knob it reads here.
-    capability.width = 1280;
-    capability.height = 960;
-    capability.maxFPS = static_cast<int32_t>(mFps);
-    capability.videoType = webrtc::VideoType::kI420;
-    mModule->RegisterCaptureDataCallback(this);
-    if (mModule->StartCapture(capability) != 0) {
-      mModule->DeRegisterCaptureDataCallback();
-      fprintf(stderr, "screencast: StartCapture failed\n");
+    if (!StartModule()) {
       return false;
     }
+    ArmHeartbeat();
     return true;
   }
 
@@ -125,17 +163,32 @@ class nsScreencastService::Session final
   // lock NotifyOnFrame holds while it is inside OnFrame, so when it returns
   // no OnFrame is running and none will start; StopCapture then joins the
   // capture thread. A frame already queued to the main thread finds mStopped
-  // set and drops itself.
+  // set and drops itself, and so do the retry and the heartbeat.
   void Stop() {
     if (mStopped.exchange(true)) {
       return;
     }
-    mModule->DeRegisterCaptureDataCallback();
-    mModule->StopCapture();
+    ReleaseModule();
     if (mClient) {
       mClient->ScreencastStopped();
       mClient = nullptr;
     }
+  }
+
+  // Main thread. The module's own word that it will not ask for frames any
+  // more - a permanent error from the capturer. The module is released and
+  // another one is tried after kRetryDelayMs, for as long as this session
+  // lives: a window that cannot be captured now is usually a window that can
+  // be captured in a moment.
+  void OnCaptureEnded() {
+    if (mStopped.load()) {
+      return;
+    }
+    ReleaseModule();
+    // Whatever the old module owed an acknowledgement for is not coming
+    // through it any more; the next module starts with the budget it needs.
+    mFramesInFlight.store(0);
+    RetryLater();
   }
 
   void Ack() {
@@ -273,19 +326,112 @@ class nsScreencastService::Session final
           if (self->mStopped.load() || !self->mClient) {
             return;
           }
-          NS_ConvertUTF8toUTF16 utf16(base64);
-          self->mClient->ScreencastFrame(utf16, uint32_t(cropWidth),
-                                         uint32_t(cropHeight));
+          // Kept for the heartbeat, which repeats it while the module is
+          // quiet. Main thread only, like everything that reads it.
+          self->mLastFrame = base64;
+          self->mLastWidth = uint32_t(cropWidth);
+          self->mLastHeight = uint32_t(cropHeight);
+          self->Deliver();
         }));
   }
 
  private:
   ~Session() override = default;
 
+  // Main thread. Register, start, and listen for the module ending on its
+  // own. Shared by the first start and by every retry.
+  bool StartModule() {
+    webrtc::VideoCaptureCapability capability;
+    // The desktop capturer takes its size from the window; the frame rate is
+    // the only knob it reads here.
+    capability.width = 1280;
+    capability.height = 960;
+    capability.maxFPS = static_cast<int32_t>(mFps);
+    capability.videoType = webrtc::VideoType::kI420;
+    mModule->RegisterCaptureDataCallback(this);
+    if (mModule->StartCapture(capability) != 0) {
+      mModule->DeRegisterCaptureDataCallback();
+      fprintf(stderr, "screencast: StartCapture failed\n");
+      return false;
+    }
+    mEnded = mModule->CaptureEndedEvent()->Connect(
+        GetMainThreadSerialEventTarget(), this, &Session::OnCaptureEnded);
+    return true;
+  }
+
+  // Main thread. The listener goes first: it holds a raw pointer to this
+  // object and a module being stopped can still fire the event.
+  void ReleaseModule() {
+    mEnded.DisconnectIfExists();
+    if (mModule) {
+      mModule->DeRegisterCaptureDataCallback();
+      mModule->StopCapture();
+      mModule = nullptr;
+    }
+  }
+
+  void RetryLater() {
+    NS_DelayedDispatchToCurrentThread(
+        NS_NewRunnableFunction("nsScreencastService::Session::Retry",
+                               [self = RefPtr{this}]() { self->Retry(); }),
+        kRetryDelayMs);
+  }
+
+  // Main thread. A new module for the same window, and another attempt later
+  // if this one cannot even start.
+  void Retry() {
+    if (mStopped.load() || mModule) {
+      return;
+    }
+    mModule = webrtc::DesktopCaptureImpl::Create(
+        NextModuleId(), mWindowId.get(), camera::CaptureDeviceType::Window);
+    if (!mModule || !StartModule()) {
+      mModule = nullptr;
+      RetryLater();
+    }
+  }
+
+  void ArmHeartbeat() {
+    NS_DelayedDispatchToCurrentThread(
+        NS_NewRunnableFunction("nsScreencastService::Session::Heartbeat",
+                               [self = RefPtr{this}]() { self->Heartbeat(); }),
+        kHeartbeatTickMs);
+  }
+
+  // Main thread. The last frame again, if the module has handed over nothing
+  // for a heartbeat and the client is not still holding one.
+  void Heartbeat() {
+    if (mStopped.load()) {
+      return;
+    }
+    if (!mLastFrame.IsEmpty() && mClient && mFramesInFlight.load() == 0 &&
+        TimeStamp::Now() - mLastDelivered >
+            TimeDuration::FromMilliseconds(double(kHeartbeatMs))) {
+      mFramesInFlight.fetch_add(1);
+      Deliver();
+    }
+    ArmHeartbeat();
+  }
+
+  // Main thread. The frame held in mLastFrame goes to the client, counted
+  // against the flow control by whoever called this.
+  void Deliver() {
+    mLastDelivered = TimeStamp::Now();
+    NS_ConvertUTF8toUTF16 utf16(mLastFrame);
+    mClient->ScreencastFrame(utf16, mLastWidth, mLastHeight);
+  }
+
   // Main thread only: the client is a JavaScript object.
   nsCOMPtr<nsIScreencastServiceClient> mClient;
   nsCOMPtr<nsIWidget> mWidget;
   webrtc::scoped_refptr<webrtc::DesktopCaptureImpl> mModule;
+  // Main thread only.
+  MediaEventListener mEnded;
+  const nsCString mWindowId;
+  nsCString mLastFrame;
+  uint32_t mLastWidth = 0;
+  uint32_t mLastHeight = 0;
+  TimeStamp mLastDelivered;
   const int mWidth;
   const int mHeight;
   const int mViewportWidth;
@@ -403,12 +549,11 @@ NS_IMETHODIMP nsScreencastService::StartScreencast(
   nsCString windowId;
   windowId.AppendPrintf("%" PRIuPTR, rawWindowId);
 
-  static int32_t sModuleId = 0;
   // Explicit, because scoped_refptr's constructor from a raw pointer is:
   // taking a reference is a decision, not something a conversion should do
   // quietly. `video_capture_factory.cc` wraps the same call the same way.
   webrtc::scoped_refptr<webrtc::DesktopCaptureImpl> module(
-      webrtc::DesktopCaptureImpl::Create(++sModuleId, windowId.get(),
+      webrtc::DesktopCaptureImpl::Create(NextModuleId(), windowId.get(),
                                          camera::CaptureDeviceType::Window));
   if (!module) {
     return NS_ERROR_FAILURE;
@@ -419,7 +564,7 @@ NS_IMETHODIMP nsScreencastService::StartScreencast(
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<Session> session = new Session(
-      aClient, widget, std::move(module), int(aWidth), int(aHeight),
+      aClient, widget, std::move(module), windowId, int(aWidth), int(aHeight),
       int(aViewportWidth), int(aViewportHeight), margin, aQuality, aFps);
   if (!session->Start()) {
     return NS_ERROR_FAILURE;
