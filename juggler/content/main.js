@@ -90,9 +90,25 @@ export function initialize(browsingContext, docShell) {
   data.frameTree.setInitScripts([...contextCrossProcessCookie.initScripts, ...pageCrossProcessCookie.initScripts]);
   data.channel = new SimpleChannel('', 'process-' + Services.appinfo.processID);
   data.pageAgent = new PageAgent(data.channel, data.frameTree);
+  // ⛔ THE ONE ROAD THAT DOES NOT DEPEND ON THE CHANNEL BINDING. A
+  // restored document's actor is not the one the target's channel is
+  // bound to - that is the defect - so it cannot ask over the channel.
+  // An actor message reaches its own parent actor whatever the channel
+  // happens to be doing.
+  data.frameTree.setBecameCurrentNotifier(() => {
+    try {
+      data.actor?.sendAsyncMessage('juggler:became-current', {});
+    } catch (e) {}
+  });
   docShell.fileInputInterceptionEnabled = !!pageCrossProcessCookie.interceptFileChooserDialog;
 
   data.channel.register('', {
+    announceRestoredDocument() {
+      // The parent calls this once it has bound the channel to the actor
+      // of a document restored from the back-forward cache. See
+      // FrameTree.announceRestoredDocument.
+      data.frameTree.announceRestoredDocument();
+    },
     setInitScripts(scripts) {
       data.frameTree.setInitScripts(scripts);
     },

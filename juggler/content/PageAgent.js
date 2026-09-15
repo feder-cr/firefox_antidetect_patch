@@ -111,6 +111,11 @@ export class PageAgent {
       helper.on(this._frameTree, 'framedetached', this._onFrameDetached.bind(this)),
       helper.on(this._frameTree, 'navigationstarted', this._onNavigationStarted.bind(this)),
       helper.on(this._frameTree, 'navigationcommitted', this._onNavigationCommitted.bind(this)),
+      // A document restored from the back-forward cache is loaded
+      // already: its two lifecycle events fired the first time round and
+      // will not fire again, so they are reported here or a caller waits
+      // for something that can never arrive.
+      helper.on(this._frameTree, 'documentrestored', frame => this._emitAllEvents(frame)),
       helper.on(this._frameTree, 'navigationaborted', this._onNavigationAborted.bind(this)),
       helper.on(this._frameTree, 'samedocumentnavigation', this._onSameDocumentNavigation.bind(this)),
       helper.on(this._frameTree, 'pageready', () => this._browserPage.emit('pageReady', {})),

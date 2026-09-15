@@ -11,6 +11,10 @@ const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js'
 
 const helper = new Helper();
 
+//: One per restored document, so that two restores never share a
+//: navigation id. A restore has no load identifier of its own to borrow.
+let restoredDocuments = 0;
+
 // ⛔ MONDO SCRIPT - leva `STEALTHFOX_SCRIPT_WORLD=1`.
 //
 // E' una variabile d'AMBIENTE e non una pref perche' i mondi si costruiscono
@@ -358,7 +362,67 @@ export class FrameTree {
     if (frame && sameDocumentNavigation) {
       frame._url = location.spec;
       this.emit(FrameTree.Events.SameDocumentNavigation, frame);
+      return;
     }
+    if (frame && this._isBackForwardRestore(progress, location)) {
+      // Announcing from here would be too early: the target's channel is still
+      // bound to the actor of the document we are coming BACK FROM, so the
+      // announcement would be dropped. The parent rebinds first and then asks.
+      this._restoredFrame = frame;
+      this._restoredUrl = location.spec;
+      if (this._becameCurrent)
+        this._becameCurrent();
+    }
+  }
+
+  _isBackForwardRestore(progress, location) {
+    // A restore arrives with the document ALREADY WHOLE; an ordinary
+    // navigation is notified while its document is still being made. Measured:
+    // every ordinary location change reports `loading`, the restore reports
+    // `complete`. Without a distinguisher this would commit a second
+    // navigation for every page load, which is worse than the defect it fixes.
+    //
+    // `about:` pages are excluded because the startup ones are already
+    // complete when they are announced and would take this branch for nothing.
+    try {
+      const document = progress.DOMWindow.document;
+      return document.readyState === 'complete' &&
+             document.documentURI === location.spec &&
+             !location.spec.startsWith('about:');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  setBecameCurrentNotifier(notifier) {
+    this._becameCurrent = notifier;
+  }
+
+  announceRestoredDocument() {
+    // Called by the parent once the channel is bound to this document's actor,
+    // so that what follows has somewhere to go.
+    const frame = this._restoredFrame;
+    const url = this._restoredUrl;
+    this._restoredFrame = null;
+    this._restoredUrl = null;
+    if (!frame || !this._frameIdToFrame.has(frame.id()))
+      return;
+    // The three steps of an ordinary navigation, in the same order. The
+    // navigation id is synthetic because a restore has no load identifier to
+    // borrow; it only has to be new.
+    frame._pendingNavigationId =
+        helper.toProtocolNavigationId('bfcache-' + (++restoredDocuments));
+    this.emit(FrameTree.Events.NavigationStarted, frame);
+    frame._onGlobalObjectCleared();
+    this._frameNavigationCommitted(frame, url);
+    // ⛔ AND THE DOCUMENT IS ALREADY LOADED, WHICH NOTHING WOULD EVER SAY.
+    // `load` and `DOMContentLoaded` fired when this document was first built
+    // and do not fire again on a restore, so a caller waiting for either -
+    // which is what `go_back()` does by default - would wait for an event that
+    // can never come. Reporting the fact is this class's job; turning it into
+    // protocol events is PageAgent's, which is why this is an event and not a
+    // call into the agent.
+    this.emit(FrameTree.Events.DocumentRestored, frame);
   }
 
   _onBrowsingContextAttached(browsingContext) {
@@ -421,6 +485,7 @@ FrameTree.Events = {
   WebSocketFrameReceived: 'websocketframereceived',
   WebSocketFrameSent: 'websocketframesent',
   NavigationStarted: 'navigationstarted',
+  DocumentRestored: 'documentrestored',
   NavigationCommitted: 'navigationcommitted',
   NavigationAborted: 'navigationaborted',
   SameDocumentNavigation: 'samedocumentnavigation',

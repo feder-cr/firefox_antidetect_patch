@@ -10,7 +10,24 @@ export class JugglerFrameParent extends JSWindowActorParent {
     super();
   }
 
-  receiveMessage() { }
+  receiveMessage(message) {
+    // ⛔ THIS IS ONLY REACHED WHILE THE CHANNEL IS NOT BOUND TO THIS ACTOR,
+    // and that is exactly the case worth handling: `SimpleChannel.bindToActor`
+    // binds by replacing an actor's `receiveMessage`, so the bound actor never
+    // arrives here. A document restored from the back-forward cache belongs to
+    // an actor that was created earlier and then stopped being the bound one,
+    // which is why everything it says is dropped today.
+    if (message?.name !== 'juggler:became-current')
+      return;
+    if (!this._target || !this.manager?.isCurrentGlobal)
+      return;
+    this.wireToTarget(this._target);
+    // Only now does the restored document have somewhere to speak, so only now
+    // is it asked to announce itself. The other order loses the announcement,
+    // measured.
+    this._target._channel.connect('').send('announceRestoredDocument')
+        .catch(e => void e);
+  }
 
   async actorCreated() {
     // Actors are registered per the WindowGlobalParent / WindowGlobalChild pair. We are only
