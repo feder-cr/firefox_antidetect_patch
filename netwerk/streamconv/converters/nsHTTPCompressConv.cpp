@@ -56,14 +56,27 @@ class BrotliWrapper {
   BrotliWrapper() = default;
   ~BrotliWrapper() { BrotliDecoderStateCleanup(&mState); }
 
-  bool Init(nsIRequest* aRequest) {
+  bool Init(nsIRequest* aRequest, bool aDictionaryRequired) {
     if (!BrotliDecoderStateInit(&mState, nullptr, nullptr, nullptr)) {
       return false;
     }
 
     nsCOMPtr<nsIHttpChannel> httpchannel(do_QueryInterface(aRequest));
     if (!httpchannel) {
-      return false;
+      // No channel means no shared dictionary to look up, and for plain
+      // `br` that is the ordinary case rather than a failure: the channel is
+      // consulted here for one reason only, and it is optional.
+      //
+      // Refusing instead made brotli undecodable off a channel, which is how
+      // a buffered body gets decoded. Measured: the same response served as
+      // gzip and as deflate decodes, and as `br` returns NS_ERROR_FAILURE
+      // from here, reported by a user against the automation protocol's
+      // response-body command.
+      //
+      // `dcb` is the exception and keeps refusing. There the dictionary is
+      // not an optimisation, it is the encoding: without it the bytes cannot
+      // be read at all, so a missing channel is a real failure.
+      return !aDictionaryRequired;
     }
     if (NS_SUCCEEDED(httpchannel->GetDecompressDictionary(
             getter_AddRefs(mDictionary))) &&
@@ -884,7 +897,8 @@ nsHTTPCompressConv::OnDataAvailable(nsIRequest* request, nsIInputStream* iStr,
     case HTTP_COMPRESS_BROTLI_DICTIONARY: {
       if (!mBrotli) {
         mBrotli = MakeUnique<BrotliWrapper>();
-        if (!mBrotli->Init(request)) {
+        if (!mBrotli->Init(request,
+                           mMode == HTTP_COMPRESS_BROTLI_DICTIONARY)) {
           return NS_ERROR_FAILURE;
         }
       }
