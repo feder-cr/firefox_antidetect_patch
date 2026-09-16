@@ -34,7 +34,6 @@ export class JugglerFrameParent extends JSWindowActorParent {
     // interested in those WindowGlobalParent actors that are matching current browsingContext
     // window global.
     // See https://github.com/mozilla/gecko-dev/blob/cd2121e7d83af1b421c95e8c923db70e692dab5f/testing/mochitest/BrowserTestUtils/BrowserTestUtilsParent.sys.mjs#L15
-    dump(`[PARENT-ACTOR] actorCreated browserId=${this.browsingContext.browserId} isCG=${this.manager?.isCurrentGlobal} parent=${!!this.browsingContext.parent}\n`);
     if (!this.manager?.isCurrentGlobal)
       return;
 
@@ -73,7 +72,6 @@ export class JugglerFrameParent extends JSWindowActorParent {
     const embedder = this.browsingContext.top?.embedderElement;
     let smentito = false;
     if (target && embedder && registry?.targetForBrowser(embedder) !== target) {
-      dump(`[PARENT-ACTOR] rifiutato: browserId=${browserId} appartiene a un altro <browser>\n`);
       target = null;
       smentito = true;
     }
@@ -86,23 +84,18 @@ export class JugglerFrameParent extends JSWindowActorParent {
       // sugli stessi due numeri che si sono appena scontrati, quindi metterlo in
       // coda sposterebbe la stessa collisione al prossimo target che nasce.
       registry._pendingActors.set(browserId, this);
-      dump(`[PARENT-ACTOR] registered pending actor for browserId=${browserId}\n`);
     }
-    dump(`[PARENT-ACTOR] target=${!!this._target} for browserId=${browserId}\n`);
     if (!this._target)
       return;
 
     this.actorName = `browser::page[${this._target.id()}]/${this.browsingContext.browserId}/${this.browsingContext.id}/${this._target.nextActorSequenceNumber()}`;
-    dump(`[PARENT-ACTOR] calling setActor for target ${this._target.id()}\n`);
     this._target.setActor(this);
-    dump(`[PARENT-ACTOR] setActor done\n`);
   }
 
   wireToTarget(target) {
     this._target = target;
     this.actorName = `browser::page[${target.id()}]/${this.browsingContext.browserId}/${this.browsingContext.id}/${target.nextActorSequenceNumber()}`;
     target.setActor(this);
-    dump(`[PARENT-ACTOR] wireToTarget: bound to target ${target.id()} for browserId=${this.browsingContext.browserId}\n`);
   }
 
   didDestroy() {
