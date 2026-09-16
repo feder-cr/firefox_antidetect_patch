@@ -6,6 +6,7 @@
 
 const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
 const { ChannelEventSinkFactory } = ChromeUtils.importESModule("chrome://juggler/content/ChannelEventSink.sys.mjs");
+const { newProxyInfoFor } = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
 
 
 const Cc = Components.classes;
@@ -21,8 +22,6 @@ const BinaryInputStream = CC('@mozilla.org/binaryinputstream;1', 'nsIBinaryInput
 const BinaryOutputStream = CC('@mozilla.org/binaryoutputstream;1', 'nsIBinaryOutputStream', 'setOutputStream');
 const StorageStream = CC('@mozilla.org/storagestream;1', 'nsIStorageStream', 'init');
 const helper = new Helper();
-
-const UINT32_MAX = Math.pow(2, 32)-1;
 
 // Cap response storage with 100Mb per tracked tab.
 const MAX_RESPONSE_STORAGE_SIZE = 100 * 1024 * 1024;
@@ -633,32 +632,22 @@ export class NetworkObserver {
         }
         if (this._targetRegistry.shouldBustHTTPAuthCacheForProxy(proxy))
           Services.obs.notifyObservers(null, "net:clear-active-logins");
-        // ⛔ WITH_AUTH, and the plain `newProxyInfo` used to be on this line.
-        // It has no username or password parameters, so the credentials the
-        // client sends with `Browser.setBrowserProxy` reached this object and
-        // stopped here. For SOCKS that is not a cosmetic loss: the engine then
-        // offers method 0x00 only - measured 2026-08-30, 23 browser
-        // connections to an auth-requiring proxy, every one of them
-        // advertising "no authentication", and the proxy closed all 23.
+        // ⛔ AND THE CREDENTIALS ARE NOT DECIDED HERE ANY MORE, because for
+        // seven releases they were decided here WRONGLY and nothing said so.
         //
-        // It went unnoticed for as long as a SECOND road delivered them: this
-        // project wrote `network.proxy.socks_username` / `_password`, which
-        // the pref path injects at `nsProtocolProxyService.cpp`,
-        // `NewProxyInfo_Internal`. Those prefs were removed with the other
-        // proxy roads, and this line is what makes one road sufficient - for
-        // every scheme, since the same two fields carry HTTP proxy auth.
-        proxyFilter.onProxyFilterResult(protocolProxyService.newProxyInfoWithAuth(
-            proxy.type,
-            proxy.host,
-            proxy.port,
-            proxy.username || '',
-            proxy.password || '',
-            '', /* aProxyAuthorizationHeader */
-            '', /* aConnectionIsolationKey */
-            Ci.nsIProxyInfo.TRANSPARENT_PROXY_RESOLVES_HOST, /* aFlags */
-            UINT32_MAX, /* aFailoverTimeout */
-            null, /* failover proxy */
-        ));
+        // The line this replaces passed the username and the password for
+        // every scheme, with a comment claiming "the same two fields carry
+        // HTTP proxy auth". They do not. Gecko refuses them for anything that
+        // is not SOCKS, so with an authenticated HTTP proxy this call threw,
+        // `onProxyFilterResult` was never reached, and necko went on with the
+        // DEFAULT proxy info: DIRECT, over the host's own address, with no
+        // error on the protocol and nothing in the log a client could see.
+        // Reported from the outside as a privacy failure, not caught here.
+        //
+        // `newProxyInfoFor` is now the only place that answers the question,
+        // and it is also called when the proxy is SET, so a proxy this engine
+        // cannot express refuses its command instead of arriving here to fail.
+        proxyFilter.onProxyFilterResult(newProxyInfoFor(proxy));
       },
     };
     protocolProxyService.registerChannelFilter(this._channelProxyFilter, 0 /* position */);
