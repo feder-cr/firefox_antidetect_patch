@@ -173,6 +173,10 @@ export class PageHandler {
     }
 
     this._isDragging = false;
+    // The watcher that notices a drag being born lives as long as the GESTURE -
+    // from the press to the release - not as long as one dispatch call. See
+    // `_adoptDragSessionIfStarted` for why that distinction is the whole bug.
+    this._dragGestureWatcher = null;
     this._lastMousePosition = { x: 0, y: 0 };
 
     this._reportedFrameIds = new Set();
@@ -593,11 +597,60 @@ export class PageHandler {
         });
         await this._contentPage.send('dispatchDragEvent', {type: 'dragend'});
         this._isDragging = false;
+        // And close the gesture's watcher with it. It still holds the
+        // `dragstart` that started this drag, and without this the next
+        // `mousemove` would adopt the very session Escape just cancelled.
+        this._disposeDragGestureWatcher();
       }
       return;
     }
     return await this._pageTarget.activateAndRun(() =>
       this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text}));
+  }
+
+  _disposeDragGestureWatcher() {
+    if (!this._dragGestureWatcher)
+      return;
+    this._dragGestureWatcher.dispose();
+    this._dragGestureWatcher = null;
+  }
+
+  /**
+   * Adopt the drag session if one was born anywhere in this gesture.
+   *
+   * ⛔ WHY THIS IS NOT INLINE IN THE `mousemove` HANDLER, WHERE IT USED TO BE.
+   * `_isDragging` describes the whole gesture, but it was derived inside the
+   * handler of a SINGLE event, from a watcher that the same call created and
+   * disposed. That only holds while the dispatch is acknowledged: upstream sent
+   * mouse events through `win.synthesizeMouseEvent`, which takes a completion
+   * callback, and closed `sendEvents` with `await Promise.all(promises)` - so by
+   * the time the check ran, the renderer had processed the event and `dragstart`
+   * had already been observed. The comment saying "[mousemove] - always emitted.
+   * This was awaited as part of `sendEvents` call" is that contract.
+   *
+   * This fork dispatches through `jugglerSendMouseEvent`, which has no
+   * completion callback, so the await went away and only the comment stayed.
+   * From then on `dragstart` could arrive after its watcher had been disposed,
+   * and nothing would ever set `_isDragging`: every later move stayed a plain
+   * `mousemove`, the release stayed a plain `mouseup`, and the drop was lost.
+   *
+   * Measured on a 480 px travel: delivered in 5 runs out of 6 when the events
+   * were sent back to back, and in 0 out of 6 as soon as they were 5 ms apart -
+   * because the gap is exactly where no watcher was alive to catch the news.
+   * It is also why a travel of one single `mousemove` never worked while two
+   * identical ones did: the second event existed only to give a late
+   * `dragstart` a live watcher to land in. [B213]
+   *
+   * Giving the watcher the lifetime of the gesture removes the hole rather than
+   * making it smaller, so WHEN the news arrives stops mattering.
+   */
+  async _adoptDragSessionIfStarted() {
+    if (this._isDragging || !this._dragGestureWatcher)
+      return;
+    if (!this._dragGestureWatcher.hasEvent('dragstart'))
+      return;
+    const eventObject = await this._dragGestureWatcher.ensureEvent('juggler-drag-finalized');
+    this._isDragging = eventObject.dragSessionStarted;
   }
 
   async ['Page.dispatchTapEvent'](options) {
@@ -671,6 +724,14 @@ export class PageHandler {
         if (this._isDragging)
           return;
 
+        // The gesture starts here, so the watcher for it starts here. Which of
+        // the events between this press and the release carries the `dragstart`
+        // is not ours to predict, and it used to be predicted.
+        this._disposeDragGestureWatcher();
+        this._dragGestureWatcher = new EventWatcher(
+            this._pageEventSink, ['dragstart', 'juggler-drag-finalized'],
+            this._pendingEventWatchers);
+
         const eventNames = button === 2 ? ['mousedown', 'contextmenu'] : ['mousedown'];
         await sendEvents(eventNames);
         return;
@@ -678,6 +739,9 @@ export class PageHandler {
 
       if (type === 'mousemove') {
         this._lastMousePosition = { x, y };
+        // Before deciding what this move is, catch up: the drag may have been
+        // born during an earlier call, or in the gap between two of them.
+        await this._adoptDragSessionIfStarted();
         if (this._isDragging) {
           const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
           await this._contentPage.send('dispatchDragEvent', {type:'dragover', x, y, modifiers});
@@ -685,7 +749,6 @@ export class PageHandler {
           return;
         }
 
-        const watcher = new EventWatcher(this._pageEventSink, ['dragstart', 'juggler-drag-finalized'], this._pendingEventWatchers);
         /* STEALTHFOX_HUMANIZE_HOOK: expand mousemove into a Bezier trajectory. */
         if (_stealthfoxHumanize.enabled()) {
           const bbox = this._pageTarget._linkedBrowser.getBoundingClientRect();
@@ -720,33 +783,37 @@ export class PageHandler {
         }
         await sendEvents(['mousemove']);
 
-        // The order of events after 'mousemove' is sent:
-        // 1. [dragstart] - might or might NOT be emitted
-        // 2. [mousemove] - always emitted. This was awaited as part of `sendEvents` call.
-        // 3. [juggler-drag-finalized] - only emitted if dragstart was emitted.
-
-        if (watcher.hasEvent('dragstart')) {
-          const eventObject = await watcher.ensureEvent('juggler-drag-finalized');
-          this._isDragging = eventObject.dragSessionStarted;
-        }
-        watcher.dispose();
+        // And catch up again, in case this move is the one that gave birth to
+        // the drag. `sendEvents` does NOT wait for the renderer here - see
+        // `_adoptDragSessionIfStarted` - so this check can miss, and the gesture
+        // watcher is what makes a miss harmless instead of final.
+        await this._adoptDragSessionIfStarted();
         return;
       }
 
       if (type === 'mouseup') {
-        if (this._isDragging) {
-          const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
-          await this._contentPage.send('dispatchDragEvent', {type: 'dragover', x, y, modifiers});
-          await this._contentPage.send('dispatchDragEvent', {type: 'drop', x, y, modifiers});
-          await this._contentPage.send('dispatchDragEvent', {type: 'dragend', x, y, modifiers});
-          // NOTE:
-          // - 'drop' event might not be dispatched at all, depending on dropAction.
-          // - 'dragend' event might not be dispatched at all, if the source element was removed
-          //   during drag. However, it'll be dispatched synchronously in the renderer.
-          await watcher.ensureEventsAndDispose(['dragover']);
-          this._isDragging = false;
-        } else {
-          await sendEvents(['mouseup']);
+        // The last chance to notice: a drag born by the final move has until
+        // here to be adopted, and before the gesture watcher is closed.
+        await this._adoptDragSessionIfStarted();
+        try {
+          if (this._isDragging) {
+            const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
+            await this._contentPage.send('dispatchDragEvent', {type: 'dragover', x, y, modifiers});
+            await this._contentPage.send('dispatchDragEvent', {type: 'drop', x, y, modifiers});
+            await this._contentPage.send('dispatchDragEvent', {type: 'dragend', x, y, modifiers});
+            // NOTE:
+            // - 'drop' event might not be dispatched at all, depending on dropAction.
+            // - 'dragend' event might not be dispatched at all, if the source element was removed
+            //   during drag. However, it'll be dispatched synchronously in the renderer.
+            await watcher.ensureEventsAndDispose(['dragover']);
+            this._isDragging = false;
+          } else {
+            await sendEvents(['mouseup']);
+          }
+        } finally {
+          // The gesture is over either way, so the window in which a `dragstart`
+          // means anything closes here - including when the branch above threw.
+          this._disposeDragGestureWatcher();
         }
         return;
       }
