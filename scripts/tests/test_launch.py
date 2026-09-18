@@ -16,11 +16,9 @@ import os
 import sys
 from pathlib import Path
 
-SDK_PATH = os.environ.get(
-    "STEALTHFOX_PYTHONPATH",
-    r"c:/src/firefox-stealth/release/stealthfox/src",
-)
-sys.path.insert(0, SDK_PATH)
+from _sdk import load_sdk  # noqa: E402
+
+load_sdk()
 
 from invisible_playwright.async_api import async_playwright  # noqa: E402
 

@@ -97,14 +97,14 @@ export class PageAgent {
     this._eventListeners = [
       helper.addObserver(this._linkClicked.bind(this, false), 'juggler-link-click'),
       helper.addObserver(this._linkClicked.bind(this, true), 'juggler-link-click-sync'),
-      // 'file-input-picker-opening' e' l'observer che Gecko notifica GIA' da
-      // se', con l'elemento come subject (upstream lo usa per WebDriver BiDi).
-      // Prima qui c'era 'juggler-file-picker-shown', che in tutto l'albero
-      // compariva SOLO su questa riga: nessuno lo notificava mai, quindi
-      // `page.on('filechooser')` non poteva scattare. Ascoltare quello di
-      // upstream invece di inventarne uno nostro toglie una divergenza a ogni
-      // rebase; la sola cosa che il nostro C++ aggiunge e' NON aprire il
-      // dialogo nativo quando l'intercettazione e' accesa.
+      // 'file-input-picker-opening' is the observer Gecko ALREADY notifies by
+      // itself, with the element as the subject (upstream uses it for WebDriver
+      // BiDi). This used to be 'juggler-file-picker-shown', a name that
+      // appeared on this ONE line in the whole tree: nothing ever notified it,
+      // so `page.on('filechooser')` could not fire. Listening to upstream's
+      // instead of inventing our own removes a divergence at every rebase; the
+      // only thing our C++ adds is NOT opening the native dialog while
+      // interception is on.
       helper.addObserver(this._filePickerShown.bind(this), 'file-input-picker-opening'),
       helper.addObserver(this._onDocumentOpenLoad.bind(this), 'juggler-document-open-loaded'),
       helper.on(this._frameTree, 'frameattached', this._onFrameAttached.bind(this)),
@@ -379,12 +379,12 @@ export class PageAgent {
   }
 
   async _dispatchTrustedInputEvents({objectId, frameId, types}) {
-    // Il chrome-side gemello del dispatch che lo script iniettato faceva da
-    // solo, lato contenuto, per select_option e fill non testuale. La
-    // differenza e' dispatchDOMEventViaPresShellForTesting invece di
-    // element.dispatchEvent: quella chiama SetTrusted(true) sull'evento
-    // prima di consegnarlo, questo no - ed e' il motivo per cui esisteva la
-    // divergenza misurata, non una scelta deliberata.
+    // The chrome-side twin of the dispatch the injected script used to do on
+    // its own, content-side, for select_option and non-textual fill. The
+    // difference is dispatchDOMEventViaPresShellForTesting instead of
+    // element.dispatchEvent: the former calls SetTrusted(true) on the event
+    // before delivering it and the latter does not - which is why the measured
+    // divergence existed, rather than it being a deliberate choice.
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
