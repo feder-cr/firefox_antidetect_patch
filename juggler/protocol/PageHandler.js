@@ -81,10 +81,11 @@ const _stealthfoxHumanize = {
       const dy = curve[i][1] - curve[i - 1][1];
       total += Math.sqrt(dx * dx + dy * dy);
     }
-    // Il tetto dei passi si DERIVA dalla cadenza, non la ripete: il `100` che
-    // stava qui era "10 ms a passo" scritto una seconda volta, cioe' lo stesso
-    // fatto di `stepMs` in due punti. Alzare stepMs lasciando il 100 avrebbe
-    // sforato `maxTime` senza che niente lo dicesse.
+    // The ceiling on the step count is DERIVED from the cadence rather than
+    // repeating it: the `100` that used to sit here was "10 ms per step"
+    // written a second time, the same fact as `stepMs` in two places. Raising
+    // stepMs while leaving the 100 would have overrun `maxTime` with nothing
+    // saying so.
     const maxSteps = Math.max(4, Math.floor((maxTimeS || 1.5) * 1000 / this.stepMs()));
     const target = Math.min(maxSteps, Math.max(4, Math.floor(Math.pow(total, 0.25) * 20)));
     const out = [];
@@ -380,18 +381,18 @@ export class PageHandler {
   }
 
   async ['Page.setEmulatedMedia']({colorScheme, type, reducedMotion, forcedColors, contrast}) {
-    // Stealthfox: movimento ridotto, colori forzati e contrasto NON si impongono
-    // piu' da qui. Le loro dichiarazioni vivono in invisible_core come prefs, e
-    // l'override del BrowsingContext le cortocircuitava: Gecko guarda prima
-    // l'override e legge LookAndFeel solo quando quello e' None.
+    // Stealthfox: reduced motion, forced colors and contrast are NOT imposed
+    // from here any more. Their declarations live in invisible_core as prefs,
+    // and the BrowsingContext override short-circuited them: Gecko looks at the
+    // override first and only reads LookAndFeel when that one is None.
     //
-    // Si RIFIUTA invece di ignorare in silenzio. Ignorare renderebbe questa API
-    // una bugia: il chiamante crede di aver cambiato una media feature e la
-    // pagina risponde un'altra cosa. Un rifiuto nomina la manopola vera.
-    const imposti = Object.entries({reducedMotion, forcedColors, contrast})
+    // It REFUSES rather than ignoring silently. Ignoring would make this API a
+    // lie: the caller believes it changed a media feature and the page answers
+    // something else. A refusal names the real knob.
+    const imposed = Object.entries({reducedMotion, forcedColors, contrast})
         .filter(entry => entry[1] !== undefined && entry[1] !== null && entry[1] !== '')
         .map(entry => entry[0]);
-    if (imposti.length)
+    if (imposed.length)
       throw new Error('Page.setEmulatedMedia: ' + imposti.join(', ') + ' non si impostano da qui; li dichiara invisible_core nel profilo');
     this._pageTarget.setColorScheme(colorScheme || null);
     this._pageTarget.setEmulatedMedia(type);
@@ -556,38 +557,37 @@ export class PageHandler {
     return await this._pageTarget.setInitScripts(scripts);
   }
 
-  // TASTIERA E MOUSE PRENDEVANO STRADE DIVERSE, E LA DIFFERENZA SI VEDEVA DALLA
-  // PAGINA.
+  // THE KEYBOARD AND THE MOUSE TOOK DIFFERENT ROADS, AND THE PAGE COULD SEE
+  // THE DIFFERENCE.
   //
-  // `dispatchMouseEvent`, `dispatchWheelEvent`, `reload` e `bringToFront`
-  // passano tutti da `activateAndRun()`, che fa `window.focus()` e seleziona la
-  // scheda PRIMA di agire - il commento upstream sul percorso del mouse dice
-  // perche' ("We must switch to proper tab..."). Il percorso della tastiera no:
-  // andava dritto al processo di contenuto, quindi i tasti arrivavano a una
-  // pagina che NON aveva il fuoco. Un umano non puo' farlo: per digitare in una
-  // finestra bisogna prima portarla davanti, ed e' proprio quello che il nostro
-  // mouse gia' faceva.
+  // `dispatchMouseEvent`, `dispatchWheelEvent`, `reload` and `bringToFront` all
+  // go through `activateAndRun()`, which calls `window.focus()` and selects the
+  // tab BEFORE acting - the upstream comment on the mouse path says why ("We
+  // must switch to proper tab..."). The keyboard path did not: it went straight
+  // to the content process, so keys reached a page that did NOT have focus. A
+  // human cannot do that: typing into a window means bringing it forward first,
+  // which is exactly what our mouse already did.
   //
-  // Misurato il 2026-08-23 sul prodotto, con `document.hasFocus()` letto DENTRO
-  // il gestore di keydown - cinque casi, e solo l'ultimo era sano:
-  //   1) una pagina sola, si digita            -> true    (il caso comune, sano)
-  //   2) due pagine, si digita in quella davanti -> true
-  //   3) due pagine, si digita in quella DIETRO  -> FALSE  <- il tell
-  //   4) stessa pagina dietro, ma col MOUSE      -> true   (activateAndRun)
-  //   5) tastiera subito dopo quel click         -> true   (l'aveva attivata il click)
-  // Cioe' il difetto non e' "manca il fuoco", e' l'ASIMMETRIA: la stessa pagina
-  // nello stesso istante risponde true al mouse e false alla tastiera, e basta
-  // un `document.hasFocus()` dentro un keydown per vederlo.
+  // Measured 2026-08-23 on the product, reading `document.hasFocus()` INSIDE the
+  // keydown handler - five cases, and only the last one was healthy:
+  //   1) one page, typing                       -> true   (the common, healthy case)
+  //   2) two pages, typing into the front one    -> true
+  //   3) two pages, typing into the BACK one     -> FALSE  <- the tell
+  //   4) same back page, but with the MOUSE      -> true   (activateAndRun)
+  //   5) keyboard right after that click         -> true   (the click had activated it)
+  // So the defect is not "focus is missing", it is the ASYMMETRY: the same page
+  // at the same instant answers true to the mouse and false to the keyboard, and
+  // one `document.hasFocus()` inside a keydown is enough to see it.
   //
-  // Il rimedio e' all'origine e non e' una pezza: non si finge il fuoco e non si
-  // corregge `hasFocus`, si fa passare l'input della tastiera dalla STESSA
-  // attivazione che usa gia' quello del mouse. Se la scheda e' gia' quella
-  // selezionata, `activateAndRun` fa solo un `window.focus()` su una finestra
-  // gia' a fuoco, che non emette niente e non costa niente.
+  // The remedy is at the origin and is not a patch: focus is not faked and
+  // `hasFocus` is not corrected, the keyboard's input is routed through the SAME
+  // activation the mouse already uses. When the tab is already the selected one,
+  // `activateAndRun` only calls `window.focus()` on an already focused window,
+  // which emits nothing and costs nothing.
   //
-  // Vale per tutto l'input diretto - tasti, testo inserito, tocco - non per il
-  // solo caso misurato: il difetto e' della classe, e correggerne un membro solo
-  // lascerebbe gli altri a divergere da soli (regola 16).
+  // It holds for all direct input - keys, inserted text, touch - not only for
+  // the measured case: the defect belongs to the class, and fixing one member
+  // would leave the others to diverge on their own (rule 16).
   async ['Page.dispatchKeyEvent']({type, keyCode, code, key, repeat, location, text}) {
     // key events don't fire if we are dragging.
     if (this._isDragging) {
@@ -800,13 +800,13 @@ export class PageHandler {
             // Jittered inter-sample delay: a real human's pointer dt is non-uniform;
             // a fixed stepMs was a behavioral tell. Gaussian around stepMs.
             //
-            // Il pavimento e' UN FOTOGRAMMA a 60 Hz, non 2 ms. Firefox unisce i
-            // mousemove al ritmo di refresh, quindi una pagina su un 60 Hz vero
-            // non puo' vederne due a 2 ms di distanza: quel pavimento produceva
-            // intervalli che nessun hardware reale genera. Misurato il
-            // 2026-08-24 con stepMs=10: 79% dei dt sotto 16,7 ms, minimo 2 ms.
-            // Il generatore Python del wrapper, che e' il percorso predefinito e
-            // il riferimento, sulla stessa mossa da' media 31,9 ms e minimo 16.
+            // The floor is ONE FRAME at 60 Hz, not 2 ms. Firefox coalesces
+            // mousemove at the refresh rate, so a page on a real 60 Hz display
+            // cannot see two of them 2 ms apart: that floor produced intervals
+            // no real hardware generates. Measured 2026-08-24 with stepMs=10:
+            // 79% of the dt below 16.7 ms, minimum 2 ms. The wrapper's Python
+            // generator, which is the default path and the reference, gives a
+            // mean of 31.9 ms and a minimum of 16 on the same movement.
             const d = Math.max(16, Math.round(_stealthfoxHumanize._gauss(stepDelayMs, stepDelayMs * 0.4)));
             await new Promise(r => setTimeout(r, d));
           }
@@ -888,8 +888,8 @@ export class PageHandler {
     }, { muteNotificationsPopup: true });
   }
 
-  // Stessa classe di `Page.dispatchKeyEvent` sopra, e stessa ragione: e' input
-  // che arriva alla pagina, quindi deve trovare la finestra a fuoco.
+  // Same class as `Page.dispatchKeyEvent` above, and the same reason: it is
+  // input reaching the page, so it must find the window focused.
   async ['Page.insertText'](options) {
     return await this._pageTarget.activateAndRun(() =>
       this._contentPage.send('insertText', options));
