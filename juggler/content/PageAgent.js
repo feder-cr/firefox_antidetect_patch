@@ -169,6 +169,7 @@ export class PageAgent {
         describeNode: this._describeNode.bind(this),
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchDragEvent: this._dispatchDragEvent.bind(this),
+        isDragSessionLive: this._isDragSessionLive.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
         getContentQuads: this._getContentQuads.bind(this),
         insertText: this._insertText.bind(this),
@@ -565,6 +566,27 @@ export class PageAgent {
     const frame = this._frameTree.mainFrame();
     const domWindow = frame?.domWindow();
     return domWindow ? dragService.getCurrentSession(domWindow) : undefined;
+  }
+
+  /**
+   * Is a drag session live RIGHT NOW? Asked by the parent at the release.
+   *
+   * ⛔ WHY ASKING BEATS WATCHING, AT THIS ONE POINT. The parent learns about a
+   * drag by observing the `dragstart` we emit, which is cheap and needs no round
+   * trip - but observing can only ever be as fresh as the last thing that
+   * arrived. At the release there is no later event to catch up on, so a miss
+   * there is final: the release goes out as a plain `mouseup`, the drop never
+   * happens, and the session is not even closed. That is the case of a travel
+   * made of ONE movement, where the drag is born by the last event of the
+   * gesture. [B213]
+   *
+   * So at that one point the parent stops inferring and asks the side that
+   * knows. The answer is ordered behind the mouse event that may have started
+   * the drag: both ride the same channel to this process, and input is not
+   * delivered later than what was sent after it.
+   */
+  async _isDragSessionLive() {
+    return { live: !!this._getCurrentDragSession() };
   }
 
   async _dispatchDragEvent({type, x, y, modifiers}) {

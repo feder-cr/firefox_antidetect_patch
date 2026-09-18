@@ -177,6 +177,9 @@ export class PageHandler {
     // from the press to the release - not as long as one dispatch call. See
     // `_adoptDragSessionIfStarted` for why that distinction is the whole bug.
     this._dragGestureWatcher = null;
+    // A press and a release with nothing in between cannot have started a drag,
+    // so an ordinary click never pays for the question asked at the release.
+    this._gestureMoved = false;
     this._lastMousePosition = { x: 0, y: 0 };
 
     this._reportedFrameIds = new Set();
@@ -653,6 +656,32 @@ export class PageHandler {
     this._isDragging = eventObject.dragSessionStarted;
   }
 
+  /**
+   * The release's last word: stop inferring and ASK.
+   *
+   * ⛔ WHY THE WATCHER IS NOT ENOUGH HERE, AND ONLY HERE. Watching is cheap and
+   * needs no round trip, so it carries every movement - but it can only ever be
+   * as fresh as the last thing that arrived, and `sendEvents` does not wait for
+   * the renderer (see `_adoptDragSessionIfStarted`). Everywhere else a miss is
+   * harmless: the next movement catches up. At the release there IS no next
+   * movement, so a miss is final - the release goes out as a plain `mouseup`,
+   * the drop never happens, and the session is left open. That is the case of a
+   * travel made of ONE movement, which is what `humanize=False` emits: the drag
+   * is born by the last event of the gesture and nothing after it can notice.
+   * Measured before this: 1 delivery out of 5. [B213]
+   *
+   * The answer is ordered behind the mouse events it is about - the content
+   * channel is a JSWindowActor, so it rides the same connection to that process
+   * as the input, and input is not delivered later than what was sent after it.
+   * The question is asked at most once per gesture, and only when the gesture
+   * MOVED: a press and a release with nothing in between cannot have started a
+   * drag, so a click pays nothing.
+   */
+  async _adoptDragSessionFromContent() {
+    const answer = await this._contentPage.send('isDragSessionLive', {});
+    this._isDragging = !!(answer && answer.live);
+  }
+
   async ['Page.dispatchTapEvent'](options) {
     return await this._pageTarget.activateAndRun(() =>
       this._contentPage.send('dispatchTapEvent', options));
@@ -731,6 +760,7 @@ export class PageHandler {
         this._dragGestureWatcher = new EventWatcher(
             this._pageEventSink, ['dragstart', 'juggler-drag-finalized'],
             this._pendingEventWatchers);
+        this._gestureMoved = false;
 
         const eventNames = button === 2 ? ['mousedown', 'contextmenu'] : ['mousedown'];
         await sendEvents(eventNames);
@@ -739,6 +769,8 @@ export class PageHandler {
 
       if (type === 'mousemove') {
         this._lastMousePosition = { x, y };
+        if (this._dragGestureWatcher)
+          this._gestureMoved = true;
         // Before deciding what this move is, catch up: the drag may have been
         // born during an earlier call, or in the gap between two of them.
         await this._adoptDragSessionIfStarted();
@@ -792,9 +824,12 @@ export class PageHandler {
       }
 
       if (type === 'mouseup') {
-        // The last chance to notice: a drag born by the final move has until
-        // here to be adopted, and before the gesture watcher is closed.
+        // The last chance to notice, and the only one that cannot be made up
+        // for later: first what we already saw, then - if the gesture moved at
+        // all - the content process itself.
         await this._adoptDragSessionIfStarted();
+        if (!this._isDragging && this._gestureMoved)
+          await this._adoptDragSessionFromContent();
         try {
           if (this._isDragging) {
             const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
