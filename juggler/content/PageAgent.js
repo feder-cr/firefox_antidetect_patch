@@ -131,6 +131,16 @@ export class PageAgent {
         if (inputEvent.type === 'dragstart') {
           // After the dragStart event is dispatched and handled by Web,
           // it might or might not create a new drag session, depending on its preventing default.
+          //
+          // [B212]: this `setTimeout(0)` LOOKS like the race that loses the
+          // drop, and it was tested as such - the engine was made to report
+          // `dragStarted` from EventStateManager at the instant it decides,
+          // and this poll was replaced by an observer on that fact. The
+          // delivery rate did NOT improve (14/20 against 17/20, same bench,
+          // same twenty seeds), so the session is genuinely not being created
+          // in those runs rather than being created and read too early. The
+          // change was reverted: it moved no measure and would have cost a
+          // permanent divergence in EventStateManager.cpp.
           setTimeout(() => {
             const session = this._getCurrentDragSession();
             this._browserPage.emit('pageInputEvent', { type: 'juggler-drag-finalized', dragSessionStarted: !!session });
@@ -562,23 +572,15 @@ export class PageAgent {
     const dropEffect = session.dataTransfer.dropEffect;
 
     if ((type === 'drop' && dropEffect !== 'none') || type ===  'dragover') {
+      // [B212]: this used to call jugglerSendMouseEvent, which could never
+      // work. A drag event is a WidgetDragEvent, and the mouse synthesizer
+      // rejects every type outside its ten mouse strings with
+      // NS_ERROR_FAILURE - so `dragover` failed on every call, the drop never
+      // reached the target, and the failure also stopped the mouseup behind
+      // it. jugglerSendDragEvent is the drag door, built to mirror the
+      // platform's own drop target rather than the synthesized-for-tests path.
       const win = this._frameTree.mainFrame().domWindow();
-      win.windowUtils.jugglerSendMouseEvent(
-        type,
-        x,
-        y,
-        0, /*button*/
-        0, /*clickCount*/
-        modifiers,
-        false /*aIgnoreRootScrollFrame*/,
-        0.0 /*pressure*/,
-        1 /*inputSource: real mouse = MOZ_SOURCE_MOUSE (synthetic was 0 = automation tell)*/,
-        true /*isDOMEventSynthesized*/,
-        false /*isWidgetEventSynthesized*/,
-        0 /*buttons*/,
-        win.windowUtils.DEFAULT_MOUSE_POINTER_ID /* pointerIdentifier */,
-        false /*disablePointerEvent*/,
-      );
+      win.windowUtils.jugglerSendDragEvent(type, x, y, modifiers);
       return;
     }
     if (type === 'dragend') {
