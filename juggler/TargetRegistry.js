@@ -613,6 +613,13 @@ export class PageTarget {
     if (this._actor !== actor)
       return;
     this._actor = undefined;
+    // ⛔ THE CHANNEL GOES QUIET HERE AND MIGHT NEVER SPEAK AGAIN. `resetTransport`
+    // keeps every pending request in the hope that a new actor binds and
+    // replays it; measured 2026-09-19, a reload during a drag removed this
+    // actor and NO replacement ever arrived. Whoever holds a request that only
+    // the old document could answer has to hear about it, so this is emitted
+    // whether or not a replacement follows. [B216]
+    this.emit(PageTarget.Events.ContentDetached);
     this._channel.resetTransport();
   }
 
@@ -963,6 +970,7 @@ export class PageTarget {
 }
 
 PageTarget.Events = {
+  ContentDetached: Symbol('PageTarget.ContentDetached'),
   Crashed: Symbol('PageTarget.Crashed'),
   DialogOpened: Symbol('PageTarget.DialogOpened'),
   ScreencastFrame: Symbol('PageTarget.ScreencastFrame'),

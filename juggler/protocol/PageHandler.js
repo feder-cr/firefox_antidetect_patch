@@ -182,6 +182,7 @@ export class PageHandler {
     // so an ordinary click never pays for the question asked at the release.
     this._gestureMoved = false;
     this._lastMousePosition = { x: 0, y: 0 };
+    this._documentScopedWaits = new Set();
 
     this._reportedFrameIds = new Set();
     this._networkEventsForUnreportedFrameIds = new Map();
@@ -199,6 +200,8 @@ export class PageHandler {
     this._pendingEventWatchers = new Set();
     this._eventListeners = [
       helper.on(this._pageTarget, PageTarget.Events.DialogOpened, this._onDialogOpened.bind(this)),
+      helper.on(this._pageTarget, PageTarget.Events.ContentDetached,
+                this._onContentDetached.bind(this)),
       helper.on(this._pageTarget, PageTarget.Events.Crashed, () => {
         this._session.emitEvent('Page.crashed', {});
       }),
@@ -592,13 +595,13 @@ export class PageHandler {
     // key events don't fire if we are dragging.
     if (this._isDragging) {
       if (type === 'keydown' && key === 'Escape') {
-        await this._contentPage.send('dispatchDragEvent', {
+        await this._sendToCurrentDocument('dispatchDragEvent', {
           type: 'dragover',
           x: this._lastMousePosition.x,
           y: this._lastMousePosition.y,
           modifiers: 0
         });
-        await this._contentPage.send('dispatchDragEvent', {type: 'dragend'});
+        await this._sendToCurrentDocument('dispatchDragEvent', {type: 'dragend'});
         // Escape ends the gesture as surely as the release does, and the
         // watcher goes with it: it still holds the `dragstart` that started
         // this drag, so without this the next `mousemove` would adopt the very
@@ -609,6 +612,55 @@ export class PageHandler {
     }
     return await this._pageTarget.activateAndRun(() =>
       this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text}));
+  }
+
+  /**
+   * The content end we were talking to is gone, so everything aimed at it ends.
+   *
+   * ⛔ A REQUEST AIMED AT A DOCUMENT USED TO OUTLIVE THE DOCUMENT. SimpleChannel
+   * keeps a pending request across a transport reset so that a NEW actor can
+   * replay it - right for a transport hiccup, wrong for anything only the old
+   * document could answer. Observed both ways: a `dispatchDragEvent` replayed
+   * into the NEXT document, and - on a reload during a drag - the actor removed
+   * with no replacement, the request pending for the life of the page, and
+   * `Page.dispatchMouseEvent` never answering again while `evaluate` and `url`
+   * kept working. [B216]
+   *
+   * The transport is not the place to fix that: it does not know what a
+   * document is and should not. The caller does, and says so through
+   * `_sendToCurrentDocument`. This is the signal that ends those waits, and it
+   * is `PageTarget.removeActor` because that is the one measured to still
+   * arrive: it runs in the parent and does not depend on content speaking.
+   * `pageNavigationCommitted` and `pageReady` were tried first and do not
+   * arrive in that case - they come from content, which has stopped.
+   *
+   * ⛔ AND IT ENDS ONLY THE GESTURE AND THESE WAITS. An earlier version also
+   * disposed every pending event watcher here, on every actor swap - which is
+   * every navigation - and that broke input delivery: full e2e red 2 runs out
+   * of 2 on two different pointer actions, green 2 out of 2 without it. The
+   * gesture's own watcher already ends with the gesture.
+   */
+  _onContentDetached() {
+    this._endGesture();
+    const waits = [...this._documentScopedWaits];
+    this._documentScopedWaits.clear();
+    for (const fail of waits)
+      fail(new Error('the document this was aimed at is gone'));
+  }
+
+  /**
+   * Send to content, and give up if the document it was aimed at goes away.
+   * The plain `send` has no end of its own: see `_onContentDetached`.
+   */
+  async _sendToCurrentDocument(methodName, params) {
+    let fail;
+    const abandoned = new Promise((_, reject) => { fail = reject; });
+    this._documentScopedWaits.add(fail);
+    try {
+      return await Promise.race([this._contentPage.send(methodName, params), abandoned]);
+    } finally {
+      this._documentScopedWaits.delete(fail);
+    }
   }
 
   _disposeDragGestureWatcher() {
@@ -799,7 +851,7 @@ export class PageHandler {
         await this._adoptDragSessionIfStarted();
         if (this._isDragging) {
           const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
-          await this._contentPage.send('dispatchDragEvent', {type:'dragover', x, y, modifiers});
+          await this._sendToCurrentDocument('dispatchDragEvent', {type:'dragover', x, y, modifiers});
           await watcher.ensureEventsAndDispose(['dragover']);
           return;
         }
@@ -856,9 +908,9 @@ export class PageHandler {
         try {
           if (this._isDragging) {
             const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
-            await this._contentPage.send('dispatchDragEvent', {type: 'dragover', x, y, modifiers});
-            await this._contentPage.send('dispatchDragEvent', {type: 'drop', x, y, modifiers});
-            await this._contentPage.send('dispatchDragEvent', {type: 'dragend', x, y, modifiers});
+            await this._sendToCurrentDocument('dispatchDragEvent', {type: 'dragover', x, y, modifiers});
+            await this._sendToCurrentDocument('dispatchDragEvent', {type: 'drop', x, y, modifiers});
+            await this._sendToCurrentDocument('dispatchDragEvent', {type: 'dragend', x, y, modifiers});
             // NOTE:
             // - 'drop' event might not be dispatched at all, depending on dropAction.
             // - 'dragend' event might not be dispatched at all, if the source element was removed
