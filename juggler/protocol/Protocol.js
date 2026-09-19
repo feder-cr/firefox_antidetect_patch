@@ -62,6 +62,12 @@ pageTypes.DOMPoint = {
   y: t.Number,
 };
 
+pageTypes.PointerLanding = {
+  type: t.String,
+  landed: t.Boolean,
+  on: t.String,
+};
+
 pageTypes.Rect = {
   x: t.Number,
   y: t.Number,
@@ -801,6 +807,16 @@ const Page = {
         frameId: t.String,
         objectId: t.String,
         rect: t.Optional(pageTypes.Rect),
+      },
+    },
+    'pointerLanded': {
+      params: {
+        frameId: t.String,
+        objectId: t.String,
+        types: t.Array(t.String),
+      },
+      returns: {
+        landings: t.Array(pageTypes.PointerLanding),
       },
     },
     'setInitScripts': {

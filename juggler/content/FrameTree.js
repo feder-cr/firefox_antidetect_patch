@@ -106,7 +106,14 @@ export class FrameTree {
       helper.addProgressListener(webProgress, this, flags),
     ];
 
-    this._dragEventListeners = [];
+    this._inputEventListeners = [];
+    // Where the last pointer event of each type actually landed, per
+    // document. Read back by `PageAgent._pointerLanded`. [B217]
+    this._pointerLanding = new Map();
+  }
+
+  pointerLanding(type) {
+    return this._pointerLanding.get(type) || null;
   }
 
   workers() {
@@ -268,9 +275,9 @@ export class FrameTree {
       if (e) dump(`[FrameTree] removeListeners(_eventListeners) failed (half-destroyed webProgress): ${e.message}\n`);
     }
     try {
-      helper.removeListeners(this._dragEventListeners);
+      helper.removeListeners(this._inputEventListeners);
     } catch (e) {
-      if (e) dump(`[FrameTree] removeListeners(_dragEventListeners) failed: ${e.message}\n`);
+      if (e) dump(`[FrameTree] removeListeners(_inputEventListeners) failed: ${e.message}\n`);
     }
   }
 
@@ -290,18 +297,34 @@ export class FrameTree {
     }
 
     if (frame === this._mainFrame) {
-      helper.removeListeners(this._dragEventListeners);
+      helper.removeListeners(this._inputEventListeners);
+      // A landing recorded in the previous document says nothing about this
+      // one, and must not be read as if it did.
+      this._pointerLanding.clear();
       const chromeEventHandler = docShell.chromeEventHandler;
       const options = {
         mozSystemGroup: true,
         capture: true,
       };
       const emitInputEvent = (event) => this.emit(FrameTree.Events.InputEvent, { type: event.type, jugglerEventId: 0 });
+      // ⛔ WHERE A POINTER EVENT LANDED IS RECORDED AT DISPATCH, NOT RE-READ
+      // AFTERWARDS. A geometry read after the event cannot tell "the event
+      // missed" from "the event hit and the target moved because of it"; the
+      // event's own target can. Capture on the chrome event handler, in the
+      // system group: it runs before any page listener and no page script can
+      // stop it or see it. `composedTarget` is the node inside a shadow tree,
+      // where `target` would already be retargeted to the host. [B217]
+      const recordLanding = (event) => {
+        this._pointerLanding.set(event.type, event.composedTarget || event.target);
+      };
       // Drag events are dispatched from content process, so these we don't see in the
       // `juggler-mouse-event-hit-renderer` instrumentation.
-      this._dragEventListeners = [
+      this._inputEventListeners = [
         helper.addEventListener(chromeEventHandler, 'dragstart', emitInputEvent, options),
         helper.addEventListener(chromeEventHandler, 'dragover', emitInputEvent, options),
+        helper.addEventListener(chromeEventHandler, 'mousemove', recordLanding, options),
+        helper.addEventListener(chromeEventHandler, 'mousedown', recordLanding, options),
+        helper.addEventListener(chromeEventHandler, 'mouseup', recordLanding, options),
       ];
     }
   }

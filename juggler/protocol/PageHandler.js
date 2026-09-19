@@ -556,6 +556,10 @@ export class PageHandler {
     return await this._contentPage.send('scrollIntoViewIfNeeded', options);
   }
 
+  async ['Page.pointerLanded'](options) {
+    return await this._contentPage.send('pointerLanded', options);
+  }
+
   async ['Page.setInitScripts']({ scripts }) {
     return await this._pageTarget.setInitScripts(scripts);
   }

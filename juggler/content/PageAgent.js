@@ -170,6 +170,7 @@ export class PageAgent {
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchDragEvent: this._dispatchDragEvent.bind(this),
         isDragSessionLive: this._isDragSessionLive.bind(this),
+        pointerLanded: this._pointerLanded.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
         getContentQuads: this._getContentQuads.bind(this),
         insertText: this._insertText.bind(this),
@@ -587,6 +588,54 @@ export class PageAgent {
    */
   async _isDragSessionLive() {
     return { live: !!this._getCurrentDragSession() };
+  }
+
+  /**
+   * Did the last pointer event of each given type land on this element?
+   *
+   * ⛔ THE ANSWER THAT LETS AN ACTION STOP LYING. The driver checks the hit
+   * target BEFORE it acts and, deliberately, never re-reads the geometry after:
+   * a read after the event cannot distinguish a miss from a hit whose target
+   * moved by its own effect (`_act_on_target` in the wrapper says why). What it
+   * can be told instead is where the event itself landed, recorded at dispatch
+   * by `FrameTree`. A text node counts through its parent; anything inside the
+   * element counts as the element, which is also how the DOM `click` composes
+   * from `mousedown` and `mouseup`.
+   *
+   * Ordered behind the events it is about, for the same reason as
+   * `_isDragSessionLive`: the question rides the same channel as the input.
+   * [B217]
+   */
+  async _pointerLanded({frameId, objectId, types}) {
+    const frame = this._frameTree.frame(frameId);
+    if (!frame)
+      throw new Error('Failed to find frame with id = ' + frameId);
+    const node = frame.unsafeObject(objectId);
+    if (!node)
+      throw new Error('Object not found for id = ' + objectId);
+    const describe = (t) => {
+      if (!t)
+        return 'nothing';
+      if (t.nodeType === 3)
+        t = t.parentNode;
+      if (!t || !t.tagName)
+        return t && t.nodeName ? t.nodeName : 'nothing';
+      const id = t.id ? '#' + t.id : '';
+      const cls = t.classList && t.classList.length ? '.' + [...t.classList].join('.') : '';
+      return t.tagName.toLowerCase() + id + cls;
+    };
+    const landings = [];
+    for (const type of types) {
+      const target = this._frameTree.pointerLanding(type);
+      if (!target) {
+        landings.push({ type, landed: false, on: 'no ' + type + ' reached this document' });
+        continue;
+      }
+      const t = target.nodeType === 3 ? target.parentNode : target;
+      const landed = !!t && (t === node || node.contains(t));
+      landings.push({ type, landed, on: landed ? '' : describe(t) });
+    }
+    return { landings };
   }
 
   async _dispatchDragEvent({type, x, y, modifiers}) {
