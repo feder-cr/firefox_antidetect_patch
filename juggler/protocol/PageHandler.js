@@ -599,11 +599,11 @@ export class PageHandler {
           modifiers: 0
         });
         await this._contentPage.send('dispatchDragEvent', {type: 'dragend'});
-        this._isDragging = false;
-        // And close the gesture's watcher with it. It still holds the
-        // `dragstart` that started this drag, and without this the next
-        // `mousemove` would adopt the very session Escape just cancelled.
-        this._disposeDragGestureWatcher();
+        // Escape ends the gesture as surely as the release does, and the
+        // watcher goes with it: it still holds the `dragstart` that started
+        // this drag, so without this the next `mousemove` would adopt the very
+        // session Escape just cancelled.
+        this._endGesture();
       }
       return;
     }
@@ -616,6 +616,29 @@ export class PageHandler {
       return;
     this._dragGestureWatcher.dispose();
     this._dragGestureWatcher = null;
+  }
+
+  /**
+   * The gesture is over. Every piece of state that describes it ends here.
+   *
+   * ⛔ `_isDragging` DESCRIBES A GESTURE AND USED TO BE CLEARED ON A SUCCESS
+   * PATH, which is the same defect the watcher had, one line away, and it
+   * survived the fix that named it. The release cleared the flag as the last
+   * statement of the drag branch, so anything that threw before it - a
+   * `dragover` that never came back, a content side that found the session
+   * already gone and raised on `session.dataTransfer` - left the flag TRUE with
+   * no gesture to end it.
+   *
+   * A page in that state is not degraded, it is dead to the pointer: every
+   * later `mousedown` returns at once, every `mousemove` is redirected to
+   * `dispatchDragEvent`, and the page sees neither `mouseover` nor a click.
+   * Nothing recovers it, because the only two places that cleared the flag both
+   * require being in a drag that ends well. [B216]
+   */
+  _endGesture() {
+    this._isDragging = false;
+    this._gestureMoved = false;
+    this._disposeDragGestureWatcher();
   }
 
   /**
@@ -841,14 +864,13 @@ export class PageHandler {
             // - 'dragend' event might not be dispatched at all, if the source element was removed
             //   during drag. However, it'll be dispatched synchronously in the renderer.
             await watcher.ensureEventsAndDispose(['dragover']);
-            this._isDragging = false;
           } else {
             await sendEvents(['mouseup']);
           }
         } finally {
-          // The gesture is over either way, so the window in which a `dragstart`
-          // means anything closes here - including when the branch above threw.
-          this._disposeDragGestureWatcher();
+          // The gesture is over either way - including when the branch above
+          // threw - so everything that describes it ends here.
+          this._endGesture();
         }
         return;
       }
