@@ -586,7 +586,18 @@ export class PageAgent {
    * the drag: both ride the same channel to this process, and input is not
    * delivered later than what was sent after it.
    */
-  async _isDragSessionLive() {
+  async _isDragSessionLive({afterEventId} = {}) {
+    // Only after the renderer has handled the last move sent: a coalesced
+    // `mousemove` that has not been dispatched yet cannot have started a drag,
+    // and asking before it is asking about a moment that has not happened.
+    // Bounded like `_pointerLanded`; a bound that expires answers "no
+    // session", which is what is true at that moment.
+    if (afterEventId) {
+      await Promise.race([
+        this._frameTree.whenEventHit(afterEventId),
+        new Promise(resolve => setTimeout(resolve, 5000)),
+      ]);
+    }
     return { live: !!this._getCurrentDragSession() };
   }
 

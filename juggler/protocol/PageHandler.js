@@ -183,6 +183,9 @@ export class PageHandler {
     this._gestureMoved = false;
     this._lastMousePosition = { x: 0, y: 0 };
     this._documentScopedWaits = new Set();
+    // The id of the last mouse event handed to the widget, across calls:
+    // the question asked at the release waits for the renderer's ack of it.
+    this._lastMouseEventId = 0;
 
     this._reportedFrameIds = new Set();
     this._networkEventsForUnreportedFrameIds = new Map();
@@ -749,15 +752,26 @@ export class PageHandler {
    * is born by the last event of the gesture and nothing after it can notice.
    * Measured before this: 1 delivery out of 5. [B213]
    *
-   * The answer is ordered behind the mouse events it is about - the content
-   * channel is a JSWindowActor, so it rides the same connection to that process
-   * as the input, and input is not delivered later than what was sent after it.
+   * ⛔ THE ANSWER IS NOT ORDERED BEHIND THE INPUT BY THE CHANNEL, AND THIS
+   * DOCSTRING USED TO SAY IT WAS. The content channel is a JSWindowActor on
+   * the same connection as the input, but a `mousemove` is coalesced in the
+   * content process and dispatched at the next refresh tick: "sent before" is
+   * not "handled before". Traced for [B217]: the question reached content and
+   * was answered from an empty record while the page had already seen the
+   * `mouseover` of the very move it asked about. So the question carries the
+   * id of the last mouse event dispatched, and content waits for the
+   * renderer's ack of it before looking at the drag session - the ack that
+   * `PresShell` emits again since [B217]. Measured 5/5 before that was known,
+   * which is how a wrong reason survives: it was right often enough.
+   *
    * The question is asked at most once per gesture, and only when the gesture
    * MOVED: a press and a release with nothing in between cannot have started a
    * drag, so a click pays nothing.
    */
   async _adoptDragSessionFromContent() {
-    const answer = await this._contentPage.send('isDragSessionLive', {});
+    const answer = await this._contentPage.send('isDragSessionLive', {
+      afterEventId: this._lastMouseEventId,
+    });
     this._isDragging = !!(answer && answer.live);
   }
 
@@ -935,6 +949,8 @@ export class PageHandler {
         return;
       }
     }, { muteNotificationsPopup: true });
+    if (lastEventId)
+      this._lastMouseEventId = lastEventId;
     return { eventId: lastEventId };
   }
 
