@@ -101,7 +101,12 @@ export class FrameTree {
       }, 'browsing-context-discarded'),
       helper.addObserver((subject, topic, eventInfo) => {
         const [type, jugglerEventId] = eventInfo.split(' ');
-        this.emit(FrameTree.Events.InputEvent, { type, jugglerEventId: +(jugglerEventId ?? '0') });
+        const id = +(jugglerEventId ?? '0');
+        // The renderer's ack, restored with [B217]: ids only grow, so "has
+        // event N been handled" is "is the last acked id at least N".
+        if (id > this._lastHitEventId)
+          this._lastHitEventId = id;
+        this.emit(FrameTree.Events.InputEvent, { type, jugglerEventId: id });
       }, 'juggler-mouse-event-hit-renderer'),
       helper.addProgressListener(webProgress, this, flags),
     ];
@@ -110,10 +115,85 @@ export class FrameTree {
     // Where the last pointer event of each type actually landed, per
     // document. Read back by `PageAgent._pointerLanded`. [B217]
     this._pointerLanding = new Map();
+    this._lastHitEventId = 0;
   }
 
   pointerLanding(type) {
     return this._pointerLanding.get(type) || null;
+  }
+
+  /**
+   * Resolves once the renderer has acked the juggler mouse event `id` (or a
+   * later one). This is the ordering the landing question needs: the input
+   * and the question do not share a queue - a `mousemove` is coalesced and
+   * dispatched at the next refresh tick - so "sent before" is not "handled
+   * before". Measured: the question answered from an empty record while the
+   * page had already seen the `mouseover` of the very move it asked about.
+   */
+  whenEventHit(id) {
+    if (this._lastHitEventId >= id)
+      return Promise.resolve();
+    return new Promise(resolve => {
+      const off = helper.on(this, FrameTree.Events.InputEvent, () => {
+        if (this._lastHitEventId >= id) {
+          off();
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
+   * The privileged listeners on the main frame's chrome event handler: drag
+   * events for the drag door, pointer landings for [B217]. Installed on
+   * `DOMDocElementInserted` of the main frame, as they always were.
+   *
+   * ⛔ A VERSION OF THIS ALSO INSTALLED FROM THE CONSTRUCTOR, on the theory
+   * that a tree built after the document's root element was inserted had no
+   * listeners. Measured false: at construction the docShell has no chrome
+   * event handler yet in every run traced, so that call never installed
+   * anything; and the hover whose `mouseover` the page saw with no `mousemove`
+   * recorded was ORDERING - the question reached this process before the
+   * coalesced `mousemove` was dispatched - which the renderer ack fixes.
+   */
+  _installMainFrameInputListeners(docShell) {
+    helper.removeListeners(this._inputEventListeners);
+    const chromeEventHandler = docShell.chromeEventHandler;
+    const options = {
+      mozSystemGroup: true,
+      capture: true,
+    };
+    const emitInputEvent = (event) => this.emit(FrameTree.Events.InputEvent, { type: event.type, jugglerEventId: 0 });
+    // ⛔ WHERE A POINTER EVENT LANDED IS RECORDED AT DISPATCH, NOT RE-READ
+    // AFTERWARDS. A geometry read after the event cannot tell "the event
+    // missed" from "the event hit and the target moved because of it"; the
+    // event's own target can. Capture on the chrome event handler, in the
+    // system group: it runs before any page listener and no page script can
+    // stop it or see it. `composedTarget` is the node inside a shadow tree,
+    // where `target` would already be retargeted to the host. [B217]
+    //
+    // The record carries the DOCUMENT the target belongs to, and the reader
+    // compares it with the document it is asked about: a landing from a
+    // previous document is then rejected by identity, not by clearing a map
+    // in a lifecycle callback whose timing is not ours.
+    const recordLanding = (event) => {
+      const target = event.composedTarget || event.target;
+      const seen = (this._pointerLanding.get(event.type)?.seen || 0) + 1;
+      this._pointerLanding.set(event.type, {
+        target,
+        document: target && target.ownerDocument ? target.ownerDocument : target,
+        seen,
+      });
+    };
+    // Drag events are dispatched from content process, so these we don't see in the
+    // `juggler-mouse-event-hit-renderer` instrumentation.
+    this._inputEventListeners = [
+      helper.addEventListener(chromeEventHandler, 'dragstart', emitInputEvent, options),
+      helper.addEventListener(chromeEventHandler, 'dragover', emitInputEvent, options),
+      helper.addEventListener(chromeEventHandler, 'mousemove', recordLanding, options),
+      helper.addEventListener(chromeEventHandler, 'mousedown', recordLanding, options),
+      helper.addEventListener(chromeEventHandler, 'mouseup', recordLanding, options),
+    ];
   }
 
   workers() {
@@ -297,35 +377,7 @@ export class FrameTree {
     }
 
     if (frame === this._mainFrame) {
-      helper.removeListeners(this._inputEventListeners);
-      // A landing recorded in the previous document says nothing about this
-      // one, and must not be read as if it did.
-      this._pointerLanding.clear();
-      const chromeEventHandler = docShell.chromeEventHandler;
-      const options = {
-        mozSystemGroup: true,
-        capture: true,
-      };
-      const emitInputEvent = (event) => this.emit(FrameTree.Events.InputEvent, { type: event.type, jugglerEventId: 0 });
-      // ⛔ WHERE A POINTER EVENT LANDED IS RECORDED AT DISPATCH, NOT RE-READ
-      // AFTERWARDS. A geometry read after the event cannot tell "the event
-      // missed" from "the event hit and the target moved because of it"; the
-      // event's own target can. Capture on the chrome event handler, in the
-      // system group: it runs before any page listener and no page script can
-      // stop it or see it. `composedTarget` is the node inside a shadow tree,
-      // where `target` would already be retargeted to the host. [B217]
-      const recordLanding = (event) => {
-        this._pointerLanding.set(event.type, event.composedTarget || event.target);
-      };
-      // Drag events are dispatched from content process, so these we don't see in the
-      // `juggler-mouse-event-hit-renderer` instrumentation.
-      this._inputEventListeners = [
-        helper.addEventListener(chromeEventHandler, 'dragstart', emitInputEvent, options),
-        helper.addEventListener(chromeEventHandler, 'dragover', emitInputEvent, options),
-        helper.addEventListener(chromeEventHandler, 'mousemove', recordLanding, options),
-        helper.addEventListener(chromeEventHandler, 'mousedown', recordLanding, options),
-        helper.addEventListener(chromeEventHandler, 'mouseup', recordLanding, options),
-      ];
+      this._installMainFrameInputListeners(docShell);
     }
   }
 

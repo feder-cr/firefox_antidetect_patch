@@ -606,13 +606,32 @@ export class PageAgent {
    * `_isDragSessionLive`: the question rides the same channel as the input.
    * [B217]
    */
-  async _pointerLanded({frameId, objectId, types}) {
+  async _pointerLanded({frameId, objectId, types, afterEventId}) {
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const node = frame.unsafeObject(objectId);
     if (!node)
       throw new Error('Object not found for id = ' + objectId);
+    // ⛔ WAIT FOR THE RENDERER'S ACK OF THE LAST EVENT SENT, OR THE ANSWER IS
+    // ABOUT THE WRONG MOMENT. The question and the input do not share a
+    // queue: a `mousemove` is coalesced and dispatched at the next refresh
+    // tick, and this method ran first two times out of four, answering "no
+    // mousemove has reached the page" while the page had already seen the
+    // `mouseover` of that very move. The ack is exact; a wait on frames would
+    // be a guess. Bounded, and a bound that expires is reported as what it is.
+    if (afterEventId) {
+      const acked = await Promise.race([
+        this._frameTree.whenEventHit(afterEventId).then(() => true),
+        new Promise(resolve => setTimeout(() => resolve(false), 5000)),
+      ]);
+      if (!acked) {
+        return { landings: types.map(type => ({
+          type, landed: false, seen: 0,
+          on: 'event ' + afterEventId + ' was never acked by the renderer',
+        })) };
+      }
+    }
     const describe = (t) => {
       if (!t)
         return 'nothing';
@@ -624,16 +643,23 @@ export class PageAgent {
       const cls = t.classList && t.classList.length ? '.' + [...t.classList].join('.') : '';
       return t.tagName.toLowerCase() + id + cls;
     };
+    const document = frame.domWindow().document;
     const landings = [];
     for (const type of types) {
-      const target = this._frameTree.pointerLanding(type);
-      if (!target) {
-        landings.push({ type, landed: false, on: 'no ' + type + ' reached this document' });
+      const landing = this._frameTree.pointerLanding(type);
+      if (!landing) {
+        landings.push({ type, landed: false, seen: 0, on: 'no ' + type + ' has reached the page' });
         continue;
       }
-      const t = target.nodeType === 3 ? target.parentNode : target;
+      if (landing.document !== document) {
+        landings.push({ type, landed: false, seen: landing.seen,
+                        on: 'a previous document; none has reached this one' });
+        continue;
+      }
+      const target = landing.target;
+      const t = target && target.nodeType === 3 ? target.parentNode : target;
       const landed = !!t && (t === node || node.contains(t));
-      landings.push({ type, landed, on: landed ? '' : describe(t) });
+      landings.push({ type, landed, seen: landing.seen, on: landed ? '' : describe(t) });
     }
     return { landings };
   }

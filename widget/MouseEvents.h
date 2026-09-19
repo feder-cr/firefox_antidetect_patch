@@ -225,6 +225,15 @@ class WidgetMouseEventBase : public WidgetInputEvent {
   // Possible values a in MouseEvent
   uint16_t mInputSource;
 
+  // Stealthfox: the id `nsIDOMWindowUtils.jugglerSendMouseEvent` handed back
+  // for this event, 0 for every event that did not come from it. It rides the
+  // event across processes and coalescing so that the process which finally
+  // dispatches it can say so (`juggler-mouse-event-hit-renderer`); that ack is
+  // the only way the driver can know its input has reached the page, and it
+  // was lost in the FF150 port - the id was generated and written into a
+  // dictionary nobody read. [B217]
+  uint32_t mJugglerEventId = 0;
+
   bool IsLeftButtonPressed() const {
     return !!(mButtons & MouseButtonsFlag::ePrimaryFlag);
   }
@@ -249,6 +258,7 @@ class WidgetMouseEventBase : public WidgetInputEvent {
     mButtons = aEvent.mButtons;
     mPressure = aEvent.mPressure;
     mInputSource = aEvent.mInputSource;
+    mJugglerEventId = aEvent.mJugglerEventId;
   }
 
   /**

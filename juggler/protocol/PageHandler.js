@@ -768,6 +768,10 @@ export class PageHandler {
 
   async ['Page.dispatchMouseEvent']({type, x, y, button, clickCount, modifiers, buttons}) {
     const win = this._pageTarget._window;
+    // The id of the last mouse event handed to the widget, which the renderer
+    // acks once it has handled it. Returned so that a caller can wait for
+    // exactly that event before asking where it landed. [B217]
+    let lastEventId = 0;
     const sendEvents = async (types) => {
       if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
         this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
@@ -776,7 +780,7 @@ export class PageHandler {
         await helper.awaitTopic('apz-repaints-flushed');
 
       for (const type of types) {
-        win.windowUtils.jugglerSendMouseEvent(
+        lastEventId = win.windowUtils.jugglerSendMouseEvent(
           type,
           x + boundingBox.left,
           y + boundingBox.top,
@@ -809,7 +813,7 @@ export class PageHandler {
         // A special hack: if someone tries to do `mousemove` outside of
         // viewport coordinates, then move the mouse off from the Web Content.
         // This way we can eliminate all the hover effects.
-        win.windowUtils.jugglerSendMouseEvent(
+        lastEventId = win.windowUtils.jugglerSendMouseEvent(
           'mousemove',
           0 /* x */,
           0 /* y */,
@@ -871,7 +875,7 @@ export class PageHandler {
             const [px, py] = path[i];
             if (px < 0 || py < 0 || px >= bbox.width || py >= bbox.height) continue;
             try {
-              win.windowUtils.jugglerSendMouseEvent('mousemove',
+              lastEventId = win.windowUtils.jugglerSendMouseEvent('mousemove',
                   px + bbox.left, py + bbox.top, button, clickCount, modifiers,
                   false, (buttons ? 0.5 : 0.0) /* pressure */, 1 /* inputSource: real mouse */, true, false, buttons,
                   win.windowUtils.DEFAULT_MOUSE_POINTER_ID, false);
@@ -931,6 +935,7 @@ export class PageHandler {
         return;
       }
     }, { muteNotificationsPopup: true });
+    return { eventId: lastEventId };
   }
 
   async ['Page.dispatchWheelEvent']({x, y, button, deltaX, deltaY, deltaZ, modifiers }) {

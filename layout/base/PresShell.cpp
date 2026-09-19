@@ -7145,6 +7145,50 @@ nsresult PresShell::HandleEvent(nsIFrame* aFrameForPresShell,
 
   RecordModifiers(aGUIEvent);
 
+  // Stealthfox [B217]: the renderer acks a juggler mouse event AFTER handling
+  // it, once. The id is what `jugglerSendMouseEvent` handed back in the parent;
+  // it rode the event here (and through coalescing, which keeps the last id
+  // folded in). Content-side Juggler observes this to answer "has my input
+  // reached the page" - the question a driver cannot answer any other way, and
+  // the one whose answer was lost in the FF150 port. Zeroing the id after
+  // notifying is what makes it once: a nested HandleEvent on a child shell
+  // sees 0 and stays quiet. Not before the dispatch: the observer runs
+  // JavaScript synchronously, and a promise resumed from it would read the
+  // landing before the listeners below had recorded it.
+  const uint32_t jugglerEventId =
+      aGUIEvent->AsMouseEvent() ? aGUIEvent->AsMouseEvent()->mJugglerEventId
+                                : 0;
+  auto ackJugglerEvent = MakeScopeExit([&] {
+    if (!jugglerEventId || !aGUIEvent->AsMouseEvent() ||
+        aGUIEvent->AsMouseEvent()->mJugglerEventId != jugglerEventId) {
+      return;
+    }
+    const char* type = nullptr;
+    switch (aGUIEvent->mMessage) {
+      case eMouseMove:
+        type = "mousemove";
+        break;
+      case eMouseDown:
+        type = "mousedown";
+        break;
+      case eMouseUp:
+        type = "mouseup";
+        break;
+      default:
+        return;
+    }
+    aGUIEvent->AsMouseEvent()->mJugglerEventId = 0;
+    if (nsCOMPtr<nsIObserverService> os =
+            mozilla::services::GetObserverService()) {
+      nsAutoString info;
+      info.AppendASCII(type);
+      info.Append(' ');
+      info.AppendInt(jugglerEventId);
+      os->NotifyObservers(nullptr, "juggler-mouse-event-hit-renderer",
+                          info.get());
+    }
+  });
+
   AutoWeakFrame weakFrameForPresShell(aFrameForPresShell);
 
   // Running tests must not expect that some mouse boundary events are fired

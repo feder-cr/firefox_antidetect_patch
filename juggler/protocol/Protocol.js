@@ -65,6 +65,9 @@ pageTypes.DOMPoint = {
 pageTypes.PointerLanding = {
   type: t.String,
   landed: t.Boolean,
+  // How many events of this type the page has seen so far: a landing that is
+  // missing with `seen` at zero is a delivery question, not a geometry one.
+  seen: t.Number,
   on: t.String,
 };
 
@@ -814,6 +817,9 @@ const Page = {
         frameId: t.String,
         objectId: t.String,
         types: t.Array(t.String),
+        // The id `dispatchMouseEvent` returned for the last event sent: the
+        // answer waits for the renderer to have handled it.
+        afterEventId: t.Optional(t.Number),
       },
       returns: {
         landings: t.Array(pageTypes.PointerLanding),
@@ -911,7 +917,12 @@ const Page = {
         modifiers: t.Number,
         clickCount: t.Optional(t.Number),
         buttons: t.Number,
-      }
+      },
+      returns: {
+        // The renderer acks this id once it has handled the event; 0 when
+        // nothing was dispatched (a press outside the viewport, a drag).
+        eventId: t.Number,
+      },
     },
     'dispatchWheelEvent': {
       params: {

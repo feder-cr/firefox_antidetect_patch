@@ -122,6 +122,7 @@ struct ParamTraits<mozilla::WidgetMouseEventBase> {
     WriteParam(aWriter, aParam.mButtons);
     WriteParam(aWriter, aParam.mPressure);
     WriteParam(aWriter, aParam.mInputSource);
+    WriteParam(aWriter, aParam.mJugglerEventId);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -130,7 +131,8 @@ struct ParamTraits<mozilla::WidgetMouseEventBase> {
            ReadParam(aReader, &aResult->mButton) &&
            ReadParam(aReader, &aResult->mButtons) &&
            ReadParam(aReader, &aResult->mPressure) &&
-           ReadParam(aReader, &aResult->mInputSource);
+           ReadParam(aReader, &aResult->mInputSource) &&
+           ReadParam(aReader, &aResult->mJugglerEventId);
   }
 };
 

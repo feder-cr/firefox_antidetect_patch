@@ -9843,6 +9843,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
   mouseOrPointerEvent.mModifiers =
       GetWidgetModifiers(aMouseEventData.mModifiers);
   mouseOrPointerEvent.mButton = aMouseEventData.mButton;
+  // Stealthfox [B217]: the id travels on the event, see MouseEvents.h.
+  mouseOrPointerEvent.mJugglerEventId = aMouseEventData.mJugglerEventId;
   mouseOrPointerEvent.mButtons =
       aMouseEventData.mButtons.WasPassed()
           ? aMouseEventData.mButtons.Value()
