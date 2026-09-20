@@ -220,6 +220,20 @@ bool CroppingWindowCapturerWin::ShouldUseScreenCapturer() {
     return false;
   }
 
+  // STEALTHFOX_HIDDEN_DESKTOP: a window created on a Win32 desktop object
+  // other than the input desktop passes the check above - it is visible, not
+  // iconic, not cloaked, and the shell's virtual desktop manager has no
+  // opinion about it - yet the screen shows the input desktop only, so a
+  // crop of the screen can never contain it. Worse, the screen capturers move
+  // this thread onto the input desktop, after which the window capturer
+  // cannot read the window either: the capture ends with no frame at all.
+  // PrintWindow with PW_RENDERFULLCONTENT reads such a window in full from a
+  // thread on its own desktop (measured 2026-09-20), so the window capturer
+  // is the only path that can deliver.
+  if (!window_capture_helper_.IsWindowOnInputDesktop(selected)) {
+    return false;
+  }
+
   // Check if the window is a translucent layered window.
   const LONG window_ex_style = GetWindowLong(selected, GWL_EXSTYLE);
   if (window_ex_style & WS_EX_LAYERED) {

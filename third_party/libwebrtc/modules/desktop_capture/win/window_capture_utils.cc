@@ -18,10 +18,13 @@
 #include <cstddef>
 #include <cstring>
 #include <cwchar>
+#include <memory>
+#include <string>
 
 #include "modules/desktop_capture/desktop_capture_types.h"
 #include "modules/desktop_capture/desktop_capturer.h"
 #include "modules/desktop_capture/desktop_geometry.h"
+#include "modules/desktop_capture/win/desktop.h"
 #include "modules/desktop_capture/win/scoped_gdi_object.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
@@ -450,6 +453,34 @@ bool WindowCaptureHelperWin::IsWindowOnCurrentDesktop(HWND hwnd) {
 bool WindowCaptureHelperWin::IsWindowVisibleOnCurrentDesktop(HWND hwnd) {
   return IsWindowValidAndVisible(hwnd) && IsWindowOnCurrentDesktop(hwnd) &&
          !IsWindowCloaked(hwnd);
+}
+
+// STEALTHFOX_HIDDEN_DESKTOP: the desktop of the window's own thread against
+// the input desktop, compared by name the way Desktop::IsSame does. Only a
+// thread of this process can be asked which desktop it was created on, and
+// the handle GetThreadDesktop returns is not ours to close.
+bool WindowCaptureHelperWin::IsWindowOnInputDesktop(HWND hwnd) {
+  DWORD process_id = 0;
+  const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
+  if (!thread_id || process_id != GetCurrentProcessId()) {
+    return true;
+  }
+  HDESK window_desktop = GetThreadDesktop(thread_id);
+  if (!window_desktop) {
+    return true;
+  }
+  wchar_t window_desktop_name[256];
+  DWORD length = 0;
+  if (!GetUserObjectInformationW(window_desktop, UOI_NAME, window_desktop_name,
+                                 sizeof(window_desktop_name), &length)) {
+    return true;
+  }
+  std::unique_ptr<Desktop> input_desktop(Desktop::GetInputDesktop());
+  std::wstring input_desktop_name;
+  if (!input_desktop || !input_desktop->GetName(&input_desktop_name)) {
+    return true;
+  }
+  return _wcsicmp(window_desktop_name, input_desktop_name.c_str()) == 0;
 }
 
 // A cloaked window is composited but not visible to the user.

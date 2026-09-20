@@ -114,6 +114,13 @@ class WindowCaptureHelperWin {
   bool IsWindowOnCurrentDesktop(HWND hwnd);
   bool IsWindowVisibleOnCurrentDesktop(HWND hwnd);
   bool IsWindowCloaked(HWND hwnd);
+  // Whether the window lives on the desktop the screen shows (the input
+  // desktop). A window of this process created on another Win32 desktop
+  // object passes every visibility check above and is still not on the
+  // screen, so nothing cropped from the screen can contain it. Windows of
+  // other processes cannot be asked, and are reported as on the input
+  // desktop, which is where a picker finds them. STEALTHFOX_HIDDEN_DESKTOP.
+  bool IsWindowOnInputDesktop(HWND hwnd);
 
   // The optional `ex_style_filters` parameter allows callers to provide
   // extended window styles (e.g. WS_EX_TOOLWINDOW) and prevent windows that
