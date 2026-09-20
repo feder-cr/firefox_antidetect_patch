@@ -410,17 +410,18 @@ jobs:
         shell: bash
         run: python scripts/ci_font_gate.py "$FF_EXE"
 
-      # CLOAK + WEBGL-MASKING GUARDS — run the wrapper's e2e cloak/gamma checks
+      # HIDDEN-DESKTOP + WEBGL-MASKING GUARDS - run the wrapper's e2e checks
       # against THIS leg's freshly-built artifact, on its native runner. The
-      # wrapper's headless=True is headed+hidden (cloak on Win/macOS, its own
-      # Xvfb on Linux). Linux (Xvfb + llvmpipe) and Windows (WARP) give a
-      # software WebGL context on the GPU-less hosts, so the WebGL-dependent
-      # assertions run there. macOS GitHub runners expose NO WebGL in the CI
-      # session at all (even vanilla Firefox; macOS has no software-GL fallback),
-      # so on the mac legs the WebGL checks self-skip and the cloak is validated
-      # via its non-blank screenshot + CGWindowAlpha == 0. test_cloak asserts the
-      # window is hidden (Windows DWMWA_CLOAKED / macOS CGWindowAlpha) AND still
-      # renders — the macOS leg is the only place the cocoa cloak patch gets RUN.
+      # wrapper's headless=True is headed+hidden: on Windows the browser is
+      # created on a hidden Win32 desktop (since 2026-09-20; until then the
+      # binary cloaked its own window with DWMWA_CLOAK, and this step kept its
+      # name so old runs stay findable), on Linux it gets its own Xvfb. Linux
+      # (Xvfb + llvmpipe) and Windows (WARP) give a software WebGL context on
+      # the GPU-less hosts, so the WebGL-dependent assertions run there.
+      # test_hidden_desktop asserts, on Windows, that a headless=True session
+      # leaves NO Firefox window on the interactive desktop and has one on its
+      # own, after a control arm found a headed window where it belongs, AND
+      # that it still renders; Linux self-skips (Xvfb is the e2e.yml path).
       # The webgl guard catches a regression of the gamma readPixels noise back to
       # the pixelscan-maskable ±1 spike form (covered on Linux + Windows).
       # ⛔ THE CORE COMES FROM GIT, NOT FROM THE INDEX, and this is not a
@@ -465,7 +466,7 @@ jobs:
             --tag "${{ github.event.inputs.release_tag || github.ref_name }}" \
             -o gate.seal.json
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
-            tests/test_cloak.py \
+            tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             -m e2e -o addopts='' -q
 

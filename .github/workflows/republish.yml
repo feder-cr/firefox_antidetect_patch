@@ -12,7 +12,7 @@
 # funzionato, perche' il suo assert pretendeva ancora i due archivi macOS che una
 # release a tre gambe non produce. La via d'uscita era rotta nel momento in cui
 # serviva, e nessuno poteva saperlo: questo workflow si lancia a mano. This workflow downloads the binary artifacts
-# from a prior `release` run, re-runs the (now-fixed) drive gate + cloak/WebGL guards
+# from a prior `release` run, re-runs the (now-fixed) drive gate + hidden-desktop/WebGL guards
 # against those exact byte-identical binaries on their native runners, and — only if
 # green — publishes the DRAFT release. Same publish logic as release.yml (draft, notes,
 # checksums, source-commit) so the human still runs the realness gate before un-drafting.
@@ -115,7 +115,7 @@ jobs:
         run: |
           python -m pip install --quiet ".[dev]"
           INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
-            tests/test_cloak.py \
+            tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             -m e2e -o addopts='' -q
 

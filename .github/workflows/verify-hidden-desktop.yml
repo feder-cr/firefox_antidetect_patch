@@ -1,6 +1,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# verify-cloak.yml — re-runnable CLOAK + WEBGL-MASKING GUARDS for an EXISTING
-# build run's artifacts, WITHOUT rebuilding Firefox (~2h su una gamba).
+# verify-hidden-desktop.yml — re-runnable HIDDEN-DESKTOP + WEBGL-MASKING GUARDS
+# for an EXISTING build run's artifacts, WITHOUT rebuilding Firefox (~2h su una
+# gamba). Si chiamava verify-cloak.yml fino al 2026-09-20: il cloak nel binario
+# e' uscito e la finestra headless di Windows si nasconde creando il browser su
+# un desktop Win32 nascosto; il gate e' tests/test_hidden_desktop.py del wrapper.
 #
 # release.yml runs these same guards in its `gate` job against each freshly-built
 # artifact. This re-runs them against the artifacts of a PRIOR build run (input
@@ -8,7 +11,7 @@
 # fix (e.g. making a leg tolerant of the runner's missing WebGL) can be validated
 # against the real binaries in ~10 min instead of paying a full rebuild.
 #
-# Same guard command as release.yml's gate. Headed-but-cloaked; zero proxy / zero
+# Same guard command as release.yml's gate. Headed-but-hidden; zero proxy / zero
 # secrets.
 #
 # ⛔ Fino al 2026-08-26 questa intestazione diceva "The macOS legs are the only
@@ -18,7 +21,7 @@
 # e' la conseguenza di aver smesso di spedire per mac - ma va detta invece che
 # cancellata, perche' una riga sparita non insegna niente a chi la cerca.
 # ─────────────────────────────────────────────────────────────────────────────
-name: verify-cloak
+name: verify-hidden-desktop
 
 on:
   workflow_dispatch:
@@ -102,6 +105,6 @@ jobs:
         run: |
           python -m pip install --quiet ".[dev]"
           INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
-            tests/test_cloak.py \
+            tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             -m e2e -o addopts='' -q
