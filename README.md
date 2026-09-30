@@ -40,6 +40,15 @@ reproduces one machine. What each of those surfaces reveals, and what it costs t
 right, is written up one at a time at
 **[feder-cr.github.io/invisible_playwright](https://feder-cr.github.io/invisible_playwright/)**.
 
+## Pointer input and page zoom
+
+Juggler accepts pointer positions in page CSS pixels. Mouse input, native
+cursor motion and wheel hit positions account for the page's current browser
+zoom, including site-specific zoom restored from a persistent profile.
+Device scaling is handled separately by Gecko; callers should not multiply
+pointer coordinates by `window.devicePixelRatio`. Landing verification remains
+enabled.
+
 ## Anonymous launch counter
 
 This build issues a single HTTPS GET to a public asset on

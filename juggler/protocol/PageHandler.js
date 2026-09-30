@@ -787,8 +787,11 @@ export class PageHandler {
     // exactly that event before asking where it landed. [B217]
     let lastEventId = 0;
     const sendEvents = async (types) => {
+      // Protocol points are content CSS pixels; this window's utils take
+      // chrome CSS pixels. Device scaling is applied by the native dispatch.
+      const zoom = this._pageTarget._linkedBrowser.browsingContext.fullZoom;
       if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
-        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
+        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x * zoom, y * zoom, 0, 0);
       const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
       if (win.windowUtils.flushApzRepaints())
         await helper.awaitTopic('apz-repaints-flushed');
@@ -796,8 +799,8 @@ export class PageHandler {
       for (const type of types) {
         lastEventId = win.windowUtils.jugglerSendMouseEvent(
           type,
-          x + boundingBox.left,
-          y + boundingBox.top,
+          x * zoom + boundingBox.left,
+          y * zoom + boundingBox.top,
           button,
           clickCount,
           modifiers,
@@ -820,7 +823,8 @@ export class PageHandler {
       this._pageTarget.ensureContextMenuClosed();
       // If someone asks us to dispatch mouse event outside of viewport, then we normally would drop it.
       const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
-      if (x < 0 || y < 0 || x > boundingBox.width || y > boundingBox.height) {
+      const zoom = this._pageTarget._linkedBrowser.browsingContext.fullZoom;
+      if (x < 0 || y < 0 || x * zoom > boundingBox.width || y * zoom > boundingBox.height) {
         if (type !== 'mousemove')
           return;
 
@@ -887,10 +891,10 @@ export class PageHandler {
           const stepDelayMs = _stealthfoxHumanize.stepMs();
           for (let i = 1; i < path.length - 1; i++) {
             const [px, py] = path[i];
-            if (px < 0 || py < 0 || px >= bbox.width || py >= bbox.height) continue;
+            if (px < 0 || py < 0 || px * zoom >= bbox.width || py * zoom >= bbox.height) continue;
             try {
               lastEventId = win.windowUtils.jugglerSendMouseEvent('mousemove',
-                  px + bbox.left, py + bbox.top, button, clickCount, modifiers,
+                  px * zoom + bbox.left, py * zoom + bbox.top, button, clickCount, modifiers,
                   false, (buttons ? 0.5 : 0.0) /* pressure */, 1 /* inputSource: real mouse */, true, false, buttons,
                   win.windowUtils.DEFAULT_MOUSE_POINTER_ID, false);
             } catch (e) { /* ignore per-step errors */ }
@@ -963,8 +967,9 @@ export class PageHandler {
       this._pageTarget.ensureContextMenuClosed();
 
       // 1. Scroll element to the desired location first; the coordinates are relative to the element.
+      const zoom = this._pageTarget._linkedBrowser.browsingContext.fullZoom;
       if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
-        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x, y, 0, 0);
+        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x * zoom, y * zoom, 0, 0);
       // 2. Get element's bounding box in the browser after the scroll is completed.
       const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
 
@@ -974,8 +979,8 @@ export class PageHandler {
         await helper.awaitTopic('apz-repaints-flushed');
 
       win.windowUtils.sendWheelEvent(
-        x + boundingBox.left,
-        y + boundingBox.top,
+        x * zoom + boundingBox.left,
+        y * zoom + boundingBox.top,
         deltaX,
         deltaY,
         deltaZ,
