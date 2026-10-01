@@ -382,21 +382,35 @@ export class PageAgent {
 
   async _dispatchTrustedInputEvents({objectId, frameId, types}) {
     // The chrome-side twin of the dispatch the injected script used to do on
-    // its own, content-side, for select_option and non-textual fill. The
-    // difference is dispatchDOMEventViaPresShellForTesting instead of
-    // element.dispatchEvent: the former calls SetTrusted(true) on the event
-    // before delivering it and the latter does not - which is why the measured
-    // divergence existed, rather than it being a deliberate choice.
+    // its own, content-side, for select_option and non-textual fill: it has to
+    // come from here because only a chrome caller gets isTrusted.
+    //
+    // dispatchEvent on the Xray, not dispatchDOMEventViaPresShellForTesting.
+    // EventDispatcher::DispatchDOMEvent marks a fresh event trusted when the
+    // caller is chrome (LegacyIsCallerChromeOrNativeCode), and this code runs
+    // with the system principal; the Xray keeps the call in this compartment,
+    // so the caller IS chrome (a waived wrapper would run it as the page). It
+    // is also how Gecko fires the real ones - nsContentUtils::DispatchTrustedEvent
+    // straight at the element. The presshell route took the target's
+    // GetUncomposedDoc(), which is null for any node inside a shadow root, so
+    // every select or input in a web component failed with NS_ERROR_UNEXPECTED.
+    //
+    // The init dict is the one Firefox itself uses, measured on 151: both
+    // bubble, neither is cancelable, and only `input` is composed (`change` is
+    // not, so a document listener must not see one from inside a shadow root).
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject)
       throw new Error('Object not found for id = ' + objectId);
-    const utils = frame.domWindow().windowUtils;
+    const target = Cu.isXrayWrapper(unsafeObject) ? unsafeObject : Cu.unwaiveXrays(unsafeObject);
+    const win = frame.domWindow();
     for (const type of types) {
-      const event = new (frame.domWindow().Event)(type, { bubbles: true, cancelable: true, composed: true });
-      utils.dispatchDOMEventViaPresShellForTesting(unsafeObject, event);
+      const event = new win.Event(type, { bubbles: true, cancelable: false, composed: type === 'input' });
+      target.dispatchEvent(event);
+      if (!event.isTrusted)
+        throw new Error('dispatchTrustedInputEvents: "' + type + '" was not delivered as trusted');
     }
   }
 
@@ -414,9 +428,11 @@ export class PageAgent {
       nsFiles = await Promise.all(files.map(filePath => File.createFromFileName(filePath)));
     }
     unsafeObject.mozSetFileArray(nsFiles);
+    // Same init dict as a real file pick (and as _dispatchTrustedInputEvents):
+    // not cancelable, and `change` not composed.
     const events = [
-      new (frame.domWindow().Event)('input', { bubbles: true, cancelable: true, composed: true }),
-      new (frame.domWindow().Event)('change', { bubbles: true, cancelable: true, composed: true }),
+      new (frame.domWindow().Event)('input', { bubbles: true, cancelable: false, composed: true }),
+      new (frame.domWindow().Event)('change', { bubbles: true, cancelable: false, composed: false }),
     ];
     for (const event of events)
       unsafeObject.dispatchEvent(event);
