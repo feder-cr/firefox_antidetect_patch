@@ -177,6 +177,7 @@ export class PageAgent {
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
         dispatchTrustedInputEvents: this._dispatchTrustedInputEvents.bind(this),
+        effectiveZoom: this._effectiveZoom.bind(this),
         evaluate: this._runtime.evaluate.bind(this._runtime),
         callFunction: this._runtime.callFunction.bind(this._runtime),
         getObjectProperties: this._runtime.getObjectProperties.bind(this._runtime),
@@ -436,6 +437,20 @@ export class PageAgent {
     ];
     for (const event of events)
       unsafeObject.dispatchEvent(event);
+  }
+
+  /**
+   * The full zoom actually in effect for this page, which is not always the
+   * one requested: the device context rounds it to whole app units per device
+   * pixel, so a requested 1.1 is 60/55 = 1.0909. A point in the page's CSS
+   * pixels lands at that factor in the chrome window, so the parent asks for
+   * this number instead of reading the requested `BrowsingContext.fullZoom`.
+   */
+  _effectiveZoom() {
+    const viewer = this._docShell.docViewer;
+    if (!viewer)
+      throw new Error('The page has no document viewer to read its zoom from');
+    return { zoom: viewer.deviceFullZoomForTest };
   }
 
   _getContentQuads({objectId, frameId}) {

@@ -133,12 +133,17 @@ export function initialize(browsingContext, docShell) {
       return data.failedToOverrideTimezone;
     },
 
-    async awaitViewportDimensions({width, height}) {
+    // In device pixels: see PageTarget._awaitContentSize. One device pixel of
+    // slack, because the parent's size is a CSS size times a scale and the
+    // viewer's is the same size after layout snapped it to whole pixels.
+    async awaitViewportDimensions({deviceWidth, deviceHeight}) {
       await new Promise(resolve => {
         const listeners = [];
         const check = () => {
           helper.removeListeners(listeners);
-          if (docShell.domWindow.innerWidth === width && docShell.domWindow.innerHeight === height) {
+          const w = {}, h = {};
+          docShell.domWindow.windowUtils.getDocumentViewerSize(w, h);
+          if (Math.abs(w.value - deviceWidth) <= 1 && Math.abs(h.value - deviceHeight) <= 1) {
             resolve();
             return;
           }

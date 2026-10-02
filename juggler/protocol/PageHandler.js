@@ -780,27 +780,59 @@ export class PageHandler {
       this._contentPage.send('dispatchTapEvent', options));
   }
 
+  /**
+   * The page's CSS pixels, as this window counts them.
+   *
+   * Points on this protocol are in the page's CSS pixels, while the mouse and
+   * the wheel are dispatched through this chrome window (jugglerSendMouseEvent,
+   * sendWheelEvent, the <browser>'s own scrollRectIntoViewIfNeeded), which take
+   * chrome CSS pixels. THE ONLY PLACE THAT CONVERSION IS WRITTEN. Device
+   * scaling needs nothing here, the native dispatch applies it; browser zoom
+   * does, and the factor is the zoom IN EFFECT in the content process, not the
+   * requested `BrowsingContext.fullZoom`: Firefox rounds it to whole app units
+   * per device pixel, so a site saved at 110% (the first Ctrl++ step) is
+   * 1.0909 there. Multiplying by 1.1 put a click 15 px off at x = 1740;
+   * without any factor, 145 px.
+   */
+  async _pagePixels() {
+    const browser = this._pageTarget._linkedBrowser;
+    const { zoom } = await this._contentPage.send('effectiveZoom');
+    return {
+      // A length, or a point relative to the <browser> element.
+      length: value => value * zoom,
+      // Whether the point is inside the page's viewport.
+      contains: (x, y) => {
+        const rect = browser.getBoundingClientRect();
+        return x >= 0 && y >= 0 && x * zoom <= rect.width && y * zoom <= rect.height;
+      },
+      // The point in the window. Read when asked, so after any scroll of the
+      // <browser> itself.
+      inWindow: (x, y) => {
+        const rect = browser.getBoundingClientRect();
+        return { x: x * zoom + rect.left, y: y * zoom + rect.top };
+      },
+    };
+  }
+
   async ['Page.dispatchMouseEvent']({type, x, y, button, clickCount, modifiers, buttons}) {
     const win = this._pageTarget._window;
+    const page = await this._pagePixels();
     // The id of the last mouse event handed to the widget, which the renderer
     // acks once it has handled it. Returned so that a caller can wait for
     // exactly that event before asking where it landed. [B217]
     let lastEventId = 0;
     const sendEvents = async (types) => {
-      // Protocol points are content CSS pixels; this window's utils take
-      // chrome CSS pixels. Device scaling is applied by the native dispatch.
-      const zoom = this._pageTarget._linkedBrowser.browsingContext.fullZoom;
       if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
-        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x * zoom, y * zoom, 0, 0);
-      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(page.length(x), page.length(y), 0, 0);
+      const point = page.inWindow(x, y);
       if (win.windowUtils.flushApzRepaints())
         await helper.awaitTopic('apz-repaints-flushed');
 
       for (const type of types) {
         lastEventId = win.windowUtils.jugglerSendMouseEvent(
           type,
-          x * zoom + boundingBox.left,
-          y * zoom + boundingBox.top,
+          point.x,
+          point.y,
           button,
           clickCount,
           modifiers,
@@ -822,9 +854,7 @@ export class PageHandler {
     await this._pageTarget.activateAndRun(async () => {
       this._pageTarget.ensureContextMenuClosed();
       // If someone asks us to dispatch mouse event outside of viewport, then we normally would drop it.
-      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
-      const zoom = this._pageTarget._linkedBrowser.browsingContext.fullZoom;
-      if (x < 0 || y < 0 || x * zoom > boundingBox.width || y * zoom > boundingBox.height) {
+      if (!page.contains(x, y)) {
         if (type !== 'mousemove')
           return;
 
@@ -884,17 +914,17 @@ export class PageHandler {
 
         /* STEALTHFOX_HUMANIZE_HOOK: expand mousemove into a Bezier trajectory. */
         if (_stealthfoxHumanize.enabled()) {
-          const bbox = this._pageTarget._linkedBrowser.getBoundingClientRect();
           const path = _stealthfoxHumanize.trajectory(
               this._humanizeFromX || 0, this._humanizeFromY || 0,
               x, y, _stealthfoxHumanize.maxTimeS());
           const stepDelayMs = _stealthfoxHumanize.stepMs();
           for (let i = 1; i < path.length - 1; i++) {
             const [px, py] = path[i];
-            if (px < 0 || py < 0 || px * zoom >= bbox.width || py * zoom >= bbox.height) continue;
+            if (!page.contains(px, py)) continue;
+            const point = page.inWindow(px, py);
             try {
               lastEventId = win.windowUtils.jugglerSendMouseEvent('mousemove',
-                  px * zoom + bbox.left, py * zoom + bbox.top, button, clickCount, modifiers,
+                  point.x, point.y, button, clickCount, modifiers,
                   false, (buttons ? 0.5 : 0.0) /* pressure */, 1 /* inputSource: real mouse */, true, false, buttons,
                   win.windowUtils.DEFAULT_MOUSE_POINTER_ID, false);
             } catch (e) { /* ignore per-step errors */ }
@@ -963,15 +993,15 @@ export class PageHandler {
     const lineOrPageDeltaX = deltaX > 0 ? Math.floor(deltaX) : Math.ceil(deltaX);
     const lineOrPageDeltaY = deltaY > 0 ? Math.floor(deltaY) : Math.ceil(deltaY);
 
+    const page = await this._pagePixels();
     await this._pageTarget.activateAndRun(async () => {
       this._pageTarget.ensureContextMenuClosed();
 
       // 1. Scroll element to the desired location first; the coordinates are relative to the element.
-      const zoom = this._pageTarget._linkedBrowser.browsingContext.fullZoom;
       if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
-        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(x * zoom, y * zoom, 0, 0);
-      // 2. Get element's bounding box in the browser after the scroll is completed.
-      const boundingBox = this._pageTarget._linkedBrowser.getBoundingClientRect();
+        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(page.length(x), page.length(y), 0, 0);
+      // 2. Where the point is in the window, after the scroll is completed.
+      const point = page.inWindow(x, y);
 
       const win = this._pageTarget._window;
       // 3. Make sure compositor is flushed after scrolling.
@@ -979,8 +1009,8 @@ export class PageHandler {
         await helper.awaitTopic('apz-repaints-flushed');
 
       win.windowUtils.sendWheelEvent(
-        x * zoom + boundingBox.left,
-        y * zoom + boundingBox.top,
+        point.x,
+        point.y,
         deltaX,
         deltaY,
         deltaZ,

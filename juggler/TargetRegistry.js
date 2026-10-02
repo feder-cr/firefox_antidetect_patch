@@ -526,7 +526,6 @@ export class PageTarget {
     this._linkedBrowser = tab.linkedBrowser;
     this._browserContext = browserContext;
     this._viewportSize = undefined;
-    this._zoom = 1;
     // { screencastId } while a screencast is running on this page, undefined
     // otherwise. One per window: the capture module holds a single sink.
     this._screencastInfo = undefined;
@@ -647,7 +646,6 @@ export class PageTarget {
     this.updateTouchOverride(browsingContext);
     this.updateUserAgent(browsingContext);
     this.updateDPPXOverride(browsingContext);
-    this.updateZoom(browsingContext);
     this.updateEmulatedMedia(browsingContext);
     this.updateColorSchemeOverride(browsingContext);
     this.updateForceOffline(browsingContext);
@@ -679,17 +677,14 @@ export class PageTarget {
     (browsingContext || this._linkedBrowser.browsingContext).customUserAgent = this._browserContext.defaultUserAgent;
   }
 
+  // Browser zoom is not ours: FullZoom.sys.mjs owns `fullZoom` (a site's
+  // saved zoom included) and Gecko composes it with this override natively.
+  // There used to be a `_zoom` here, always 1, that was multiplied in, written
+  // over `fullZoom` at every new tab, and divided out of the viewport size -
+  // which made set_viewport_size wait forever on a zoomed page.
   updateDPPXOverride(browsingContext = undefined) {
     browsingContext ||= this._linkedBrowser.browsingContext;
-    const dppx = this._zoom * (this._browserContext.deviceScaleFactor || this._initialDPPX);
-    browsingContext.overrideDPPX = dppx;
-  }
-
-  async updateZoom(browsingContext = undefined) {
-    browsingContext ||= this._linkedBrowser.browsingContext;
-    // Update dpr first, and then UI zoom.
-    this.updateDPPXOverride(browsingContext);
-    browsingContext.fullZoom = this._zoom;
+    browsingContext.overrideDPPX = this._browserContext.deviceScaleFactor || this._initialDPPX;
   }
 
   _updateModalDialogs() {
@@ -744,7 +739,7 @@ export class PageTarget {
       const toolbarTop = stackRect.y;
       this._window.resizeBy(width - this._window.innerWidth, height + toolbarTop - this._window.innerHeight);
 
-      await this._channel.connect('').send('awaitViewportDimensions', { width: width / this._zoom, height: height / this._zoom });
+      await this._awaitContentSize(width, height);
     } else {
       this._linkedBrowser.style.removeProperty('width');
       this._linkedBrowser.style.removeProperty('height');
@@ -755,11 +750,25 @@ export class PageTarget {
       this._linkedBrowser.browsingContext.inRDMPane = false;
 
       const actualSize = this._linkedBrowser.getBoundingClientRect();
-      await this._channel.connect('').send('awaitViewportDimensions', {
-        width: actualSize.width / this._zoom,
-        height: actualSize.height / this._zoom,
-      });
+      await this._awaitContentSize(actualSize.width, actualSize.height);
     }
+  }
+
+  /**
+   * Resolves once the content area has the size the <browser> was given.
+   *
+   * Compared in DEVICE pixels, which neither browser zoom nor the DPPX
+   * override touch: the page's CSS size under a zoom is Gecko's own rounding
+   * of app units, and a second copy of that arithmetic here would be a second
+   * truth. The <browser>'s chrome CSS size times this window's scale is the
+   * size the content's document viewer is laid out at.
+   */
+  async _awaitContentSize(width, height) {
+    const scale = this._window.devicePixelRatio;
+    await this._channel.connect('').send('awaitViewportDimensions', {
+      deviceWidth: Math.round(width * scale),
+      deviceHeight: Math.round(height * scale),
+    });
   }
 
   setEmulatedMedia(mediumOverride) {
