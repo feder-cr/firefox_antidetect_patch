@@ -382,8 +382,12 @@ export class PageHandler {
     return await this._contentPage.send('setFileInputFiles', options);
   }
 
-  async ['Page.dispatchTrustedInputEvents'](options) {
-    return await this._contentPage.send('dispatchTrustedInputEvents', options);
+  async ['Page.setUserInput'](options) {
+    return await this._contentPage.send('setUserInput', options);
+  }
+
+  async ['Page.selectOptions'](options) {
+    return await this._contentPage.send('selectOptions', options);
   }
 
   async ['Page.setEmulatedMedia']({colorScheme, type, reducedMotion, forcedColors, contrast}) {

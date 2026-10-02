@@ -760,11 +760,31 @@ const Page = {
         files: t.Array(t.String),
       },
     },
-    'dispatchTrustedInputEvents': {
+    // A value committed into an <input>/<textarea> through Firefox's own
+    // user path (HTMLInputElement.setUserInput): Firefox fires the events.
+    // `changed` is false when the value was already there, and then nothing
+    // reaches the page.
+    'setUserInput': {
       params: {
         frameId: t.String,
         objectId: t.String,
-        types: t.Array(t.String),
+        value: t.String,
+      },
+      returns: {
+        changed: t.Boolean,
+      },
+    },
+    // Options selected through the dropdown's own path
+    // (HTMLSelectElement.userFinishedInteracting). `indices` index
+    // `select.options`; matching a label or a value to them is the caller's.
+    'selectOptions': {
+      params: {
+        frameId: t.String,
+        objectId: t.String,
+        indices: t.Array(t.Number),
+      },
+      returns: {
+        changed: t.Boolean,
       },
     },
     'setViewportSize': {

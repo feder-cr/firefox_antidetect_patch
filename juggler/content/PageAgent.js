@@ -21,6 +21,10 @@ const obs = Cc["@mozilla.org/observer-service;1"].getService(
 
 const helper = new Helper();
 
+// The <input> types besides the text fields that hold a value a user sets by
+// typing or picking, and so take `setUserInput`.
+const kUserValueTypes = new Set(['number', 'date', 'time', 'datetime-local', 'month', 'week', 'color', 'range']);
+
 class WorkerData {
   constructor(pageAgent, browserChannel, worker) {
     this._workerRuntime = worker.channel().connect('runtime');
@@ -176,7 +180,8 @@ export class PageAgent {
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
-        dispatchTrustedInputEvents: this._dispatchTrustedInputEvents.bind(this),
+        setUserInput: this._setUserInput.bind(this),
+        selectOptions: this._selectOptions.bind(this),
         effectiveZoom: this._effectiveZoom.bind(this),
         evaluate: this._runtime.evaluate.bind(this._runtime),
         callFunction: this._runtime.callFunction.bind(this._runtime),
@@ -381,62 +386,193 @@ export class PageAgent {
     return { remoteObject: context.rawValueToRemoteObject(unsafeObject) };
   }
 
-  async _dispatchTrustedInputEvents({objectId, frameId, types}) {
-    // The chrome-side twin of the dispatch the injected script used to do on
-    // its own, content-side, for select_option and non-textual fill: it has to
-    // come from here because only a chrome caller gets isTrusted.
-    //
-    // dispatchEvent on the Xray, not dispatchDOMEventViaPresShellForTesting.
-    // EventDispatcher::DispatchDOMEvent marks a fresh event trusted when the
-    // caller is chrome (LegacyIsCallerChromeOrNativeCode), and this code runs
-    // with the system principal; the Xray keeps the call in this compartment,
-    // so the caller IS chrome (a waived wrapper would run it as the page). It
-    // is also how Gecko fires the real ones - nsContentUtils::DispatchTrustedEvent
-    // straight at the element. The presshell route took the target's
-    // GetUncomposedDoc(), which is null for any node inside a shadow root, so
-    // every select or input in a web component failed with NS_ERROR_UNEXPECTED.
-    //
-    // The init dict is the one Firefox itself uses, measured on 151: both
-    // bubble, neither is cancelable, and only `input` is composed (`change` is
-    // not, so a document listener must not see one from inside a shadow root).
+  /**
+   * The element behind `objectId`, as the Xray this chrome code must hold.
+   *
+   * Everything below calls [ChromeOnly] members (`setUserInput`,
+   * `userFinishedInteracting`, `mozSetDndFilesAndDirectories`), which exist
+   * only on the Xray: through a waived wrapper the call would run as the
+   * page and find nothing. It is also what makes an event this file has to
+   * build itself trusted - EventDispatcher marks it so because the caller is
+   * chrome - so it is checked here, BEFORE anything reaches the page, rather
+   * than read back from `isTrusted` after the page has already seen it.
+   */
+  _xrayElement(frameId, objectId) {
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject)
       throw new Error('Object not found for id = ' + objectId);
-    const target = Cu.isXrayWrapper(unsafeObject) ? unsafeObject : Cu.unwaiveXrays(unsafeObject);
-    const win = frame.domWindow();
-    for (const type of types) {
-      const event = new win.Event(type, { bubbles: true, cancelable: false, composed: type === 'input' });
-      target.dispatchEvent(event);
-      if (!event.isTrusted)
-        throw new Error('dispatchTrustedInputEvents: "' + type + '" was not delivered as trusted');
-    }
+    const element = Cu.isXrayWrapper(unsafeObject) ? unsafeObject : Cu.unwaiveXrays(unsafeObject);
+    if (!Cu.isXrayWrapper(element))
+      throw new Error('Object ' + objectId + ' is not reachable through an Xray');
+    return element;
   }
 
-  async _setFileInputFiles({objectId, frameId, files}) {
-    const frame = this._frameTree.frame(frameId);
-    if (!frame)
-      throw new Error('Failed to find frame with id = ' + frameId);
-    const unsafeObject = frame.unsafeObject(objectId);
-    if (!unsafeObject)
-      throw new Error('Object is not input!');
-    let nsFiles;
-    if (unsafeObject.webkitdirectory) {
-      nsFiles = await new Directory(files[0]).getFiles(true);
-    } else {
-      nsFiles = await Promise.all(files.map(filePath => File.createFromFileName(filePath)));
+  /**
+   * The one place this engine BUILDS an input event, for the one control
+   * Firefox gives chrome no user path into (see `_setUserInput`, range).
+   *
+   * The init dict is what Firefox's own dispatch produces, measured with real
+   * input on 151: `input` is nsContentUtils::DispatchInputEvent on a control
+   * without an editor (bubbles, composed, not cancelable) and `change` is
+   * DispatchTrustedEvent(CanBubble::eYes, Cancelable::eNo), so not composed: a
+   * document listener must not see a `change` from inside a shadow root.
+   */
+  _fireAsFirefoxDoes(element, type) {
+    const init = { input: { bubbles: true, composed: true }, change: { bubbles: true } }[type];
+    if (!init)
+      throw new Error('No native shape known for "' + type + '"');
+    element.dispatchEvent(new element.ownerGlobal.Event(type, init));
+  }
+
+  /**
+   * Commit a value into an <input>/<textarea> through the path Firefox itself
+   * takes when a USER produces that value, so that Firefox, not this file,
+   * decides which events the page gets and what they look like.
+   *
+   * `setUserInput` is that path: the datetime box calls it when the user
+   * finishes typing a date, the password manager and form autofill call it to
+   * fill a field, the in-content color picker calls it on every pick. It fires
+   * `beforeinput`/`input` (an InputEvent `insertReplacementText` on a text
+   * control, a plain Event elsewhere) and `change` by Firefox's own rule.
+   *
+   * Where that path stops short of what a user produces, the gap is closed
+   * per control, and each gap is a measured one:
+   *  - date/time/datetime-local: `setUserInput` assumes the datetime box is
+   *    the caller and does not tell it the value changed, so its fields would
+   *    keep showing the old value (and a later commit from them would undo
+   *    ours). It is told with the engine's own notification for any value set
+   *    from outside it, `MozDateTimeValueChanged`, non-bubbling, inside the UA
+   *    widget: the page cannot hear it.
+   *  - color: the release build's picker is the native dialog, whose `Done`
+   *    fires `change` from C++; `setUserInput` never does for a color (it is
+   *    not a change-on-blur control). It is fired here, as Firefox's own
+   *    in-content picker does (ColorPickerChild.closeImpl).
+   *  - range: Firefox moves a range for a user only from a pointer drag or a
+   *    key, both in C++, and `setUserInput` on a FOCUSED range defers `change`
+   *    to blur - where a user's drag fires it at the release. Firing it here
+   *    as well would make that blur fire a second one. So the value is set as
+   *    a script would and both events are fired with Firefox's shape: the
+   *    least distant path, and the only one built here.
+   * A value equal to the current one commits nothing, as for a user: the
+   * datetime box and the color dialog both stop there.
+   */
+  async _setUserInput({frameId, objectId, value}) {
+    const element = this._xrayElement(frameId, objectId);
+    const win = element.ownerGlobal;
+    const isInput = win.HTMLInputElement.isInstance(element);
+    if (!isInput && !win.HTMLTextAreaElement.isInstance(element))
+      throw new Error('Element is not an <input> or <textarea>');
+    const type = element.type;
+    if (isInput && !element.mozIsTextField(false) && !kUserValueTypes.has(type))
+      throw new Error('Input of type "' + type + '" has no user value to set');
+    if (isInput) {
+      // What the control would hold: a value it sanitizes away is refused
+      // before the page sees anything. Firefox's own sanitizer decides, run on
+      // a detached <input> carrying the same attributes (`min`/`max`/`step`
+      // move a range, `alpha`/`colorspace` decide what a color accepts). Not a
+      // clone: cloning runs a customized built-in's constructor, which the
+      // page sees. Not the handlers either: nothing on a probe may compile.
+      const probe = element.ownerDocument.createElement('input');
+      for (const name of element.getAttributeNames()) {
+        if (!name.startsWith('on'))
+          probe.setAttribute(name, element.getAttribute(name));
+      }
+      probe.value = value;
+      if (probe.value !== value)
+        throw new Error('Malformed value');
     }
-    unsafeObject.mozSetFileArray(nsFiles);
-    // Same init dict as a real file pick (and as _dispatchTrustedInputEvents):
-    // not cancelable, and `change` not composed.
-    const events = [
-      new (frame.domWindow().Event)('input', { bubbles: true, cancelable: false, composed: true }),
-      new (frame.domWindow().Event)('change', { bubbles: true, cancelable: false, composed: false }),
-    ];
-    for (const event of events)
-      unsafeObject.dispatchEvent(event);
+    if (element.value === value)
+      return { changed: false };
+    if (type === 'range') {
+      element.value = value;
+      this._fireAsFirefoxDoes(element, 'input');
+      this._fireAsFirefoxDoes(element, 'change');
+      return { changed: true };
+    }
+    element.setUserInput(value);
+    if (type === 'color') {
+      this._fireAsFirefoxDoes(element, 'change');
+    } else if (isInput && element.dateTimeBoxElement) {
+      element.dateTimeBoxElement.dispatchEvent(new win.Event('MozDateTimeValueChanged'));
+    }
+    return { changed: true };
+  }
+
+  /**
+   * Select options the way the dropdown does when a user picks one.
+   *
+   * SelectChild sets the selection and then calls `userFinishedInteracting`,
+   * under `setHandlingUserInput`: Firefox fires `input` and `change` from there
+   * (nsContentUtils::DispatchInputEvent, DispatchTrustedEvent), and marks the
+   * control user-interacted for :user-valid/:user-invalid. The listbox, the
+   * keyboard and the dropdown all end in that same call. Nothing is fired
+   * when the selection did not change, as for a user picking the option that
+   * was already selected.
+   *
+   * `indices` are positions in `select.options`, resolved by the caller: which
+   * option a label or a value names is the caller's matching, not ours.
+   */
+  async _selectOptions({frameId, objectId, indices}) {
+    const select = this._xrayElement(frameId, objectId);
+    const win = select.ownerGlobal;
+    if (!win.HTMLSelectElement.isInstance(select))
+      throw new Error('Element is not a <select> element');
+    const options = [...select.options];
+    for (const index of indices) {
+      if (!Number.isInteger(index) || index < 0 || index >= options.length)
+        throw new Error('No option at index ' + index);
+    }
+    if (!select.multiple && indices.length > 1)
+      throw new Error('A single <select> takes one option, got ' + indices.length);
+    const before = options.map(option => option.selected);
+    if (select.multiple)
+      options.forEach((option, index) => option.selected = indices.includes(index));
+    else
+      select.selectedIndex = indices.length ? indices[0] : -1;
+    const changed = options.some((option, index) => option.selected !== before[index]);
+    const handlingUserInput = win.windowUtils.setHandlingUserInput(changed);
+    try {
+      select.userFinishedInteracting(changed);
+    } finally {
+      handlingUserInput.destruct();
+    }
+    return { changed };
+  }
+
+  /**
+   * Put files into an <input type=file> the way Firefox does when a user
+   * hands them over.
+   *
+   * `mozSetDndFilesAndDirectories` is the drop path, and it ends in the same
+   * DispatchChangeEventCallback the file picker's `Done` uses: Firefox fires
+   * `input` and `change` itself and marks the control user-interacted. The
+   * picker also grants user activation when it closes, so a `change` handler
+   * may open a popup; that is granted here first, as `Done` does.
+   *
+   * ⛔ THE FILES ARE BORN IN THE PAGE'S GLOBAL, through the Xray of the page's
+   * own `File`/`Directory`. The drop path keeps the objects it is given, so a
+   * File made with this actor's `File` ended up in `input.files` as a chrome
+   * object: the page could count it and not read it, and a `change` handler
+   * touching `file.name` threw "Permission denied" - measured, every listener
+   * that read the file died. `mozSetFileArray` hid this by copying each file
+   * into the input's global, which the drop path does not do.
+   */
+  async _setFileInputFiles({objectId, frameId, files}) {
+    const input = this._xrayElement(frameId, objectId);
+    const win = input.ownerGlobal;
+    if (!win.HTMLInputElement.isInstance(input) || input.type !== 'file')
+      throw new Error('Element is not an <input type=file>');
+    let nsFiles;
+    if (input.webkitdirectory) {
+      nsFiles = await new win.Directory(files[0]).getFiles(true);
+    } else {
+      nsFiles = await Promise.all(files.map(filePath => win.File.createFromFileName(filePath)));
+    }
+    input.ownerDocument.notifyUserGestureActivation();
+    input.mozSetDndFilesAndDirectories(nsFiles);
   }
 
   /**
