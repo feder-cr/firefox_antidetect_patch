@@ -5,6 +5,7 @@
 "use strict";
 
 const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
+const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
 const { ChannelEventSinkFactory } = ChromeUtils.importESModule("chrome://juggler/content/ChannelEventSink.sys.mjs");
 const { newProxyInfoFor } = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
 
@@ -501,10 +502,11 @@ class NetworkRequest {
       isIntercepted,
       requestId: this.requestId,
       redirectedFrom: this.redirectedFromId,
-      // Stealthfox 2026-08-24: mai letto - clonava lo stream e lo
-      // base64-codificava per ogni POST, e nessuno lo chiede senza
-      // page.route()/request.postData().
-      postData: undefined,
+      // Stealthfox 2026-08-24 stopped cloning and base64-encoding the body of
+      // every POST. It is read again only while interception is on for the
+      // page or its context: a route handler deciding whether to let a
+      // request through needs it, and other sessions keep the saving.
+      postData: this._shouldIntercept() ? readRequestPostData(this.httpChannel) : undefined,
       headers: requestHeaders(this.httpChannel),
       method: this.httpChannel.requestMethod,
       navigationId: this.navigationId,
@@ -807,6 +809,49 @@ function responseHead(httpChannel, opt_statusCode, opt_statusText) {
     // when redirect did not actually hit the network.
   }
   return { status, statusText, headers };
+}
+
+function readRequestPostData(httpChannel) {
+  if (!(httpChannel instanceof Ci.nsIUploadChannel))
+    return undefined;
+  let iStream = httpChannel.uploadStream;
+  if (!iStream)
+    return undefined;
+  const isSeekableStream = iStream instanceof Ci.nsISeekableStream;
+  const isTellableStream = iStream instanceof Ci.nsITellableStream;
+
+  // For some reason, we cannot rewind back big streams,
+  // so instead we should clone them.
+  const isCloneable = iStream instanceof Ci.nsICloneableInputStream;
+  if (isCloneable)
+    iStream = iStream.clone();
+
+  let prevOffset;
+  // Surprisingly, stream might implement `nsITellableStream` without
+  // implementing the `tell` method.
+  if (isSeekableStream && isTellableStream && iStream.tell) {
+    prevOffset = iStream.tell();
+    iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
+  }
+
+  // Read data from the stream.
+  let result = undefined;
+  try {
+    const maxLen = iStream.available();
+    // Cap at 10Mb.
+    if (maxLen <= 10 * 1024 * 1024) {
+      const buffer = NetUtil.readInputStreamToString(iStream, maxLen);
+      result = btoa(buffer);
+    }
+  } catch (err) {
+  }
+
+  // Seek locks the file, so seek to the beginning only if necko hasn't
+  // read it yet, since necko doesn't seek to 0 before reading (at lest
+  // not till 459384 is fixed).
+  if (isSeekableStream && prevOffset == 0 && !isCloneable)
+    iStream.seek(Ci.nsISeekableStream.NS_SEEK_SET, 0);
+  return result;
 }
 
 function setPostData(httpChannel, postData, headers) {
