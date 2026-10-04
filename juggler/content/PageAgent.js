@@ -557,6 +557,8 @@ export class PageAgent {
       }
       if (element.disabled || element.readOnly)
         return 'field disabled or read-only';
+      if (name === 'username' && value === '')
+        return 'empty username';
       if (checkValue && !this._inputValueIsValid(element, value))
         return 'malformed value';
     };
@@ -588,8 +590,21 @@ export class PageAgent {
           started = true;
           written = true;
           reason = name + ': write failed';
-          element.setUserInput(value);
+          const observer = new doc.defaultView.MutationObserver(() => {});
+          observer.observe(doc, {subtree: true, childList: true, attributes: true, attributeFilter: ['type']});
+          try {
+            element.setUserInput(value);
+          } finally {
+            field.mutated = observer.takeRecords().some(record =>
+              record.type === 'attributes' ? record.target === element
+                : [...record.removedNodes].some(node => node === element || node.contains(element)));
+            observer.disconnect();
+          }
           reason = name + ': post-check failed';
+          if (field.mutated) {
+            reason = name + ': type changed or field removed during the write';
+            throw new Error();
+          }
           const failure = checkField(field, false);
           if (failure) {
             reason = name + ': ' + failure;
@@ -628,6 +643,18 @@ export class PageAgent {
           }
         }
         break;
+      }
+    }
+    for (const {name, element, value} of fields) {
+      if (result[name] === 'filled' || result[name] === 'unchanged') {
+        let same = false;
+        try {
+          same = element.value === value;
+        } catch {}
+        if (!same) {
+          result[name] = 'altered';
+          result.reason = (result.reason ? result.reason + '; ' : '') + name + ': the page changed the value';
+        }
       }
     }
     return result;
