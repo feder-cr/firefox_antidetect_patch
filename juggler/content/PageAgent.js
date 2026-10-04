@@ -181,6 +181,7 @@ export class PageAgent {
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
         setUserInput: this._setUserInput.bind(this),
+        autofillLogin: this._autofillLogin.bind(this),
         selectOptions: this._selectOptions.bind(this),
         effectiveZoom: this._effectiveZoom.bind(this),
         evaluate: this._runtime.evaluate.bind(this._runtime),
@@ -428,6 +429,22 @@ export class PageAgent {
   }
 
   /**
+   * Whether Firefox's sanitizer preserves this value, using a detached input
+   * with the same attributes (`min`/`max`/`step`, `alpha`/`colorspace`, etc.).
+   * Not a clone: cloning runs a customized built-in's constructor. Event
+   * handlers are omitted too, so nothing on the probe may compile.
+   */
+  _inputValueIsValid(element, value) {
+    const probe = element.ownerDocument.createElement('input');
+    for (const name of element.getAttributeNames()) {
+      if (!name.startsWith('on'))
+        probe.setAttribute(name, element.getAttribute(name));
+    }
+    probe.value = value;
+    return probe.value === value;
+  }
+
+  /**
    * Commit a value into an <input>/<textarea> through the path Firefox itself
    * takes when a USER produces that value, so that Firefox, not this file,
    * decides which events the page gets and what they look like.
@@ -468,22 +485,8 @@ export class PageAgent {
     const type = element.type;
     if (isInput && !element.mozIsTextField(false) && !kUserValueTypes.has(type))
       throw new Error('Input of type "' + type + '" has no user value to set');
-    if (isInput) {
-      // What the control would hold: a value it sanitizes away is refused
-      // before the page sees anything. Firefox's own sanitizer decides, run on
-      // a detached <input> carrying the same attributes (`min`/`max`/`step`
-      // move a range, `alpha`/`colorspace` decide what a color accepts). Not a
-      // clone: cloning runs a customized built-in's constructor, which the
-      // page sees. Not the handlers either: nothing on a probe may compile.
-      const probe = element.ownerDocument.createElement('input');
-      for (const name of element.getAttributeNames()) {
-        if (!name.startsWith('on'))
-          probe.setAttribute(name, element.getAttribute(name));
-      }
-      probe.value = value;
-      if (probe.value !== value)
-        throw new Error('Malformed value');
-    }
+    if (isInput && !this._inputValueIsValid(element, value))
+      throw new Error('Malformed value');
     if (element.value === value)
       return { changed: false };
     if (type === 'range') {
@@ -499,6 +502,135 @@ export class PageAgent {
       element.dateTimeBoxElement.dispatchEvent(new win.Event('MozDateTimeValueChanged'));
     }
     return { changed: true };
+  }
+
+  static _removeAutofillHighlight(event) {
+    event.target.autofillState = '';
+  }
+
+  /**
+   * Fill username then password in the same task as their origin checks.
+   * Like LoginManagerChild, highlight AFTER setUserInput, even if unchanged,
+   * and remove each highlight on its next input in the system event group.
+   *
+   * Every field is checked before any write. Native input dispatch can run
+   * page listeners synchronously, so recheck identity after writing and before
+   * the next field. Once writing starts, failures report outcomes and attempt
+   * to clear the affected value; exceptions must not imply a safe refusal.
+   */
+  _autofillLogin({frameId, origin, username, password}) {
+    if (username === undefined && password === undefined)
+      throw new Error('autofillLogin refused: at least one field is required');
+    const fields = [];
+    let doc;
+    try {
+      const frame = this._frameTree.frame(frameId);
+      doc = frame.domWindow().document;
+      for (const [name, field] of Object.entries({username, password})) {
+        if (field !== undefined)
+          fields.push({name, element: this._xrayElement(frameId, field.objectId), value: field.value, type: field.type});
+      }
+    } catch {
+      throw new Error('autofillLogin refused: frame or field unavailable');
+    }
+    if (fields.length === 2 && fields[0].element === fields[1].element)
+      throw new Error('autofillLogin refused: fields must be distinct');
+
+    const checkField = ({name, element, value, type}, checkValue) => {
+      const frame = this._frameTree.frame(frameId);
+      if (!frame || frame.domWindow()?.document !== doc)
+        return 'frame document changed';
+      if (!element.ownerGlobal.HTMLInputElement.isInstance(element))
+        return 'not an input';
+      if (!element.isConnected || element.ownerDocument !== doc)
+        return 'field detached or moved';
+      const principal = doc.nodePrincipal;
+      if (!principal.isContentPrincipal || principal.isNullPrincipal || principal.isSystemPrincipal)
+        return 'not a content principal';
+      if (element.ownerGlobal.origin !== origin)
+        return 'origin mismatch';
+      if (name === 'password') {
+        if (element.type !== 'password' || (type !== undefined && type !== 'password'))
+          return 'password type mismatch';
+      } else if (!element.mozIsTextField(true) || (type !== undefined && element.type !== type.toLowerCase())) {
+        return 'username type mismatch';
+      }
+      if (element.disabled || element.readOnly)
+        return 'field disabled or read-only';
+      if (checkValue && !this._inputValueIsValid(element, value))
+        return 'malformed value';
+    };
+    for (const field of fields) {
+      let reason;
+      try {
+        reason = checkField(field, true);
+      } catch {
+        reason = 'field precheck failed';
+      }
+      if (reason)
+        throw new Error('autofillLogin refused: ' + field.name + ': ' + reason);
+    }
+
+    const result = Object.fromEntries(fields.map(field => [field.name, 'skipped']));
+    let started = false;
+    for (const field of fields) {
+      const {name, element, value} = field;
+      let written = false;
+      let highlighting = false;
+      let reason = name + ': field recheck failed';
+      try {
+        const failure = checkField(field, true);
+        if (failure) {
+          reason = name + ': ' + failure;
+          throw new Error();
+        }
+        if (element.value !== value) {
+          started = true;
+          written = true;
+          reason = name + ': write failed';
+          element.setUserInput(value);
+          reason = name + ': post-check failed';
+          const failure = checkField(field, false);
+          if (failure) {
+            reason = name + ': ' + failure;
+            throw new Error();
+          }
+        }
+        const altered = written && element.value !== value;
+        reason = name + ': highlight failed';
+        started = true;
+        highlighting = true;
+        element.autofillState = 'autofill';
+        element.addEventListener('input', PageAgent._removeAutofillHighlight, {mozSystemGroup: true, once: true});
+        result[name] = altered ? 'altered' : written ? 'filled' : 'unchanged';
+        if (altered)
+          result.reason = (result.reason ? result.reason + '; ' : '') + name + ': the page changed the value';
+      } catch {
+        if (!started)
+          throw new Error('autofillLogin refused: ' + reason);
+        result.reason = reason;
+        if (written) {
+          try {
+            try {
+              element.setUserInput('');
+            } finally {
+              element.autofillState = '';
+            }
+            result[name] = element.value === '' ? 'cleared' : 'uncleared';
+          } catch {
+            result[name] = 'uncleared';
+          }
+        } else if (highlighting) {
+          try {
+            element.autofillState = '';
+          } catch {
+            result.reason += '; highlight could not be cleared';
+          }
+        }
+        break;
+      }
+    }
+    return result;
   }
 
   /**

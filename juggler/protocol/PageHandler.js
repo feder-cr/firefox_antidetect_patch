@@ -386,6 +386,10 @@ export class PageHandler {
     return await this._contentPage.send('setUserInput', options);
   }
 
+  async ['Page.autofillLogin'](options) {
+    return await this._contentPage.send('autofillLogin', options);
+  }
+
   async ['Page.selectOptions'](options) {
     return await this._contentPage.send('selectOptions', options);
   }

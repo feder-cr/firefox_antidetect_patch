@@ -57,6 +57,12 @@ browserTypes.DownloadOptions = {
 };
 
 const pageTypes = {};
+pageTypes.AutofillField = {
+  objectId: t.String,
+  value: t.String,
+  type: t.Optional(t.String),
+};
+
 pageTypes.DOMPoint = {
   x: t.Number,
   y: t.Number,
@@ -772,6 +778,22 @@ const Page = {
       },
       returns: {
         changed: t.Boolean,
+      },
+    },
+    // Origin-checked login filling and highlighting in one synchronous task,
+    // through Firefox's password manager path. Failures after writing report
+    // per-field outcomes rather than implying that nothing was written.
+    'autofillLogin': {
+      params: {
+        frameId: t.String,
+        origin: t.String,
+        username: t.Optional(pageTypes.AutofillField),
+        password: t.Optional(pageTypes.AutofillField),
+      },
+      returns: {
+        username: t.Optional(t.String),
+        password: t.Optional(t.String),
+        reason: t.Optional(t.String),
       },
     },
     // Options selected through the dropdown's own path
