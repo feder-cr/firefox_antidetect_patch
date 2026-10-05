@@ -489,6 +489,10 @@ class NetworkRequest {
   }
 
   _fallThroughInterceptController() {
+    const context = this._networkObserver._targetRegistry.browserContextForUserContextId(
+        this.httpChannel.loadInfo.originAttributes.userContextId);
+    if (context?.serviceWorkersBlocked)
+      return undefined;
     try {
       return this._previousCallbacks?.getInterface(Ci.nsINetworkInterceptController);
     } catch (e) {
@@ -714,6 +718,19 @@ export class NetworkObserver {
     if (!(channel instanceof Ci.nsIHttpChannel))
       return;
     const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
+    const loadInfo = httpChannel.loadInfo;
+    const context = this._targetRegistry.browserContextForUserContextId(loadInfo.originAttributes.userContextId);
+    if (context?.serviceWorkersBlocked) {
+      const type = loadInfo.internalContentPolicyType;
+      // The import type is shared with ordinary workers. Only SW update
+      // checks carry this header (ServiceWorkerScriptCache.cpp).
+      const serviceWorkerImport = type === Ci.nsIContentPolicy.TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS &&
+          requestHeaders(httpChannel).some(header => header.name.toLowerCase() === 'service-worker' && header.value === 'script');
+      if (type === Ci.nsIContentPolicy.TYPE_INTERNAL_SERVICE_WORKER || serviceWorkerImport) {
+        httpChannel.cancel(Cr.NS_ERROR_NET_RESET);
+        return;
+      }
+    }
     const channelId = httpChannel.channelId + '';
     const redirectedFrom = this._expectedRedirect.get(channelId);
     if (redirectedFrom) {

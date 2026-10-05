@@ -1069,6 +1069,10 @@ class BrowserContext {
     this.deviceScaleFactor = undefined;
     this.defaultUserAgent = null;
     this.requestInterceptionEnabled = undefined;
+    this.serviceWorkersBlocked = false;
+    this._serviceWorkerListener = null;
+    this._serviceWorkerUnregistrations = new Set();
+    this._serviceWorkerError = null;
     this.touchOverride = false;
     this.forceOffline = false;
     this.disableCache = false;
@@ -1113,6 +1117,58 @@ class BrowserContext {
     this._registry._browserContextIdToBrowserContext.delete(this.browserContextId);
     this._registry._userContextIdToBrowserContext.delete(this.userContextId);
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
+    await this.setServiceWorkersBlocked(false);
+  }
+
+  async setServiceWorkersBlocked(blocked) {
+    if (!blocked) {
+      if (this._serviceWorkerListener) {
+        this._serviceWorkerManager.removeListener(this._serviceWorkerListener);
+        this._serviceWorkerListener = null;
+      }
+      this.serviceWorkersBlocked = false;
+      this._serviceWorkerError = null;
+      return;
+    }
+    if (!this.serviceWorkersBlocked) {
+      this._serviceWorkerManager = Cc['@mozilla.org/serviceworkers/manager;1'].getService(Ci.nsIServiceWorkerManager);
+      this.serviceWorkersBlocked = true;
+      this._serviceWorkerListener = {
+        QueryInterface: ChromeUtils.generateQI([Ci.nsIServiceWorkerManagerListener]),
+        onRegister: info => this._unregisterServiceWorker(info),
+        onUnregister() {},
+        onQuotaUsageCheckFinish() {},
+      };
+      this._serviceWorkerManager.addListener(this._serviceWorkerListener);
+      const registrations = this._serviceWorkerManager.getAllRegistrations();
+      for (let i = 0; i < registrations.length; ++i)
+        this._unregisterServiceWorker(registrations.queryElementAt(i, Ci.nsIServiceWorkerRegistrationInfo));
+    }
+    // The reply is the barrier before the client can open its first page.
+    while (this._serviceWorkerUnregistrations.size)
+      await Promise.all(this._serviceWorkerUnregistrations);
+    if (this._serviceWorkerError)
+      throw this._serviceWorkerError;
+  }
+
+  _unregisterServiceWorker(info) {
+    if (info.principal.originAttributes.userContextId !== this.userContextId)
+      return;
+    const task = new Promise((resolve, reject) => {
+      // unregister alone lets an active worker live until its clients close.
+      info.forceShutdown();
+      this._serviceWorkerManager.unregister(info.principal, {
+        QueryInterface: ChromeUtils.generateQI([Ci.nsIServiceWorkerUnregisterCallback]),
+        unregisterSucceeded: () => resolve(),
+        unregisterFailed: () => reject(new Error(`Failed to unregister service worker for ${info.scope}`)),
+      }, info.scope);
+    });
+    this._serviceWorkerUnregistrations.add(task);
+    task.then(() => this._serviceWorkerUnregistrations.delete(task), error => {
+      this._serviceWorkerUnregistrations.delete(task);
+      this._serviceWorkerError = error;
+      Components.utils.reportError(error);
+    });
   }
 
   setProxy(proxy) {

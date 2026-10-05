@@ -203,6 +203,9 @@ export class BrowserHandler {
     this._targetRegistry.browserContextForId(browserContextId).requestInterceptionEnabled = enabled;
   }
 
+  async ['Browser.setServiceWorkersBlocked']({browserContextId, blocked}) {
+    await this._targetRegistry.browserContextForId(browserContextId).setServiceWorkersBlocked(blocked);
+  }
 
   ['Browser.setCacheDisabled']({browserContextId, cacheDisabled}) {
     this._targetRegistry.browserContextForId(browserContextId).setCacheDisabled(cacheDisabled);

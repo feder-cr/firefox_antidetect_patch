@@ -304,6 +304,12 @@ const Browser = {
         enabled: t.Boolean,
       },
     },
+    'setServiceWorkersBlocked': {
+      params: {
+        browserContextId: t.Optional(t.String),
+        blocked: t.Boolean,
+      },
+    },
     'setGeolocationOverride': {
       params: {
         browserContextId: t.Optional(t.String),
