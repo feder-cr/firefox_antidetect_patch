@@ -410,20 +410,40 @@ export class FrameTree {
 
     const isStop = flag & Ci.nsIWebProgressListener.STATE_STOP;
     if (isStop && frame._pendingNavigationId && status) {
-      // FF150 Fission workaround: NS_BINDING_ABORTED on the main frame is
-      // SPURIOUS during cross-process BC swap. The old BC's DocLoader stops
-      // (firing STATE_STOP with status=NS_BINDING_ABORTED) before the new BC
-      // takes over and commits the same navigation. Suppressing this abort
-      // lets _frameNavigationCommitted on the new BC fire correctly.
-      // Real network failures use other status codes (e.g. NS_ERROR_*) and
-      // still propagate normally.
-      if (frame === this._mainFrame && status === Cr.NS_BINDING_ABORTED)
-        return;
       // Navigation is aborted.
       const navigationId = frame._pendingNavigationId;
       frame._pendingNavigationId = null;
       // Always report download navigation as failure to match other browsers.
       const errorText = helper.getNetworkErrorStatusText(status);
+      // Stealthfox [B302]: the main frame's NS_BINDING_ABORTED is SPURIOUS
+      // when a Fission process swap takes the navigation to another process:
+      // the old channel is disconnected there, by
+      // BrowsingContext::DeactivateDocuments, which then marks the context in
+      // the BFCache in the same task, or, for a document that cannot enter it,
+      // while its docShell is destroyed. Dropping every such abort (the FF150
+      // workaround this replaces) also dropped the real ones: document.open()
+      // and window.stop() stop the ongoing navigation of a document that stays
+      // where it is. The navigation then stayed pending, and the
+      // document.write() after a document.open() inserts a root element into
+      // the OLD document, which onWindowEvent took for the navigation's
+      // commit. So the pending navigation is cleared at once, and the abort is
+      // reported unless, by the end of this task, the document has gone the
+      // swap's way.
+      if (frame === this._mainFrame && status === Cr.NS_BINDING_ABORTED) {
+        if (docShell.isBeingDestroyed())
+          return;
+        Services.tm.dispatchToMainThread(() => {
+          let swapped;
+          try {
+            swapped = docShell.isBeingDestroyed() || docShell.browsingContext.isInBFCache;
+          } catch (e) {
+            swapped = true;   // the docShell is gone: the swap's way
+          }
+          if (!swapped)
+            this.emit(FrameTree.Events.NavigationAborted, frame, navigationId, errorText);
+        });
+        return;
+      }
       this.emit(FrameTree.Events.NavigationAborted, frame, navigationId, errorText);
       if (frame === this._mainFrame && status !== Cr.NS_BINDING_ABORTED)
         this.forcePageReady();
