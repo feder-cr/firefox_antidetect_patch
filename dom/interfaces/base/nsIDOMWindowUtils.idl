@@ -381,7 +381,8 @@ interface nsIDOMWindowUtils : nsISupports {
                       in long aLineOrPageDeltaX,
                       in long aLineOrPageDeltaY,
                       in unsigned long aOptions,
-                      [optional] in nsISynthesizedEventCallback aCallback);
+                      [optional] in nsISynthesizedEventCallback aCallback,
+                      [optional] in double aLatency);
 
   /**
    * Native modifiers for sendNativeKeyEvent and sendNativeMouseEvent.

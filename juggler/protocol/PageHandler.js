@@ -1038,7 +1038,7 @@ export class PageHandler {
     return landing ? { landing } : {};
   }
 
-  async ['Page.dispatchWheelEvent']({x, y, button, deltaX, deltaY, deltaZ, modifiers }) {
+  async ['Page.dispatchWheelEvent']({x, y, button, deltaX, deltaY, deltaZ, modifiers, latency }) {
     const deltaMode = 0; // WheelEvent.DOM_DELTA_PIXEL
     const lineOrPageDeltaX = deltaX > 0 ? Math.floor(deltaX) : Math.ceil(deltaX);
     const lineOrPageDeltaY = deltaY > 0 ? Math.floor(deltaY) : Math.ceil(deltaY);
@@ -1068,7 +1068,9 @@ export class PageHandler {
         modifiers,
         lineOrPageDeltaX,
         lineOrPageDeltaY,
-        0 /* options */);
+        0 /* options */,
+        null /* callback */,
+        latency || 0 /* [B301] born this many ms before the dispatch */);
     }, { muteNotificationsPopup: true });
   }
 
