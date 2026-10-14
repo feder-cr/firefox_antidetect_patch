@@ -3110,6 +3110,13 @@ class nsContentUtils {
    *         by any event listener.
    */
   MOZ_CAN_RUN_SCRIPT
+  /**
+   * Stealthfox [B299] [B301]: the birth of a synthesized input event that
+   * reaches the page aLatencyMs after it was born, as a system's does; never
+   * before the previous such birth, mouse or wheel.
+   */
+  static mozilla::TimeStamp InputEventBirth(double aLatencyMs);
+
   static mozilla::Result<bool, nsresult> SynthesizeMouseEvent(
       mozilla::PresShell* aPresShell, nsIWidget* aWidget,
       const nsAString& aType, mozilla::LayoutDeviceIntPoint& aRefPoint,

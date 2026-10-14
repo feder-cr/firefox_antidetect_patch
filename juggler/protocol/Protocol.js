@@ -977,6 +977,8 @@ const Page = {
       params: {
         x: t.Number,
         y: t.Number,
+        // [B301] born this many ms before the dispatch, decided by the client.
+        latency: t.Optional(t.Number),
         deltaX: t.Number,
         deltaY: t.Number,
         deltaZ: t.Number,

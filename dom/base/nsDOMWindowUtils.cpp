@@ -857,7 +857,8 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
                                  uint32_t aDeltaMode, int32_t aModifiers,
                                  int32_t aLineOrPageDeltaX,
                                  int32_t aLineOrPageDeltaY, uint32_t aOptions,
-                                 nsISynthesizedEventCallback* aCallback) {
+                                 nsISynthesizedEventCallback* aCallback,
+                                 double aLatency) {
   if (XRE_IsContentProcess() && aCallback &&
       ((aOptions & WHEEL_EVENT_ASYNC_ENABLED) ||
        StaticPrefs::test_events_async_enabled())) {
@@ -890,6 +891,10 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
   wheelEvent.mLineOrPageDeltaX = aLineOrPageDeltaX;
   wheelEvent.mLineOrPageDeltaY = aLineOrPageDeltaY;
   wheelEvent.mCallbackId = notifier.SaveCallback();
+  // Stealthfox [B301]: born before the page sees it, as the mouse ([B299]).
+  if (aLatency > 0) {
+    wheelEvent.mTimeStamp = nsContentUtils::InputEventBirth(aLatency);
+  }
 
   nsPresContext* presContext = GetPresContext();
   NS_ENSURE_TRUE(presContext, NS_ERROR_FAILURE);
