@@ -1781,9 +1781,9 @@ export var TelemetrySendImpl = {
  */
 function sessionRoute() {
   let proxy = null;
-  if (Cu.isESModuleLoaded("chrome://juggler/content/TargetRegistry.js")) {
+  if (Cu.isESModuleLoaded("resource://gre/modules/juggler/TargetRegistry.js")) {
     const { TargetRegistry } = ChromeUtils.importESModule(
-      "chrome://juggler/content/TargetRegistry.js"
+      "resource://gre/modules/juggler/TargetRegistry.js"
     );
     const registry = TargetRegistry.instance();
     // userContextId 0: the context of a request with the system principal.

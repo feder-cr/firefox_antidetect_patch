@@ -4,10 +4,10 @@
 
 "use strict";
 
-const {Helper, EventWatcher} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
+const {Helper, EventWatcher} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
-const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('chrome://juggler/content/NetworkObserver.js');
-const {PageTarget} = ChromeUtils.importESModule('chrome://juggler/content/TargetRegistry.js');
+const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('resource://gre/modules/juggler/NetworkObserver.js');
+const {PageTarget} = ChromeUtils.importESModule('resource://gre/modules/juggler/TargetRegistry.js');
 const {setTimeout, clearTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 
 const Cc = Components.classes;

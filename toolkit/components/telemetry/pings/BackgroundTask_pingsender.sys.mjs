@@ -8,7 +8,7 @@ import {
 } from "resource://gre/modules/TelemetrySend.sys.mjs";
 
 const { newProxyInfoFor, proxyAuthCallbacks, proxyForHost } =
-  ChromeUtils.importESModule("chrome://juggler/content/SessionRoute.js");
+  ChromeUtils.importESModule("resource://gre/modules/juggler/SessionRoute.js");
 
 export async function runBackgroundTask(commandLine) {
   const proxy = takeSessionRoute();
