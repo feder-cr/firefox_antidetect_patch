@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {Helper} = ChromeUtils.importESModule('chrome://juggler/content/Helper.js');
-const {StealthCursor} = ChromeUtils.importESModule('chrome://juggler/content/StealthCursor.js');
-const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('chrome://juggler/content/SessionRoute.js');
+const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
+const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
+const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("resource://gre/modules/ContextualIdentityService.sys.mjs");
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');

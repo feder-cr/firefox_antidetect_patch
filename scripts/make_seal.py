@@ -27,7 +27,7 @@ assets on 2026-07-25, are baked into the schema:
     record, because a client verifies the leg it actually runs; one seal-wide
     BuildID matched exactly one platform and refused the other four.
   * The Linux archives carry NO omni.ja: linux_release.sh tars the pre-package
-    dist/bin layout, so chrome/juggler/ is loose in the tree. Provenance is read
+    dist/bin layout, so the juggler is loose in the tree. Provenance is read
     from whichever layout the archive has, and omni_sha256 is left empty for a
     leg that has nothing to hash.
 """
@@ -48,12 +48,14 @@ from pathlib import Path
 # the bug; invisible_core refuses a schema it does not know rather than guess.
 SCHEMA = 2
 JUGGLER_ENTRIES = (
-    "chrome/juggler/content/protocol/PageHandler.js",
-    "chrome/juggler/content/TargetRegistry.js",
-    "chrome/juggler/content/content/main.js",
-    "chrome/juggler/content/content/Runtime.js",
+    "modules/juggler/protocol/PageHandler.js",
+    "modules/juggler/TargetRegistry.js",
+    "modules/juggler/content/main.js",
+    "modules/juggler/content/Runtime.js",
 )
-JUGGLER_DIR_REL = "chrome/juggler"
+# Since firefox-47 juggler is not a chrome package: it loads from
+# resource://gre/modules/juggler/ (juggler/moz.build says why).
+JUGGLER_DIR_REL = "modules/juggler"
 JUGGLER_MARKERS = (b"stealthfox", b"zoom.stealth")
 ENTRY_REL = {
     "win32": "firefox.exe",

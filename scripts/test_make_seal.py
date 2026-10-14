@@ -20,7 +20,7 @@ WHAT IS COVERED, and each case is a real refusal rather than a plausible one:
 
   1. two legs disagreeing on `Version` - a leg built from a different tree;
   2. a basename that does not carry its own reported version (issue #14);
-  3. an archive with no `chrome/juggler/` at all - Playwright cannot drive it;
+  3. an archive with no juggler (`modules/juggler/`) at all - Playwright cannot drive it;
   4. an archive whose juggler carries no stealth marker - a stock build;
   5. an incomplete release, missing platforms;
   6. a tag that is not `firefox-N`;
@@ -214,7 +214,7 @@ def test_an_archive_with_no_juggler_is_refused(d: Path):
     """Playwright cannot drive it and invisible_core refuses every launch of it,
     so a seal naming it would pair the core to an engine nobody can use."""
     _release(d, **{"linux-x86_64_juggler": False})
-    _expect(d, "no chrome/juggler")
+    _expect(d, "no modules/juggler")
 
 
 @case

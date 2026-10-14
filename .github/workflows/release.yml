@@ -40,6 +40,13 @@ on:
           wrapper is mid-rewrite: otherwise unfinished work on main blocks a
           binary release that has nothing to do with it.
         default: 'main'
+      core_ref:
+        description: >
+          invisible_core ref the gate installs. Defaults to main, for the reason
+          the gate step gives. Set it to the branch that follows a change of the
+          engine's layout (firefox-47 moved the juggler to modules/juggler):
+          main still reads the old one and refuses every launch.
+        default: 'main'
 
 env:
   SOURCE_REPO: feder-cr/firefox_antidetect_patch
@@ -133,17 +140,28 @@ jobs:
         shell: bash
         run: python3 scripts/check_release_naming.py
 
-      # The channel between Juggler's two halves, tested without a browser. A
-      # request answered from another channel end's kept answers is never
-      # dispatched and nothing says so: a page's "main world created" was lost
-      # that way and every read in the page's world after it waited out its
-      # whole timeout (B286). Seconds here, before hours of build.
-      - name: Juggler's channel keeps the requests of every end apart
+      # Juggler tested without a browser, seconds here before hours of build.
+      # The channel between its two halves: a request answered from another
+      # channel end's kept answers is never dispatched and nothing says so (a
+      # page's "main world created" was lost that way, B286). And where it loads
+      # from: never a chrome package, which a page probes by name, and every
+      # resource URL a file the build installs (invisible_playwright #336).
+      - name: Juggler's tests without a browser
         if: matrix.leg == 'linux-x86_64'
         shell: bash
         # The files, expanded by the shell: from Node 21 the arguments of
         # --test are file patterns, and a directory is loaded as a module.
         run: node --test juggler/tests/*.test.mjs
+
+      # The release scripts' own known-bad inputs: validate_release.py's
+      # no-updater and no-juggler-name checks, and make_seal.py's refusals. A
+      # check that has only ever printed its OK line is not a gate.
+      - name: The release scripts refuse what they must
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        run: |
+          python3 scripts/validate_release.py --selftest
+          python3 scripts/test_make_seal.py
 
       # Record which firefox_antidetect_patch commit this build came from. The publish
       # job turns the range previous-release..this commit into the release notes
@@ -242,10 +260,10 @@ jobs:
           N=$(find "$STAGING" -type l | wc -l)
           [ "$N" -eq 0 ] || { echo "ERROR: $N symlinks remain after cp -aL"; exit 1; }
           for t in xpcshell certutil pk12util rapl; do rm -f "$STAGING/$t"; done
-          # JUGGLER GATE: the binary is undrivable by Playwright without it (see 70-known-bugs)
-          { [ -e "$STAGING/chrome/juggler.manifest" ] && [ -d "$STAGING/chrome/juggler" ]; } \
-            || { echo "ERROR: juggler missing from package (chrome/juggler) — Playwright can't drive it"; exit 1; }
-          echo "juggler GATE OK (loose chrome/juggler present)"
+          # JUGGLER GATE: present (Playwright cannot drive the binary without it)
+          # and not a chrome package (a page probes one by name). The two checks
+          # live in validate_release.py, which also runs on the archive below.
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$STAGING'); v.assert_juggler_provenance(t); v.assert_no_juggler_registration(t)"
           find "$STAGING" -type f \
             \( -name '*.so' -o -name firefox -o -name firefox-bin -o -name plugin-container \
                -o -name pingsender -o -name glxtest -o -name vaapitest -o -name updater \) \
@@ -277,11 +295,11 @@ jobs:
             || { echo "ERROR: mach package did not produce a clean dist/firefox tree"; exit 1; }
           WIN_APP=obj-rel/dist/firefox
           echo "packaging from: $WIN_APP"
-          # JUGGLER GATE: omni.ja must carry juggler (else Playwright can't drive it)
+          # JUGGLER GATE: in omni.ja (Playwright cannot drive the binary without
+          # it) and not a chrome package (a page probes one by name), the same
+          # two checks as the Linux leg.
           [ -f "$WIN_APP/omni.ja" ] || { echo "ERROR: no omni.ja in $WIN_APP"; exit 1; }
-          python3 -c "import zipfile,sys; sys.exit(0 if any('juggler' in n.lower() for n in zipfile.ZipFile('$WIN_APP/omni.ja').namelist()) else 1)" \
-            || { echo "ERROR: juggler missing from $WIN_APP/omni.ja — Playwright can't drive it"; exit 1; }
-          echo "juggler GATE OK (win)"
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_no_juggler_registration(t)"
           mkdir -p out
           ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
           ls -la out/
@@ -472,7 +490,7 @@ jobs:
         run: |
           python -m pip install --quiet ".[dev]"
           python -m pip install --quiet --force-reinstall --no-deps \
-            "git+https://github.com/feder-cr/invisible_core@main"
+            "git+https://github.com/feder-cr/invisible_core@${{ github.event.inputs.core_ref || 'main' }}"
           python -c "from importlib.metadata import version; print('core under test:', version('invisible-core'))"
           python -m invisible_core seal --binary "$FF_EXE" \
             --tag "${{ github.event.inputs.release_tag || github.ref_name }}" \

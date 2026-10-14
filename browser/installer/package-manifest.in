@@ -198,8 +198,6 @@
 #ifdef ENABLE_WEBDRIVER
 @RESPATH@/chrome/remote@JAREXT@
 @RESPATH@/chrome/remote.manifest
-@RESPATH@/chrome/juggler@JAREXT@
-@RESPATH@/chrome/juggler.manifest
 #endif
 
 ; Modules

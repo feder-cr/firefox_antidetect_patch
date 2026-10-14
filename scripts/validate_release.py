@@ -210,12 +210,14 @@ def check_critical_files(root: Path, critical: list[str]) -> None:
 
 
 JUGGLER_ENTRIES = (
-    "chrome/juggler/content/protocol/PageHandler.js",
-    "chrome/juggler/content/TargetRegistry.js",
-    "chrome/juggler/content/content/main.js",
-    "chrome/juggler/content/content/Runtime.js",
+    "modules/juggler/protocol/PageHandler.js",
+    "modules/juggler/TargetRegistry.js",
+    "modules/juggler/content/main.js",
+    "modules/juggler/content/Runtime.js",
 )
-JUGGLER_DIR_REL = "chrome/juggler"
+# Since firefox-47 juggler is not a chrome package: it loads from
+# resource://gre/modules/juggler/ (juggler/moz.build says why).
+JUGGLER_DIR_REL = "modules/juggler"
 JUGGLER_MARKERS = (b"stealthfox", b"zoom.stealth")
 
 
@@ -233,7 +235,7 @@ def assert_juggler_provenance(tree: Path) -> None:
 
     TWO LAYOUTS. The Windows zip and the macOS tarballs pack the juggler into
     omni.ja. The Linux tarballs carry no omni.ja at all - linux_release.sh tars
-    the pre-package dist/bin layout, where chrome/juggler/ is loose in the tree
+    the pre-package dist/bin layout, where the juggler is loose in the tree
     (measured on firefox-18: 0 *.ja members, 21 loose juggler members). Reading
     only omni.ja made this gate raise on the Linux arm, and since Hard rule 4
     makes this script a publishing precondition, that would have blocked every
@@ -248,7 +250,7 @@ def assert_juggler_provenance(tree: Path) -> None:
         with zipfile.ZipFile(omni) as zf:
             names = set(zf.namelist())
             if not any(n.startswith(JUGGLER_DIR_REL + "/") for n in names):
-                raise SystemExit("validate_release: omni.ja has no chrome/juggler/ - "
+                raise SystemExit(f"validate_release: omni.ja has no {JUGGLER_DIR_REL}/ - "
                                  "Playwright cannot drive this build")
             marked = 0
             for entry in JUGGLER_ENTRIES:
@@ -257,7 +259,7 @@ def assert_juggler_provenance(tree: Path) -> None:
                                      f"{entry}")
                 if any(m in zf.read(entry) for m in JUGGLER_MARKERS):
                     marked += 1
-    elif (root / "chrome" / "juggler").is_dir():
+    elif (root / JUGGLER_DIR_REL).is_dir():
         layout = "unpacked tree"
         marked = 0
         for entry in JUGGLER_ENTRIES:
@@ -280,6 +282,46 @@ def assert_juggler_provenance(tree: Path) -> None:
             f"erode it silently.")
     print(f"    juggler provenance OK ({marked}/{len(JUGGLER_ENTRIES)} entries marked, "
           f"{layout} layout)")
+
+
+#: The manifest instructions that register a name a page can probe. The parent
+#: sends every registered chrome package to each content process, and
+#: `new Worker("chrome://<name>/...")` returns for a registered name and throws
+#: SecurityError at once for an absent one (camoufox #847, measured on firefox-46
+#: 2026-10-14: `juggler` was the one name of 65 that retail does not register).
+REGISTERING = ("content", "skin", "locale", "resource")
+
+
+def _manifest_texts(tree: Path):
+    """(where, text) for every chrome manifest of the tree: inside each omni.ja,
+    and loose beside it (the Linux archives carry no omni.ja)."""
+    import zipfile
+    root = _juggler_root(tree)
+    for omni in (root / "omni.ja", root / "browser" / "omni.ja"):
+        if omni.is_file():
+            with zipfile.ZipFile(omni) as zf:
+                for n in zf.namelist():
+                    if n.endswith(".manifest"):
+                        yield f"{omni.relative_to(root)}!{n}", zf.read(n).decode("utf-8", "replace")
+    for p in root.rglob("*.manifest"):
+        yield str(p.relative_to(root)), p.read_bytes().decode("utf-8", "replace")
+
+
+def assert_no_juggler_registration(tree: Path) -> None:
+    """No manifest may register a chrome package or a resource substitution named
+    after the juggler: a page sees the name. Until firefox-47 every build had
+    `content juggler`, and from 2026-10-06 captcha vendors probed it."""
+    found = []
+    for where, text in _manifest_texts(tree):
+        for line in text.splitlines():
+            t = line.split()
+            if len(t) >= 2 and t[0] in REGISTERING and "juggler" in t[1].lower():
+                found.append(f"{where}: {line.strip()}")
+    if found:
+        raise ValidationError(
+            f"a page can probe the juggler by name, registered by: {found}. It loads "
+            f"from resource://gre/modules/juggler/ and is never a chrome package")
+    print("    no juggler name registered OK")
 
 
 UPDATER_FILES = (
@@ -414,6 +456,7 @@ def validate_linux_tarball(archive: Path) -> None:
         extract_tar(archive, td)
         check_critical_files(td, CRITICAL_LINUX)
         assert_juggler_provenance(td)
+        assert_no_juggler_registration(td)
         assert_no_updater(td)
 
         print("  [4/4] smoke (firefox --version)...")
@@ -434,6 +477,7 @@ def validate_windows_zip(archive: Path) -> None:
         extract_zip(archive, td)
         check_critical_files(td, CRITICAL_WIN)
         assert_juggler_provenance(td)
+        assert_no_juggler_registration(td)
         assert_no_updater(td)
 
         print("  [3/4] no-symlinks check (zip cannot store them, but verify)...")
@@ -461,8 +505,7 @@ def _selftest() -> int:
 
     def tree(*extra, omni_members=(), nested_omni=()):
         d = Path(tempfile.mkdtemp(prefix="vr-selftest-"))
-        (d / "chrome" / "juggler").mkdir(parents=True)
-        (d / "modules").mkdir()
+        (d / JUGGLER_DIR_REL).mkdir(parents=True)
         (d / "firefox.exe").write_bytes(b"x")
         (d / "modules" / "AppConstants.sys.mjs").write_bytes(b"x")
         for rel in extra:
@@ -509,11 +552,49 @@ def _selftest() -> int:
         ("a directory called updater", lambda: tree("updater/keep.txt"), False),
     ]
 
+    def registering(manifest, text, omni=False):
+        """A tree whose `manifest` (inside omni.ja when `omni`) says `text`."""
+        d = tree()
+        if omni:
+            with zipfile.ZipFile(d / "omni.ja", "w") as zf:
+                zf.writestr(manifest, text)
+        else:
+            f = d / manifest
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(text.encode())
+        return d
+
+    #: The juggler registration check: (name, factory, must_raise).
+    registrations = [
+        ("a clean tree", lambda: tree(), False),
+        ("content juggler inside omni.ja (every build until firefox-47)",
+         lambda: registering("chrome/chrome.manifest",
+                             "content juggler juggler/content/\n", omni=True), True),
+        ("the loose Linux chrome/juggler.manifest",
+         lambda: registering("chrome/juggler.manifest", "content juggler juggler/content/\n"),
+         True),
+        ("a resource substitution named after it",
+         lambda: registering("chrome/chrome.manifest",
+                             "resource juggler-modules modules/juggler/\n", omni=True), True),
+        # Near-misses: the names retail registers, and the word in a comment.
+        ("content global and remote, as retail",
+         lambda: registering("chrome/chrome.manifest",
+                             "content global global/content/\ncontent remote remote/content/\n",
+                             omni=True), False),
+        ("the word in a comment",
+         lambda: registering("chrome/chrome.manifest", "# juggler moved to modules/juggler\n",
+                             omni=True), False),
+    ]
+    cases = [(name, factory, must_raise, assert_no_updater)
+             for name, factory, must_raise in cases]
+    cases += [(name, factory, must_raise, assert_no_juggler_registration)
+              for name, factory, must_raise in registrations]
+
     bad = 0
-    for name, factory, must_raise in cases:
+    for name, factory, must_raise, check in cases:
         d = factory()
         try:
-            assert_no_updater(d)
+            check(d)
             raised = False
         except ValidationError:
             raised = True
@@ -526,7 +607,7 @@ def _selftest() -> int:
         print(f"  [{verdict:9}] {name}: {expect}, "
               f"{'refused' if raised else 'passed'}")
 
-    fired = sum(1 for _, _, m in cases if m)
+    fired = sum(1 for _, _, m, _ in cases if m)
     print(f"[selftest] {len(cases)} cases ({fired} known-bad, "
           f"{len(cases) - fired} that must not fire), {bad} wrong")
     return 1 if bad else 0
@@ -535,7 +616,8 @@ def _selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true",
-                    help="run the known-bad inputs for the no-updater check and exit")
+                    help="run the known-bad inputs for the no-updater and the "
+                         "no-juggler-name checks and exit")
     ap.add_argument("tag", nargs="?", help="release tag, e.g. firefox-4 (resolves to release/binary/<tag>/)")
     ap.add_argument("--linux", type=Path, help="explicit path to the Linux tar.gz (overrides tag)")
     ap.add_argument("--win", type=Path, help="explicit path to the Windows zip (overrides tag)")
