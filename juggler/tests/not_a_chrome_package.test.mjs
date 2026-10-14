@@ -115,6 +115,45 @@ test('the stack filter skips the prefix the build installs under', () => {
   assert.equal(literal[1], PREFIX);
 });
 
+test('a juggler name in WebIDL stays behind ChromeOnly', () => {
+  // One WebIDL member carries the name: `jugglerEventId` in the dictionary
+  // SynthesizeMouseEventData. A dictionary has no constructor and no
+  // enumeration surface, so the only way a page could read the name is by
+  // passing an object with a getter to a method that accepts the dictionary -
+  // and those methods are ChromeOnly. That annotation is the whole guard, so
+  // losing it makes the literal string probeable from a page. The name itself
+  // would be better gone (next engine release); until then this fails if the
+  // annotation does.
+  const dir = path.join(TREE, 'dom/webidl');
+  const named = [];
+  for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.webidl'))) {
+    const text = fs.readFileSync(path.join(dir, f), 'utf8');
+    if (!/juggler/i.test(text))
+      continue;
+    // The dictionaries that declare a juggler-named member.
+    for (const m of text.matchAll(/dictionary\s+(\w+)[^{]*\{([\s\S]*?)\n\};/g)) {
+      if (/\bjuggler\w*\s*(=|;)/i.test(m[2]))
+        named.push({ file: f, dict: m[1], text });
+    }
+  }
+  assert.ok(named.length, 'no juggler-named WebIDL member found: the scan is not reading the tree');
+  const unguarded = [];
+  for (const { file, dict, text } of named) {
+    const lines = text.split('\n');
+    lines.forEach((line, i) => {
+      // A method taking the dictionary as a parameter type. Declarations only:
+      // a doc comment naming the dictionary is prose, not a surface.
+      if (!new RegExp(`\\b${dict}\\b`).test(line) || /^\s*dictionary\s/.test(line)
+          || /^\s*(\*|\/\/|\/\*)/.test(line))
+        return;
+      const before = lines.slice(Math.max(0, i - 10), i + 1).join('\n');
+      if (!/\[[^\]]*ChromeOnly[^\]]*\]/.test(before))
+        unguarded.push(`${file}:${i + 1}: ${line.trim()}`);
+    });
+  }
+  assert.deepEqual(unguarded, []);
+});
+
 test('the test fails on the layout it replaces', () => {
   // The parser on a moz.build that installs nothing finds nothing, and a URL to
   // a file not in the lists is reported: the two assertions above can fire.
