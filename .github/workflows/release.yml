@@ -45,7 +45,9 @@ on:
           invisible_core ref the gate installs. Defaults to main, for the reason
           the gate step gives. Set it to the branch that follows a change of the
           engine's layout (firefox-47 moved the juggler to modules/juggler):
-          main still reads the old one and refuses every launch.
+          main still reads the old one and refuses every launch. The core is
+          installed before the wrapper, so wrapper_ref must pin the version this
+          ref builds.
         default: 'main'
 
 env:
@@ -477,20 +479,30 @@ jobs:
       # Bisected with extra_prefs: either declaration alone is not enough, both
       # together revive it, and the shader-language pref is not involved.
       #
-      # --force-reinstall is REQUIRED and the reason is worth knowing: the core's
-      # version is derived from the seal, not bumped per commit, so git main and
-      # the index both call themselves 19.14.0 and pip would consider the pin
-      # already satisfied. Same version string, different code. --no-deps keeps
-      # pip from re-resolving and dragging the published one back in.
+      # THE CORE GOES IN FIRST, FROM GIT, AND THE WRAPPER AFTER IT. The core's
+      # version is derived from the seal, not bumped per commit, so git and the
+      # index can both call themselves 19.14.0: installed first, the git core
+      # satisfies the wrapper's exact pin and pip keeps it - same version string,
+      # the code under test.
       #
-      # No INVISIBLE_CORE_PIN escape is needed, and that follows from the same
-      # fact: the version does not move, so the wrapper's pin stays satisfied.
+      # It used to go the other way (wrapper first, then the core force-
+      # reinstalled with --no-deps), which assumed the version does not move
+      # during a release. firefox-47 broke that: the juggler moved to
+      # modules/juggler, so the core that ships with the binary is a NEW core
+      # (47.x) and the published one (46.x) cannot even find the juggler. With
+      # the old order the wrapper of main kept its 46 pin, the import-time
+      # enforce_core_pin repaired the core back to 46, and every leg failed on a
+      # binary that was fine. In this order the pairing under test is the one pip
+      # resolves from the declared pins, which is the pairing a user gets: pass
+      # a wrapper_ref whose pin names the core core_ref builds. A mismatch does
+      # not get papered over - pip downgrades to the index core and the gate
+      # fails on it, which is the truth about that pairing.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
         run: |
-          python -m pip install --quiet ".[dev]"
-          python -m pip install --quiet --force-reinstall --no-deps \
+          python -m pip install --quiet \
             "git+https://github.com/feder-cr/invisible_core@${{ github.event.inputs.core_ref || 'main' }}"
+          python -m pip install --quiet ".[dev]"
           python -c "from importlib.metadata import version; print('core under test:', version('invisible-core'))"
           python -m invisible_core seal --binary "$FF_EXE" \
             --tag "${{ github.event.inputs.release_tag || github.ref_name }}" \
