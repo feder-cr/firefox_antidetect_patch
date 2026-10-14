@@ -101,6 +101,20 @@ test('every juggler resource URL names a file the build installs', () => {
   assert.deepEqual(missing, []);
 });
 
+test('the stack filter skips the prefix the build installs under', () => {
+  // js/src/vm/SavedStacks.cpp hides Juggler's frames from the stacks a page
+  // reads by their source URL's prefix. When the install path moves and the
+  // literal does not, every Juggler frame shows up in Error.stack again.
+  const cpp = fs.readFileSync(path.join(TREE, 'js/src/vm/SavedStacks.cpp'), 'utf8');
+  const literal = cpp.match(/kJuggler\[\]\s*=\s*"([^"]+)"/);
+  assert.ok(literal, 'SavedStacks.cpp no longer names the prefix in kJuggler');
+  const build = fs.readFileSync(path.join(JUGGLER, 'moz.build'), 'utf8');
+  assert.match(build, /FINAL_TARGET_FILES\.modules\.juggler\s*\+=/);
+  // FINAL_TARGET_FILES.modules.juggler lands in dist/bin/modules/juggler,
+  // which is resource://gre/modules/juggler/.
+  assert.equal(literal[1], PREFIX);
+});
+
 test('the test fails on the layout it replaces', () => {
   // The parser on a moz.build that installs nothing finds nothing, and a URL to
   // a file not in the lists is reported: the two assertions above can fire.
