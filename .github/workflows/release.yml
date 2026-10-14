@@ -263,7 +263,7 @@ jobs:
           # JUGGLER GATE: present (Playwright cannot drive the binary without it)
           # and not a chrome package (a page probes one by name). The two checks
           # live in validate_release.py, which also runs on the archive below.
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$STAGING'); v.assert_juggler_provenance(t); v.assert_no_juggler_registration(t)"
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$STAGING'); v.assert_juggler_provenance(t); v.assert_declares_nothing_beyond_stock(t, 'linux')"
           find "$STAGING" -type f \
             \( -name '*.so' -o -name firefox -o -name firefox-bin -o -name plugin-container \
                -o -name pingsender -o -name glxtest -o -name vaapitest -o -name updater \) \
@@ -299,7 +299,7 @@ jobs:
           # it) and not a chrome package (a page probes one by name), the same
           # two checks as the Linux leg.
           [ -f "$WIN_APP/omni.ja" ] || { echo "ERROR: no omni.ja in $WIN_APP"; exit 1; }
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_no_juggler_registration(t)"
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_declares_nothing_beyond_stock(t, 'win')"
           mkdir -p out
           ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
           ls -la out/
