@@ -825,8 +825,7 @@ export class PageHandler {
    *
    * Points on this protocol are in the page's CSS pixels, while the mouse and
    * the wheel are dispatched through this chrome window (jugglerSendMouseEvent,
-   * sendWheelEvent, the <browser>'s own scrollRectIntoViewIfNeeded), which take
-   * chrome CSS pixels. THE ONLY PLACE THAT CONVERSION IS WRITTEN. Device
+   * sendWheelEvent), which take chrome CSS pixels. THE ONLY PLACE THAT CONVERSION IS WRITTEN. Device
    * scaling needs nothing here, the native dispatch applies it; browser zoom
    * does, and the factor is the zoom IN EFFECT in the content process, not the
    * requested `BrowsingContext.fullZoom`: Firefox rounds it to whole app units
@@ -838,8 +837,6 @@ export class PageHandler {
     const browser = this._pageTarget._linkedBrowser;
     const { zoom } = await this._contentPage.send('effectiveZoom');
     return {
-      // A length, or a point relative to the <browser> element.
-      length: value => value * zoom,
       // Whether the point is inside the page's viewport.
       contains: (x, y) => {
         const rect = browser.getBoundingClientRect();
@@ -867,11 +864,20 @@ export class PageHandler {
     // the page never handles it, so there is no ack to wait for.
     let landsInPage = true;
     const sendEvents = async (types) => {
-      if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
-        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(page.length(x), page.length(y), 0, 0);
+      // ⛔ NO APZ FLUSH HERE, AND NO SCROLL OF THE <browser> BEFORE IT. Upstream
+      // Juggler scrolled the <browser> into the chrome window
+      // (scrollRectIntoViewIfNeeded) and then waited for `apz-repaints-flushed`
+      // so that scroll reached the main thread before the point was computed.
+      // In this tree no binding of Element declares that method (B184), so the
+      // scroll never ran and the flush waited for an update that never came.
+      // And the wait had no bound: flushApzRepaints() answers true once it has
+      // SENT the request, and the compositor drops it in silence when its
+      // bridge is not initialized or the layer tree is gone - test-only code on
+      // desktop (APZCTreeManager::FlushApzRepaints) - which stopped the
+      // activation chain, and with it the input of every tab, for good. The
+      // page's own scrolling lives in its process, which this window's flush
+      // never touched.
       const point = page.inWindow(x, y);
-      if (win.windowUtils.flushApzRepaints())
-        await helper.awaitTopic('apz-repaints-flushed');
 
       for (const type of types) {
         lastEventId = win.windowUtils.jugglerSendMouseEvent(
@@ -949,9 +955,12 @@ export class PageHandler {
         // born during an earlier call, or in the gap between two of them.
         await this._adoptDragSessionIfStarted();
         if (this._isDragging) {
-          const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
+          // The reply is the acknowledgement: jugglerSendDragEvent dispatches
+          // synchronously in the content process, so when it answers the
+          // dragover has reached the page or never will. It used to wait as well
+          // for the page's `dragover` to be reported, without a bound, and an
+          // event that reached no frame stopped the activation chain for good.
           await this._sendToCurrentDocument('dispatchDragEvent', {type:'dragover', x, y, modifiers});
-          await watcher.ensureEventsAndDispose(['dragover']);
           return;
         }
 
@@ -1008,7 +1017,7 @@ export class PageHandler {
         await this._adoptDragSessionIfStarted();
         try {
           if (this._isDragging) {
-            const watcher = new EventWatcher(this._pageEventSink, ['dragover'], this._pendingEventWatchers);
+            // Each reply is the acknowledgement (see the mousemove above).
             await this._sendToCurrentDocument('dispatchDragEvent', {type: 'dragover', x, y, modifiers});
             await this._sendToCurrentDocument('dispatchDragEvent', {type: 'drop', x, y, modifiers});
             await this._sendToCurrentDocument('dispatchDragEvent', {type: 'dragend', x, y, modifiers});
@@ -1016,7 +1025,6 @@ export class PageHandler {
             // - 'drop' event might not be dispatched at all, depending on dropAction.
             // - 'dragend' event might not be dispatched at all, if the source element was removed
             //   during drag. However, it'll be dispatched synchronously in the renderer.
-            await watcher.ensureEventsAndDispose(['dragover']);
           } else {
             await sendEvents(['mouseup']);
           }
@@ -1047,16 +1055,11 @@ export class PageHandler {
     await this._pageTarget.activateAndRun(async () => {
       this._pageTarget.ensureContextMenuClosed();
 
-      // 1. Scroll element to the desired location first; the coordinates are relative to the element.
-      if (typeof this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded === 'function')
-        this._pageTarget._linkedBrowser.scrollRectIntoViewIfNeeded(page.length(x), page.length(y), 0, 0);
-      // 2. Where the point is in the window, after the scroll is completed.
+      // Where the point is in the window. No scroll and no APZ flush before
+      // it: see Page.dispatchMouseEvent.
       const point = page.inWindow(x, y);
 
       const win = this._pageTarget._window;
-      // 3. Make sure compositor is flushed after scrolling.
-      if (win.windowUtils.flushApzRepaints())
-        await helper.awaitTopic('apz-repaints-flushed');
 
       win.windowUtils.sendWheelEvent(
         point.x,

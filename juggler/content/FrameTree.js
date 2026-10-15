@@ -189,7 +189,6 @@ export class FrameTree {
     // `juggler-mouse-event-hit-renderer` instrumentation.
     this._inputEventListeners = [
       helper.addEventListener(chromeEventHandler, 'dragstart', emitInputEvent, options),
-      helper.addEventListener(chromeEventHandler, 'dragover', emitInputEvent, options),
       helper.addEventListener(chromeEventHandler, 'mousemove', recordLanding, options),
       helper.addEventListener(chromeEventHandler, 'mousedown', recordLanding, options),
       helper.addEventListener(chromeEventHandler, 'mouseup', recordLanding, options),
