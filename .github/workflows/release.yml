@@ -278,7 +278,8 @@ jobs:
           # names and the bytes of every readable file) is the retail's of the
           # same version, judged against Mozilla's complete MAR (stock_parity.py).
           # Both live in validate_release.py, which also runs on the archive below.
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$STAGING'); v.assert_juggler_provenance(t); v.assert_page_surface_is_stock(t)"
+          # Every gate runs and reports before the verdict (scripts/release_gates.py).
+          python3 scripts/release_gates.py "$STAGING"
           find "$STAGING" -type f \
             \( -name '*.so' -o -name firefox -o -name firefox-bin -o -name plugin-container \
                -o -name pingsender -o -name glxtest -o -name vaapitest -o -name updater \) \
@@ -314,7 +315,7 @@ jobs:
           # it), and the PAGE-SURFACE GATE against the retail of the same
           # version: the same two checks as the Linux leg.
           [ -f "$WIN_APP/omni.ja" ] || { echo "ERROR: no omni.ja in $WIN_APP"; exit 1; }
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_page_surface_is_stock(t); v.assert_windows_runtime_is_shipped(t)"
+          python3 scripts/release_gates.py "$WIN_APP"
           mkdir -p out
           ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
           ls -la out/
