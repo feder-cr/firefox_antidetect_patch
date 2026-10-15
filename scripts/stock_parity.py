@@ -27,6 +27,16 @@ and the platform from its executable's header, so nothing here names either.
 The retail's omni.ja are in the optimized jar layout that Python's zipfile
 refuses ("Bad magic number for central directory"); they are read with
 Mozilla's own reader, python/mozbuild/mozpack/mozjar.py of this tree.
+
+WHAT IT DOES NOT SEE, so that nobody reads more into its pass. It reads the
+manifests; registrations made by JavaScript at run time (the newtab resource
+host in AboutNewTabResourceMapping.sys.mjs, formautofill, extensions) are on a
+page's surface and not on this one, though the bytes of the built-in add-ons
+are, through resource://builtin-addons. Lines whose flags compare against the
+host or the build's version (osversion, abi, appversion, platformversion) are
+refused as undecidable rather than guessed; 151 has none. And it is the
+surface of the engine's own files only: fonts, built-in stylesheets and every
+other fingerprint are other gates' business.
 """
 from __future__ import annotations
 
@@ -55,9 +65,6 @@ JARS = {"omni.ja": "", "browser/omni.ja": "browser/"}
 ROOT_MANIFESTS = ("chrome.manifest", "browser/chrome.manifest")
 #: Built-in resource hosts, by the logical prefix they map to.
 BUILTIN_HOSTS = {"gre": "", "app": "browser/"}
-#: The instructions a page can observe: registered names, and overrides that
-#: change what a chrome URL answers.
-REGISTERING = ("content", "skin", "locale", "resource", "override")
 
 
 class ParityError(Exception):
@@ -155,6 +162,28 @@ class Files:
 
 
 # ── the surface ─────────────────────────────────────────────────────────────
+#
+# The chrome registry as Gecko builds it, because an approximation of it lets
+# a difference through. xpcom/components/ManifestParser.cpp reads each manifest
+# line by line and follows a `manifest` line where it stands, so the order is
+# depth-first and file order; chrome/nsChromeRegistryChrome.cpp and
+# SubstitutingProtocolHandler keep the LAST registration of a package, of a
+# skin or locale provider, of a resource host and of an override. Reading in
+# another order, or keeping every registration, passed a build whose later
+# line moved a package to a directory with fewer files (independent review,
+# 2026-10-15).
+
+#: argc of every directive ManifestParser knows (kParsingTable); any other
+#: first token is ignored, as Gecko ignores it.
+DIRECTIVES = {"manifest": 1, "component": 2, "contract": 2, "category": 3,
+              "content": 2, "locale": 3, "skin": 3, "override": 2, "resource": 2}
+#: The directives whose lines take contentaccessible/remoteenabled/remoterequired
+#: (`contentflags` in kParsingTable); on any other they are unknown modifiers.
+CONTENT_FLAGS = ("content", "resource")
+#: ManifestParser's os target for each platform (nsIXULRuntime.OS, lowercased).
+OS_TARGET = {"win64": "winnt", "win64-aarch64": "winnt", "win32": "winnt",
+             "linux-x86_64": "linux", "linux-aarch64": "linux", "linux-i686": "linux"}
+
 
 def _flag(token: str, name: str):
     """ManifestParser's CheckFlag: `name`, `name=1|t...|y...` true,
@@ -170,26 +199,67 @@ def _flag(token: str, name: str):
     return bool(value) and value[0] in "1ty"
 
 
-def _instructions(files: Files):
-    """(manifest path, tokens) for every instruction the registry reads,
-    following `manifest` lines from the root manifests."""
-    seen, todo = set(), [m for m in ROOT_MANIFESTS if files.has(m)]
-    if not todo:
-        raise ParityError("no root chrome.manifest: this is not a Firefox tree")
-    while todo:
-        path = todo.pop()
-        if path in seen:
-            continue
-        seen.add(path)
-        base = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
-        for line in files.read(path).decode("utf-8", "replace").splitlines():
-            tokens = line.split("#", 1)[0].split()
-            if not tokens:
+def _string_flag(token: str, name: str, value: str, state):
+    """ManifestParser's CheckStringFlag: `name=v` or `name!=v`. Returns the
+    new tri-state (None unspecified, True ok, False bad), or the sentinel
+    NotImplemented when the token is not this flag."""
+    if len(token) < len(name) + 1 or not token.startswith(name):
+        return NotImplemented
+    rest = token[len(name):]
+    if rest.startswith("!="):
+        equal, wanted = False, rest[2:]
+    elif rest.startswith("="):
+        equal, wanted = True, rest[1:]
+    else:
+        return NotImplemented
+    if state is True:
+        return True
+    return (wanted == value) == equal
+
+
+class AppInfo:
+    """What ManifestParser compares a line's flags with, read from the tree."""
+
+    def __init__(self, files: "Files", platform: str):
+        ini = files.read("application.ini").decode("utf-8", "replace")
+        fields = dict(l.split("=", 1) for l in ini.splitlines() if "=" in l)
+        self.app_id = fields.get("ID", "").lower()
+        self.os = OS_TARGET[platform]
+
+
+def _active(directive: str, flags: list, app: AppInfo, where: str):
+    """(registered, content flags) for one line, as ManifestParser decides:
+    an unknown modifier drops the line, a failing condition drops it."""
+    states, content = {}, set()
+    for token in (t.lower() for t in flags):
+        for name, value in (("application", app.app_id), ("os", app.os), ("process", "main")):
+            new = _string_flag(token, name, value, states.get(name))
+            if new is not NotImplemented:
+                states[name] = new
+                break
+        else:
+            for name in ("osversion", "appversion", "platformversion", "abi"):
+                if token.startswith(name):
+                    raise ParityError(f"{where}: `{token}` compares against the host or the "
+                                      f"build's version, which a static read cannot decide")
+            background = _flag(token, "backgroundtask")
+            if background is not None:
+                # Not in background-task mode: a line for background tasks only
+                # is not registered.
+                if background:
+                    states["backgroundtask"] = False
                 continue
-            if tokens[0] == "manifest":
-                todo.append(_normalize(base + tokens[1]))
-            else:
-                yield path, tokens
+            if directive in CONTENT_FLAGS:
+                hit = [n for n in ("contentaccessible", "remoteenabled", "remoterequired")
+                       if _flag(token, n) is not None]
+                if hit:
+                    if _flag(token, hit[0]):
+                        content.add(hit[0])
+                    continue
+            if _flag(token, "xpcnativewrappers") is not None:
+                continue
+            return False, set()  # "Unrecognized chrome manifest modifier": line dropped
+    return all(v is not False for v in states.values()), content
 
 
 def _normalize(path: str) -> str:
@@ -202,74 +272,124 @@ def _normalize(path: str) -> str:
     return "/".join(out) + ("/" if path.endswith("/") else "")
 
 
-def surface(files: Files) -> dict:
-    """{key: value} for everything a page can observe: one key per
-    registration (value: its flags), and one per readable file (value: the
-    SHA-256 of its bytes)."""
-    regs, targets, accessible_pkgs, accessible_hosts, overrides = {}, {}, set(), set(), []
-    for manifest, t in _instructions(files):
-        kind = t[0]
-        if kind not in REGISTERING:
-            continue
-        base = manifest.rsplit("/", 1)[0] + "/" if "/" in manifest else ""
-        if kind in ("content", "resource"):
-            name, target, flags = t[1], t[2], t[3:]
-            key = f"{kind} {name}"
-        elif kind in ("skin", "locale"):
-            name, target, flags = t[1], t[3], t[4:]
-            key = f"{kind} {name} {t[2]}"
-        else:  # override <from> <to>
-            name, target, flags = t[1], t[2], t[3:]
-            key = f"override {name}"
-            overrides.append((name, target))
-        flags_norm = " ".join(sorted(f.lower() for f in flags))
-        regs.setdefault(key, set()).add(flags_norm)
-        if kind != "override":
-            targets.setdefault((kind, name), []).append(
-                (t[2] if kind in ("skin", "locale") else None,
-                 target if ":" in target else _normalize(base + target)))
-        if kind in ("content", "resource") and any(_flag(f, "contentaccessible") for f in flags):
-            (accessible_pkgs if kind == "content" else accessible_hosts).add(name)
+class Registry:
+    """The registrations of a tree, last one winning, as Gecko keeps them."""
 
-    def resolve_url(url: str) -> str:
-        """A resource:// or chrome:// URL target to a logical path."""
-        scheme, rest = url.split("://", 1)
+    def __init__(self, files: "Files", platform: str):
+        self.files = files
+        self.app = AppInfo(files, platform)
+        self.packages = {}   # name -> (directory, content flags)
+        self.providers = {}  # (kind, package, provider) -> directory
+        self.hosts = {}      # resource host -> (target, content flags)
+        self.overrides = {}  # chrome URL -> chrome URL
+        roots = [m for m in ROOT_MANIFESTS if files.has(m)]
+        if not roots:
+            raise ParityError("no root chrome.manifest: this is not a Firefox tree")
+        for root in roots:
+            self._read(root, set())
+
+    def _read(self, path: str, stack: set):
+        if path in stack or not self.files.has(path):
+            return  # Gecko logs a missing manifest and carries on
+        base = path.rsplit("/", 1)[0] + "/" if "/" in path else ""
+        for number, line in enumerate(self.files.read(path).decode("utf-8", "replace").splitlines(), 1):
+            if line.startswith("#"):
+                continue
+            tokens = line.split()
+            if not tokens or tokens[0] not in DIRECTIVES:
+                continue
+            argc = DIRECTIVES[tokens[0]]
+            if len(tokens) < 1 + argc:
+                continue
+            args, flags = tokens[1:1 + argc], tokens[1 + argc:]
+            registered, content = _active(tokens[0], flags, self.app, f"{path}:{number}")
+            if not registered:
+                continue
+            kind = tokens[0]
+            if kind == "manifest":
+                self._read(_normalize(base + args[0]), stack | {path})
+            elif kind == "content":
+                self.packages[args[0]] = (self._dir(base, args[1]), frozenset(content))
+            elif kind in ("skin", "locale"):
+                self.providers[(kind, args[0], args[1])] = self._dir(base, args[2])
+            elif kind == "resource":
+                self.hosts[args[0]] = (self._dir(base, args[1]), frozenset(content))
+            elif kind == "override":
+                self.overrides[args[0]] = args[1]
+
+    @staticmethod
+    def _dir(base: str, target: str) -> str:
+        return target if ":" in target else _normalize(base + target)
+
+    def resolve(self, target: str) -> str:
+        """A registration target - a logical path or a resource:// / chrome://
+        URL - to a logical path."""
+        if ":" not in target:
+            return target
+        scheme, rest = target.split("://", 1)
         host, _, sub = rest.partition("/")
         if scheme == "resource":
-            if host in BUILTIN_HOSTS and ("resource", host) not in targets:
+            host = host or "app"  # resource:/// is the app, ResolveSpecialCases
+            if host in self.hosts:
+                return self.resolve(self.hosts[host][0]) + sub
+            if host in BUILTIN_HOSTS:
                 return BUILTIN_HOSTS[host] + sub
-            return resolve_target(("resource", host)) + sub
+            raise ParityError(f"{target}: no resource host {host!r}")
         if scheme == "chrome":
-            provider, _, sub2 = sub.partition("/")
-            return resolve_target((provider, host)) + sub2
-        raise ParityError(f"target {url} is not a resource:// or chrome:// URL")
+            kind, _, rel = sub.partition("/")
+            if kind == "content" and host in self.packages:
+                return self.resolve(self.packages[host][0]) + rel
+            matches = [d for (k, p, _), d in self.providers.items() if k == kind and p == host]
+            if len(matches) == 1:
+                return self.resolve(matches[0]) + rel
+            raise ParityError(f"{target}: {len(matches)} {kind} providers for {host!r}")
+        raise ParityError(f"{target}: not a resource:// or chrome:// URL")
 
-    def resolve_target(reg) -> str:
-        found = targets.get(reg)
-        if not found or len({t for _, t in found}) != 1:
-            raise ParityError(f"{reg[0]} {reg[1]} has {len(found or [])} targets: not decidable")
-        target = found[0][1]
-        return resolve_url(target) if ":" in target else target
 
-    out = {f"registers {k}": " | ".join(sorted(v)) for k, v in regs.items()}
-    for (kind, name), entries in targets.items():
-        if not ((kind != "resource" and name in accessible_pkgs)
-                or (kind == "resource" and name in accessible_hosts)):
-            continue
-        for provider, target in entries:
-            directory = resolve_url(target) if ":" in target else target
-            for path in files.under(directory):
-                rel = path[len(directory):]
-                url = (f"resource://{name}/{rel}" if kind == "resource"
-                       else f"chrome://{name}/{kind}/{rel}" + (f" [{provider}]" if provider else ""))
-                digest = hashlib.sha256(files.read(path)).hexdigest()
-                if out.setdefault(f"file {url}", digest) != digest:
-                    raise ParityError(f"{url} is registered twice with different bytes: "
-                                      f"which one a page reads is not decidable here")
-    for frm, to in overrides:
-        path = resolve_url(to)
-        out[f"override target {frm}"] = (hashlib.sha256(files.read(path)).hexdigest()
-                                          if files.has(path) else "missing")
+def surface(files: "Files", platform: str) -> dict:
+    """{key: value} for everything a page can observe of a tree: one key per
+    registration (value: its content flags, or its target for an override),
+    and one per readable URL (value: the SHA-256 of what it answers)."""
+    reg = Registry(files, platform)
+    out = {}
+    for name, (_, flags) in reg.packages.items():
+        out[f"registers content {name}"] = " ".join(sorted(flags))
+    for (kind, package, provider) in reg.providers:
+        out[f"registers {kind} {package} {provider}"] = ""
+    for host, (_, flags) in reg.hosts.items():
+        out[f"registers resource {host}"] = " ".join(sorted(flags))
+    for frm, to in reg.overrides.items():
+        out[f"registers override {frm}"] = to
+
+    def digest(path):
+        return hashlib.sha256(reg.files.read(path)).hexdigest() if reg.files.has(path) else "missing"
+
+    # Readable: every directory of a contentaccessible package - content, skin
+    # and locale, since the flag is the package's (AllowContentToAccess) - and
+    # of a contentaccessible resource host.
+    readable = []
+    for name, (directory, flags) in reg.packages.items():
+        if "contentaccessible" in flags:
+            readable.append((f"chrome://{name}/content/", reg.resolve(directory)))
+            for (kind, package, provider), d in reg.providers.items():
+                if package == name:
+                    readable.append((f"chrome://{name}/{kind}/", reg.resolve(d), provider))
+    for host, (target, flags) in reg.hosts.items():
+        if "contentaccessible" in flags:
+            readable.append((f"resource://{host}/", reg.resolve(target)))
+    for prefix, directory, *provider in readable:
+        suffix = f" [{provider[0]}]" if provider else ""
+        for path in reg.files.under(directory):
+            out[f"file {prefix}{path[len(directory):]}{suffix}"] = digest(path)
+    # An override changes what a chrome URL answers: a page loading it from a
+    # readable package reads the target, not the file the package holds.
+    for frm, to in reg.overrides.items():
+        host = frm.split("://", 1)[1].split("/", 1)[0] if frm.startswith("chrome://") else None
+        package = reg.packages.get(host)
+        if package and "contentaccessible" in package[1]:
+            keys = [k for k in out if k == f"file {frm}" or k.startswith(f"file {frm} [")]
+            for key in keys or [f"file {frm}"]:
+                out[key] = digest(reg.resolve(to))
     return out
 
 
@@ -315,12 +435,16 @@ def retail_files(version: str, platform: str) -> Files:
     sums = _download(f"{ARCHIVE}/{version}/SHA256SUMS", CACHE / version / "SHA256SUMS")
     want = [l.split()[0] for l in sums.read_text("utf-8").splitlines() if l.endswith("  " + rel)]
     if len(want) != 1:
-        raise ParityError(f"SHA256SUMS of {version} lists {rel} {len(want)} times")
+        sums.unlink()
+        raise ParityError(f"SHA256SUMS of {version} lists {rel} {len(want)} times; "
+                          f"removed, download again")
     mar = _download(f"{ARCHIVE}/{version}/{rel}", CACHE / version / f"{platform}.complete.mar")
     data = mar.read_bytes()
     if hashlib.sha256(data).hexdigest() != want[0]:
+        # Either may be the bad one: both go, and the next run fetches both.
         mar.unlink()
-        raise ParityError(f"{mar} does not match SHA256SUMS; removed, download again")
+        sums.unlink()
+        raise ParityError(f"{mar} does not match SHA256SUMS; both removed, download again")
     return Files.from_entries(read_mar(data))
 
 
@@ -349,6 +473,9 @@ def load_exceptions(platform: str, path: Path = EXCEPTIONS) -> dict:
         missing = {"key", "platforms", "why", "measured"} - set(entry)
         if missing:
             raise ParityError(f"exception without {sorted(missing)}: {entry}")
+        if not (isinstance(entry["platforms"], list)
+                and all(isinstance(p, str) for p in entry["platforms"])):
+            raise ParityError(f"exception platforms must be a list of names: {entry}")
         if platform in entry["platforms"]:
             out[entry["key"]] = entry
     return out
@@ -359,8 +486,8 @@ def judge(tree: Path, retail=retail_files, exceptions: Path = EXCEPTIONS) -> tup
     `retail(version, platform)` gives the judge's Files; the selftest passes a
     tree of its own, everything else the MAR."""
     platform, version = platform_of(tree), version_of(tree)
-    ours = surface(Files.from_directory(tree))
-    stock = surface(retail(version, platform))
+    ours = surface(Files.from_directory(tree), platform)
+    stock = surface(retail(version, platform), platform)
     diff = differences(ours, stock)
     declared = load_exceptions(platform, exceptions)
     undeclared = {k: v for k, v in diff.items() if k not in declared}
@@ -387,9 +514,15 @@ def selftest() -> int:
             "content devimg devtools/images/ contentaccessible=true\n"
             "content private private/content/\n"
             "resource content-accessible resource://gre/contentaccessible/ contentaccessible=yes\n"
-            "override chrome://global/content/license.html chrome://global/content/real.html\n"),
+            "override chrome://global/content/license.html chrome://global/content/real.html\n"
+            "override chrome://global/content/secret.html chrome://private/content/s.html\n"
+            "manifest second.manifest\n"),
+        "chrome/second.manifest": "override chrome://global/content/a.css chrome://global/content/a.css\n",
         "chrome/toolkit/content/global/a.css": "body { color: red }\n",
         "chrome/toolkit/content/global/real.html": "<p>license</p>\n",
+        "chrome/toolkit/content/global/copy.html": "<p>license</p>\n",
+        "chrome/toolkit/content/global/license.html": "<p>shadowed</p>\n",
+        "chrome/private/content/s.html": "<p>secret</p>\n",
         "chrome/toolkit/skin/global/b.css": "x {}\n",
         "chrome/en-US/locale/global/c.properties": "k=v\n",
         "chrome/devtools/images/d.svg": "<svg/>\n",
@@ -454,6 +587,44 @@ def selftest() -> int:
          ["file chrome://global/content/a.css"]),
         ("a declaration with nothing left to excuse", mutate(), True,
          ["file chrome://global/content/a.css"]),
+        # From the independent review of 2026-10-15: each was a way through.
+        ("the locale of an accessible package differs",
+         mutate(**{"chrome/en-US/locale/global/c.properties": "k=w\n"}), True, None),
+        ("a content flag other than contentaccessible differs",
+         mutate(chrome__chrome_DOT_manifest=manifest.replace(
+             "content private private/content/\n", "content private private/content/ remoteenabled\n")),
+         True, None),
+        ("an override pointing at another file with the same bytes",
+         mutate(chrome__chrome_DOT_manifest=manifest.replace(
+             "chrome://global/content/real.html", "chrome://global/content/copy.html")), True, None),
+        ("the target of an override in a package a page cannot load",
+         mutate(chrome__private__content__s_DOT_html="<p>other secret</p>\n"), True, None),
+        ("a later registration moves a package (Gecko keeps the last)",
+         mutate(chrome__chrome_DOT_manifest=manifest + "content devimg devtools/\n"
+                + "content devimg devtools/images/ contentaccessible=true\n"
+                + "content devimg private/content/ contentaccessible=true\n"), True, None),
+        ("the order of two manifests decides an override",
+         mutate(chrome__second_DOT_manifest=
+                "override chrome://global/content/a.css chrome://global/content/a.css\n"
+                "override chrome://global/content/license.html chrome://global/content/copy.html\n"),
+         True, None),
+        ("a trailing # makes Gecko drop the line",
+         mutate(chrome__chrome_DOT_manifest=manifest.replace(
+             "content private private/content/\n", "content private private/content/ # moved\n")),
+         True, None),
+        ("a line that compares against the host cannot be decided",
+         mutate(chrome__chrome_DOT_manifest=manifest + "content juggler juggler/ osversion>=10.0\n"),
+         True, None),
+        # Near-misses: what Gecko does not register, or a page does not read.
+        ("a line for another os is not registered",
+         mutate(chrome__chrome_DOT_manifest=manifest + "content juggler juggler/ os=darwin\n"),
+         False, None),
+        ("a file an override shadows is not what a page reads",
+         mutate(chrome__toolkit__content__global__license_DOT_html="<p>other</p>\n"), False, None),
+        ("the same registrations split over two manifests",
+         mutate(chrome__chrome_DOT_manifest=manifest.replace("content private private/content/\n", ""),
+                chrome__second_DOT_manifest="override chrome://global/content/a.css "
+                "chrome://global/content/a.css\ncontent private private/content/\n"), False, None),
     ]
     bad = 0
     work = Path(tempfile.mkdtemp(prefix="stock-parity-selftest-"))
@@ -495,6 +666,9 @@ def main(argv) -> int:
         platform, version, undeclared, stale, size = judge(Path(argv[1]))
     except ParityError as exc:
         print(f"NOT JUDGED: {exc}")
+        return 3
+    except Exception as exc:  # a defect of the gate is not a verdict on the build
+        print(f"NOT JUDGED: the gate failed: {type(exc).__name__}: {exc}")
         return 3
     print(f"{platform} {version}: {size} keys on the retail's surface, "
           f"{len(undeclared)} undeclared differences, {len(stale)} stale declarations")
