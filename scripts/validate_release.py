@@ -285,69 +285,39 @@ def assert_juggler_provenance(tree: Path) -> None:
           f"{layout} layout)")
 
 
-#: The manifest instructions that register a name a page can probe. The parent
-#: sends every registered chrome package to each content process, and
-#: `new Worker("chrome://<name>/...")` returns for a registered name and throws
-#: SecurityError at once for an absent one (camoufox #847, measured on firefox-46
-#: 2026-10-14: `juggler` was the one name of 65 that retail does not register).
-REGISTERING = ("content", "skin", "locale", "resource")
+def assert_page_surface_is_stock(tree: Path) -> None:
+    """What a web page can read of this build - every chrome package and
+    resource substitution it registers, with their flags, and the bytes of
+    every file a page can load - must be what the retail Firefox of the same
+    version and platform has. The judge is Mozilla's own complete MAR for that
+    release, checked against its SHA256SUMS: see stock_parity.py, which also
+    holds the differences declared as invisible to a page and why.
 
-
-def _manifest_texts(tree: Path):
-    """(where, text) for every chrome manifest of the tree: inside each omni.ja,
-    and loose beside it (the Linux archives carry no omni.ja)."""
-    import zipfile
-    root = _juggler_root(tree)
-    for omni in (root / "omni.ja", root / "browser" / "omni.ja"):
-        if omni.is_file():
-            with zipfile.ZipFile(omni) as zf:
-                for n in zf.namelist():
-                    if n.endswith(".manifest"):
-                        yield f"{omni.relative_to(root)}!{n}", zf.read(n).decode("utf-8", "replace")
-    for p in root.rglob("*.manifest"):
-        yield str(p.relative_to(root)), p.read_bytes().decode("utf-8", "replace")
-
-
-#: A stock Firefox's registered names per OS, the baseline this build may not
-#: exceed. Keyed data, system-derived, refreshed per major - see its _provenance.
-STOCK_REGISTRATIONS = Path(__file__).resolve().parent / "stock_registrations.json"
-
-def _registered_names(tree: Path) -> "set[str]":
-    """Every 'kind name' this tree registers through its chrome manifests."""
-    names = set()
-    for _where, text in _manifest_texts(tree):
-        for line in text.splitlines():
-            t = line.split("#")[0].split()
-            if len(t) >= 2 and t[0] in REGISTERING:
-                names.add(f"{t[0]} {t[1]}")
-    return names
-
-
-def assert_declares_nothing_beyond_stock(tree: Path, os_key: str) -> None:
-    """The build may register no chrome package or resource substitution that a
-    stock Firefox of this major does not. A page probes a registered name with
-    `new Worker("chrome://<name>/...")` - it returns for a registered name and
-    throws SecurityError for an absent one - so any name stock lacks is a tell,
-    whatever it is called. This is why the juggler loads from
-    resource://gre/modules/juggler/ (a namespace stock has) and is declared
-    nowhere; the gate keeps it, and anything like it, that way
-    (invisible_playwright #336). The earlier form of this gate refused only the
-    literal name `juggler`, which was the symptom, not the invariant.
+    It replaces assert_declares_nothing_beyond_stock (firefox-47), which
+    compared only the registered NAMES, only one way (ours not beyond stock),
+    against a list kept by hand whose Linux half was derived from Windows. A
+    name stock has and we lack is probed the same way, and a file of a
+    readable package that differs is read the same way: both were invisible to
+    it. Run on firefox-47 on 2026-10-15 this gate found 44 differences on
+    Windows and 87 on each Linux architecture, the names gate none.
     """
-    doc = json.loads(STOCK_REGISTRATIONS.read_text(encoding="utf-8"))
-    if os_key not in doc or not isinstance(doc[os_key], list):
-        raise ValidationError(f"no stock-registration baseline for os {os_key!r}")
-    baseline = set(doc[os_key])
-    if not baseline:
-        raise ValidationError(f"empty stock baseline for {os_key} - the gate would pass anything")
-    extra = sorted(_registered_names(tree) - baseline)
-    if extra:
+    import stock_parity
+    root = _juggler_root(tree)
+    try:
+        platform, version, undeclared, stale, size = stock_parity.judge(root)
+    except stock_parity.ParityError as exc:
+        raise ValidationError(f"the page surface could not be judged: {exc}") from exc
+    if undeclared or stale:
+        lines = [f"      {what}: {key}" for key, what in undeclared.items()]
+        lines += [f"      declared but not different: {key}" for key in stale]
+        shown = "\n".join(lines[:40]) + (f"\n      ... and {len(lines) - 40} more" if len(lines) > 40 else "")
         raise ValidationError(
-            f"this build registers names a stock Firefox {doc.get('major','?')} does not, "
-            f"which a page can probe by name: {extra}. Our additions (the juggler) load from "
-            f"resource://gre/modules/juggler/ and are declared nowhere; see "
-            f"{STOCK_REGISTRATIONS.name}")
-    print(f"    declares nothing beyond stock OK ({len(baseline)} {os_key} names)")
+            f"this build differs from the retail Firefox {version} ({platform}) in "
+            f"{len(undeclared)} thing(s) a page can read, and {len(stale)} declaration(s) "
+            f"excuse a difference that is gone:\n{shown}\n"
+            f"    A difference a page cannot observe is declared in "
+            f"{stock_parity.EXCEPTIONS.name} with its measurement; anything else is fixed.")
+    print(f"    page surface is stock OK ({platform} {version}, {size} keys)")
 
 
 UPDATER_FILES = (
@@ -482,7 +452,7 @@ def validate_linux_tarball(archive: Path) -> None:
         extract_tar(archive, td)
         check_critical_files(td, CRITICAL_LINUX)
         assert_juggler_provenance(td)
-        assert_declares_nothing_beyond_stock(td, "linux")
+        assert_page_surface_is_stock(td)
         assert_no_updater(td)
 
         print("  [4/4] smoke (firefox --version)...")
@@ -503,7 +473,7 @@ def validate_windows_zip(archive: Path) -> None:
         extract_zip(archive, td)
         check_critical_files(td, CRITICAL_WIN)
         assert_juggler_provenance(td)
-        assert_declares_nothing_beyond_stock(td, "win")
+        assert_page_surface_is_stock(td)
         assert_no_updater(td)
 
         print("  [3/4] no-symlinks check (zip cannot store them, but verify)...")
@@ -578,50 +548,8 @@ def _selftest() -> int:
         ("a directory called updater", lambda: tree("updater/keep.txt"), False),
     ]
 
-    def registering(manifest, text, omni=False):
-        """A tree whose `manifest` (inside omni.ja when `omni`) says `text`."""
-        d = tree()
-        if omni:
-            with zipfile.ZipFile(d / "omni.ja", "w") as zf:
-                zf.writestr(manifest, text)
-        else:
-            f = d / manifest
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_bytes(text.encode())
-        return d
-
-    #: The beyond-stock registration check: (name, factory, must_raise). It is
-    #: class-level - any name stock does not have fails, not only `juggler`.
-    registrations = [
-        ("a clean tree", lambda: tree(), False),
-        ("content juggler inside omni.ja (every build until firefox-47)",
-         lambda: registering("chrome/chrome.manifest",
-                             "content juggler juggler/content/\n", omni=True), True),
-        ("the loose Linux chrome/juggler.manifest",
-         lambda: registering("chrome/juggler.manifest", "content juggler juggler/content/\n"),
-         True),
-        ("a resource substitution named after it",
-         lambda: registering("chrome/chrome.manifest",
-                             "resource juggler-modules modules/juggler/\n", omni=True), True),
-        # Class-level: a non-juggler package stock lacks must fail too, or the
-        # gate is still the narrow name match it replaced.
-        ("some other package stock does not have",
-         lambda: registering("chrome/chrome.manifest",
-                             "content widgetpanel widgetpanel/content/\n", omni=True), True),
-        # Near-misses: names stock DOES register, and the word in a comment.
-        ("content global and remote, as stock",
-         lambda: registering("chrome/chrome.manifest",
-                             "content global global/content/\ncontent remote remote/content/\n",
-                             omni=True), False),
-        ("the word in a comment",
-         lambda: registering("chrome/chrome.manifest", "# juggler moved to modules/juggler\n",
-                             omni=True), False),
-    ]
     cases = [(name, factory, must_raise, assert_no_updater)
              for name, factory, must_raise in cases]
-    cases += [(name, factory, must_raise,
-               lambda d: assert_declares_nothing_beyond_stock(d, "win"))
-              for name, factory, must_raise in registrations]
 
     bad = 0
     for name, factory, must_raise, check in cases:
@@ -643,14 +571,16 @@ def _selftest() -> int:
     fired = sum(1 for _, _, m, _ in cases if m)
     print(f"[selftest] {len(cases)} cases ({fired} known-bad, "
           f"{len(cases) - fired} that must not fire), {bad} wrong")
-    return 1 if bad else 0
+    # The page-surface gate carries its own known-bad cases, on trees it builds.
+    import stock_parity
+    return 1 if bad or stock_parity.selftest() else 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true",
                     help="run the known-bad inputs for the no-updater and the "
-                         "beyond-stock registration checks and exit")
+                         "page-surface checks and exit")
     ap.add_argument("tag", nargs="?", help="release tag, e.g. firefox-4 (resolves to release/binary/<tag>/)")
     ap.add_argument("--linux", type=Path, help="explicit path to the Linux tar.gz (overrides tag)")
     ap.add_argument("--win", type=Path, help="explicit path to the Windows zip (overrides tag)")

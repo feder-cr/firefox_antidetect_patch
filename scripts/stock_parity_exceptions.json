@@ -1,0 +1,4 @@
+{
+  "_provenance": "Differences from the retail Firefox of the same version that a web page cannot observe, each with the measurement that says so. Read by stock_parity.py; a declaration that no longer matches a difference fails the gate, so this list cannot outlive what it excuses. The owner's rule (2026-10-14): no difference a page can detect.",
+  "exceptions": []
+}

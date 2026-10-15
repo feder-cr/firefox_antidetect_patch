@@ -262,10 +262,12 @@ jobs:
           N=$(find "$STAGING" -type l | wc -l)
           [ "$N" -eq 0 ] || { echo "ERROR: $N symlinks remain after cp -aL"; exit 1; }
           for t in xpcshell certutil pk12util rapl; do rm -f "$STAGING/$t"; done
-          # JUGGLER GATE: present (Playwright cannot drive the binary without it)
-          # and not a chrome package (a page probes one by name). The two checks
-          # live in validate_release.py, which also runs on the archive below.
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$STAGING'); v.assert_juggler_provenance(t); v.assert_declares_nothing_beyond_stock(t, 'linux')"
+          # JUGGLER GATE: present (Playwright cannot drive the binary without it).
+          # PAGE-SURFACE GATE: what a page can read of the build (registered
+          # names and the bytes of every readable file) is the retail's of the
+          # same version, judged against Mozilla's complete MAR (stock_parity.py).
+          # Both live in validate_release.py, which also runs on the archive below.
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$STAGING'); v.assert_juggler_provenance(t); v.assert_page_surface_is_stock(t)"
           find "$STAGING" -type f \
             \( -name '*.so' -o -name firefox -o -name firefox-bin -o -name plugin-container \
                -o -name pingsender -o -name glxtest -o -name vaapitest -o -name updater \) \
@@ -298,10 +300,10 @@ jobs:
           WIN_APP=obj-rel/dist/firefox
           echo "packaging from: $WIN_APP"
           # JUGGLER GATE: in omni.ja (Playwright cannot drive the binary without
-          # it) and not a chrome package (a page probes one by name), the same
-          # two checks as the Linux leg.
+          # it), and the PAGE-SURFACE GATE against the retail of the same
+          # version: the same two checks as the Linux leg.
           [ -f "$WIN_APP/omni.ja" ] || { echo "ERROR: no omni.ja in $WIN_APP"; exit 1; }
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_declares_nothing_beyond_stock(t, 'win')"
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_page_surface_is_stock(t)"
           mkdir -p out
           ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
           ls -la out/
