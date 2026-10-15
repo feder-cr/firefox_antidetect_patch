@@ -83,7 +83,6 @@ jobs:
             host: x86_64-unknown-linux-gnu
             target: ''
             rust_target: x86_64-unknown-linux-gnu
-            win_disables: 'no'
             extra_pkgs: ''
             asset: firefox-151.0-stealth-linux-x86_64.tar.gz
           - leg: linux-arm64
@@ -91,7 +90,6 @@ jobs:
             family: linux
             target: ''
             rust_target: aarch64-unknown-linux-gnu
-            win_disables: 'no'
             extra_pkgs: ''
             asset: firefox-151.0-stealth-linux-arm64.tar.gz
           - leg: win-x86_64
@@ -100,7 +98,6 @@ jobs:
             host: x86_64-unknown-linux-gnu
             target: x86_64-pc-windows-msvc
             rust_target: x86_64-pc-windows-msvc
-            win_disables: 'yes'
             extra_pkgs: 'msitools p7zip-full zip'
             asset: firefox-151.0-stealth-win-x86_64.zip
     steps:
@@ -224,10 +221,18 @@ jobs:
           } >> .mozconfig
           if [ -n "${{ matrix.target }}" ]; then echo "ac_add_options --target=${{ matrix.target }}" >> .mozconfig; fi
           if [ -n "${{ matrix.host }}" ]; then echo "ac_add_options --host=${{ matrix.host }}" >> .mozconfig; fi
-          if [ "${{ matrix.win_disables }}" = "yes" ]; then
-            # The maintenance service and the update agent have no options left:
-            # the update machinery is out of update-programs.configure entirely.
-            echo "ac_add_options --disable-default-browser-agent" >> .mozconfig
+          # No --disable-default-browser-agent here: the .mozconfig dropped it on
+          # 2026-08-19 because the retail release builds the agent (only the
+          # installer registers it, and we ship an archive), and this leg kept
+          # adding it back, so the agent's page-readable image was missing from
+          # every Windows build (B157, found by the page-surface gate).
+          if [ "${{ matrix.family }}" = "win" ]; then
+            # The C++ runtime ships beside the binaries, as the retail ships it
+            # (B306): windows.configure packages it only under MOZ_AUTOMATION or
+            # with this option, and this cross leg had neither, so a clean
+            # Windows could not start the browser. A toolchain without
+            # Redist/MSVC fails configure at once, loudly.
+            echo "ac_add_options --with-redist" >> .mozconfig
           fi
           NCPU=4
           { echo "mk_add_options MOZ_PARALLEL_BUILD=$NCPU";
@@ -255,13 +260,19 @@ jobs:
         if: matrix.family == 'linux'
         run: |
           set -e
-          DIST=obj-rel/dist/bin
+          # The PACKAGED tree, as the Windows leg ships it (B310). This leg used
+          # to tar obj-rel/dist/bin, the development tree: the test binaries and
+          # TLS test servers went out with it, and the 44 locale .properties a
+          # page can read kept the comments the packager strips, so they differed
+          # from the retail's. A failing `mach package` fails the leg.
+          ./mach package
+          DIST=obj-rel/dist/firefox
+          [ -x "$DIST/firefox" ] || { echo "ERROR: mach package did not produce $DIST/firefox"; exit 1; }
           STAGING=staging
           rm -rf "$STAGING"; mkdir -p "$STAGING" out
           cp -aL "$DIST/." "$STAGING/"                      # -L: dereference ALL symlinks into real files
           N=$(find "$STAGING" -type l | wc -l)
           [ "$N" -eq 0 ] || { echo "ERROR: $N symlinks remain after cp -aL"; exit 1; }
-          for t in xpcshell certutil pk12util rapl; do rm -f "$STAGING/$t"; done
           # JUGGLER GATE: present (Playwright cannot drive the binary without it).
           # PAGE-SURFACE GATE: what a page can read of the build (registered
           # names and the bytes of every readable file) is the retail's of the
@@ -303,7 +314,7 @@ jobs:
           # it), and the PAGE-SURFACE GATE against the retail of the same
           # version: the same two checks as the Linux leg.
           [ -f "$WIN_APP/omni.ja" ] || { echo "ERROR: no omni.ja in $WIN_APP"; exit 1; }
-          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_page_surface_is_stock(t)"
+          python3 -c "import sys; from pathlib import Path; sys.path.insert(0, 'scripts'); import validate_release as v; t = Path('$WIN_APP'); v.assert_juggler_provenance(t); v.assert_page_surface_is_stock(t); v.assert_windows_runtime_is_shipped(t)"
           mkdir -p out
           ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
           ls -la out/

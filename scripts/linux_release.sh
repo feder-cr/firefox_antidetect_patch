@@ -22,12 +22,15 @@ TAG="${1:?usage: $0 <tag>}"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/ff-build/firefox-150}"
 STAGING="${STAGING:-$HOME/ff-build/stealth-staging-$TAG}"
 OUTPUT_DIR="${OUTPUT_DIR:-$HOME/ff-build/release-$TAG}"
-DIST="$SOURCE_DIR/obj-x86_64-pc-linux-gnu/dist/bin"
+# The PACKAGED tree (`./mach package` first), as release.yml ships it (B310):
+# dist/bin is the development tree, with the test binaries and the comments the
+# packager strips from the .properties a page can read.
+DIST="$SOURCE_DIR/obj-x86_64-pc-linux-gnu/dist/firefox"
 TARBALL="$OUTPUT_DIR/firefox-151.0-stealth-linux-x86_64.tar.gz"
 
 if [ ! -d "$DIST" ]; then
-    echo "ERROR: dist/bin not found at $DIST" >&2
-    echo "       (set SOURCE_DIR to the patched-firefox source root)" >&2
+    echo "ERROR: dist/firefox not found at $DIST: run ./mach package first" >&2
+    echo "       (and set SOURCE_DIR to the patched-firefox source root)" >&2
     exit 1
 fi
 
@@ -51,16 +54,7 @@ fi
 echo "  $(find "$STAGING" -type f | wc -l) regular files, no symlinks"
 
 echo ""
-echo "[2/5] Remove dev-only binaries (they leak build paths)..."
-for tool in xpcshell certutil pk12util rapl; do
-    if [ -f "$STAGING/$tool" ]; then
-        echo "  rm $tool"
-        rm -f "$STAGING/$tool"
-    fi
-done
-
-echo ""
-echo "[3/5] Strip debug info from binaries..."
+echo "[2/5] Strip debug info from binaries..."
 find "$STAGING" -type f \
     \( -name "*.so" -o -name "firefox" -o -name "firefox-bin" \
        -o -name "plugin-container" -o -name "pingsender" \
@@ -68,34 +62,16 @@ find "$STAGING" -type f \
     -exec strip --strip-debug {} + 2>/dev/null || true
 
 echo ""
-echo "[4/5] Sanitize embedded build-host paths..."
+echo "[3/5] Sanitize embedded build-host paths..."
 STAGING="$STAGING" python3 "$REPO_ROOT/scripts/linux_sanitize.py"
 
-# buildconfig.html has free-form paths; sanitize separately (no
-# length constraint, plain HTML).
-HTML="$STAGING/chrome/toolkit/content/global/buildconfig.html"
-if [ -f "$HTML" ]; then
-    sed -i \
-        -e 's|/home/feder/\.mozbuild|/b/firefox-stealth/mozbuild|g' \
-        -e 's|/home/feder/\.rustup|/b/firefox-stealth/rustup|g' \
-        -e 's|/home/feder/|/b/firefox-stealth/|g' \
-        "$HTML"
-fi
-
-# grep -arl exits 1 when there are NO matches. Combined with set -o pipefail
-# that propagates as a non-zero pipeline exit, killing the script silently
-# (the "good" case looked like an error). `|| true` keeps the leak check
-# semantically the same: LEAK_FILES counts matches, 0 = no leaks = success.
-LEAK_FILES=$( ( grep -arl '/home/feder' "$STAGING" 2>/dev/null || true ) | wc -l )
-if [ "$LEAK_FILES" -ne "0" ]; then
-    echo "ERROR: $LEAK_FILES files still contain /home/feder paths:" >&2
-    grep -arl '/home/feder' "$STAGING" 2>/dev/null | head -10 >&2
-    exit 1
-fi
-echo "  clean (no /home/feder bytes remaining)"
+# No leak check here: validate_release.py below reads every file AND every
+# member of omni.ja, where the packaged buildconfig.html now lives and where the
+# sed and the grep that used to be here could not reach. A home directory left
+# in a local build is refused there instead of shipped.
 
 echo ""
-echo "[5/5] Build tarball (anonymized owner, fixed mtime)..."
+echo "[4/5] Build tarball (anonymized owner, fixed mtime)..."
 mkdir -p "$OUTPUT_DIR"
 rm -f "$TARBALL"
 tar --owner=0 --group=0 --numeric-owner \
@@ -113,7 +89,7 @@ echo "  symlinks in archive: $(tar -tzvf "$TARBALL" | grep -c '^l')"
 echo "  regular files:       $(tar -tzvf "$TARBALL" | grep -c '^-')"
 echo ""
 
-echo "[6/6] Mandatory smoke test via validate_release.py..."
+echo "[5/5] Mandatory smoke test via validate_release.py..."
 # One leg, pre-packaging: structure, build-machine paths and the smoke test. The
 # site-name scan needs a token list that lives outside this repo, so it is waived
 # HERE and required at publish time - make_release.sh calls the same validator

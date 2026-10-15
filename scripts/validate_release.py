@@ -171,19 +171,54 @@ def _all_leak_patterns() -> list:
     return LEAK_PATTERNS + _EXTRA_CACHE
 
 
-def check_no_leaks_archive(archive: Path) -> None:
-    """Scan the (decompressed) archive bytes for build-path and site-name leaks."""
-    data = archive.read_bytes()
-    if archive.suffix == ".gz":
-        data = gzip.decompress(data)
-    hits = []
-    for pat in _all_leak_patterns():
-        if pat.search(data):
-            hits.append(pat.pattern.decode())
+#: The containers inside a Firefox tree whose members are compressed one by one,
+#: so the bytes on disk do not show what they carry.
+NESTED_ARCHIVES = (".ja", ".jar", ".xpi", ".zip")
+
+
+def _payloads(root: Path):
+    """(where, bytes) for every file of an extracted tree, and for every member
+    of every nested archive in it (NESTED_ARCHIVES), read with Mozilla's own jar
+    reader because the omni.ja Mozilla packs are in a layout zipfile refuses."""
+    from stock_parity import open_jar
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(root).as_posix()
+        data = p.read_bytes()
+        yield rel, data
+        if p.suffix.lower() in NESTED_ARCHIVES:
+            try:
+                jar = open_jar(data, rel)
+                members = [e.filename for e in jar if not e.filename.endswith("/")]
+            except Exception as exc:  # an archive that cannot be read cannot be cleared
+                raise ValidationError(f"{rel}: cannot open it to scan its members: {exc}") from exc
+            for name in members:
+                yield f"{rel}!{name}", jar[name].read()
+
+
+def check_no_leaks_tree(root: Path) -> None:
+    """No build path and no site name in any file of the extracted tree, nor in
+    any member of an archive inside it.
+
+    ⛔ IT USED TO SCAN THE ARCHIVE'S RAW BYTES (check_no_leaks_archive), and a zip
+    compresses each member on its own: on every Windows zip the scan saw the
+    member names and the stored members only, and on both platforms nothing
+    inside omni.ja or an .xpi. Measured on 2026-10-15 with a deflated zip member
+    and an omni.ja inside a tarball, each carrying a home directory: both passed.
+    """
+    patterns = _all_leak_patterns()
+    hits: dict = {}
+    scanned = 0
+    for where, data in _payloads(root):
+        scanned += 1
+        for pat in patterns:
+            if pat.search(data):
+                hits.setdefault(pat.pattern.decode(), []).append(where)
     if hits:
-        raise ValidationError(
-            f"{archive.name}: leak hits for patterns {hits}"
-        )
+        shown = {k: v[:5] + ([f"... {len(v) - 5} more"] if len(v) > 5 else []) for k, v in hits.items()}
+        raise ValidationError(f"leak hits: {shown}")
+    print(f"    no leaks in {scanned} files and nested members")
 
 
 def extract_tar(archive: Path, dst: Path) -> None:
@@ -320,6 +355,30 @@ def assert_page_surface_is_stock(tree: Path) -> None:
     print(f"    page surface is stock OK ({platform} {version}, {size} keys)")
 
 
+def assert_windows_runtime_is_shipped(tree: Path) -> None:
+    """Every DLL the build's binaries import, directly or by delay load, is
+    shipped in the archive or is one the retail of the same version also
+    expects from Windows (runtime_imports.py). Until firefox-48 the C++ runtime
+    was imported and not shipped, so a clean Windows could not start the
+    browser (B306) while every machine that ran the e2e had it installed.
+    """
+    import runtime_imports
+    import stock_parity
+    root = _juggler_root(tree)
+    try:
+        retail = stock_parity.retail_files(stock_parity.version_of(root), stock_parity.platform_of(root))
+        missing = runtime_imports.missing_runtime(stock_parity.Files.from_directory(root), retail)
+    except stock_parity.ParityError as exc:
+        raise ValidationError(f"the imported DLLs could not be judged: {exc}") from exc
+    if missing:
+        shown = {dll: users[:4] + ([f"... {len(users) - 4} more"] if len(users) > 4 else [])
+                 for dll, users in missing.items()}
+        raise ValidationError(
+            f"the binaries import DLLs that are neither shipped nor provided by Windows "
+            f"(the retail ships them): {shown}. The C++ runtime ships with --with-redist.")
+    print("    every imported DLL is shipped or provided by Windows OK")
+
+
 UPDATER_FILES = (
     "updater.exe", "updater", "updater.ini", "update-settings.ini",
     "maintenanceservice.exe", "maintenanceservice_installer.exe", "updateagent",
@@ -443,14 +502,13 @@ def validate_linux_tarball(archive: Path) -> None:
     print("  [1/4] no-symlinks check...")
     check_no_symlinks_tar(archive)
 
-    print("  [2/4] path-leak check...")
-    check_no_leaks_archive(archive)
-
-    print("  [3/4] extract + critical-files check...")
+    print("  [2/4] extract + critical-files check...")
     with tempfile.TemporaryDirectory(prefix="ff-validate-linux-") as td:
         td = Path(td)
         extract_tar(archive, td)
         check_critical_files(td, CRITICAL_LINUX)
+        print("  [3/4] path-leak check, every file and nested member...")
+        check_no_leaks_tree(td)
         assert_juggler_provenance(td)
         assert_page_surface_is_stock(td)
         assert_no_updater(td)
@@ -464,16 +522,16 @@ def validate_windows_zip(archive: Path) -> None:
     if not archive.exists():
         raise ValidationError(f"archive not found: {archive}")
 
-    print("  [1/4] path-leak check...")
-    check_no_leaks_archive(archive)
-
-    print("  [2/4] extract + critical-files check...")
+    print("  [1/4] extract + critical-files check...")
     with tempfile.TemporaryDirectory(prefix="ff-validate-win-") as td:
         td = Path(td)
         extract_zip(archive, td)
         check_critical_files(td, CRITICAL_WIN)
+        print("  [2/4] path-leak check, every file and nested member...")
+        check_no_leaks_tree(td)
         assert_juggler_provenance(td)
         assert_page_surface_is_stock(td)
+        assert_windows_runtime_is_shipped(td)
         assert_no_updater(td)
 
         print("  [3/4] no-symlinks check (zip cannot store them, but verify)...")
@@ -551,6 +609,38 @@ def _selftest() -> int:
     cases = [(name, factory, must_raise, assert_no_updater)
              for name, factory, must_raise in cases]
 
+    leak = b"built in /home/feder/ff-build\n" * 20
+
+    def with_archive(rel, members):
+        d = tree()
+        (d / rel).parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(d / rel, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, body in members.items():
+                zf.writestr(name, body)
+        return d
+
+    def loose(rel, body):
+        d = tree()
+        (d / rel).parent.mkdir(parents=True, exist_ok=True)
+        (d / rel).write_bytes(body)
+        return d
+
+    leaks = [
+        ("a clean tree", lambda: tree(), False),
+        ("a home directory in a loose file", lambda: loose("buildconfig.html", leak), True),
+        # The two the raw-bytes scan could not see (2026-10-15).
+        ("a home directory in a DEFLATED member of omni.ja",
+         lambda: with_archive("omni.ja", {"chrome/toolkit/content/global/buildconfig.html": leak}), True),
+        ("a home directory inside a built-in .xpi",
+         lambda: with_archive("browser/features/x.xpi", {"manifest.json": leak}), True),
+        ("a nested archive that cannot be opened is not cleared",
+         lambda: loose("browser/features/broken.xpi", b"PK not really a zip"), True),
+        ("the same words without a home directory",
+         lambda: with_archive("omni.ja", {"a.txt": b"built in /builds/worker"}), False),
+    ]
+    cases += [(name, factory, must_raise, check_no_leaks_tree)
+              for name, factory, must_raise in leaks]
+
     bad = 0
     for name, factory, must_raise, check in cases:
         d = factory()
@@ -572,8 +662,11 @@ def _selftest() -> int:
     print(f"[selftest] {len(cases)} cases ({fired} known-bad, "
           f"{len(cases) - fired} that must not fire), {bad} wrong")
     # The page-surface gate carries its own known-bad cases, on trees it builds.
+    import runtime_imports
     import stock_parity
-    return 1 if bad or stock_parity.selftest() else 0
+    parity = stock_parity.selftest()
+    runtime = runtime_imports.selftest()
+    return 1 if bad or parity or runtime else 0
 
 
 def main() -> int:

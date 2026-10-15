@@ -71,6 +71,21 @@ class ParityError(Exception):
     """The surface could not be read or judged; never a pass."""
 
 
+def open_jar(data: bytes, where: str) -> "JarReader":
+    """Mozilla's JarReader over `data`, refusing first what is not a zip.
+
+    ⛔ ITS SEARCH FOR THE END RECORD NEVER ENDS ON DATA SHORTER THAN THE RECORD:
+    mozjar.py starts at -22 and stops only at `offset == -len(data)`, which a
+    19-byte file never reaches (measured 2026-10-15: a corrupt nested archive
+    hung the gate instead of failing it). Every real omni.ja, Mozilla's
+    optimized ones included, ends with the record, so this refuses nothing
+    legitimate.
+    """
+    if len(data) < 22 or data[-(0xFFFF + 22):].rfind(b"PK\x05\x06") < 0:
+        raise ParityError(f"{where} is not a zip: no end of central directory record")
+    return JarReader(data=data)
+
+
 # ── which tree ──────────────────────────────────────────────────────────────
 
 def platform_of(tree: Path) -> str:
@@ -122,7 +137,7 @@ class Files:
                 loaders[rel] = p.read_bytes
         for rel, prefix in JARS.items():
             if (root / rel).is_file():
-                cls._add_jar(loaders, JarReader(str(root / rel)), prefix, rel)
+                cls._add_jar(loaders, open_jar((root / rel).read_bytes(), rel), prefix, rel)
         return cls(loaders)
 
     @classmethod
@@ -134,7 +149,7 @@ class Files:
                 loaders[rel] = (lambda d=data: d)
         for rel, prefix in JARS.items():
             if rel in entries:
-                cls._add_jar(loaders, JarReader(data=entries[rel]), prefix, rel)
+                cls._add_jar(loaders, open_jar(entries[rel], rel), prefix, rel)
         return cls(loaders)
 
     @staticmethod
@@ -621,6 +636,7 @@ def selftest() -> int:
          False, None),
         ("a file an override shadows is not what a page reads",
          mutate(chrome__toolkit__content__global__license_DOT_html="<p>other</p>\n"), False, None),
+        ("a corrupt omni.ja is refused as unreadable, not hung on", "CORRUPT_OMNI", True, None),
         ("the same registrations split over two manifests",
          mutate(chrome__chrome_DOT_manifest=manifest.replace("content private private/content/\n", ""),
                 chrome__second_DOT_manifest="override chrome://global/content/a.css "
@@ -633,7 +649,11 @@ def selftest() -> int:
         retail = Files.from_directory(work / "retail")
         for i, (name, ours, must_refuse, declared) in enumerate(cases):
             tree = work / f"ours{i}"
-            write(tree, ours, omni=False)
+            if ours == "CORRUPT_OMNI":
+                write(tree, base, omni=False)
+                (tree / "omni.ja").write_bytes(b"PK not really a zip")
+            else:
+                write(tree, ours, omni=False)
             exc = work / f"exceptions{i}.json"
             exc.write_bytes(json.dumps({"exceptions": [
                 {"key": k, "platforms": ["linux-x86_64"], "why": "selftest", "measured": "selftest"}
