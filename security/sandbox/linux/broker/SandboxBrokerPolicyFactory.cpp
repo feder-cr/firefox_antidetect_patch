@@ -3,6 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SandboxBrokerPolicyFactory.h"
+#include "mozilla/net/StealthBranding.h"
 #include "SandboxInfo.h"
 #include "SandboxLogging.h"
 
@@ -718,6 +719,18 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
   // Whitelisted for reading by the user/distro
   AddDynamicPathList(policy, "security.sandbox.content.read_path_whitelist",
                      rdonly);
+
+  // STEALTH: the branding a page reads is declared by invisible_core, which
+  // keeps the files wherever it is installed. The content processes load them,
+  // so they get READ access to exactly that directory - the same one the
+  // declaration gate accepted, through the same function, and only when it
+  // holds nothing but regular files. netwerk/protocol/res/StealthBranding.h.
+  if (nsCOMPtr<nsIFile> branding = mozilla::net::StealthBrandingDeclaredDir()) {
+    nsAutoCString brandingPath;
+    if (NS_SUCCEEDED(branding->GetNativePath(brandingPath))) {
+      policy->AddTree(rdonly, brandingPath.get());
+    }
+  }
 
   // userContent.css and the extensions dir sit in the profile, which is
   // normally blocked.
