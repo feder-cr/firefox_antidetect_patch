@@ -160,8 +160,16 @@ def version_of(tree: Path) -> str:
 
 
 def serves_declared_branding(tree: Path, platform: str) -> bool:
-    """Whether the engine of `tree` serves the branding from the directory
-    invisible_core declares (the module docstring), read from its library."""
+    """Whether the engine of `tree` serves the branding from the archive
+    invisible_core declares (the module docstring), read from its library.
+
+    ⛔ The declared branding is judged by its bytes and observable() ONLY
+    because the engine serves it through jar:, the channel class the retail
+    serves omni.ja with: observable() projects a file onto what a page reads
+    ASSUMING that channel, and the page probe measured it with that assumption
+    true on both sides. Served any other way (the declared directory of
+    2026-10-16 went through file:), the projection is false and this gate is
+    blind to it, so Files.serving refuses anything but an archive."""
     lib = tree / ("xul.dll" if platform.startswith("win") else "libxul.so")
     if not lib.is_file():
         raise ParityError(f"no {lib.name} in {tree}: which branding a page reads is not decidable")
@@ -924,6 +932,8 @@ def selftest() -> int:
          mutate(), True, None, (True, {**RETAIL_BRAND, "sub/x.png": "PNG16x16"})),
         ("a declared archive that is not a zip, on which the engine refuses to launch",
          mutate(), True, None, (True, "NOTAZIP")),
+        ("a declared DIRECTORY, served through file: where observable() assumes jar:",
+         mutate(), True, None, (True, "DIRECTORY")),
         ("an engine that serves the declared brand, judged without it, is not judged",
          mutate(), True, None, (True, None)),
         ("a declared archive for an engine that serves its own brand",
@@ -956,6 +966,13 @@ def selftest() -> int:
             if brand_files == "NOTAZIP":
                 branding = work / f"brand{i}.zip"
                 branding.write_bytes(b"PK not really a zip")
+            elif brand_files == "DIRECTORY":
+                # The retail's own files, loose: right bytes, wrong channel.
+                branding = work / f"brand{i}"
+                branding.mkdir()
+                for rel, text in RETAIL_BRAND.items():
+                    text = IMAGES.get(text, text)
+                    (branding / rel).write_bytes(text if isinstance(text, bytes) else text.encode())
             elif brand_files is not None:
                 branding = work / f"brand{i}.zip"
                 with zipfile.ZipFile(branding, "w") as z:
