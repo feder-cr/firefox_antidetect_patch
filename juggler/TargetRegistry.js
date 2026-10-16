@@ -130,9 +130,17 @@ export class TargetRegistry {
     return TargetRegistry._instance || null;
   }
 
-  constructor() {
+  /**
+   * @param {{survivesLastWindow: boolean}} options
+   *   survivesLastWindow: the browser was started with -silent, so Juggler
+   *   holds it in the last-window-closing survival area and closing every
+   *   window does not quit it. Without -silent (a persistent context) the
+   *   last window to close quits the browser.
+   */
+  constructor({ survivesLastWindow }) {
     helper.decorateAsEventEmitter(this);
     TargetRegistry._instance = this;
+    this._survivesLastWindow = survivesLastWindow;
 
     this._browserContextIdToBrowserContext = new Map();
     this._userContextIdToBrowserContext = new Map();
@@ -178,6 +186,7 @@ export class TargetRegistry {
         }
         target.emit(PageTarget.Events.Crashed);
         target.dispose();
+        target.closeCrashedTab();
       }
     }, 'oop-frameloader-crashed');
 
@@ -816,6 +825,30 @@ export class PageTarget {
     this._gBrowser.removeTab(this._tab, {
       skipPermitUnload: !runBeforeUnload,
     });
+  }
+
+  /**
+   * After its content process crashed and the client was told, the tab is
+   * closed (the owner's decision, 2026-10-14, as camoufox #794/#795/#803).
+   * Until firefox-48 the crash only disposed the target: the tab stayed in the
+   * parent until the browser exited, 15-60 MB a crash with no bound, and no
+   * command reached it any more, not page.close nor the context's close.
+   *
+   * Called after dispose(), so the TabClose listener finds no target and
+   * nothing is disposed twice. Each page has a window of its own, so the tab
+   * is usually the last of its window and the window closes with it
+   * (browser.tabs.closeWindowWithLastTab). The one tab kept is the last tab of
+   * the last window of a browser that does not survive it, a persistent
+   * context: closing it would quit the browser under the client. It stays as
+   * Firefox keeps every crashed tab, on its crash page.
+   */
+  closeCrashedTab() {
+    if (!this._registry._survivesLastWindow && this._gBrowser.tabs.length === 1) {
+      const windows = [...Services.wm.getEnumerator('navigator:browser')];
+      if (windows.length === 1)
+        return;
+    }
+    this._gBrowser.removeTab(this._tab, { skipPermitUnload: true });
   }
 
   channel() {
