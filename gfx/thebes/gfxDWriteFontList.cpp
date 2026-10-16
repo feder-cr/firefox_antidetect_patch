@@ -1503,6 +1503,13 @@ bool gfxDWriteFontList::ReadFaceNames(const fontlist::Family* aFamily,
                                       const fontlist::Face* aFace,
                                       nsCString& aPSName,
                                       nsCString& aFullName) {
+  if (mStealthBundleOnly) {
+    // STEALTH [B317]: the bundle's faces are in no DirectWrite collection
+    // (their Index() is kNoIndex), so the lookup below can only fail for them.
+    // The base reads their names from the bundle file, on every platform.
+    return gfxPlatformFontList::ReadFaceNames(aFamily, aFace, aPSName,
+                                              aFullName);
+  }
   IDWriteFontCollection* collection =
 #ifdef MOZ_BUNDLED_FONTS
       aFamily->IsBundled() ? mBundledFonts : mSystemFonts;
@@ -1581,6 +1588,14 @@ bool gfxDWriteFontList::ReadFaceNames(const fontlist::Family* aFamily,
 
 void gfxDWriteFontList::ReadFaceNamesForFamily(
     fontlist::Family* aFamily, bool aNeedFullnamePostscriptNames) {
+  if (mStealthBundleOnly) {
+    // STEALTH [B317]: see ReadFaceNames above. Returning early here, as the
+    // collection lookup below did, left every bundled family without its
+    // src:local() names and its alternate family names.
+    gfxPlatformFontList::ReadFaceNamesForFamily(aFamily,
+                                                aNeedFullnamePostscriptNames);
+    return;
+  }
   if (!aFamily->IsInitialized()) {
     if (!InitializeFamily(aFamily)) {
       return;
@@ -1630,39 +1645,7 @@ void gfxDWriteFontList::ReadFaceNamesForFamily(
         continue;
       }
 
-      AutoTArray<nsCString, 4> otherFamilyNames;
-      gfxFontUtils::ReadOtherFamilyNamesForFace(familyName, data, size,
-                                                otherFamilyNames, false);
-      for (const auto& alias : otherFamilyNames) {
-        nsAutoCString key(alias);
-        ToLowerCase(key);
-        auto aliasData = mAliasTable.GetOrInsertNew(key);
-        aliasData->InitFromFamily(aFamily, familyName);
-        aliasData->mFaces.AppendElement(facePtrs[i]);
-      }
-
-      nsAutoCString psname, fullname;
-      // Bug 1854090: don't load PSname if the family name ends with ".tmp",
-      // as some PDF-related software appears to pollute the font collection
-      // with spurious re-encoded versions of standard fonts like Arial, fails
-      // to alter the PSname, and thus can result in garbled rendering because
-      // the wrong resource may be found via src:local(...).
-      if (!StringEndsWith(key, ".tmp"_ns)) {
-        if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
-                data, size, gfxFontUtils::NAME_ID_POSTSCRIPT, psname))) {
-          ToLowerCase(psname);
-          MaybeAddToLocalNameTable(psname,
-                                   fontlist::LocalFaceRec::InitData(key, i));
-        }
-      }
-      if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
-              data, size, gfxFontUtils::NAME_ID_FULL, fullname))) {
-        ToLowerCase(fullname);
-        if (fullname != psname) {
-          MaybeAddToLocalNameTable(fullname,
-                                   fontlist::LocalFaceRec::InitData(key, i));
-        }
-      }
+      RecordFaceNamesFromTable(aFamily, i, key, familyName, data, size);
 
       dwFontFace->ReleaseFontTable(context);
     }

@@ -478,12 +478,13 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   /**
    * Read PSName and FullName of the given face, for src:local lookup,
    * returning true if actually implemented and succeeded.
+   * STEALTH [B317]: implemented here for the bundle's faces, on every platform,
+   * from the 'name' table of the bundle file; a platform's override delegates
+   * here when the font list is bundle-only.
    */
   virtual bool ReadFaceNames(const mozilla::fontlist::Family* aFamily,
                              const mozilla::fontlist::Face* aFace,
-                             nsCString& aPSName, nsCString& aFullName) {
-    return false;
-  }
+                             nsCString& aPSName, nsCString& aFullName);
 
   // initialize localized family names
   bool InitOtherFamilyNames(bool aDeferOtherFamilyNamesLoading);
@@ -1022,7 +1023,22 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
    */
   virtual void ReadFaceNamesForFamily(mozilla::fontlist::Family* aFamily,
                                       bool aNeedFullnamePostscriptNames)
-      MOZ_REQUIRES(mLock) {}
+      MOZ_REQUIRES(mLock);
+
+  /**
+   * STEALTH [B317]: record what one face's 'name' table says - its alternate
+   * family names in mAliasTable, its PostScript and full names in the local
+   * names table that @font-face src:local() searches. ONE implementation, for
+   * the platform's own faces (gfxDWriteFontList passes the table DirectWrite
+   * hands it) and for the bundle's (read from the bundle file): before it the
+   * bundle's tables were never read on any platform, so src:local() found no
+   * bundled face and no localized family name resolved.
+   */
+  void RecordFaceNamesFromTable(mozilla::fontlist::Family* aFamily,
+                                uint32_t aFaceIndex, const nsACString& aKey,
+                                const nsACString& aFamilyName,
+                                const char* aNameTable, uint32_t aLength)
+      MOZ_REQUIRES(mLock);
 
   typedef nsRefPtrHashtable<nsCStringHashKey, gfxFontFamily> FontFamilyTable;
   typedef nsRefPtrHashtable<nsCStringHashKey, gfxFontEntry> FontEntryTable;

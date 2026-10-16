@@ -1165,6 +1165,101 @@ void gfxPlatformFontList::MaybeAddToLocalNameTable(
   });
 }
 
+void gfxPlatformFontList::RecordFaceNamesFromTable(
+    fontlist::Family* aFamily, uint32_t aFaceIndex, const nsACString& aKey,
+    const nsACString& aFamilyName, const char* aNameTable, uint32_t aLength) {
+  // Moved here unchanged from gfxDWriteFontList::ReadFaceNamesForFamily, so
+  // that the bundle's faces get exactly what DirectWrite gives an installed
+  // font, and nothing that could drift from it.
+  const fontlist::Pointer* facePtrs = aFamily->Faces(SharedFontList());
+  AutoTArray<nsCString, 4> otherFamilyNames;
+  gfxFontUtils::ReadOtherFamilyNamesForFace(aFamilyName, aNameTable, aLength,
+                                            otherFamilyNames, false);
+  for (const auto& alias : otherFamilyNames) {
+    nsAutoCString key(alias);
+    ToLowerCase(key);
+    auto aliasData = mAliasTable.GetOrInsertNew(key);
+    aliasData->InitFromFamily(aFamily, aFamilyName);
+    aliasData->mFaces.AppendElement(facePtrs[aFaceIndex]);
+  }
+
+  nsAutoCString psname, fullname;
+  // Bug 1854090: don't load PSname if the family name ends with ".tmp",
+  // as some PDF-related software appears to pollute the font collection
+  // with spurious re-encoded versions of standard fonts like Arial, fails
+  // to alter the PSname, and thus can result in garbled rendering because
+  // the wrong resource may be found via src:local(...).
+  if (!StringEndsWith(aKey, ".tmp"_ns)) {
+    if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
+            aNameTable, aLength, gfxFontUtils::NAME_ID_POSTSCRIPT, psname))) {
+      ToLowerCase(psname);
+      MaybeAddToLocalNameTable(psname,
+                               fontlist::LocalFaceRec::InitData(aKey, aFaceIndex));
+    }
+  }
+  if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
+          aNameTable, aLength, gfxFontUtils::NAME_ID_FULL, fullname))) {
+    ToLowerCase(fullname);
+    if (fullname != psname) {
+      MaybeAddToLocalNameTable(fullname,
+                               fontlist::LocalFaceRec::InitData(aKey, aFaceIndex));
+    }
+  }
+}
+
+void gfxPlatformFontList::ReadFaceNamesForFamily(
+    fontlist::Family* aFamily, bool aNeedFullnamePostscriptNames) {
+  // STEALTH [B317]: a platform that reads names while enumerating (fontconfig)
+  // has nothing to do here for its own fonts; the bundle's faces were never
+  // enumerated by any platform, so their names are read here, on every one.
+  if (!mStealthBundleOnly) {
+    return;
+  }
+  if (!aFamily->IsInitialized() && !InitializeFamily(aFamily)) {
+    return;
+  }
+  fontlist::FontList* list = SharedFontList();
+  const fontlist::Pointer* facePtrs = aFamily->Faces(list);
+  nsAutoCString familyName(aFamily->DisplayName().AsString(list));
+  nsAutoCString key(aFamily->Key().AsString(list));
+  auto* bundle = StealthBundleFontList::Get();
+  for (uint32_t i = 0; i < aFamily->NumFaces(); ++i) {
+    auto* face = facePtrs[i].ToPtr<fontlist::Face>(list);
+    if (!face) {
+      continue;
+    }
+    gfxFontUtils::AutoHBBlob names(bundle->GetFaceNameTable(
+        nsCString(face->mDescriptor.AsString(list)), face->mIndex));
+    if (!names) {
+      continue;
+    }
+    unsigned int length = 0;
+    const char* data = hb_blob_get_data(names, &length);
+    RecordFaceNamesFromTable(aFamily, i, key, familyName, data, length);
+  }
+}
+
+bool gfxPlatformFontList::ReadFaceNames(const fontlist::Family* aFamily,
+                                        const fontlist::Face* aFace,
+                                        nsCString& aPSName,
+                                        nsCString& aFullName) {
+  // STEALTH [B317]: the bundle's faces, on every platform; the platform's own
+  // faces are its override's business.
+  if (!mStealthBundleOnly) {
+    return false;
+  }
+  gfxFontUtils::AutoHBBlob names(StealthBundleFontList::Get()->GetFaceNameTable(
+      nsCString(aFace->mDescriptor.AsString(SharedFontList())), aFace->mIndex));
+  if (!names) {
+    return false;
+  }
+  (void)gfxFontUtils::ReadCanonicalName(names, gfxFontUtils::NAME_ID_POSTSCRIPT,
+                                        aPSName);
+  (void)gfxFontUtils::ReadCanonicalName(names, gfxFontUtils::NAME_ID_FULL,
+                                        aFullName);
+  return !aPSName.IsEmpty() || !aFullName.IsEmpty();
+}
+
 void gfxPlatformFontList::LoadBadUnderlineList() {
   gfxFontUtils::GetPrefsFontList("font.blacklist.underline_offset",
                                  mBadUnderlineFamilyNames);
