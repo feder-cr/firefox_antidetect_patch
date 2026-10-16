@@ -2374,55 +2374,89 @@ bool HybridXrayWrapper<Traits>::nativeOwnPropertyDescriptor(
   return Base::getOwnPropertyDescriptor(cx, wrapper, id, desc);
 }
 
-template <typename Traits>
-bool HybridXrayWrapper<Traits>::nativePrototype(
-    JSContext* cx, HandleObject wrapper, MutableHandleObject protop) const {
-  return Base::getPrototype(cx, wrapper, protop);
+// Is this level of the page's chain a STANDARD object, one the standards
+// define: a WebIDL object (an instance, an interface or prototype object, the
+// window) or a standard prototype or constructor of its realm. Every other
+// level (an ordinary instance, a class's prototype) the page created.
+static bool IsStandardLevel(JSObject* content) {
+  JSObject* obj = js::UncheckedUnwrap(content, /* stopAtWindowProxy = */ false);
+  return mozilla::dom::UseDOMXray(obj) ||
+         JS::IdentifyStandardPrototype(obj) != JSProto_Null ||
+         JS::IdentifyStandardConstructor(obj) != JSProto_Null;
 }
 
-// THE STANDARD VIEW: the Xray resolution of `wrapper` and of its Xray
-// prototypes. None of it runs the page's script, whatever the page replaced:
-// a Proxy the page put on Document.prototype is not on this chain, which is
-// built from the WebIDL and ES specs.
-static bool NativeLookup(JSContext* cx, HandleObject wrapper, HandleId id,
-                         MutableHandle<Maybe<PropertyDescriptor>> desc,
-                         MutableHandleObject holder) {
+// The native view of ONE standard level: the Xray's own resolution of it.
+static bool NativeOwn(JSContext* cx, HandleObject level, HandleId id,
+                      MutableHandle<Maybe<PropertyDescriptor>> desc) {
+  const BaseProxyHandler* handler = js::GetProxyHandler(level);
+  js::AutoEnterPolicy policy(cx, handler, level, id,
+                             BaseProxyHandler::GET_PROPERTY_DESCRIPTOR, true);
+  if (handler == &HybridXrayDOM::singleton) {
+    return HybridXrayDOM::singleton.nativeOwnPropertyDescriptor(cx, level, id,
+                                                                desc);
+  }
+  return HybridXrayJS::singleton.nativeOwnPropertyDescriptor(cx, level, id,
+                                                             desc);
+}
+
+// THE RULE, LEVEL BY LEVEL OF THE PAGE'S OWN CHAIN (XrayWrapper.h, above the
+// class). A standard level answers with its native view, which no replacement
+// the page made reaches; a level the page created answers with its own
+// properties. A name the native view of some standard level knows is
+// STANDARD for this object, and the answer is the first page-created level
+// that defines it before that standard level (Point.prototype.toString, a
+// custom element's click), or else the native definition: what the page added
+// on the standard levels does not count for it (document.querySelector =
+// trap). A name no standard level knows is not the standard's: `desc` stays
+// empty and the caller asks the page's object as the page would, so an
+// expando still shadows a class member of the same name.
+//
+// Walking the page's real chain has one price, and it is stated: a scripted
+// Proxy the page inserts AS A PROTOTYPE inside a standard chain is asked for
+// its own properties like any page-created level, and its traps run.
+static bool ChainLookup(JSContext* cx, HandleObject wrapper, HandleId id,
+                        MutableHandle<Maybe<PropertyDescriptor>> desc) {
   desc.reset();
-  holder.set(nullptr);
-  RootedObject obj(cx, wrapper);
+  Rooted<Maybe<PropertyDescriptor>> pageFirst(cx);
+  Rooted<Maybe<PropertyDescriptor>> levelDesc(cx);
+  RootedObject level(cx, wrapper);
+  RootedObject content(cx);
   RootedObject proto(cx);
-  while (obj) {
-    // An Xray's prototypes are standard prototypes of the page, which wrap
-    // into this compartment as hybrid Xrays themselves. Anything else would
-    // not be a standard view to read.
-    if (!IsHybridXrayWrapper(obj)) {
-      MOZ_ASSERT_UNREACHABLE("an Xray prototype chain that leaves the Xrays");
-      return true;
+  while (level) {
+    content = js::UncheckedUnwrap(level, /* stopAtWindowProxy = */ true);
+    if (IsHybridXrayWrapper(level) && IsStandardLevel(content)) {
+      if (!NativeOwn(cx, level, id, &levelDesc)) {
+        return false;
+      }
+      if (levelDesc.isSome()) {
+        desc.set(pageFirst.isSome() ? pageFirst.get() : levelDesc.get());
+        return true;
+      }
+    } else if (pageFirst.isNothing()) {
+      {
+        JSAutoRealm ar(cx, content);
+        JS_MarkCrossZoneId(cx, id);
+        if (!JS_GetOwnPropertyDescriptorById(cx, content, id, &levelDesc)) {
+          return false;
+        }
+      }
+      if (levelDesc.isSome()) {
+        if (!JS_WrapPropertyDescriptor(cx, &levelDesc)) {
+          return false;
+        }
+        pageFirst.set(levelDesc.get());
+      }
     }
-    const BaseProxyHandler* handler = js::GetProxyHandler(obj);
-    js::AutoEnterPolicy policy(cx, handler, obj, id,
-                               BaseProxyHandler::GET_PROPERTY_DESCRIPTOR,
-                               true);
-    bool ok;
-    if (handler == &HybridXrayDOM::singleton) {
-      ok = HybridXrayDOM::singleton.nativeOwnPropertyDescriptor(cx, obj, id,
-                                                                desc) &&
-           (desc.isSome() ||
-            HybridXrayDOM::singleton.nativePrototype(cx, obj, &proto));
-    } else {
-      ok = HybridXrayJS::singleton.nativeOwnPropertyDescriptor(cx, obj, id,
-                                                               desc) &&
-           (desc.isSome() ||
-            HybridXrayJS::singleton.nativePrototype(cx, obj, &proto));
+    {
+      JSAutoRealm ar(cx, content);
+      if (!JS_GetPrototype(cx, content, &proto)) {
+        return false;
+      }
     }
-    if (!ok) {
+    if (!JS_WrapObject(cx, &proto)) {
       return false;
     }
-    if (desc.isSome()) {
-      holder.set(obj);
-      return true;
-    }
-    obj = proto;
+    level = proto;
   }
   return true;
 }
@@ -2443,30 +2477,10 @@ static bool ContentLookup(JSContext* cx, HandleObject wrapper, HandleId id,
   return JS_WrapPropertyDescriptor(cx, desc);
 }
 
-bool HybridXrayGetPropertyDescriptor(
-    JSContext* cx, HandleObject wrapper, HandleId id,
-    MutableHandle<Maybe<PropertyDescriptor>> desc, MutableHandleObject holder) {
-  MOZ_ASSERT(IsHybridXrayWrapper(wrapper));
-  if (!NativeLookup(cx, wrapper, id, desc, holder)) {
-    return false;
-  }
-  if (desc.isSome()) {
-    return true;
-  }
-  if (!ContentLookup(cx, wrapper, id, desc)) {
-    return false;
-  }
-  // As the Xrays do, the wrapper stands for wherever on the page's chain the
-  // name was found.
-  holder.set(desc.isSome() ? wrapper.get() : nullptr);
-  return true;
-}
-
 bool HybridXrayGetBareName(JSContext* cx, HandleObject wrapper, HandleId id,
                            MutableHandle<Maybe<PropertyDescriptor>> desc) {
   MOZ_ASSERT(IsHybridXrayWrapper(wrapper));
-  RootedObject holder(cx);
-  if (!NativeLookup(cx, wrapper, id, desc, &holder)) {
+  if (!ChainLookup(cx, wrapper, id, desc)) {
     return false;
   }
   if (desc.isSome()) {
@@ -2562,8 +2576,7 @@ template <typename Traits>
 bool HybridXrayWrapper<Traits>::has(JSContext* cx, HandleObject wrapper,
                                     HandleId id, bool* bp) const {
   Rooted<Maybe<PropertyDescriptor>> desc(cx);
-  RootedObject holder(cx);
-  if (!NativeLookup(cx, wrapper, id, &desc, &holder)) {
+  if (!ChainLookup(cx, wrapper, id, &desc)) {
     return false;
   }
   if (desc.isSome()) {
@@ -2581,8 +2594,7 @@ bool HybridXrayWrapper<Traits>::get(JSContext* cx, HandleObject wrapper,
                                     HandleValue receiver, HandleId id,
                                     MutableHandleValue vp) const {
   Rooted<Maybe<PropertyDescriptor>> desc(cx);
-  RootedObject holder(cx);
-  if (!NativeLookup(cx, wrapper, id, &desc, &holder)) {
+  if (!ChainLookup(cx, wrapper, id, &desc)) {
     return false;
   }
   if (desc.isNothing()) {
@@ -2590,7 +2602,7 @@ bool HybridXrayWrapper<Traits>::get(JSContext* cx, HandleObject wrapper,
   }
 
   // Everything after here follows [[Get]] for ordinary objects, on the
-  // standard definition.
+  // definition the rule picked.
   desc->assertComplete();
   if (desc->isDataDescriptor()) {
     vp.set(desc->value());
@@ -2610,12 +2622,12 @@ bool HybridXrayWrapper<Traits>::set(JSContext* cx, HandleObject wrapper,
                                     HandleValue receiver,
                                     ObjectOpResult& result) const {
   Rooted<Maybe<PropertyDescriptor>> desc(cx);
-  RootedObject holder(cx);
-  if (!NativeLookup(cx, wrapper, id, &desc, &holder)) {
+  if (!ChainLookup(cx, wrapper, id, &desc)) {
     return false;
   }
 
-  // A standard accessor runs its standard setter: `el.textContent = x`.
+  // The accessor the rule picked runs its setter: the standard one for
+  // `el.textContent = x`, the page's own for an accessor its class defines.
   if (desc.isSome() && desc->isAccessorDescriptor()) {
     RootedObject setter(cx, desc->setter());
     if (!setter) {
@@ -2717,8 +2729,7 @@ template <typename Traits>
 bool HybridXrayWrapper<Traits>::getPrototype(
     JSContext* cx, HandleObject wrapper, MutableHandleObject protop) const {
   // The page's prototype, so `el instanceof MyElement` and
-  // `obj instanceof PageClass` hold. Name lookups do not walk it: they walk
-  // the Xray's (NativeLookup), then the page's object as a whole.
+  // `obj instanceof PageClass` hold. It is the chain ChainLookup walks too.
   RootedObject target(cx, HybridTarget(wrapper));
   {
     JSAutoRealm ar(cx, target);
