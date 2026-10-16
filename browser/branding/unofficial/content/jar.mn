@@ -2,21 +2,25 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# Any page can load chrome://branding/content/ (contentaccessible=yes), so every
+# file it can reach is the official one, byte for byte, read from
+# browser/branding/official/ rather than copied here. The rest of this brand
+# (application name, prefs, OS-level icons) stays unofficial: no page sees it.
 browser.jar:
 % content branding %content/branding/ contentaccessible=yes
-  content/branding/about.png
-  content/branding/about-logo.png
-  content/branding/about-logo.svg
-  content/branding/about-logo@2x.png
-  content/branding/about-wordmark.svg
-  content/branding/about-logo-private.png
-  content/branding/about-logo-private@2x.png
-  content/branding/document.ico                  (../document.ico)
-  content/branding/document_pdf.svg
-  content/branding/firefox-wordmark.svg
-  content/branding/icon16.png                    (../default16.png)
-  content/branding/icon32.png                    (../default32.png)
-  content/branding/icon48.png                    (../default48.png)
-  content/branding/icon64.png                    (../default64.png)
-  content/branding/icon128.png                   (../default128.png)
-  content/branding/aboutDialog.css
+  content/branding/about.png                     (../../official/content/about.png)
+  content/branding/about-logo.png                (../../official/content/about-logo.png)
+  content/branding/about-logo.svg                (../../official/content/about-logo.svg)
+  content/branding/about-logo@2x.png             (../../official/content/about-logo@2x.png)
+  content/branding/about-wordmark.svg            (../../official/content/about-wordmark.svg)
+  content/branding/about-logo-private.png        (../../official/content/about-logo-private.png)
+  content/branding/about-logo-private@2x.png     (../../official/content/about-logo-private@2x.png)
+  content/branding/document.ico                  (../../official/document.ico)
+  content/branding/document_pdf.svg              (../../official/content/document_pdf.svg)
+  content/branding/firefox-wordmark.svg          (../../official/content/firefox-wordmark.svg)
+  content/branding/icon16.png                    (../../official/default16.png)
+  content/branding/icon32.png                    (../../official/default32.png)
+  content/branding/icon48.png                    (../../official/default48.png)
+  content/branding/icon64.png                    (../../official/default64.png)
+  content/branding/icon128.png                   (../../official/default128.png)
+  content/branding/aboutDialog.css               (../../official/content/aboutDialog.css)

@@ -90,6 +90,15 @@ ac_add_options --enable-update-channel=release
 # gia' stato sospeso una volta. `scripts/check_branding.py` rifiutava il binario
 # finche' la riga era qui.
 #
+# ⛔ MA I FILE CHE UNA PAGINA RAGGIUNGE SONO QUELLI UFFICIALI, dal 2026-10-16,
+# con l'autorizzazione di Mozilla all'uso dei loghi, ottenuta dal proprietario
+# e registrata in [B307]. Il pacchetto chrome://branding/content/ e'
+# contentaccessible=yes, quindi qualunque pagina carica quei 16 file e misura
+# CSS, proporzioni ed esistenza: `browser/branding/unofficial/content/jar.mn`
+# li legge da `browser/branding/official/`, senza copie. Il resto del marchio
+# resta unofficial: questo flag resta spento, ProductName resta Nightly e
+# check_branding.py continua a giudicare il FILE.
+#
 # ⛔ MA TOGLIERE LA RIGA NON BASTA, E LA PRIMA VERSIONE DI QUESTO COMMENTO
 # DICEVA CHE BASTAVA. Misurato il 2026-08-20: dopo la ricompilazione
 # `config.status` portava gia' MOZ_APP_DISPLAYNAME='Nightly' e
