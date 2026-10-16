@@ -255,10 +255,10 @@ jobs:
         timeout-minutes: 180
         run: ./mach build
 
-      # The page-surface gate below asks invisible_core which branding directory
+      # The page-surface gate below asks invisible_core which branding archive
       # it declares (validate_release.declared_branding): an engine with the
-      # branding redirect (P60) serves that directory, not the brand in its
-      # omni.ja, so that directory is what a page reads and what is judged. The
+      # branding redirect (P60) serves that archive, not the brand in its
+      # omni.ja, so that archive is what a page reads and what is judged. The
       # core is the one the drive gate pairs with the binary, core_ref, so both
       # gates judge the same pairing. An engine without the redirect never asks,
       # and the install stays unconditional on purpose: every engine built from

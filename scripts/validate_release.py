@@ -321,7 +321,7 @@ def assert_juggler_provenance(tree: Path) -> None:
 
 
 def declared_branding() -> Path:
-    """The branding directory invisible_core declares by default, asked of the
+    """The branding archive invisible_core declares by default, asked of the
     installed core the way a launch asks it - a profile translated to prefs -
     so that this gate holds no default and no second copy of where it lives.
     The release workflow installs the core it pairs with the build first."""
@@ -333,9 +333,9 @@ def declared_branding() -> Path:
         raise ValidationError(
             "this engine serves the branding invisible_core declares, and no invisible_core "
             f"is installed to say which: {exc}") from exc
-    spec = translate_profile_to_prefs(generate_profile(seed=1)).get("zoom.stealth.branding.dir")
+    spec = translate_profile_to_prefs(generate_profile(seed=1)).get("zoom.stealth.branding.archive")
     if not spec:
-        raise ValidationError("the installed invisible_core declares no zoom.stealth.branding.dir: "
+        raise ValidationError("the installed invisible_core declares no zoom.stealth.branding.archive: "
                               "it is older than the engine, and the engine refuses to launch with it")
     return Path(urllib.request.url2pathname(urllib.parse.urlparse(spec).path))
 

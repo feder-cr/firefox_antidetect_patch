@@ -48,14 +48,21 @@ Mozilla's own reader, python/mozbuild/mozpack/mozjar.py of this tree.
 THE BRANDING A PAGE READS IS THE CORE'S, not the build's, on an engine that
 redirects it (P60): with the engine on, every URI under the branding package's
 content directory - chrome://branding/content/ and the same files through
-resource://usercontext-content/branding/ - is served from the directory
-invisible_core declares in zoom.stealth.branding.dir, and the build's own brand
-in omni.ja is never read. So on such an engine that directory takes the place
-of the package's files, those it lacks included, exactly as the redirect does,
-and its files pass through observable() like any other. Whether the engine
-redirects is read from the tree, the pref's name in the engine library, because
-no manifest changes; judging such an engine without the declared directory is
-refused as not judged, since what would be judged is what a page never reads.
+resource://usercontext-content/branding/ - is served from the zip archive
+invisible_core declares in zoom.stealth.branding.archive (as jar:, the channel
+class the retail uses), and the build's own brand in omni.ja is never read. So
+on such an engine the archive's entries take the place of the package's files,
+those it lacks included, exactly as the redirect does, and they pass through
+observable() like any other file. Whether the engine redirects is read from the
+tree, the pref's name in the engine library, because no manifest changes;
+judging such an engine without the declared archive is refused as not judged,
+since what would be judged is what a page never reads. What this gate cannot
+see is HOW the engine serves the entries: it compares what a file holds, not
+the channel it comes through. A file: channel keeps the content type a loader
+suggests where a jar: one replaces it with the entry's own, so a PNG loaded as
+a script or a stylesheet loaded on a file:-served branding and failed on the
+retail - 62 loads a page saw and this gate did not (2026-10-16). That is the
+page probe's to see, tests/gates/page_surface_probe in the workbench.
 
 WHAT IT DOES NOT SEE, so that nobody reads more into its pass. It reads the
 manifests; registrations made by JavaScript at run time (the newtab resource
@@ -95,11 +102,11 @@ ROOT_MANIFESTS = ("chrome.manifest", "browser/chrome.manifest")
 #: Built-in resource hosts, by the logical prefix they map to.
 BUILTIN_HOSTS = {"gre": "", "app": "browser/"}
 #: The chrome package whose content directory an engine with the branding
-#: redirect serves from the declared directory (netwerk/protocol/res/
+#: redirect serves from the declared archive (netwerk/protocol/res/
 #: StealthBranding.h), and the pref that declares it: its name is in the engine
 #: library exactly when the engine has the redirect (StaticPrefList.yaml).
 BRANDING_PACKAGE = "branding"
-BRANDING_PREF = b"zoom.stealth.branding.dir"
+BRANDING_PREF = b"zoom.stealth.branding.archive"
 
 
 class ParityError(Exception):
@@ -208,20 +215,28 @@ class Files:
                                   f"reads is not decidable here")
             loaders[path] = (lambda j=jar, n=name: j[n].read())
 
-    def serving(self, directory: str, source: Path) -> "Files":
+    def serving(self, directory: str, archive: Path) -> "Files":
         """These files with `directory` (a logical path ending in /) holding
-        exactly the files of `source`, as the branding redirect serves them.
-        The engine serves only a directory of regular files, no subdirectory
-        and no link (StealthBrandingDeclaredDir), and refuses to launch on any
-        other; such a directory is not judged either."""
-        if not source.is_dir():
-            raise ParityError(f"the declared branding directory {source} does not exist")
+        exactly the root entries of the zip `archive`, as the branding redirect
+        serves them. The engine serves only a regular file that is a zip with
+        nothing but files at its root (StealthBrandingDeclaredArchive) and
+        refuses to launch on any other; such an archive is not judged either."""
+        import zipfile
+        if archive.is_symlink() or not archive.is_file():
+            raise ParityError(f"the declared branding archive {archive} is not a regular file")
+        try:
+            with zipfile.ZipFile(archive) as z:
+                entries = {i.filename: z.read(i) for i in z.infolist()}
+        except zipfile.BadZipFile as exc:
+            raise ParityError(f"the declared branding archive {archive} is not a zip: {exc}") from exc
+        nested = sorted(n for n in entries if "/" in n)
+        if nested or not entries:
+            raise ParityError(f"the declared branding archive {archive} holds "
+                              f"{nested or 'nothing'} besides files at its root: "
+                              f"the engine refuses to launch on it")
         loaders = {p: f for p, f in self._loaders.items() if not p.startswith(directory)}
-        for p in sorted(source.iterdir()):
-            if p.is_symlink() or not p.is_file():
-                raise ParityError(f"the declared branding directory holds {p.name}, which is "
-                                  f"not a regular file: the engine refuses to launch on it")
-            loaders[directory + p.name] = p.read_bytes
+        for name, data in sorted(entries.items()):
+            loaders[directory + name] = (lambda d=data: d)
         return Files(loaders)
 
     def has(self, path: str) -> bool:
@@ -640,20 +655,20 @@ def judge(tree: Path, retail=retail_files, exceptions: Path = EXCEPTIONS,
           branding: Path | None = None) -> tuple:
     """(platform, version, undeclared differences, stale declarations, size).
     `retail(version, platform)` gives the judge's Files; the selftest passes a
-    tree of its own, everything else the MAR. `branding` is the directory
+    tree of its own, everything else the MAR. `branding` is the archive
     invisible_core declares, required exactly when the engine serves it."""
     platform, version = platform_of(tree), version_of(tree)
     files = Files.from_directory(tree)
     if serves_declared_branding(tree, platform):
         if branding is None:
             raise ParityError("this engine serves the branding invisible_core declares, not "
-                              "its own: pass the declared directory (--branding)")
+                              "its own: pass the declared archive (--branding)")
         reg = Registry(files, platform)
         if BRANDING_PACKAGE not in reg.packages:
             raise ParityError(f"no {BRANDING_PACKAGE} package registered: nothing to redirect")
         files = files.serving(reg.resolve(reg.packages[BRANDING_PACKAGE][0]), branding)
     elif branding is not None:
-        raise ParityError("a branding directory was passed, but this engine serves its own")
+        raise ParityError("a branding archive was passed, but this engine serves its own")
     ours = surface(files, platform)
     stock = surface(retail(version, platform), platform)
     diff = differences(ours, stock)
@@ -663,9 +678,9 @@ def judge(tree: Path, retail=retail_files, exceptions: Path = EXCEPTIONS,
     return platform, version, undeclared, stale, len(stock)
 
 
-def judge_branding(directory: Path, version: str, platform: str, retail=retail_files) -> dict:
+def judge_branding(archive: Path, version: str, platform: str, retail=retail_files) -> dict:
     """{key: description} of every difference a page could read between the
-    retail `version` for `platform` and the same retail serving `directory` as
+    retail `version` for `platform` and the same retail serving `archive` as
     its branding, the way an engine with the redirect serves it.
 
     The branding a page reads belongs to invisible_core, so a release of the
@@ -676,7 +691,7 @@ def judge_branding(directory: Path, version: str, platform: str, retail=retail_f
     reg = Registry(files, platform)
     if BRANDING_PACKAGE not in reg.packages:
         raise ParityError(f"the retail {version} ({platform}) registers no {BRANDING_PACKAGE} package")
-    served = files.serving(reg.resolve(reg.packages[BRANDING_PACKAGE][0]), directory)
+    served = files.serving(reg.resolve(reg.packages[BRANDING_PACKAGE][0]), archive)
     return differences(surface(served, platform), surface(files, platform))
 
 
@@ -890,10 +905,9 @@ def selftest() -> int:
          mutate(chrome__chrome_DOT_manifest=manifest.replace("content private private/content/\n", ""),
                 chrome__second_DOT_manifest="override chrome://global/content/a.css "
                 "chrome://global/content/a.css\ncontent private private/content/\n"), False, None),
-        # The branding an engine with the redirect serves from the directory
+        # The branding an engine with the redirect serves from the archive
         # invisible_core declares (P60). The fifth field: (the engine library
-        # names the pref, the declared directory or None); a name ending in /
-        # is a subdirectory.
+        # names the pref, the entries of the declared archive, "NOTAZIP", or None).
         ("an engine that serves the declared brand, the retail's, over its own that differs",
          mutate(**OWN_BRAND), False, None, (True, RETAIL_BRAND)),
         ("the declared brand's stylesheet differs (both ways in read it)",
@@ -906,11 +920,13 @@ def selftest() -> int:
          mutate(), True, None, (True, {**RETAIL_BRAND, "extra.css": "e {}\n"})),
         ("a declared brand without a file the retail has",
          mutate(), True, None, (True, {k: v for k, v in RETAIL_BRAND.items() if k != "wordmark.svg"})),
-        ("a declared directory holding a subdirectory, on which the engine refuses to launch",
-         mutate(), True, None, (True, {**RETAIL_BRAND, "sub/": None})),
+        ("a declared archive with an entry under a directory, on which the engine refuses to launch",
+         mutate(), True, None, (True, {**RETAIL_BRAND, "sub/x.png": "PNG16x16"})),
+        ("a declared archive that is not a zip, on which the engine refuses to launch",
+         mutate(), True, None, (True, "NOTAZIP")),
         ("an engine that serves the declared brand, judged without it, is not judged",
          mutate(), True, None, (True, None)),
-        ("a declared directory for an engine that serves its own brand",
+        ("a declared archive for an engine that serves its own brand",
          mutate(), True, None, (False, RETAIL_BRAND)),
         ("an engine library without the pref: its own brand is what a page reads",
          mutate(**OWN_BRAND), True, None, (False, None)),
@@ -937,15 +953,15 @@ def selftest() -> int:
             elif not set_only:
                 write(tree, ours, omni=False, redirects=redirects)
             branding = None
-            if brand_files is not None:
-                branding = work / f"brand{i}"
-                branding.mkdir()
-                for rel, text in brand_files.items():
-                    if rel.endswith("/"):
-                        (branding / rel).mkdir()
-                    else:
+            if brand_files == "NOTAZIP":
+                branding = work / f"brand{i}.zip"
+                branding.write_bytes(b"PK not really a zip")
+            elif brand_files is not None:
+                branding = work / f"brand{i}.zip"
+                with zipfile.ZipFile(branding, "w") as z:
+                    for rel, text in brand_files.items():
                         text = IMAGES.get(text, text)
-                        (branding / rel).write_bytes(text if isinstance(text, bytes) else text.encode())
+                        z.writestr(rel, text if isinstance(text, bytes) else text.encode())
             exc = work / f"exceptions{i}.json"
             exc.write_bytes(json.dumps({"exceptions": [
                 {"key": k, "platforms": ["linux-x86_64"], "why": "selftest", "measured": "selftest"}
@@ -975,9 +991,9 @@ def main(argv) -> int:
     if argv[1:] == ["--selftest"]:
         return selftest()
     if len(argv) >= 5 and argv[1] == "--branding-against-retail":
-        directory, version, platforms = Path(argv[2]), argv[3], argv[4:]
+        archive, version, platforms = Path(argv[2]), argv[3], argv[4:]
         try:
-            found = {p: judge_branding(directory, version, p) for p in platforms}
+            found = {p: judge_branding(archive, version, p) for p in platforms}
         except ParityError as exc:
             print(f"NOT JUDGED: {exc}")
             return 3
@@ -985,7 +1001,7 @@ def main(argv) -> int:
             print(f"NOT JUDGED: the gate failed: {type(exc).__name__}: {exc}")
             return 3
         for platform, diff in found.items():
-            print(f"{platform} {version}: {len(diff)} differences a page reads in {directory}")
+            print(f"{platform} {version}: {len(diff)} differences a page reads in {archive}")
             for key, what in diff.items():
                 print(f"  {what:40s} {key}")
         return 1 if any(found.values()) else 0
@@ -994,8 +1010,8 @@ def main(argv) -> int:
     elif len(argv) == 2:
         branding = None
     else:
-        print("usage: stock_parity.py <extracted firefox tree> [--branding <declared dir>] | "
-              "--branding-against-retail <dir> <version> <platform>... | --selftest")
+        print("usage: stock_parity.py <extracted firefox tree> [--branding <declared archive>] | "
+              "--branding-against-retail <archive> <version> <platform>... | --selftest")
         return 2
     try:
         platform, version, undeclared, stale, size = judge(Path(argv[1]), branding=branding)
