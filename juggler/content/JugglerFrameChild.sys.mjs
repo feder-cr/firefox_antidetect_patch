@@ -29,6 +29,26 @@ export class JugglerFrameChild extends JSWindowActorChild {
       agents.channel.resumeSoon();
       return;
     }
+    if (aEvent.type === 'pagehide' || aEvent.type === 'pageshow') {
+      // ⛔ THE BACK-FORWARD CACHE, SAID BY THE ONE WHO KNOWS. `persisted` on a
+      // top-level document's pagehide means it goes into the cache, and the
+      // parent end of the channel is about to follow the next document's
+      // actor: this end stops sending, and keeps what it is told to send. On
+      // its pageshow it is the current document again, and asks the parent,
+      // over its own actor (the channel cannot carry it yet), to bind to it;
+      // the READY of that binding runs the restored document's announcement
+      // and then sends what was kept (SimpleChannel.detachFromPeer). The
+      // restore used to be guessed from a location change whose document was
+      // already complete, and what the page said before the parent rebound was
+      // lost (B303 E2, E3).
+      if (!aEvent.persisted || this.browsingContext.parent || aEvent.target !== this.document)
+        return;
+      if (aEvent.type === 'pagehide')
+        agents.channel.detachFromPeer();
+      else
+        this.sendAsyncMessage('juggler:became-current', {});
+      return;
+    }
     if (aEvent.target === this.document) {
       agents.pageAgent.onWindowEvent(aEvent);
       agents.frameTree.onWindowEvent(aEvent);

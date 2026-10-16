@@ -36,6 +36,10 @@ ActorManagerParent.addJSWindowActors({
         DOMContentLoaded: {},
         DOMWillOpenModalDialog: {},
         DOMModalDialogClosed: {},
+        // A top-level document going into the back-forward cache, and coming
+        // back from it (`persisted` on both): JugglerFrameChild.handleEvent.
+        pagehide: {},
+        pageshow: {},
       },
     },
     allFrames: true,

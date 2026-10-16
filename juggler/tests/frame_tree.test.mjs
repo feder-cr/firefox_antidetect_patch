@@ -79,6 +79,35 @@ test('an iframe\'s context going detaches that iframe', () => {
   assert.deepEqual(went(t, iframe), [sub]);
 });
 
+// B303 E3: the same class reached every process-wide observer, through the
+// lookups themselves. A tree whose document was in the back-forward cache
+// took the docShell of the page that replaced it for its own main frame:
+// contexts created, a navigation started, all for another document. Measured
+// on firefox-47 with an instrumented copy: the cached tree of page one queued
+// runtimeExecutionContextCreated id-11/id-12 and pageNavigationStarted nav-27
+// for page two. The identity check is now in the lookup, for every caller.
+function lookups(frames) {
+  return {
+    _frameIdToFrame: new Map(frames),
+    frameForBrowsingContext: FrameTree.prototype.frameForBrowsingContext,
+    frameForDocShell: FrameTree.prototype.frameForDocShell,
+  };
+}
+
+test('another top-level docShell of the tab is not this tree\'s main frame', () => {
+  const t = lookups([['mainframe-9', main], ['subframe-10737418245', sub]]);
+  const next = { id: 15, parent: null, browserId: 9 };
+  assert.equal(t.frameForDocShell({ browsingContext: next }), null);
+  assert.equal(t.frameForBrowsingContext(next), null);
+});
+
+test('the tree\'s own docShells are found', () => {
+  const t = lookups([['mainframe-9', main], ['subframe-10737418245', sub]]);
+  assert.equal(t.frameForDocShell({ browsingContext: top }), main);
+  assert.equal(t.frameForDocShell({ browsingContext: iframe }), sub);
+  assert.equal(t.frameForDocShell(null), null);
+});
+
 test('a context the tree never knew detaches nothing', () => {
   const t = tree([['mainframe-9', main]]);
   assert.deepEqual(went(t, { id: 77, parent: top, browserId: 9 }), []);

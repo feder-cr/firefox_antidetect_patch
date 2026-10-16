@@ -310,18 +310,32 @@ export class FrameTree {
       frame._addBinding(worldName, name, script);
   }
 
+  /**
+   * The frame of THIS tree whose context is `browsingContext`, or null.
+   *
+   * ⛔ BY THE CONTEXT ITSELF, NOT BY THE FRAME ID ALONE. A frame id names the
+   * frame, not one context: the main frame's is the browser's
+   * (`mainframe-<browserId>`), so every top-level context the tab has had
+   * resolves to it, and with the back-forward cache in the parent each
+   * navigation gives the tab a new top-level context and a new tree in the
+   * same process. Looked up by id, every tree took every top-level docShell of
+   * the tab for its own main frame: a tree whose document was in the cache
+   * built contexts and started navigations for the page that replaced it, from
+   * the process-wide observers that call this, and on a restore the page's
+   * console was reported in a context of the other page (measured, B303 E3);
+   * and when the cache let an old context go, every tree detached its own
+   * children [B292]. That second case had a guard of its own in
+   * `_onBrowsingContextDetached`; it belongs here, for every caller.
+   */
   frameForBrowsingContext(browsingContext) {
     if (!browsingContext)
       return null;
-    const frameId = helper.browsingContextToFrameId(browsingContext);
-    return this._frameIdToFrame.get(frameId) ?? null;
+    const frame = this._frameIdToFrame.get(helper.browsingContextToFrameId(browsingContext));
+    return frame && frame._browsingContext.id === browsingContext.id ? frame : null;
   }
 
   frameForDocShell(docShell) {
-    if (!docShell)
-      return null;
-    const frameId = helper.browsingContextToFrameId(docShell.browsingContext);
-    return this._frameIdToFrame.get(frameId) ?? null;
+    return docShell ? this.frameForBrowsingContext(docShell.browsingContext) : null;
   }
 
   frame(frameId) {
@@ -383,6 +397,12 @@ export class FrameTree {
   _frameNavigationCommitted(frame, url) {
     for (const subframe of frame._children)
       this._detachFrame(subframe);
+    this._commit(frame, url);
+  }
+
+  // The commit itself, without what a NEW document does to the tree: a
+  // document restored from the back-forward cache keeps its children.
+  _commit(frame, url) {
     const navigationId = frame._pendingNavigationId;
     frame._pendingNavigationId = null;
     frame._lastCommittedNavigationId = navigationId;
@@ -458,57 +478,39 @@ export class FrameTree {
       this.emit(FrameTree.Events.SameDocumentNavigation, frame);
       return;
     }
-    if (frame && this._isBackForwardRestore(progress, location)) {
-      // Announcing from here would be too early: the target's channel is still
-      // bound to the actor of the document we are coming BACK FROM, so the
-      // announcement would be dropped. The parent rebinds first and then asks.
-      this._restoredFrame = frame;
-      this._restoredUrl = location.spec;
-      if (this._becameCurrent)
-        this._becameCurrent();
-    }
   }
 
-  _isBackForwardRestore(progress, location) {
-    // A restore arrives with the document ALREADY WHOLE; an ordinary
-    // navigation is notified while its document is still being made. Measured:
-    // every ordinary location change reports `loading`, the restore reports
-    // `complete`. Without a distinguisher this would commit a second
-    // navigation for every page load, which is worse than the defect it fixes.
-    //
-    // `about:` pages are excluded because the startup ones are already
-    // complete when they are announced and would take this branch for nothing.
-    try {
-      const document = progress.DOMWindow.document;
-      return document.readyState === 'complete' &&
-             document.documentURI === location.spec &&
-             !location.spec.startsWith('about:');
-    } catch (e) {
-      return false;
-    }
-  }
-
-  setBecameCurrentNotifier(notifier) {
-    this._becameCurrent = notifier;
-  }
-
+  /**
+   * The main frame's document came back from the back-forward cache, and the
+   * channel is attached to it again: content/main.js runs this as the
+   * channel's reattachment hook, before anything the document said meanwhile
+   * goes out. A reattachment IS a restore - the channel detaches only on the
+   * pagehide of a document going into the cache - so nothing here guesses.
+   */
   announceRestoredDocument() {
-    // Called by the parent once the channel is bound to this document's actor,
-    // so that what follows has somewhere to go.
-    const frame = this._restoredFrame;
-    const url = this._restoredUrl;
-    this._restoredFrame = null;
-    this._restoredUrl = null;
+    const frame = this._mainFrame;
     if (!frame || !this._frameIdToFrame.has(frame.id()))
       return;
-    // The three steps of an ordinary navigation, in the same order. The
+    const url = frame.domWindow()?.location?.href;
+    if (!url)
+      return;
+    // A navigation started and committed, for the client that went back: the
     // navigation id is synthetic because a restore has no load identifier to
     // borrow; it only has to be new.
+    //
+    // ⛔ AND NOTHING THAT A NEW DOCUMENT DOES. Its globals, its iframes and its
+    // execution contexts are the ones it had: clearing the global object made
+    // new contexts under new ids - and ran the init scripts again in a page
+    // that did not load again - while what the page said from its pageshow,
+    // kept by the channel until now, named the contexts it really has, and
+    // the client dropped it for an unknown context; and the commit of a new
+    // document detached the restored page's own iframes from this tree. The
+    // children and the contexts are reported again by PageAgent on
+    // DocumentRestored, as when it attaches to a page.
     frame._pendingNavigationId =
         helper.toProtocolNavigationId('bfcache-' + (++restoredDocuments));
     this.emit(FrameTree.Events.NavigationStarted, frame);
-    frame._onGlobalObjectCleared();
-    this._frameNavigationCommitted(frame, url);
+    this._commit(frame, url);
     // ⛔ AND THE DOCUMENT IS ALREADY LOADED, WHICH NOTHING WOULD EVER SAY.
     // `load` and `DOMContentLoaded` fired when this document was first built
     // and do not fire again on a restore, so a caller waiting for either -
@@ -527,17 +529,10 @@ export class FrameTree {
   }
 
   _onBrowsingContextDetached(browsingContext) {
+    // Only the frame whose context went: frameForBrowsingContext matches the
+    // context itself [B292].
     const frame = this.frameForBrowsingContext(browsingContext);
-    // Only when the context that went IS this frame's. A frame id names the
-    // frame, not one context: the main frame's is the browser's
-    // (`mainframe-<browserId>`), so every top-level context the tab has had
-    // resolves to it. With the back-forward cache in the parent each
-    // navigation gives the tab a new top-level context and a new tree, and
-    // when the cache let an old one go, every tree - the current one too -
-    // took it for its own main frame and detached all its children: the
-    // iframes of the page being loaded, alive in the browser, were reported
-    // detached [B292].
-    if (frame && frame._browsingContext.id === browsingContext.id)
+    if (frame)
       this._detachFrame(frame);
   }
 
