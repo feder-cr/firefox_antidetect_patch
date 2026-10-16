@@ -10,6 +10,7 @@
 #include "nsXULAppAPI.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/net/StealthBranding.h"
+#include "nsIFile.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -107,12 +108,12 @@ void StealthAssertDeclarationsComplete() {
        }},
       // The branding a page reads, added 2026-10-16. Missing, it would serve
       // the build's own brand: the compiled fallback this gate exists against.
-      // "Not declared" here also means "not a set name", with the same
-      // predicate the redirect uses, because a malformed name is a path
-      // segment that no set answers to.
-      {"zoom.stealth.branding.set", []() -> bool {
-         auto lock = StaticPrefs::zoom_stealth_branding_set();
-         return !mozilla::net::StealthBrandingIsSetName(*lock);
+      // "Not declared" here also means "not usable": the same predicate the
+      // content sandbox uses to open the directory, so a launch this gate lets
+      // through is one whose content processes can read the files.
+      {"zoom.stealth.branding.dir", []() -> bool {
+         nsCOMPtr<nsIFile> dir = mozilla::net::StealthBrandingDeclaredDir();
+         return !dir;
        }},
   };
 

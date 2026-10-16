@@ -5,38 +5,35 @@
 #ifndef mozilla_net_StealthBranding_h
 #define mozilla_net_StealthBranding_h
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "nsError.h"
 #include "nsStringFwd.h"
 
+class nsIFile;
 class nsIURI;
 
 namespace mozilla::net {
 
 /**
- * The branding a page can read is DECLARED by invisible_core.
+ * The branding a page can read is DECLARED by invisible_core, files and all.
  *
  * A page reaches the branding package's content directory two ways:
  * chrome://branding/content/ (the package is contentaccessible) and
  * resource://usercontext-content/branding/ (that host maps the whole of
  * browser/content/, contentaccessible too). What it reads there - the about
  * dialog's stylesheet rules, the wordmarks' boxes, the images' sizes - tells a
- * build from the retail one. The set of answers is finite and known (the brand
- * directories this build ships), so by engine rule 7 which one a page sees is a
- * declaration of invisible_core, `zoom.stealth.branding.set`, and the engine
- * serves it.
+ * build from the retail one. By engine rule 7 what a page reads lives in
+ * invisible_core and nowhere else, so the core ships the files (the retail
+ * brand, ours, or a directory of the caller's own) and declares where they
+ * are, `zoom.stealth.branding.dir`, a file: URI of a directory. The engine
+ * keeps no stealth copy of any of them and serves the declared ones.
  *
  * Both ways end in the same place: a URI under the branding package's content
  * directory. So the redirect is one function called at the two places that
  * resolve those URIs - nsChromeRegistry::ConvertChromeURL and
  * SubstitutingProtocolHandler::ResolveURI - instead of one rule per scheme that
- * could drift apart. A page comparing the two ways gets the same set by
+ * could drift apart. A page comparing the two ways gets the same files by
  * construction.
- *
- * The declared sets live OUTSIDE browser/content/, in
- * chrome/browser/stealth-branding/<set>/ (browser/branding/stealth/jar.mn),
- * because everything under browser/content/ is readable by a page through
- * resource://usercontext-content/: a second set there would be a file a page
- * can load, and a file's mere existence is visible (load against error).
  *
  * Engine off (no seed) is stock Firefox and serves the build's own brand: that
  * is the absence of a declaration, not an incomplete one. Engine on and nothing
@@ -48,28 +45,40 @@ namespace mozilla::net {
 /**
  * Called by the chrome registry, in the parent and in every content process,
  * whenever a package's content directory is registered. Only the branding
- * package is kept: its directory, and the sets directory derived from it. A
- * registry reset re-registers every package, so the last registration wins and
- * nothing needs clearing.
+ * package is kept. A registry reset re-registers every package, so the last
+ * registration wins and nothing needs clearing.
  */
 void StealthBrandingRegisterPackage(const nsACString& aPackage, nsIURI* aBase);
 
 /**
  * Rewrites a resolved URI spec that points into the branding package's content
- * directory so that it points into the declared set instead. Leaves every other
- * spec untouched. Returns NS_ERROR_FILE_NOT_FOUND - a failed load, never the
- * build's own brand - when the engine is on and the declaration is missing or
- * malformed. Safe on any thread: ResolveURI is called off the main thread too.
+ * directory so that it points into the declared directory instead. Leaves every
+ * other spec untouched. Returns NS_ERROR_FILE_NOT_FOUND - a failed load, never
+ * the build's own brand - when the engine is on and the declaration is missing
+ * or malformed. Safe on any thread: ResolveURI is called off the main thread
+ * too.
  */
 nsresult StealthBrandingRedirect(nsACString& aResolvedSpec);
 
 /**
- * Whether a declared set name is well formed: lowercase letters, digits and
- * underscores, at least one. It becomes a path segment, so anything else - a
- * slash, a dot - is refused rather than resolved. The declaration gate uses this
- * same predicate, so "declared" means the same thing in both places.
+ * Whether a declaration is well formed: a file: URI of a directory, i.e.
+ * starting with "file:///" and ending with '/'. The redirect checks only this,
+ * on any thread; everything else is checked once, in the parent, through
+ * StealthBrandingDeclaredDir.
  */
-bool StealthBrandingIsSetName(const nsACString& aName);
+bool StealthBrandingIsDeclaredDir(const nsACString& aSpec);
+
+/**
+ * The declared directory, or null when the engine is off or the declaration
+ * is not usable: malformed, not an existing directory, or holding anything but
+ * regular files. Parent process. Two readers, and they must agree, which is why
+ * it is one function: the declaration gate refuses the launch when it is null,
+ * and the content sandbox grants READ access to exactly this directory - the
+ * files live wherever invisible_core keeps them, which the sandbox would
+ * otherwise keep closed to the content processes that load them. "Only regular
+ * files, no subdirectory" bounds what that grant opens.
+ */
+already_AddRefed<nsIFile> StealthBrandingDeclaredDir();
 
 }  // namespace mozilla::net
 

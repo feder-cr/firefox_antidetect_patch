@@ -2,10 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# STEALTH: the branding sets invisible_core can declare
-# (zoom.stealth.branding.set), packaged outside anything a page can load.
-DIRS += ["stealth"]
-
 SPHINX_TREES["docs"] = "docs"
 
 with Files("docs/**"):
