@@ -471,13 +471,21 @@ extern template class PermissiveXrayOpaque;
 //
 // The caller's world is a sandbox with the page's principal in which
 // `page.evaluate` and the other ways of running the caller's code run. Its
-// name lookups follow one rule: A NAME THE STANDARD DEFINES FOR AN OBJECT
-// RESOLVES TO THE STANDARD DEFINITION, EVERY OTHER NAME AS THE PAGE DEFINED
-// IT. `document.querySelector` is the native method even when the page has
-// replaced `Document.prototype.querySelector` with a Proxy that counts its
-// callers; `window.__NEXT_DATA__`, `el.__vue__`, the methods of a custom
-// element's class and a page function called by its bare name are the
-// page's, because the standard has nothing by those names.
+// name lookups follow one rule: THE BROWSER'S OWN APIS ARE THE ORIGINAL ONES,
+// AND WHAT THE PAGE ADDED IS THE PAGE'S. Applied level by level of the page's
+// own prototype chain (ChainLookup in XrayWrapper.cpp): a STANDARD level (a
+// WebIDL object, the window, a standard prototype or constructor) answers
+// with its native view, a level the PAGE CREATED (an instance, a class's
+// prototype) with its own properties. A name some standard level knows goes
+// to the first page-created level defining it before that level, else to
+// the native definition; what the page added ON a standard level does not
+// count for it. A name no standard level knows is the page's, looked up as
+// the page looks it up. So `document.querySelector` is the native method even
+// when the page replaced `Document.prototype.querySelector` (or set its own
+// on `document`) with a Proxy that counts its callers, while
+// `window.__NEXT_DATA__`, `el.__vue__`, a page class's `toString` and
+// `valueOf`, a custom element's `click` and a page function called by its
+// bare name are the page's.
 //
 // Neither existing view does both. A plain Xray (the utility world's) hides
 // what the page added, so `window.__APP_STATE__` reads undefined; the
@@ -488,10 +496,9 @@ extern template class PermissiveXrayOpaque;
 // Here, in the wrapper itself, neither constraint applies.
 //
 // What that means trap by trap:
-//  - has/get/set: first the STANDARD view, i.e. the Xray resolution of the
-//    object and of its Xray prototypes (`NativeLookup`); only a name it does
-//    not know reaches the page's object (`set` reaches the page for every
-//    name that is not a standard accessor, so `window.x = 1` is seen by it).
+//  - has/get/set: the rule above (ChainLookup); a name the rule leaves to the
+//    page reaches the page's object, and `set` reaches the page for every
+//    name whose answer is not an accessor, so `window.x = 1` is seen by it.
 //  - getOwnPropertyDescriptor and ownPropertyKeys: the standard own view
 //    joined with the page's own properties, so `Object.keys(el)` lists the
 //    expandos a framework put on the node.
@@ -501,10 +508,12 @@ extern template class PermissiveXrayOpaque;
 //  - call, construct, class name: the Xray's.
 // The explicit page view stays `.wrappedJSObject`, as for every Xray.
 //
-// The other direction is not an Xray at all: the page sees the caller's
-// objects through a transparent wrapper (WrapperFactory::Rewrap). The two
-// share a principal, so nothing is granted that the caller could not already
-// take with a waiver, and only Juggler can create such a compartment.
+// The other direction is not an Xray at all: the page reads the caller's
+// objects through CallerObjectWrapper (WrapperFactory.cpp), transparent for
+// their own properties, with the caller's standard prototypes shown as the
+// page's own. The two share a principal, so nothing is granted that the
+// caller could not already take with a waiver, and only privileged code can
+// create such a compartment (Juggler is the one that does).
 template <typename Traits>
 class HybridXrayWrapper
     : public XrayWrapper<js::CrossCompartmentWrapper, Traits> {
@@ -555,13 +564,11 @@ class HybridXrayWrapper
       JSContext* cx, JS::Handle<JSObject*> wrapper,
       JS::MutableHandleIdVector props) const override;
 
-  // The standard view only: the Xray's own resolution of this one object,
-  // and its Xray prototype. What NativeLookup walks.
+  // The native view of this one object: the Xray's own resolution of it,
+  // which ChainLookup asks of every standard level.
   bool nativeOwnPropertyDescriptor(
       JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<jsid> id,
       JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc) const;
-  bool nativePrototype(JSContext* cx, JS::HandleObject wrapper,
-                       JS::MutableHandleObject protop) const;
 
   static const HybridXrayWrapper singleton;
 };
@@ -573,13 +580,6 @@ extern template class HybridXrayDOM;
 extern template class HybridXrayJS;
 
 bool IsHybridXrayWrapper(JSObject* obj);
-
-// The one property lookup of the caller's world, own or inherited, as the
-// rule above defines it. `holder` is the object the name was found on.
-bool HybridXrayGetPropertyDescriptor(
-    JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
-    JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc,
-    JS::MutableHandleObject holder);
 
 // A BARE name of the caller's code, which reaches the page's window through
 // the sandbox's prototype proxy. Resolved in the order the page's own realm
