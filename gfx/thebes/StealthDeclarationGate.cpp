@@ -9,6 +9,7 @@
 #include "mozilla/Preferences.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/StaticPrefs_zoom.h"
+#include "mozilla/net/StealthBranding.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -103,6 +104,15 @@ void StealthAssertDeclarationsComplete() {
       {"zoom.stealth.voices.list", []() -> bool {
          auto lock = StaticPrefs::zoom_stealth_voices_list();
          return lock->IsEmpty();
+       }},
+      // The branding a page reads, added 2026-10-16. Missing, it would serve
+      // the build's own brand: the compiled fallback this gate exists against.
+      // "Not declared" here also means "not a set name", with the same
+      // predicate the redirect uses, because a malformed name is a path
+      // segment that no set answers to.
+      {"zoom.stealth.branding.set", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_branding_set();
+         return !mozilla::net::StealthBrandingIsSetName(*lock);
        }},
   };
 

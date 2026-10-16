@@ -20716,6 +20716,19 @@
   value: ""
   mirror: always
 
+# The branding set a page reads under chrome://branding/content/ and
+# resource://usercontext-content/branding/: the name of a directory under
+# chrome/browser/stealth-branding/, packaged by browser/branding/stealth/jar.mn
+# ("official" is the retail brand, "unofficial" the one an unbranded build
+# ships). Declared by invisible_core; with the engine on, empty or malformed
+# refuses the launch (StealthDeclarationGate) and fails the load
+# (netwerk/protocol/res/StealthBranding.h) instead of serving the build's own
+# brand.
+- name: zoom.stealth.branding.set
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # Glyph-edge coverage ladder: the distinct alpha levels a Windows rasteriser
 # produces on an antialiased glyph edge, ascending, comma separated. Measured
 # 2026-08-07 over 48 family/size/weight combinations: Windows yields 9-19
