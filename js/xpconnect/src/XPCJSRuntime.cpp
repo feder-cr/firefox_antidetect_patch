@@ -207,6 +207,7 @@ CompartmentPrivate::CompartmentPrivate(
     mozilla::BasePrincipal* origin, const SiteIdentifier& site)
     : originInfo(origin, site),
       wantXrays(false),
+      hybridXrays(false),
       allowWaivers(true),
       isWebExtensionContentScript(false),
       isUAWidgetCompartment(false),

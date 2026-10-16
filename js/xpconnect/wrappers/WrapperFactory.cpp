@@ -372,6 +372,7 @@ static void DEBUG_CheckUnwrapSafety(HandleObject obj,
           CompartmentPrivate::Get(target);
       if (!originCompartmentPrivate->wantXrays &&
           !targetCompartmentPrivate->wantXrays &&
+          !targetCompartmentPrivate->hybridXrays &&
           CompartmentsMayHaveHadTransparentCCWs(originCompartmentPrivate,
                                                 targetCompartmentPrivate)) {
         // We should have a transparent CCW, unless we have a cross-origin
@@ -442,6 +443,21 @@ static const Wrapper* SelectWrapper(bool securityWrapper, XrayType xrayType,
   return &FilteringWrapper<CrossCompartmentSecurityWrapper, Opaque>::singleton;
 }
 
+// STEALTHFOX [B322]: what the caller's world reads the page through. A hybrid
+// Xray where the object has a standard view, and the transparent wrapper
+// where it has none (a scripted Proxy, a generator): there the standard view
+// would be empty, so the page's answer is the only one. The rule is written
+// above HybridXrayWrapper in XrayWrapper.h.
+static const Wrapper* SelectHybridWrapper(XrayType xrayType) {
+  if (xrayType == XrayForDOMObject) {
+    return &HybridXrayDOM::singleton;
+  }
+  if (xrayType == XrayForJSObject) {
+    return &HybridXrayJS::singleton;
+  }
+  return &CrossCompartmentWrapper::singleton;
+}
+
 JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
                                  HandleObject obj) {
   MOZ_ASSERT(!IsWrapper(obj) || GetProxyHandler(obj) == &XrayWaiver ||
@@ -472,6 +488,15 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
       CompartmentPrivate::Get(origin);
   CompartmentPrivate* targetCompartmentPrivate =
       CompartmentPrivate::Get(target);
+
+  // STEALTHFOX [B322]: the caller's world (`hybridXrays`) wants Xrays when IT
+  // reads the page, as a `wantXrays` compartment does, but it does not impose
+  // them on the page reading ITS objects: the page sees those transparently,
+  // as it saw them when the caller's code ran in the page's own realm. Hence
+  // two flags where Gecko had one symmetric test.
+  bool targetHybrid = targetCompartmentPrivate->hybridXrays;
+  bool originForcesXrays = originCompartmentPrivate->wantXrays;
+  bool targetForcesXrays = targetCompartmentPrivate->wantXrays || targetHybrid;
 
   // Track whether we decided to use a transparent wrapper because of
   // document.domain usage, so we don't override that decision.
@@ -512,8 +537,8 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
            // Check for the more rare case of cross-origin objects before doing
            // the more-likely-to-pass checks for wantXrays.
            IsCrossOriginAccessibleObject(obj) &&
-           (!targetSubsumesOrigin || (!originCompartmentPrivate->wantXrays &&
-                                      !targetCompartmentPrivate->wantXrays))) {
+           (!targetSubsumesOrigin ||
+            (!originForcesXrays && !targetForcesXrays))) {
     wrapper = &CrossOriginObjectWrapper::singleton;
   }
 
@@ -521,9 +546,8 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
   // web-like contexts (symmetric security relationships, no forced Xrays).  In
   // this situation, if the two compartments may ever have had transparent CCWs
   // between them, we want to keep using transparent CCWs.
-  else if (originSubsumesTarget == targetSubsumesOrigin &&
-           !originCompartmentPrivate->wantXrays &&
-           !targetCompartmentPrivate->wantXrays &&
+  else if (originSubsumesTarget == targetSubsumesOrigin && !originForcesXrays &&
+           !targetForcesXrays &&
            CompartmentsMayHaveHadTransparentCCWs(originCompartmentPrivate,
                                                  targetCompartmentPrivate)) {
     isTransparentWrapperDueToDocumentDomain = true;
@@ -547,8 +571,7 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
     //
     // Xrays are a bidirectional protection, since it affords clarity to the
     // caller and privacy to the callee.
-    bool sameOriginXrays = originCompartmentPrivate->wantXrays ||
-                           targetCompartmentPrivate->wantXrays;
+    bool sameOriginXrays = originForcesXrays || targetForcesXrays;
     bool wantXrays = !sameOrigin || sameOriginXrays;
 
     XrayType xrayType = wantXrays ? GetXrayType(obj) : NotXray;
@@ -559,7 +582,11 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
                       targetCompartmentPrivate->allowWaivers &&
                       HasWaiveXrayFlag(obj);
 
-    wrapper = SelectWrapper(securityWrapper, xrayType, waiveXrays, obj);
+    if (targetHybrid && !securityWrapper && !waiveXrays) {
+      wrapper = SelectHybridWrapper(xrayType);
+    } else {
+      wrapper = SelectWrapper(securityWrapper, xrayType, waiveXrays, obj);
+    }
   }
 
   if (!targetSubsumesOrigin && !isTransparentWrapperDueToDocumentDomain) {

@@ -2331,6 +2331,409 @@ bool XrayWrapper<Base, Traits>::getPropertyKeys(
 }
 
 /*
+ * STEALTHFOX [B322]: HYBRID XRAYS. The rule, and why it lives in the wrapper,
+ * are written once, above the class in XrayWrapper.h.
+ */
+
+bool IsHybridXrayWrapper(JSObject* obj) {
+  if (!js::IsProxy(obj)) {
+    return false;
+  }
+  const BaseProxyHandler* handler = js::GetProxyHandler(obj);
+  return handler == &HybridXrayDOM::singleton ||
+         handler == &HybridXrayJS::singleton;
+}
+
+// The page's object behind a hybrid Xray. For a window that is the
+// WindowProxy, as for any wrapper: what the page itself reaches.
+static JSObject* HybridTarget(JSObject* wrapper) {
+  JSObject* target = Wrapper::wrappedObject(wrapper);
+  JS::ExposeObjectToActiveJS(target);
+  return target;
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::nativeOwnPropertyDescriptor(
+    JSContext* cx, HandleObject wrapper, HandleId id,
+    MutableHandle<Maybe<PropertyDescriptor>> desc) const {
+  desc.reset();
+  if constexpr (std::is_same_v<Traits, JSXrayTraits>) {
+    // The elements of a typed array are its data, and the Xray throws instead
+    // of answering for them: they are the page's, so the standard view does
+    // not know them.
+    RootedObject holder(cx, JSXrayTraits::singleton.ensureHolder(cx, wrapper));
+    if (!holder) {
+      return false;
+    }
+    if (IsTypedArrayKey(JSXrayTraits::getProtoKey(holder)) &&
+        !JSXrayTraits::isPrototype(holder) &&
+        IsArrayIndex(GetArrayIndexFromId(id))) {
+      return true;
+    }
+  }
+  return Base::getOwnPropertyDescriptor(cx, wrapper, id, desc);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::nativePrototype(
+    JSContext* cx, HandleObject wrapper, MutableHandleObject protop) const {
+  return Base::getPrototype(cx, wrapper, protop);
+}
+
+// THE STANDARD VIEW: the Xray resolution of `wrapper` and of its Xray
+// prototypes. None of it runs the page's script, whatever the page replaced:
+// a Proxy the page put on Document.prototype is not on this chain, which is
+// built from the WebIDL and ES specs.
+static bool NativeLookup(JSContext* cx, HandleObject wrapper, HandleId id,
+                         MutableHandle<Maybe<PropertyDescriptor>> desc,
+                         MutableHandleObject holder) {
+  desc.reset();
+  holder.set(nullptr);
+  RootedObject obj(cx, wrapper);
+  RootedObject proto(cx);
+  while (obj) {
+    // An Xray's prototypes are standard prototypes of the page, which wrap
+    // into this compartment as hybrid Xrays themselves. Anything else would
+    // not be a standard view to read.
+    if (!IsHybridXrayWrapper(obj)) {
+      MOZ_ASSERT_UNREACHABLE("an Xray prototype chain that leaves the Xrays");
+      return true;
+    }
+    const BaseProxyHandler* handler = js::GetProxyHandler(obj);
+    js::AutoEnterPolicy policy(cx, handler, obj, id,
+                               BaseProxyHandler::GET_PROPERTY_DESCRIPTOR,
+                               true);
+    bool ok;
+    if (handler == &HybridXrayDOM::singleton) {
+      ok = HybridXrayDOM::singleton.nativeOwnPropertyDescriptor(cx, obj, id,
+                                                                desc) &&
+           (desc.isSome() ||
+            HybridXrayDOM::singleton.nativePrototype(cx, obj, &proto));
+    } else {
+      ok = HybridXrayJS::singleton.nativeOwnPropertyDescriptor(cx, obj, id,
+                                                               desc) &&
+           (desc.isSome() ||
+            HybridXrayJS::singleton.nativePrototype(cx, obj, &proto));
+    }
+    if (!ok) {
+      return false;
+    }
+    if (desc.isSome()) {
+      holder.set(obj);
+      return true;
+    }
+    obj = proto;
+  }
+  return true;
+}
+
+bool HybridXrayGetPropertyDescriptor(
+    JSContext* cx, HandleObject wrapper, HandleId id,
+    MutableHandle<Maybe<PropertyDescriptor>> desc, MutableHandleObject holder) {
+  MOZ_ASSERT(IsHybridXrayWrapper(wrapper));
+  if (!NativeLookup(cx, wrapper, id, desc, holder)) {
+    return false;
+  }
+  if (desc.isSome()) {
+    return true;
+  }
+
+  // A name the standard does not define: the page's, own or inherited.
+  RootedObject target(cx, HybridTarget(wrapper));
+  {
+    JSAutoRealm ar(cx, target);
+    JS_MarkCrossZoneId(cx, id);
+    RootedObject contentHolder(cx);
+    if (!JS_GetPropertyDescriptorById(cx, target, id, desc, &contentHolder)) {
+      return false;
+    }
+  }
+  if (desc.isNothing()) {
+    return true;
+  }
+  // As the Xrays do, the wrapper stands for wherever on the page's chain the
+  // name was found.
+  holder.set(wrapper);
+  return JS_WrapPropertyDescriptor(cx, desc);
+}
+
+// [[Get]] of a name the standard does not define, on the page's object. The
+// receiver crosses as any value does: the wrapper itself becomes the page's
+// object again.
+static bool ContentGet(JSContext* cx, HandleObject wrapper,
+                       HandleValue receiver, HandleId id,
+                       MutableHandleValue vp) {
+  RootedObject target(cx, HybridTarget(wrapper));
+  {
+    JSAutoRealm ar(cx, target);
+    JS_MarkCrossZoneId(cx, id);
+    RootedValue contentReceiver(cx, receiver);
+    if (!JS_WrapValue(cx, &contentReceiver) ||
+        !JS_ForwardGetPropertyTo(cx, target, id, contentReceiver, vp)) {
+      return false;
+    }
+  }
+  return JS_WrapValue(cx, vp);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::getOwnPropertyDescriptor(
+    JSContext* cx, HandleObject wrapper, HandleId id,
+    MutableHandle<Maybe<PropertyDescriptor>> desc) const {
+  if (!nativeOwnPropertyDescriptor(cx, wrapper, id, desc)) {
+    return false;
+  }
+  if (desc.isSome()) {
+    return true;
+  }
+  RootedObject target(cx, HybridTarget(wrapper));
+  {
+    JSAutoRealm ar(cx, target);
+    JS_MarkCrossZoneId(cx, id);
+    if (!JS_GetOwnPropertyDescriptorById(cx, target, id, desc)) {
+      return false;
+    }
+  }
+  return JS_WrapPropertyDescriptor(cx, desc);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::hasOwn(JSContext* cx, HandleObject wrapper,
+                                       HandleId id, bool* bp) const {
+  Rooted<Maybe<PropertyDescriptor>> desc(cx);
+  if (!nativeOwnPropertyDescriptor(cx, wrapper, id, &desc)) {
+    return false;
+  }
+  if (desc.isSome()) {
+    *bp = true;
+    return true;
+  }
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  JS_MarkCrossZoneId(cx, id);
+  return JS_HasOwnPropertyById(cx, target, id, bp);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::has(JSContext* cx, HandleObject wrapper,
+                                    HandleId id, bool* bp) const {
+  Rooted<Maybe<PropertyDescriptor>> desc(cx);
+  RootedObject holder(cx);
+  if (!NativeLookup(cx, wrapper, id, &desc, &holder)) {
+    return false;
+  }
+  if (desc.isSome()) {
+    *bp = true;
+    return true;
+  }
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  JS_MarkCrossZoneId(cx, id);
+  return JS_HasPropertyById(cx, target, id, bp);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::get(JSContext* cx, HandleObject wrapper,
+                                    HandleValue receiver, HandleId id,
+                                    MutableHandleValue vp) const {
+  Rooted<Maybe<PropertyDescriptor>> desc(cx);
+  RootedObject holder(cx);
+  if (!NativeLookup(cx, wrapper, id, &desc, &holder)) {
+    return false;
+  }
+  if (desc.isNothing()) {
+    return ContentGet(cx, wrapper, receiver, id, vp);
+  }
+
+  // Everything after here follows [[Get]] for ordinary objects, on the
+  // standard definition.
+  desc->assertComplete();
+  if (desc->isDataDescriptor()) {
+    vp.set(desc->value());
+    return true;
+  }
+  RootedObject getter(cx, desc->getter());
+  if (!getter) {
+    vp.setUndefined();
+    return true;
+  }
+  return Call(cx, receiver, getter, HandleValueArray::empty(), vp);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::set(JSContext* cx, HandleObject wrapper,
+                                    HandleId id, HandleValue v,
+                                    HandleValue receiver,
+                                    ObjectOpResult& result) const {
+  Rooted<Maybe<PropertyDescriptor>> desc(cx);
+  RootedObject holder(cx);
+  if (!NativeLookup(cx, wrapper, id, &desc, &holder)) {
+    return false;
+  }
+
+  // A standard accessor runs its standard setter: `el.textContent = x`.
+  if (desc.isSome() && desc->isAccessorDescriptor()) {
+    RootedObject setter(cx, desc->setter());
+    if (!setter) {
+      return result.failGetterOnly();
+    }
+    RootedValue ignored(cx);
+    if (!Call(cx, receiver, setter, HandleValueArray(v), &ignored)) {
+      return false;
+    }
+    return result.succeed();
+  }
+
+  // Everything else is a write the page must see: `window.x = 1`, an expando
+  // on a node, an element of the page's array.
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  JS_MarkCrossZoneId(cx, id);
+  RootedValue value(cx, v);
+  RootedValue contentReceiver(cx, receiver);
+  if (!JS_WrapValue(cx, &value) || !JS_WrapValue(cx, &contentReceiver)) {
+    return false;
+  }
+  return JS_ForwardSetPropertyTo(cx, target, id, value, contentReceiver,
+                                 result);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::defineProperty(
+    JSContext* cx, HandleObject wrapper, HandleId id,
+    Handle<PropertyDescriptor> desc, ObjectOpResult& result) const {
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  JS_MarkCrossZoneId(cx, id);
+  Rooted<PropertyDescriptor> wrappedDesc(cx, desc);
+  if (!JS_WrapPropertyDescriptor(cx, &wrappedDesc)) {
+    return false;
+  }
+  return JS_DefinePropertyById(cx, target, id, wrappedDesc, result);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::delete_(JSContext* cx, HandleObject wrapper,
+                                        HandleId id,
+                                        ObjectOpResult& result) const {
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  JS_MarkCrossZoneId(cx, id);
+  return JS_DeletePropertyById(cx, target, id, result);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::ownPropertyKeys(
+    JSContext* cx, HandleObject wrapper, MutableHandleIdVector props) const {
+  // The page's own keys, in the page's order, then the standard own keys the
+  // page's object does not list.
+  RootedObject target(cx, HybridTarget(wrapper));
+  {
+    JSAutoRealm ar(cx, target);
+    if (!js::GetPropertyKeys(cx, target,
+                             JSITER_OWNONLY | JSITER_HIDDEN | JSITER_SYMBOLS,
+                             props)) {
+      return false;
+    }
+  }
+  for (size_t i = 0; i < props.length(); ++i) {
+    JS_MarkCrossZoneId(cx, props[i]);
+  }
+
+  RootedIdVector native(cx);
+  if (!Base::ownPropertyKeys(cx, wrapper, &native)) {
+    return false;
+  }
+  size_t contentCount = props.length();
+  for (size_t i = 0; i < native.length(); ++i) {
+    bool listed = false;
+    for (size_t j = 0; j < contentCount && !listed; ++j) {
+      listed = props[j] == native[i];
+    }
+    if (!listed && !props.append(native[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::getOwnEnumerablePropertyKeys(
+    JSContext* cx, HandleObject wrapper, MutableHandleIdVector props) const {
+  return BaseProxyHandler::getOwnEnumerablePropertyKeys(cx, wrapper, props);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::enumerate(JSContext* cx, HandleObject wrapper,
+                                          MutableHandleIdVector props) const {
+  return BaseProxyHandler::enumerate(cx, wrapper, props);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::getPrototype(
+    JSContext* cx, HandleObject wrapper, MutableHandleObject protop) const {
+  // The page's prototype, so `el instanceof MyElement` and
+  // `obj instanceof PageClass` hold. Name lookups do not walk it: they walk
+  // the Xray's (NativeLookup), then the page's object as a whole.
+  RootedObject target(cx, HybridTarget(wrapper));
+  {
+    JSAutoRealm ar(cx, target);
+    if (!JS_GetPrototype(cx, target, protop)) {
+      return false;
+    }
+  }
+  return JS_WrapObject(cx, protop);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::setPrototype(JSContext* cx,
+                                             HandleObject wrapper,
+                                             HandleObject proto,
+                                             ObjectOpResult& result) const {
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  RootedObject contentProto(cx, proto);
+  if (!JS_WrapObject(cx, &contentProto) ||
+      !JS_SetPrototype(cx, target, contentProto)) {
+    return false;
+  }
+  return result.succeed();
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::setImmutablePrototype(JSContext* cx,
+                                                      HandleObject wrapper,
+                                                      bool* succeeded) const {
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  return JS_SetImmutablePrototype(cx, target, succeeded);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::preventExtensions(
+    JSContext* cx, HandleObject wrapper, ObjectOpResult& result) const {
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  return JS_PreventExtensions(cx, target, result);
+}
+
+template <typename Traits>
+bool HybridXrayWrapper<Traits>::isExtensible(JSContext* cx,
+                                             HandleObject wrapper,
+                                             bool* extensible) const {
+  RootedObject target(cx, HybridTarget(wrapper));
+  JSAutoRealm ar(cx, target);
+  return JS_IsExtensible(cx, target, extensible);
+}
+
+template <typename Traits>
+MOZ_GLOBINIT const xpc::HybridXrayWrapper<Traits>
+    xpc::HybridXrayWrapper<Traits>::singleton(0);
+
+template class HybridXrayDOM;
+template class HybridXrayJS;
+
+/*
  * The Permissive / Security variants should be used depending on whether the
  * compartment of the wrapper is guranteed to subsume the compartment of the
  * wrapped object (i.e. - whether it is safe from a security perspective to

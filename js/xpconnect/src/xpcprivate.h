@@ -2271,6 +2271,7 @@ class MOZ_STACK_CLASS SandboxOptions : public OptionsBase {
                           JSObject* options = nullptr)
       : OptionsBase(cx, options),
         wantXrays(true),
+        hybridXrays(false),
         allowWaivers(true),
         wantComponents(true),
         wantExportHelpers(false),
@@ -2291,6 +2292,8 @@ class MOZ_STACK_CLASS SandboxOptions : public OptionsBase {
   virtual bool Parse() override;
 
   bool wantXrays;
+  // STEALTHFOX [B322]: see CompartmentPrivate::hybridXrays.
+  bool hybridXrays;
   bool allowWaivers;
   bool wantComponents;
   bool wantExportHelpers;
@@ -2579,7 +2582,7 @@ class CompartmentPrivate {
     }
 
     // Don't share if we have any weird state set.
-    return !wantXrays && !isWebExtensionContentScript &&
+    return !wantXrays && !hybridXrays && !isWebExtensionContentScript &&
            !isUAWidgetCompartment && mScope->XBLScopeStateMatches(principal);
   }
 
@@ -2589,6 +2592,14 @@ class CompartmentPrivate {
   // is deprecated, but is still the default for sandboxes for compatibity
   // reasons.
   bool wantXrays;
+
+  // STEALTHFOX [B322]: this compartment is a caller's world, which reads
+  // same-origin content through hybrid Xrays (the standard definition of a
+  // name the standard defines, the page's for every other name) while that
+  // content reads its objects transparently. Set only by Cu.Sandbox's
+  // `hybridXrays` option, which only Juggler passes. The rule is written above
+  // HybridXrayWrapper in XrayWrapper.h.
+  bool hybridXrays;
 
   // Controls whether this compartment is allowed to waive Xrays to content
   // that it subsumes. This should generally be true, except in cases where we
