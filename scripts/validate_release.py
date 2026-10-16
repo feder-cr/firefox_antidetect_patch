@@ -320,6 +320,26 @@ def assert_juggler_provenance(tree: Path) -> None:
           f"{layout} layout)")
 
 
+def declared_branding() -> Path:
+    """The branding directory invisible_core declares by default, asked of the
+    installed core the way a launch asks it - a profile translated to prefs -
+    so that this gate holds no default and no second copy of where it lives.
+    The release workflow installs the core it pairs with the build first."""
+    import urllib.parse
+    import urllib.request
+    try:
+        from invisible_core import generate_profile, translate_profile_to_prefs
+    except ImportError as exc:
+        raise ValidationError(
+            "this engine serves the branding invisible_core declares, and no invisible_core "
+            f"is installed to say which: {exc}") from exc
+    spec = translate_profile_to_prefs(generate_profile(seed=1)).get("zoom.stealth.branding.dir")
+    if not spec:
+        raise ValidationError("the installed invisible_core declares no zoom.stealth.branding.dir: "
+                              "it is older than the engine, and the engine refuses to launch with it")
+    return Path(urllib.request.url2pathname(urllib.parse.urlparse(spec).path))
+
+
 def assert_page_surface_is_stock(tree: Path) -> None:
     """What a web page can read of this build - every chrome package and
     resource substitution it registers, with their flags, and the bytes of
@@ -335,11 +355,18 @@ def assert_page_surface_is_stock(tree: Path) -> None:
     readable package that differs is read the same way: both were invisible to
     it. Run on firefox-47 on 2026-10-15 this gate found 44 differences on
     Windows and 87 on each Linux architecture, the names gate none.
+
+    On an engine that serves the branding invisible_core declares (P60) the
+    page reads that directory, not the build's own brand, so it is judged in
+    its place: declared_branding() asks the installed core for it.
     """
     import stock_parity
     root = _juggler_root(tree)
     try:
-        platform, version, undeclared, stale, size = stock_parity.judge(root)
+        branding = (declared_branding()
+                    if stock_parity.serves_declared_branding(root, stock_parity.platform_of(root))
+                    else None)
+        platform, version, undeclared, stale, size = stock_parity.judge(root, branding=branding)
     except stock_parity.ParityError as exc:
         raise ValidationError(f"the page surface could not be judged: {exc}") from exc
     if undeclared or stale:

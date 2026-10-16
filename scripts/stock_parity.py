@@ -45,6 +45,18 @@ The retail's omni.ja are in the optimized jar layout that Python's zipfile
 refuses ("Bad magic number for central directory"); they are read with
 Mozilla's own reader, python/mozbuild/mozpack/mozjar.py of this tree.
 
+THE BRANDING A PAGE READS IS THE CORE'S, not the build's, on an engine that
+redirects it (P60): with the engine on, every URI under the branding package's
+content directory - chrome://branding/content/ and the same files through
+resource://usercontext-content/branding/ - is served from the directory
+invisible_core declares in zoom.stealth.branding.dir, and the build's own brand
+in omni.ja is never read. So on such an engine that directory takes the place
+of the package's files, those it lacks included, exactly as the redirect does,
+and its files pass through observable() like any other. Whether the engine
+redirects is read from the tree, the pref's name in the engine library, because
+no manifest changes; judging such an engine without the declared directory is
+refused as not judged, since what would be judged is what a page never reads.
+
 WHAT IT DOES NOT SEE, so that nobody reads more into its pass. It reads the
 manifests; registrations made by JavaScript at run time (the newtab resource
 host in AboutNewTabResourceMapping.sys.mjs, formautofill, extensions) are on a
@@ -82,6 +94,12 @@ JARS = {"omni.ja": "", "browser/omni.ja": "browser/"}
 ROOT_MANIFESTS = ("chrome.manifest", "browser/chrome.manifest")
 #: Built-in resource hosts, by the logical prefix they map to.
 BUILTIN_HOSTS = {"gre": "", "app": "browser/"}
+#: The chrome package whose content directory an engine with the branding
+#: redirect serves from the declared directory (netwerk/protocol/res/
+#: StealthBranding.h), and the pref that declares it: its name is in the engine
+#: library exactly when the engine has the redirect (StaticPrefList.yaml).
+BRANDING_PACKAGE = "branding"
+BRANDING_PREF = b"zoom.stealth.branding.dir"
 
 
 class ParityError(Exception):
@@ -134,6 +152,15 @@ def version_of(tree: Path) -> str:
     raise ParityError(f"no Version= in {tree / 'application.ini'}")
 
 
+def serves_declared_branding(tree: Path, platform: str) -> bool:
+    """Whether the engine of `tree` serves the branding from the directory
+    invisible_core declares (the module docstring), read from its library."""
+    lib = tree / ("xul.dll" if platform.startswith("win") else "libxul.so")
+    if not lib.is_file():
+        raise ParityError(f"no {lib.name} in {tree}: which branding a page reads is not decidable")
+    return BRANDING_PREF in lib.read_bytes()
+
+
 # ── the files of a tree, by logical path ────────────────────────────────────
 
 class Files:
@@ -180,6 +207,22 @@ class Files:
                 raise ParityError(f"{path} is both loose and in {where}: which one a page "
                                   f"reads is not decidable here")
             loaders[path] = (lambda j=jar, n=name: j[n].read())
+
+    def serving(self, directory: str, source: Path) -> "Files":
+        """These files with `directory` (a logical path ending in /) holding
+        exactly the files of `source`, as the branding redirect serves them.
+        The engine serves only a directory of regular files, no subdirectory
+        and no link (StealthBrandingDeclaredDir), and refuses to launch on any
+        other; such a directory is not judged either."""
+        if not source.is_dir():
+            raise ParityError(f"the declared branding directory {source} does not exist")
+        loaders = {p: f for p, f in self._loaders.items() if not p.startswith(directory)}
+        for p in sorted(source.iterdir()):
+            if p.is_symlink() or not p.is_file():
+                raise ParityError(f"the declared branding directory holds {p.name}, which is "
+                                  f"not a regular file: the engine refuses to launch on it")
+            loaders[directory + p.name] = p.read_bytes
+        return Files(loaders)
 
     def has(self, path: str) -> bool:
         return path in self._loaders
@@ -593,12 +636,25 @@ def load_exceptions(platform: str, path: Path = EXCEPTIONS) -> dict:
     return out
 
 
-def judge(tree: Path, retail=retail_files, exceptions: Path = EXCEPTIONS) -> tuple:
+def judge(tree: Path, retail=retail_files, exceptions: Path = EXCEPTIONS,
+          branding: Path | None = None) -> tuple:
     """(platform, version, undeclared differences, stale declarations, size).
     `retail(version, platform)` gives the judge's Files; the selftest passes a
-    tree of its own, everything else the MAR."""
+    tree of its own, everything else the MAR. `branding` is the directory
+    invisible_core declares, required exactly when the engine serves it."""
     platform, version = platform_of(tree), version_of(tree)
-    ours = surface(Files.from_directory(tree), platform)
+    files = Files.from_directory(tree)
+    if serves_declared_branding(tree, platform):
+        if branding is None:
+            raise ParityError("this engine serves the branding invisible_core declares, not "
+                              "its own: pass the declared directory (--branding)")
+        reg = Registry(files, platform)
+        if BRANDING_PACKAGE not in reg.packages:
+            raise ParityError(f"no {BRANDING_PACKAGE} package registered: nothing to redirect")
+        files = files.serving(reg.resolve(reg.packages[BRANDING_PACKAGE][0]), branding)
+    elif branding is not None:
+        raise ParityError("a branding directory was passed, but this engine serves its own")
+    ours = surface(files, platform)
     stock = surface(retail(version, platform), platform)
     diff = differences(ours, stock)
     declared = load_exceptions(platform, exceptions)
@@ -652,6 +708,8 @@ def selftest() -> int:
             "resource content-accessible resource://gre/contentaccessible/ contentaccessible=yes\n"
             "override chrome://global/content/license.css chrome://global/content/real.css\n"
             "override chrome://global/content/secret.css chrome://private/content/s.css\n"
+            "content branding browsercontent/branding/ contentaccessible=yes\n"
+            "resource usercontext-content browsercontent/ contentaccessible=yes\n"
             "manifest second.manifest\n"),
         "chrome/second.manifest": "override chrome://global/content/a.css chrome://global/content/a.css\n",
         "chrome/toolkit/content/global/a.css": "body { color: red }\n",
@@ -671,12 +729,23 @@ def selftest() -> int:
         "chrome/en-US/locale/global/brand.properties": "brandShortName=Firefox\n",
         "chrome/private/content/e.js": "1\n",
         "contentaccessible/f.css": "y {}\n",
+        "chrome/browsercontent/branding/about.png": "PNG16x16",
+        "chrome/browsercontent/branding/aboutDialog.css": "#a {}\n",
+        "chrome/browsercontent/branding/wordmark.svg": '<svg viewBox="0 0 359 80"/>\n',
+        "chrome/browsercontent/other.css": "o {}\n",
     }
+    # The retail's brand, as invisible_core ships it, and a build whose own
+    # brand differs from it in a stylesheet and an image's size.
+    RETAIL_BRAND = {"about.png": "PNG16x16", "aboutDialog.css": "#a {}\n",
+                    "wordmark.svg": '<svg viewBox="0 0 359 80"/>\n'}
+    OWN_BRAND = {"chrome/browsercontent/branding/aboutDialog.css": "#b {}\n",
+                 "chrome/browsercontent/branding/about.png": "PNG16x17"}
 
-    def write(root, files, omni):
+    def write(root, files, omni, redirects=False):
         files = {rel: IMAGES.get(text, text) for rel, text in files.items()}
         root.mkdir(parents=True)
         (root / "firefox").write_bytes(elf)
+        (root / "libxul.so").write_bytes(elf + (BRANDING_PREF if redirects else b"") + b"\0")
         (root / "application.ini").write_bytes(b"[App]\nVersion=151.0\n")
         if omni:
             with zipfile.ZipFile(root / "omni.ja", "w") as z:
@@ -804,25 +873,60 @@ def selftest() -> int:
          mutate(chrome__chrome_DOT_manifest=manifest.replace("content private private/content/\n", ""),
                 chrome__second_DOT_manifest="override chrome://global/content/a.css "
                 "chrome://global/content/a.css\ncontent private private/content/\n"), False, None),
+        # The branding an engine with the redirect serves from the directory
+        # invisible_core declares (P60). The fifth field: (the engine library
+        # names the pref, the declared directory or None); a name ending in /
+        # is a subdirectory.
+        ("an engine that serves the declared brand, the retail's, over its own that differs",
+         mutate(**OWN_BRAND), False, None, (True, RETAIL_BRAND)),
+        ("the declared brand's stylesheet differs (both ways in read it)",
+         mutate(**OWN_BRAND), True, None, (True, {**RETAIL_BRAND, "aboutDialog.css": "#c {}\n"})),
+        ("the declared brand's image redrawn in the same size",
+         mutate(**OWN_BRAND), False, None, (True, {**RETAIL_BRAND, "about.png": "PNG16x16-redrawn"})),
+        ("the declared brand's image of another size",
+         mutate(), True, None, (True, {**RETAIL_BRAND, "about.png": "PNG16x17"})),
+        ("a declared brand with a file the retail lacks",
+         mutate(), True, None, (True, {**RETAIL_BRAND, "extra.css": "e {}\n"})),
+        ("a declared brand without a file the retail has",
+         mutate(), True, None, (True, {k: v for k, v in RETAIL_BRAND.items() if k != "wordmark.svg"})),
+        ("a declared directory holding a subdirectory, on which the engine refuses to launch",
+         mutate(), True, None, (True, {**RETAIL_BRAND, "sub/": None})),
+        ("an engine that serves the declared brand, judged without it, is not judged",
+         mutate(), True, None, (True, None)),
+        ("a declared directory for an engine that serves its own brand",
+         mutate(), True, None, (False, RETAIL_BRAND)),
+        ("an engine library without the pref: its own brand is what a page reads",
+         mutate(**OWN_BRAND), True, None, (False, None)),
     ]
     bad = 0
     work = Path(tempfile.mkdtemp(prefix="stock-parity-selftest-"))
     try:
         write(work / "retail", base, omni=True)
         retail = Files.from_directory(work / "retail")
-        for i, (name, ours, must_refuse, declared) in enumerate(cases):
+        for i, (name, ours, must_refuse, declared, *brand) in enumerate(cases):
+            redirects, brand_files = brand[0] if brand else (False, None)
             tree = work / f"ours{i}"
             if ours == "CORRUPT_OMNI":
                 write(tree, base, omni=False)
                 (tree / "omni.ja").write_bytes(b"PK not really a zip")
             else:
-                write(tree, ours, omni=False)
+                write(tree, ours, omni=False, redirects=redirects)
+            branding = None
+            if brand_files is not None:
+                branding = work / f"brand{i}"
+                branding.mkdir()
+                for rel, text in brand_files.items():
+                    if rel.endswith("/"):
+                        (branding / rel).mkdir()
+                    else:
+                        text = IMAGES.get(text, text)
+                        (branding / rel).write_bytes(text if isinstance(text, bytes) else text.encode())
             exc = work / f"exceptions{i}.json"
             exc.write_bytes(json.dumps({"exceptions": [
                 {"key": k, "platforms": ["linux-x86_64"], "why": "selftest", "measured": "selftest"}
                 for k in declared or []]}).encode())
             try:
-                _, _, undeclared, stale, _ = judge(tree, lambda v, p: retail, exc)
+                _, _, undeclared, stale, _ = judge(tree, lambda v, p: retail, exc, branding)
                 refused = bool(undeclared or stale)
             except ParityError:
                 refused = True
@@ -842,11 +946,15 @@ def selftest() -> int:
 def main(argv) -> int:
     if argv[1:] == ["--selftest"]:
         return selftest()
-    if len(argv) != 2:
-        print("usage: stock_parity.py <extracted firefox tree> | --selftest")
+    if len(argv) == 4 and argv[2] == "--branding":
+        branding = Path(argv[3])
+    elif len(argv) == 2:
+        branding = None
+    else:
+        print("usage: stock_parity.py <extracted firefox tree> [--branding <declared dir>] | --selftest")
         return 2
     try:
-        platform, version, undeclared, stale, size = judge(Path(argv[1]))
+        platform, version, undeclared, stale, size = judge(Path(argv[1]), branding=branding)
     except ParityError as exc:
         print(f"NOT JUDGED: {exc}")
         return 3
