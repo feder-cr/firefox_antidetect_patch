@@ -4,6 +4,7 @@
 
 #include "RegistryMessageUtils.h"
 #include "nsChromeRegistryContent.h"
+#include "mozilla/net/StealthBranding.h"
 #include "nsISubstitutingProtocolHandler.h"
 #include "nsString.h"
 #include "nsNetUtil.h"
@@ -58,6 +59,12 @@ void nsChromeRegistryContent::RegisterPackage(const ChromePackage& aPackage) {
   if (aPackage.skinBaseURI.spec.Length()) {
     nsresult rv = NS_NewURI(getter_AddRefs(skin), aPackage.skinBaseURI.spec);
     if (NS_FAILED(rv)) return;
+  }
+
+  // STEALTH: the content process resolves branding URIs itself, so it needs to
+  // know where the branding directory is too. StealthBranding.h.
+  if (content) {
+    mozilla::net::StealthBrandingRegisterPackage(aPackage.package, content);
   }
 
   mozilla::UniquePtr<PackageEntry> entry = mozilla::MakeUnique<PackageEntry>();

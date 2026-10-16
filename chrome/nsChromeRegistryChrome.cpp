@@ -7,6 +7,7 @@
 #include "nsResProtocolHandler.h"
 
 #include "nsChromeRegistryChrome.h"
+#include "mozilla/net/StealthBranding.h"
 
 #if defined(XP_WIN)
 #  include <windows.h>
@@ -480,6 +481,9 @@ void nsChromeRegistryChrome::ManifestContent(ManifestProcessingContext& cx,
   PackageEntry* entry = mPackagesHash.GetOrInsertNew(packageName);
   entry->baseURI = std::move(resolved);
   entry->flags = flags;
+  // STEALTH: where the branding directory is, for the declared-branding
+  // redirect. StealthBranding.h.
+  mozilla::net::StealthBrandingRegisterPackage(packageName, entry->baseURI);
 
   if (mDynamicRegistration) {
     ChromePackage chromePackage;

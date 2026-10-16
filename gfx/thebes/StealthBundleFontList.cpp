@@ -13,6 +13,7 @@
 #include "StealthBundleFontList.h"
 
 #include "gfxFontConstants.h"
+#include "gfxFontUtils.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "prenv.h"
@@ -446,6 +447,18 @@ bool StealthBundleFontList::GetPsname(const nsACString& aFile, uint16_t aIndex,
     }
   }
   return false;
+}
+
+hb_blob_t* StealthBundleFontList::GetFaceNameTable(const nsACString& aFile,
+                                                   uint16_t aIndex) {
+  RefPtr<FileBlob> blob = GetFaceBlob(aFile);
+  if (!blob || !blob->Length()) {
+    return nullptr;
+  }
+  // The table points into the cached bytes, which outlive every caller: the
+  // cache is never cleared (see the comment on GetFaceBlob's borrowers).
+  return gfxFontUtils::GetTableFromFontData(
+      blob->Data(), TRUETYPE_TAG('n', 'a', 'm', 'e'), aIndex);
 }
 
 bool StealthBundleFontList::GetVMetrics(const nsACString& aFile,

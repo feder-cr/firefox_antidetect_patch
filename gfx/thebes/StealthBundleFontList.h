@@ -13,6 +13,8 @@
 #include "nsTHashMap.h"
 #include "nsHashKeys.h"
 
+typedef struct hb_blob_t hb_blob_t;
+
 // One manifest face, stored as trivially-copyable raw values. Both
 // fontlist::Face::InitData and the CSS WeightRange/StretchRange/SlantStyleRange
 // types are move-only (deleted copy), so we cannot cache them; instead we cache
@@ -190,6 +192,14 @@ class StealthBundleFontList final {
   // (kCTFontNameAttribute) rather than trusting the descriptor array order,
   // which Apple does not document as matching the .ttc's face order.
   bool GetPsname(const nsACString& aFile, uint16_t aIndex, nsACString& aOut);
+
+  // The 'name' table of the face at (aFile, aIndex) - a Face's mDescriptor and
+  // mIndex - read from the bundle file itself, .ttc faces included: the same
+  // table DirectWrite or fontconfig would read from an installed copy. The
+  // returned blob borrows the cached file bytes, which this object never frees,
+  // and the caller destroys it (gfxFontUtils::AutoHBBlob). Null if the file or
+  // the table cannot be read. [B317]
+  hb_blob_t* GetFaceNameTable(const nsACString& aFile, uint16_t aIndex);
 
   // Vertical metrics for the face at (aFile, aIndex), i.e. a Face's
   // mDescriptor + mIndex. False if unknown or if the manifest predates v2, in

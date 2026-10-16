@@ -5,6 +5,7 @@
 #include "nsChromeRegistry.h"
 #include "nsChromeRegistryChrome.h"
 #include "nsChromeRegistryContent.h"
+#include "mozilla/net/StealthBranding.h"
 
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
@@ -266,7 +267,24 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI** aResult) {
     return NS_ERROR_FILE_NOT_FOUND;
   }
 
-  return NS_NewURI(aResult, path, nullptr, baseURI);
+  // STEALTH: chrome://branding/content/ reads the set invisible_core declares,
+  // through the same function as resource://usercontext-content/branding/, so
+  // the two ways a page reaches the branding cannot disagree.
+  // StealthBranding.h.
+  nsCOMPtr<nsIURI> resolved;
+  rv = NS_NewURI(getter_AddRefs(resolved), path, nullptr, baseURI);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoCString spec;
+  rv = resolved->GetSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoCString declared(spec);
+  rv = mozilla::net::StealthBrandingRedirect(declared);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (declared == spec) {
+    resolved.forget(aResult);
+    return NS_OK;
+  }
+  return NS_NewURI(aResult, declared);
 }
 
 ////////////////////////////////////////////////////////////////////////
