@@ -829,11 +829,11 @@ bool SandboxProxyHandler::getPropertyDescriptorImpl(
   } else if (xpc::IsHybridXrayWrapper(obj)) {
     // STEALTHFOX [B322]: in a caller's world the prototype is the page's
     // window behind a hybrid Xray, and a bare name (`document`, the page's
-    // `myFunction`) resolves by the same rule as `window.name` does. Walking
-    // it generically would join the two views level by level, so a property
-    // the page put on the window could hide a standard one.
-    Rooted<JSObject*> holder(cx);
-    if (!xpc::HybridXrayGetPropertyDescriptor(cx, obj, id, desc_, &holder)) {
+    // `myFunction`, its top-level `const config`) resolves by the hybrid rule,
+    // in the order the page's realm resolves it. Walking the wrapper
+    // generically would join the two views level by level, so a property the
+    // page put on the window could hide a standard one.
+    if (!xpc::HybridXrayGetBareName(cx, obj, id, desc_)) {
       return false;
     }
   } else {

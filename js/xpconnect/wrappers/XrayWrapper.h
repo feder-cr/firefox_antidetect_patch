@@ -574,14 +574,22 @@ extern template class HybridXrayJS;
 
 bool IsHybridXrayWrapper(JSObject* obj);
 
-// The one name lookup of the caller's world, own or inherited, as the rule
-// above defines it. `holder` is the object the name was found on. Used by the
-// traps above and by the sandbox's prototype proxy, through which the
-// caller's bare names reach the page's window.
+// The one property lookup of the caller's world, own or inherited, as the
+// rule above defines it. `holder` is the object the name was found on.
 bool HybridXrayGetPropertyDescriptor(
     JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
     JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc,
     JS::MutableHandleObject holder);
+
+// A BARE name of the caller's code, which reaches the page's window through
+// the sandbox's prototype proxy. Resolved in the order the page's own realm
+// resolves it, inside the same rule: the standard definition first, then a
+// binding the page declared at its top level with let, const or class (its
+// global lexical environment: not a property of the window, so `window.name`
+// does not find it, in the page or here), then the window's properties.
+bool HybridXrayGetBareName(
+    JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
+    JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc);
 
 /*
  * Slots for Xray expando objects.  See comments in XrayWrapper.cpp for details

@@ -2427,6 +2427,22 @@ static bool NativeLookup(JSContext* cx, HandleObject wrapper, HandleId id,
   return true;
 }
 
+// A name the standard does not define: the page's, own or inherited, as the
+// page's object answers it.
+static bool ContentLookup(JSContext* cx, HandleObject wrapper, HandleId id,
+                          MutableHandle<Maybe<PropertyDescriptor>> desc) {
+  RootedObject target(cx, HybridTarget(wrapper));
+  {
+    JSAutoRealm ar(cx, target);
+    JS_MarkCrossZoneId(cx, id);
+    RootedObject contentHolder(cx);
+    if (!JS_GetPropertyDescriptorById(cx, target, id, desc, &contentHolder)) {
+      return false;
+    }
+  }
+  return JS_WrapPropertyDescriptor(cx, desc);
+}
+
 bool HybridXrayGetPropertyDescriptor(
     JSContext* cx, HandleObject wrapper, HandleId id,
     MutableHandle<Maybe<PropertyDescriptor>> desc, MutableHandleObject holder) {
@@ -2437,24 +2453,52 @@ bool HybridXrayGetPropertyDescriptor(
   if (desc.isSome()) {
     return true;
   }
-
-  // A name the standard does not define: the page's, own or inherited.
-  RootedObject target(cx, HybridTarget(wrapper));
-  {
-    JSAutoRealm ar(cx, target);
-    JS_MarkCrossZoneId(cx, id);
-    RootedObject contentHolder(cx);
-    if (!JS_GetPropertyDescriptorById(cx, target, id, desc, &contentHolder)) {
-      return false;
-    }
-  }
-  if (desc.isNothing()) {
-    return true;
+  if (!ContentLookup(cx, wrapper, id, desc)) {
+    return false;
   }
   // As the Xrays do, the wrapper stands for wherever on the page's chain the
   // name was found.
-  holder.set(wrapper);
-  return JS_WrapPropertyDescriptor(cx, desc);
+  holder.set(desc.isSome() ? wrapper.get() : nullptr);
+  return true;
+}
+
+bool HybridXrayGetBareName(JSContext* cx, HandleObject wrapper, HandleId id,
+                           MutableHandle<Maybe<PropertyDescriptor>> desc) {
+  MOZ_ASSERT(IsHybridXrayWrapper(wrapper));
+  RootedObject holder(cx);
+  if (!NativeLookup(cx, wrapper, id, desc, &holder)) {
+    return false;
+  }
+  if (desc.isSome()) {
+    return true;
+  }
+
+  // The page's top-level let, const and class: bindings of the global lexical
+  // environment, which the page's own bare names consult before the window's
+  // properties. Measured on the first candidate: `class Point` at the top of a
+  // page script, `pt instanceof Point` from an evaluate, "Point is not
+  // defined", where the page's realm finds it.
+  RootedObject global(cx, js::UncheckedUnwrap(wrapper,
+                                              /* stopAtWindowProxy = */ false));
+  if (JS_IsGlobalObject(global)) {
+    {
+      JSAutoRealm ar(cx, global);
+      JS_MarkCrossZoneId(cx, id);
+      RootedObject lexical(cx, JS_GlobalLexicalEnvironment(global));
+      if (!JS_GetOwnPropertyDescriptorById(cx, lexical, id, desc)) {
+        return false;
+      }
+      // A binding still in its temporal dead zone has no value to hand out:
+      // the page's own read would throw, and so does a missing name.
+      if (desc.isSome() && (!desc->hasValue() || desc->value().isMagic())) {
+        desc.reset();
+      }
+    }
+    if (desc.isSome()) {
+      return JS_WrapPropertyDescriptor(cx, desc);
+    }
+  }
+  return ContentLookup(cx, wrapper, id, desc);
 }
 
 // [[Get]] of a name the standard does not define, on the page's object. The
