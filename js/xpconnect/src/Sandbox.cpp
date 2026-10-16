@@ -32,6 +32,7 @@
 #include "xpcprivate.h"
 #include "xpc_make_class.h"
 #include "XPCWrapper.h"
+#include "XrayWrapper.h"
 #include "Crypto.h"
 #include "mozilla/Result.h"
 #include "mozilla/dom/AbortControllerBinding.h"
@@ -825,6 +826,16 @@ bool SandboxProxyHandler::getPropertyDescriptorImpl(
     if (!JS_GetOwnPropertyDescriptorById(cx, obj, id, desc_)) {
       return false;
     }
+  } else if (xpc::IsHybridXrayWrapper(obj)) {
+    // STEALTHFOX [B322]: in a caller's world the prototype is the page's
+    // window behind a hybrid Xray, and a bare name (`document`, the page's
+    // `myFunction`) resolves by the same rule as `window.name` does. Walking
+    // it generically would join the two views level by level, so a property
+    // the page put on the window could hide a standard one.
+    Rooted<JSObject*> holder(cx);
+    if (!xpc::HybridXrayGetPropertyDescriptor(cx, obj, id, desc_, &holder)) {
+      return false;
+    }
   } else {
     Rooted<JSObject*> holder(cx);
     if (!JS_GetPropertyDescriptorById(cx, obj, id, desc_, &holder)) {
@@ -1312,6 +1323,19 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
 
   bool isSystemPrincipal = principal->IsSystemPrincipal();
 
+  // STEALTHFOX [B322]: a caller's world has the page's own principal, and
+  // `hybridXrays` replaces `wantXrays` instead of adding to it: `wantXrays`
+  // would impose Xrays on the page reading the caller's objects as well.
+  if (options.hybridXrays &&
+      (isSystemPrincipal ||
+       BasePrincipal::Cast(principal)->Is<ExpandedPrincipal>() ||
+       options.wantXrays)) {
+    JS_ReportErrorASCII(cx,
+                        "hybridXrays needs a content principal and "
+                        "wantXrays: false");
+    return NS_ERROR_INVALID_ARG;
+  }
+
   if (isSystemPrincipal) {
     options.forceSecureContext = true;
   }
@@ -1418,6 +1442,7 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
     MOZ_RELEASE_ASSERT(priv->isUAWidgetCompartment == options.isUAWidgetScope);
     MOZ_RELEASE_ASSERT(priv->hasExclusiveExpandos == hasExclusiveExpandos);
     MOZ_RELEASE_ASSERT(priv->wantXrays == wantXrays);
+    MOZ_RELEASE_ASSERT(priv->hybridXrays == options.hybridXrays);
   } else {
     CompartmentPrivate* priv = CompartmentPrivate::Get(sandbox);
     priv->allowWaivers = options.allowWaivers;
@@ -1425,6 +1450,7 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
     priv->isUAWidgetCompartment = options.isUAWidgetScope;
     priv->hasExclusiveExpandos = hasExclusiveExpandos;
     priv->wantXrays = wantXrays;
+    priv->hybridXrays = options.hybridXrays;
   }
 
   {
@@ -2022,6 +2048,7 @@ bool SandboxOptions::Parse() {
   /* All option names must be ASCII-only. */
   bool ok = ParseObject("sandboxPrototype", &proto) &&
             ParseBoolean("wantXrays", &wantXrays) &&
+            ParseBoolean("hybridXrays", &hybridXrays) &&
             ParseBoolean("allowWaivers", &allowWaivers) &&
             ParseBoolean("wantComponents", &wantComponents) &&
             ParseBoolean("wantExportHelpers", &wantExportHelpers) &&

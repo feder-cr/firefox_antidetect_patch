@@ -386,6 +386,13 @@ class XrayWrapper : public Base {
       : Base(flags | WrapperFactory::IS_XRAY_WRAPPER_FLAG,
              /* aHasPrototype = */ true) {};
 
+ protected:
+  // For HybridXrayWrapper, which walks its prototypes itself [B322].
+  constexpr XrayWrapper(unsigned flags, bool aHasPrototype)
+      : Base(flags | WrapperFactory::IS_XRAY_WRAPPER_FLAG, aHasPrototype) {};
+
+ public:
+
   /* Standard internal methods. */
   virtual bool getOwnPropertyDescriptor(
       JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<jsid> id,
@@ -459,6 +466,122 @@ class XrayWrapper : public Base {
 extern template class PermissiveXrayDOM;
 extern template class PermissiveXrayJS;
 extern template class PermissiveXrayOpaque;
+
+// STEALTHFOX [B322]: HYBRID XRAYS, the view the CALLER'S world has of the page.
+//
+// The caller's world is a sandbox with the page's principal in which
+// `page.evaluate` and the other ways of running the caller's code run. Its
+// name lookups follow one rule: A NAME THE STANDARD DEFINES FOR AN OBJECT
+// RESOLVES TO THE STANDARD DEFINITION, EVERY OTHER NAME AS THE PAGE DEFINED
+// IT. `document.querySelector` is the native method even when the page has
+// replaced `Document.prototype.querySelector` with a Proxy that counts its
+// callers; `window.__NEXT_DATA__`, `el.__vue__`, the methods of a custom
+// element's class and a page function called by its bare name are the
+// page's, because the standard has nothing by those names.
+//
+// Neither existing view does both. A plain Xray (the utility world's) hides
+// what the page added, so `window.__APP_STATE__` reads undefined; the
+// transparent view (the page's own realm, where this code used to run) walks
+// through every replacement the page made. A JS membrane cannot be the
+// fallback either: the invariants of scripted proxies force the raw value on
+// non-configurable properties, and WebIDL refuses a scripted Proxy as `this`.
+// Here, in the wrapper itself, neither constraint applies.
+//
+// What that means trap by trap:
+//  - has/get/set: first the STANDARD view, i.e. the Xray resolution of the
+//    object and of its Xray prototypes (`NativeLookup`); only a name it does
+//    not know reaches the page's object (`set` reaches the page for every
+//    name that is not a standard accessor, so `window.x = 1` is seen by it).
+//  - getOwnPropertyDescriptor and ownPropertyKeys: the standard own view
+//    joined with the page's own properties, so `Object.keys(el)` lists the
+//    expandos a framework put on the node.
+//  - defineProperty, delete and the prototype and extensibility traps: the
+//    page's object, as the page sees it, so `instanceof` with the page's
+//    classes holds.
+//  - call, construct, class name: the Xray's.
+// The explicit page view stays `.wrappedJSObject`, as for every Xray.
+//
+// The other direction is not an Xray at all: the page sees the caller's
+// objects through a transparent wrapper (WrapperFactory::Rewrap). The two
+// share a principal, so nothing is granted that the caller could not already
+// take with a waiver, and only Juggler can create such a compartment.
+template <typename Traits>
+class HybridXrayWrapper
+    : public XrayWrapper<js::CrossCompartmentWrapper, Traits> {
+  using Base = XrayWrapper<js::CrossCompartmentWrapper, Traits>;
+
+ public:
+  constexpr explicit HybridXrayWrapper(unsigned flags)
+      : Base(flags, /* aHasPrototype = */ false) {};
+
+  virtual bool getOwnPropertyDescriptor(
+      JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<jsid> id,
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc)
+      const override;
+  virtual bool defineProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                              JS::Handle<jsid> id,
+                              JS::Handle<JS::PropertyDescriptor> desc,
+                              JS::ObjectOpResult& result) const override;
+  virtual bool ownPropertyKeys(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                               JS::MutableHandleIdVector props) const override;
+  virtual bool delete_(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                       JS::Handle<jsid> id,
+                       JS::ObjectOpResult& result) const override;
+  virtual bool enumerate(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                         JS::MutableHandleIdVector props) const override;
+  virtual bool getPrototype(JSContext* cx, JS::HandleObject wrapper,
+                            JS::MutableHandleObject protop) const override;
+  virtual bool setPrototype(JSContext* cx, JS::HandleObject wrapper,
+                            JS::HandleObject proto,
+                            JS::ObjectOpResult& result) const override;
+  virtual bool setImmutablePrototype(JSContext* cx, JS::HandleObject wrapper,
+                                     bool* succeeded) const override;
+  virtual bool preventExtensions(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                                 JS::ObjectOpResult& result) const override;
+  virtual bool isExtensible(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                            bool* extensible) const override;
+  virtual bool has(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                   JS::Handle<jsid> id, bool* bp) const override;
+  virtual bool get(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                   JS::HandleValue receiver, JS::Handle<jsid> id,
+                   JS::MutableHandle<JS::Value> vp) const override;
+  virtual bool set(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                   JS::Handle<jsid> id, JS::Handle<JS::Value> v,
+                   JS::Handle<JS::Value> receiver,
+                   JS::ObjectOpResult& result) const override;
+  virtual bool hasOwn(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                      JS::Handle<jsid> id, bool* bp) const override;
+  virtual bool getOwnEnumerablePropertyKeys(
+      JSContext* cx, JS::Handle<JSObject*> wrapper,
+      JS::MutableHandleIdVector props) const override;
+
+  // The standard view only: the Xray's own resolution of this one object,
+  // and its Xray prototype. What NativeLookup walks.
+  bool nativeOwnPropertyDescriptor(
+      JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<jsid> id,
+      JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc) const;
+  bool nativePrototype(JSContext* cx, JS::HandleObject wrapper,
+                       JS::MutableHandleObject protop) const;
+
+  static const HybridXrayWrapper singleton;
+};
+
+#define HybridXrayDOM xpc::HybridXrayWrapper<xpc::DOMXrayTraits>
+#define HybridXrayJS xpc::HybridXrayWrapper<xpc::JSXrayTraits>
+
+extern template class HybridXrayDOM;
+extern template class HybridXrayJS;
+
+bool IsHybridXrayWrapper(JSObject* obj);
+
+// The one name lookup of the caller's world, own or inherited, as the rule
+// above defines it. `holder` is the object the name was found on. Used by the
+// traps above and by the sandbox's prototype proxy, through which the
+// caller's bare names reach the page's window.
+bool HybridXrayGetPropertyDescriptor(
+    JSContext* cx, JS::HandleObject wrapper, JS::HandleId id,
+    JS::MutableHandle<mozilla::Maybe<JS::PropertyDescriptor>> desc,
+    JS::MutableHandleObject holder);
 
 /*
  * Slots for Xray expando objects.  See comments in XrayWrapper.cpp for details
