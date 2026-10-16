@@ -663,6 +663,23 @@ def judge(tree: Path, retail=retail_files, exceptions: Path = EXCEPTIONS,
     return platform, version, undeclared, stale, len(stock)
 
 
+def judge_branding(directory: Path, version: str, platform: str, retail=retail_files) -> dict:
+    """{key: description} of every difference a page could read between the
+    retail `version` for `platform` and the same retail serving `directory` as
+    its branding, the way an engine with the redirect serves it.
+
+    The branding a page reads belongs to invisible_core, so a release of the
+    core can change it without any build of the engine: this is the judgement
+    the core's CI runs on its own declared set, with this file of the engine
+    the seal pins, so that the comparison and observable() are one code."""
+    files = retail(version, platform)
+    reg = Registry(files, platform)
+    if BRANDING_PACKAGE not in reg.packages:
+        raise ParityError(f"the retail {version} ({platform}) registers no {BRANDING_PACKAGE} package")
+    served = files.serving(reg.resolve(reg.packages[BRANDING_PACKAGE][0]), directory)
+    return differences(surface(served, platform), surface(files, platform))
+
+
 def selftest() -> int:
     """The gate's known-bad inputs and the near-misses that must not fire, on
     trees built here: no archive, no browser, no network. The retail is a tree
@@ -897,6 +914,13 @@ def selftest() -> int:
          mutate(), True, None, (False, RETAIL_BRAND)),
         ("an engine library without the pref: its own brand is what a page reads",
          mutate(**OWN_BRAND), True, None, (False, None)),
+        # The same judgement on the declared set alone, as the core's CI runs it
+        # (judge_branding): the sixth field marks it.
+        ("the core's declared set alone, the retail's", None, False, None, (True, RETAIL_BRAND), "SET"),
+        ("the core's declared set alone, a stylesheet changed", None, True, None,
+         (True, {**RETAIL_BRAND, "aboutDialog.css": "#a { }\n"}), "SET"),
+        ("the core's declared set alone, a file missing", None, True, None,
+         (True, {k: v for k, v in RETAIL_BRAND.items() if k != "about.png"}), "SET"),
     ]
     bad = 0
     work = Path(tempfile.mkdtemp(prefix="stock-parity-selftest-"))
@@ -905,11 +929,12 @@ def selftest() -> int:
         retail = Files.from_directory(work / "retail")
         for i, (name, ours, must_refuse, declared, *brand) in enumerate(cases):
             redirects, brand_files = brand[0] if brand else (False, None)
+            set_only = brand[1:] == ["SET"]
             tree = work / f"ours{i}"
             if ours == "CORRUPT_OMNI":
                 write(tree, base, omni=False)
                 (tree / "omni.ja").write_bytes(b"PK not really a zip")
-            else:
+            elif not set_only:
                 write(tree, ours, omni=False, redirects=redirects)
             branding = None
             if brand_files is not None:
@@ -926,8 +951,11 @@ def selftest() -> int:
                 {"key": k, "platforms": ["linux-x86_64"], "why": "selftest", "measured": "selftest"}
                 for k in declared or []]}).encode())
             try:
-                _, _, undeclared, stale, _ = judge(tree, lambda v, p: retail, exc, branding)
-                refused = bool(undeclared or stale)
+                if set_only:
+                    refused = bool(judge_branding(branding, "151.0", "linux-x86_64", lambda v, p: retail))
+                else:
+                    _, _, undeclared, stale, _ = judge(tree, lambda v, p: retail, exc, branding)
+                    refused = bool(undeclared or stale)
             except ParityError:
                 refused = True
             ok = refused == must_refuse
@@ -946,12 +974,28 @@ def selftest() -> int:
 def main(argv) -> int:
     if argv[1:] == ["--selftest"]:
         return selftest()
+    if len(argv) >= 5 and argv[1] == "--branding-against-retail":
+        directory, version, platforms = Path(argv[2]), argv[3], argv[4:]
+        try:
+            found = {p: judge_branding(directory, version, p) for p in platforms}
+        except ParityError as exc:
+            print(f"NOT JUDGED: {exc}")
+            return 3
+        except Exception as exc:  # a defect of the gate is not a verdict on the set
+            print(f"NOT JUDGED: the gate failed: {type(exc).__name__}: {exc}")
+            return 3
+        for platform, diff in found.items():
+            print(f"{platform} {version}: {len(diff)} differences a page reads in {directory}")
+            for key, what in diff.items():
+                print(f"  {what:40s} {key}")
+        return 1 if any(found.values()) else 0
     if len(argv) == 4 and argv[2] == "--branding":
         branding = Path(argv[3])
     elif len(argv) == 2:
         branding = None
     else:
-        print("usage: stock_parity.py <extracted firefox tree> [--branding <declared dir>] | --selftest")
+        print("usage: stock_parity.py <extracted firefox tree> [--branding <declared dir>] | "
+              "--branding-against-retail <dir> <version> <platform>... | --selftest")
         return 2
     try:
         platform, version, undeclared, stale, size = judge(Path(argv[1]), branding=branding)
