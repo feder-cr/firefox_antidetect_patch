@@ -522,11 +522,13 @@ class NetworkRequest {
       isIntercepted,
       requestId: this.requestId,
       redirectedFrom: this.redirectedFromId,
-      // Stealthfox 2026-08-24 stopped cloning and base64-encoding the body of
-      // every POST. It is read again only while interception is on for the
-      // page or its context: a route handler deciding whether to let a
-      // request through needs it, and other sessions keep the saving.
-      postData: this._shouldIntercept() ? readRequestPostData(this.httpChannel) : undefined,
+      // The body of every request that has one, as upstream sends it. From
+      // 2026-08-24 (B170) it was not read, and from 2026-10-03 only while
+      // interception was on, to save a copy of each upload: `request.post_data`
+      // then answered None for every POST of a page with no route, as if the
+      // form had been empty, and nothing said so (B303 E15). The reader leaves
+      // the upload intact and skips bodies over 10 MB.
+      postData: readRequestPostData(this.httpChannel),
       headers: requestHeaders(this.httpChannel),
       method: this.httpChannel.requestMethod,
       navigationId: this.navigationId,
