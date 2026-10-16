@@ -1036,7 +1036,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
    */
   void RecordFaceNamesFromTable(mozilla::fontlist::Family* aFamily,
                                 uint32_t aFaceIndex, const nsACString& aKey,
-                                const nsACString& aFamilyName,
+                                const nsCString& aFamilyName,
                                 const char* aNameTable, uint32_t aLength)
       MOZ_REQUIRES(mLock);
 

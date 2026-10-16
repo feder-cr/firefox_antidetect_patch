@@ -1167,7 +1167,7 @@ void gfxPlatformFontList::MaybeAddToLocalNameTable(
 
 void gfxPlatformFontList::RecordFaceNamesFromTable(
     fontlist::Family* aFamily, uint32_t aFaceIndex, const nsACString& aKey,
-    const nsACString& aFamilyName, const char* aNameTable, uint32_t aLength) {
+    const nsCString& aFamilyName, const char* aNameTable, uint32_t aLength) {
   // Moved here unchanged from gfxDWriteFontList::ReadFaceNamesForFamily, so
   // that the bundle's faces get exactly what DirectWrite gives an installed
   // font, and nothing that could drift from it.
