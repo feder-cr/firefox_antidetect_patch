@@ -1199,16 +1199,14 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
                      sProfileDir, u"\\chrome\\*"_ns);
 
     // STEALTH: the branding a page reads is declared by invisible_core, which
-    // keeps the files wherever it is installed. The content processes load
-    // them, so they get READ access to exactly that directory - the same one
-    // the declaration gate accepted, through the same function, and only when
-    // it holds nothing but regular files.
+    // keeps the archive wherever it is installed. The content processes load
+    // from it, so they get READ access to exactly that file - the same one the
+    // declaration gate accepted, through the same function.
     // netwerk/protocol/res/StealthBranding.h.
     if (nsCOMPtr<nsIFile> branding =
-            mozilla::net::StealthBrandingDeclaredDir()) {
+            mozilla::net::StealthBrandingDeclaredArchive()) {
       nsAutoString brandingRule;
       if (NS_SUCCEEDED(branding->GetPath(brandingRule))) {
-        brandingRule.Append(u"\\*"_ns);
         result = config->AllowFileAccess(
             sandbox::FileSemantics::kAllowReadonly, brandingRule.get());
         if (sandbox::SBOX_ALL_OK != result) {

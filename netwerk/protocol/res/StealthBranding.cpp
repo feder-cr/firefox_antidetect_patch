@@ -8,11 +8,12 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StaticPrefs_zoom.h"
-#include "nsIDirectoryEnumerator.h"
+#include "mozilla/UniquePtr.h"
 #include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsString.h"
+#include "nsZipArchive.h"
 
 namespace mozilla::net {
 
@@ -26,42 +27,56 @@ StaticAutoPtr<nsCString> sBrandingDir;  // ends with '/'
 
 }  // namespace
 
-bool StealthBrandingIsDeclaredDir(const nsACString& aSpec) {
+bool StealthBrandingIsDeclaredArchive(const nsACString& aSpec) {
   return StringBeginsWith(aSpec, "file:///"_ns) &&
-         StringEndsWith(aSpec, "/"_ns) && aSpec.FindChar('\\') == kNotFound;
+         !StringEndsWith(aSpec, "/"_ns) && aSpec.FindChar('\\') == kNotFound &&
+         aSpec.FindChar('!') == kNotFound;
 }
 
-already_AddRefed<nsIFile> StealthBrandingDeclaredDir() {
+already_AddRefed<nsIFile> StealthBrandingDeclaredArchive() {
   if (!gfx::StealthEngineActive()) {
     return nullptr;
   }
   nsAutoCString declared;
   {
-    auto lock = StaticPrefs::zoom_stealth_branding_dir();
+    auto lock = StaticPrefs::zoom_stealth_branding_archive();
     declared = *lock;
   }
-  if (!StealthBrandingIsDeclaredDir(declared)) {
+  if (!StealthBrandingIsDeclaredArchive(declared)) {
     return nullptr;
   }
-  nsCOMPtr<nsIFile> dir;
-  bool isDir = false;
-  if (NS_FAILED(NS_GetFileFromURLSpec(declared, getter_AddRefs(dir))) ||
-      NS_FAILED(dir->IsDirectory(&isDir)) || !isDir) {
+  nsCOMPtr<nsIFile> archive;
+  bool isFile = false, isLink = false;
+  if (NS_FAILED(NS_GetFileFromURLSpec(declared, getter_AddRefs(archive))) ||
+      NS_FAILED(archive->IsFile(&isFile)) || !isFile ||
+      NS_FAILED(archive->IsSymlink(&isLink)) || isLink) {
     return nullptr;
   }
-  nsCOMPtr<nsIDirectoryEnumerator> entries;
-  if (NS_FAILED(dir->GetDirectoryEntries(getter_AddRefs(entries)))) {
+  RefPtr<nsZipArchive> zip = nsZipArchive::OpenArchive(archive);
+  if (!zip) {
     return nullptr;
   }
-  nsCOMPtr<nsIFile> entry;
-  while (NS_SUCCEEDED(entries->GetNextFile(getter_AddRefs(entry))) && entry) {
-    bool isFile = false, isLink = false;
-    if (NS_FAILED(entry->IsFile(&isFile)) || !isFile ||
-        NS_FAILED(entry->IsSymlink(&isLink)) || isLink) {
+  nsZipFind* rawFind = nullptr;
+  if (NS_FAILED(zip->FindInit(nullptr, &rawFind))) {
+    return nullptr;
+  }
+  UniquePtr<nsZipFind> find(rawFind);
+  const char* name = nullptr;
+  uint16_t nameLength = 0;
+  uint32_t entries = 0;
+  while (NS_SUCCEEDED(find->FindNext(&name, &nameLength))) {
+    // Only files at the root: a directory entry or a nested path is something
+    // the declaration does not describe, and a page could load under it.
+    if (!nameLength || nsDependentCSubstring(name, nameLength).FindChar('/') !=
+                           kNotFound) {
       return nullptr;
     }
+    ++entries;
   }
-  return dir.forget();
+  if (!entries) {
+    return nullptr;
+  }
+  return archive.forget();
 }
 
 void StealthBrandingRegisterPackage(const nsACString& aPackage, nsIURI* aBase) {
@@ -97,10 +112,10 @@ nsresult StealthBrandingRedirect(nsACString& aResolvedSpec) {
 
   nsAutoCString declared;
   {
-    auto lock = StaticPrefs::zoom_stealth_branding_dir();
+    auto lock = StaticPrefs::zoom_stealth_branding_archive();
     declared = *lock;
   }
-  if (!StealthBrandingIsDeclaredDir(declared)) {
+  if (!StealthBrandingIsDeclaredArchive(declared)) {
     // In the parent this refuses the launch. In a content process the gate does
     // not run, and the load fails: serving the build's own brand here would be
     // exactly the compiled fallback engine rule 7 forbids.
@@ -108,22 +123,29 @@ nsresult StealthBrandingRedirect(nsACString& aResolvedSpec) {
     return NS_ERROR_FILE_NOT_FOUND;
   }
 
-  // The rest of the path becomes a path on disk, under a directory a web page
-  // can reach. Inside omni.ja a "../" could only wander through the archive;
-  // under a file: base it could leave the declared directory and read the
-  // machine. The URL parsers above coalesce dot segments already, so none
-  // should arrive here - which is exactly why a stray one is refused rather
-  // than trusted: this is the boundary, and it does not rely on its callers.
+  // The rest of the path names an entry of the declared archive. Inside a jar
+  // a "../" can only wander through the archive, never out of it, but the URL
+  // parsers above coalesce dot segments already, so none should arrive here -
+  // and a stray one is refused rather than interpreted: this is the boundary,
+  // and it does not rely on its callers.
   const nsDependentCSubstring rest(aResolvedSpec, brandingLength);
   nsAutoCString lowered(rest);
   ToLowerCase(lowered);
   if (lowered.Find("..") != kNotFound || lowered.Find("%2e") != kNotFound ||
       lowered.Find("%5c") != kNotFound || lowered.Find("%2f") != kNotFound ||
-      lowered.FindChar('\\') != kNotFound) {
+      lowered.FindChar('\\') != kNotFound || lowered.FindChar('/') != kNotFound) {
     return NS_ERROR_FILE_NOT_FOUND;
   }
 
-  aResolvedSpec.Replace(0, brandingLength, declared);
+  // Served as jar:, the channel class the retail serves its own branding with
+  // out of omni.ja. A file: channel is a different class: it keeps the type a
+  // loader suggests before opening (the CSS loader's text/css, the script
+  // loader's), where a jar channel replaces it with the entry's own type on
+  // open - so a page loading a PNG as a script or a stylesheet saw it load on
+  // a file: branding and fail on the retail (measured on 636cea1: 62 loads,
+  // every file, both ways in).
+  aResolvedSpec.Replace(0, brandingLength,
+                        "jar:"_ns + declared + "!/"_ns);
   return NS_OK;
 }
 

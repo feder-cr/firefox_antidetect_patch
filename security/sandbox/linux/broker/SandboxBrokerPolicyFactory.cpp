@@ -721,14 +721,15 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
                      rdonly);
 
   // STEALTH: the branding a page reads is declared by invisible_core, which
-  // keeps the files wherever it is installed. The content processes load them,
-  // so they get READ access to exactly that directory - the same one the
-  // declaration gate accepted, through the same function, and only when it
-  // holds nothing but regular files. netwerk/protocol/res/StealthBranding.h.
-  if (nsCOMPtr<nsIFile> branding = mozilla::net::StealthBrandingDeclaredDir()) {
+  // keeps the archive wherever it is installed. The content processes load
+  // from it, so they get READ access to exactly that file - the same one the
+  // declaration gate accepted, through the same function.
+  // netwerk/protocol/res/StealthBranding.h.
+  if (nsCOMPtr<nsIFile> branding =
+          mozilla::net::StealthBrandingDeclaredArchive()) {
     nsAutoCString brandingPath;
     if (NS_SUCCEEDED(branding->GetNativePath(brandingPath))) {
-      policy->AddTree(rdonly, brandingPath.get());
+      policy->AddPath(rdonly, brandingPath.get());
     }
   }
 
