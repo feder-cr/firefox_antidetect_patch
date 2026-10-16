@@ -9,8 +9,25 @@ captcha vendor found the juggler (invisible_playwright #336). And it loads, with
 `contentaccessible` - its content, skin and locale alike, because the flag
 belongs to the package (nsChromeRegistry::AllowContentToAccess reads it from the
 host) - and of every resource:// host so flagged, and reads what they render.
-So the surface is every registration a manifest makes, and the bytes of every
-file a page can load. The owner's rule (2026-10-14): "la nostra versione deve
+So the surface is every registration a manifest makes, and what a page reads
+of every file it can load.
+
+WHAT A PAGE READS OF A FILE is decided by its type, and it is less than its
+bytes (measured 2026-10-16 on the retail 151 and on firefox-47, Windows, a page
+in standards and in quirks mode loading every differing URL through <script>,
+<link rel=stylesheet>, fetch in both modes, <img> with canvas and
+createImageBitmap, <iframe>, <object>, Worker and <link rel=preload>, against
+an absent file of the same package as the control). See observable().
+  - An image loads and gives its intrinsic size; its pixels do not come back,
+    because the canvas is tainted (getImageData throws SecurityError on both).
+    So a PNG compares by its size, an ICO by the size of each of its images,
+    an SVG by what of its root decides its size.
+  - An HTML, an XHTML and a .properties file answer every channel exactly as a
+    file that does not exist, so they are not on the surface at all: a page
+    cannot tell ours from the retail's, or either from nothing. That covers
+    buildconfig.html, which spells out our mozconfig.
+  - Anything else - a stylesheet, whose rules apply to the page, a script,
+    every type nobody measured - compares by its bytes. The owner's rule (2026-10-14): "la nostra versione deve
 essere uguale identica al firefox stock, non e' accettabile che ci siano
 differenze se sono rilevabili". A difference a page cannot observe is declared
 in stock_parity_exceptions.json with the measurement that says so, and a
@@ -361,10 +378,87 @@ class Registry:
         raise ParityError(f"{target}: not a resource:// or chrome:// URL")
 
 
+#: Types a page cannot load in any way, measured: every channel answers as for
+#: an absent file (the module docstring). Only what was measured is here.
+UNLOADABLE = (".html", ".xhtml", ".properties")
+
+
+def _png_size(data: bytes, where: str) -> str:
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise ParityError(f"{where}: not a PNG, so its size cannot be read")
+    w, h = struct.unpack(">II", data[16:24])
+    # An eXIf chunk can rotate the image, which swaps its natural size.
+    exif, i = b"", 8
+    while i + 8 <= len(data):
+        n, = struct.unpack(">I", data[i:i + 4])
+        if data[i + 4:i + 8] == b"eXIf":
+            exif = data[i + 8:i + 8 + n]
+        i += 12 + n
+    return f"{w}x{h}" + (f" exif {hashlib.sha256(exif).hexdigest()}" if exif else "")
+
+
+def _ico_sizes(data: bytes, where: str) -> str:
+    if len(data) < 6 or data[:2] != b"\0\0":
+        raise ParityError(f"{where}: not an ICO, so its sizes cannot be read")
+    kind, count = struct.unpack("<HH", data[2:6])
+    sizes = []
+    for k in range(count):
+        entry = data[6 + 16 * k:22 + 16 * k]
+        if len(entry) < 16:
+            raise ParityError(f"{where}: the ICO directory is cut short")
+        bpp, size, offset = struct.unpack("<HII", entry[6:16])
+        image = data[offset:offset + size]
+        # The size an image REALLY has is in its own header: the directory's
+        # bytes are a hint the decoder does not trust.
+        if image[:8] == b"\x89PNG\r\n\x1a\n":
+            sizes.append(f"png {_png_size(image, where)}")
+        elif len(image) >= 16:
+            w, h = struct.unpack("<ii", image[4:12])
+            sizes.append(f"bmp {w}x{h // 2}/{bpp}")
+        else:
+            raise ParityError(f"{where}: an ICO image lies outside the file")
+    return f"ico {kind} " + " ".join(sizes)
+
+
+def _svg_box(data: bytes, where: str) -> str:
+    """What of an SVG decides the size an <img> gives it: the root's width,
+    height, viewBox, preserveAspectRatio and style, and every <style> in the
+    document, since a rule can size the root. The drawing itself is pixels."""
+    import re
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ParityError(f"{where}: an SVG that is not UTF-8")
+    root = re.search(r"<svg\b[^>]*>", text)
+    if not root:
+        raise ParityError(f"{where}: no <svg> root")
+    attrs = dict((k, v1 or v2) for k, v1, v2 in
+                 re.findall(r"([\w:.-]+)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", root.group(0)))
+    box = {k: attrs[k] for k in ("width", "height", "viewBox", "preserveAspectRatio", "style")
+           if k in attrs}
+    styles = re.findall(r"<style\b[^>]*>.*?</style>", text, re.S)
+    return json.dumps({"root": box, "style": styles}, sort_keys=True)
+
+
+def observable(path: str, data: bytes) -> str:
+    """What a page reads of the file at `path` (the module docstring)."""
+    ext = path[path.rfind("."):].lower() if "." in path.rsplit("/", 1)[-1] else ""
+    # Gecko picks the decoder from the bytes, not the name (imgLoader sniffs
+    # the content): the retail ships favicons named .ico that are PNGs.
+    if ext in (".png", ".ico"):
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image " + _png_size(data, path)
+        return "image " + _ico_sizes(data, path)
+    if ext == ".svg":
+        return "image " + _svg_box(data, path)
+    return "bytes " + hashlib.sha256(data).hexdigest()
+
+
 def surface(files: "Files", platform: str) -> dict:
     """{key: value} for everything a page can observe of a tree: one key per
     registration (value: its content flags, or its target for an override),
-    and one per readable URL (value: the SHA-256 of what it answers)."""
+    and one per URL a page can load (value: what it reads there,
+    observable())."""
     reg = Registry(files, platform)
     out = {}
     for name, (_, flags) in reg.packages.items():
@@ -377,7 +471,7 @@ def surface(files: "Files", platform: str) -> dict:
         out[f"registers override {frm}"] = to
 
     def digest(path):
-        return hashlib.sha256(reg.files.read(path)).hexdigest() if reg.files.has(path) else "missing"
+        return observable(path, reg.files.read(path)) if reg.files.has(path) else "missing"
 
     # Readable: every directory of a contentaccessible package - content, skin
     # and locale, since the flag is the package's (AllowContentToAccess) - and
@@ -395,13 +489,15 @@ def surface(files: "Files", platform: str) -> dict:
     for prefix, directory, *provider in readable:
         suffix = f" [{provider[0]}]" if provider else ""
         for path in reg.files.under(directory):
+            if path.lower().endswith(UNLOADABLE):
+                continue
             out[f"file {prefix}{path[len(directory):]}{suffix}"] = digest(path)
     # An override changes what a chrome URL answers: a page loading it from a
     # readable package reads the target, not the file the package holds.
     for frm, to in reg.overrides.items():
         host = frm.split("://", 1)[1].split("/", 1)[0] if frm.startswith("chrome://") else None
         package = reg.packages.get(host)
-        if package and "contentaccessible" in package[1]:
+        if package and "contentaccessible" in package[1] and not frm.lower().endswith(UNLOADABLE):
             keys = [k for k in out if k == f"file {frm}" or k.startswith(f"file {frm} [")]
             for key in keys or [f"file {frm}"]:
                 out[key] = digest(reg.resolve(to))
@@ -475,7 +571,8 @@ def differences(ours: dict, stock: dict) -> dict:
             out[key] = "only in the retail"
         elif ours[key] != stock[key]:
             out[key] = (f"retail [{stock[key]}], this build [{ours[key]}]"
-                        if key.startswith("registers ") else "content differs")
+                        if key.startswith("registers ") or not stock[key].startswith("bytes ")
+                        else "content differs")
     return out
 
 
@@ -520,6 +617,30 @@ def selftest() -> int:
     import zipfile
 
     elf = b"\x7fELF" + bytes(14) + struct.pack("<H", 0x3E) + bytes(44)
+
+    def png(w, h, body=b"A", exif=None):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + b"CRC!"
+        out = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">II", w, h) + b"\x08\x06\0\0\0")
+        if exif is not None:
+            out += chunk(b"eXIf", exif)
+        return out + chunk(b"IDAT", body) + chunk(b"IEND", b"")
+
+    def ico(*images):
+        head = struct.pack("<HHH", 0, 1, len(images))
+        offset, dirs, blobs = 6 + 16 * len(images), b"", b""
+        for image in images:
+            dirs += struct.pack("<BBBBHHII", 0, 0, 0, 0, 1, 32, len(image), offset + len(blobs))
+            blobs += image
+        return head + dirs + blobs
+
+    # Placeholders the trees are written with, so that a case names an image.
+    IMAGES = {"PNG16x16": png(16, 16), "PNG16x16-redrawn": png(16, 16, b"B"),
+              "PNG16x17": png(16, 17), "PNG16x16-rotated": png(16, 16, exif=b"MM\0*"),
+              "ICO16+32": ico(png(16, 16), png(32, 32)),
+              "ICO16+32-redrawn": ico(png(16, 16, b"B"), png(32, 32, b"B")),
+              "ICO16+48": ico(png(16, 16), png(48, 48)),
+              "NOTAPNG": b"GIF89a not a png"}
     base = {
         "chrome.manifest": "manifest chrome/chrome.manifest\n",
         "chrome/chrome.manifest": (
@@ -529,23 +650,31 @@ def selftest() -> int:
             "content devimg devtools/images/ contentaccessible=true\n"
             "content private private/content/\n"
             "resource content-accessible resource://gre/contentaccessible/ contentaccessible=yes\n"
-            "override chrome://global/content/license.html chrome://global/content/real.html\n"
-            "override chrome://global/content/secret.html chrome://private/content/s.html\n"
+            "override chrome://global/content/license.css chrome://global/content/real.css\n"
+            "override chrome://global/content/secret.css chrome://private/content/s.css\n"
             "manifest second.manifest\n"),
         "chrome/second.manifest": "override chrome://global/content/a.css chrome://global/content/a.css\n",
         "chrome/toolkit/content/global/a.css": "body { color: red }\n",
-        "chrome/toolkit/content/global/real.html": "<p>license</p>\n",
-        "chrome/toolkit/content/global/copy.html": "<p>license</p>\n",
-        "chrome/toolkit/content/global/license.html": "<p>shadowed</p>\n",
-        "chrome/private/content/s.html": "<p>secret</p>\n",
+        "chrome/toolkit/content/global/real.css": "<p>license</p>\n",
+        "chrome/toolkit/content/global/copy.css": "<p>license</p>\n",
+        "chrome/toolkit/content/global/license.css": "<p>shadowed</p>\n",
+        "chrome/private/content/s.css": "<p>secret</p>\n",
         "chrome/toolkit/skin/global/b.css": "x {}\n",
-        "chrome/en-US/locale/global/c.properties": "k=v\n",
+        "chrome/en-US/locale/global/c.ftl": "k=v\n",
         "chrome/devtools/images/d.svg": "<svg/>\n",
+        "chrome/toolkit/content/global/i.png": "PNG16x16",
+        "chrome/toolkit/content/global/k.ico": "ICO16+32",
+        "chrome/toolkit/content/global/fav.ico": "PNG16x16",
+        "chrome/toolkit/content/global/w.svg": '<svg viewBox="0 0 359 80"><path d="M0 0h9"/></svg>\n',
+        "chrome/toolkit/content/global/about.xhtml": "<window/>\n",
+        "chrome/toolkit/content/global/buildconfig.html": "<p>--enable-official</p>\n",
+        "chrome/en-US/locale/global/brand.properties": "brandShortName=Firefox\n",
         "chrome/private/content/e.js": "1\n",
         "contentaccessible/f.css": "y {}\n",
     }
 
     def write(root, files, omni):
+        files = {rel: IMAGES.get(text, text) for rel, text in files.items()}
         root.mkdir(parents=True)
         (root / "firefox").write_bytes(elf)
         (root / "application.ini").write_bytes(b"[App]\nVersion=151.0\n")
@@ -556,7 +685,7 @@ def selftest() -> int:
         else:
             for rel, text in files.items():
                 (root / rel).parent.mkdir(parents=True, exist_ok=True)
-                (root / rel).write_bytes(text.encode())
+                (root / rel).write_bytes(text if isinstance(text, bytes) else text.encode())
 
     def mutate(**changes):
         files = dict(base)
@@ -592,7 +721,7 @@ def selftest() -> int:
         ("a resource host that points into resource://gre/",
          mutate(contentaccessible__f_DOT_css="z {}\n"), True, None),
         ("the target of an override differs",
-         mutate(chrome__toolkit__content__global__real_DOT_html="<p>other</p>\n"), True, None),
+         mutate(chrome__toolkit__content__global__real_DOT_css="<p>other</p>\n"), True, None),
         # Near-miss: a page cannot load a file of a package that is not
         # contentaccessible, so its bytes are not on the surface.
         ("a file of a package a page cannot load",
@@ -604,16 +733,16 @@ def selftest() -> int:
          ["file chrome://global/content/a.css"]),
         # From the independent review of 2026-10-15: each was a way through.
         ("the locale of an accessible package differs",
-         mutate(**{"chrome/en-US/locale/global/c.properties": "k=w\n"}), True, None),
+         mutate(**{"chrome/en-US/locale/global/c.ftl": "k=w\n"}), True, None),
         ("a content flag other than contentaccessible differs",
          mutate(chrome__chrome_DOT_manifest=manifest.replace(
              "content private private/content/\n", "content private private/content/ remoteenabled\n")),
          True, None),
         ("an override pointing at another file with the same bytes",
          mutate(chrome__chrome_DOT_manifest=manifest.replace(
-             "chrome://global/content/real.html", "chrome://global/content/copy.html")), True, None),
+             "chrome://global/content/real.css", "chrome://global/content/copy.css")), True, None),
         ("the target of an override in a package a page cannot load",
-         mutate(chrome__private__content__s_DOT_html="<p>other secret</p>\n"), True, None),
+         mutate(chrome__private__content__s_DOT_css="<p>other secret</p>\n"), True, None),
         ("a later registration moves a package (Gecko keeps the last)",
          mutate(chrome__chrome_DOT_manifest=manifest + "content devimg devtools/\n"
                 + "content devimg devtools/images/ contentaccessible=true\n"
@@ -621,7 +750,7 @@ def selftest() -> int:
         ("the order of two manifests decides an override",
          mutate(chrome__second_DOT_manifest=
                 "override chrome://global/content/a.css chrome://global/content/a.css\n"
-                "override chrome://global/content/license.html chrome://global/content/copy.html\n"),
+                "override chrome://global/content/license.css chrome://global/content/copy.css\n"),
          True, None),
         ("a trailing # makes Gecko drop the line",
          mutate(chrome__chrome_DOT_manifest=manifest.replace(
@@ -635,8 +764,42 @@ def selftest() -> int:
          mutate(chrome__chrome_DOT_manifest=manifest + "content juggler juggler/ os=darwin\n"),
          False, None),
         ("a file an override shadows is not what a page reads",
-         mutate(chrome__toolkit__content__global__license_DOT_html="<p>other</p>\n"), False, None),
+         mutate(chrome__toolkit__content__global__license_DOT_css="<p>other</p>\n"), False, None),
         ("a corrupt omni.ja is refused as unreadable, not hung on", "CORRUPT_OMNI", True, None),
+        # What a page READS of a file, not its bytes (measured 2026-10-16).
+        ("an image redrawn in the same size",
+         mutate(chrome__toolkit__content__global__i_DOT_png="PNG16x16-redrawn"), False, None),
+        ("an image of another size",
+         mutate(chrome__toolkit__content__global__i_DOT_png="PNG16x17"), True, None),
+        ("an image an eXIf chunk rotates",
+         mutate(chrome__toolkit__content__global__i_DOT_png="PNG16x16-rotated"), True, None),
+        ("an image we lack (a page sees load against error)",
+         mutate(chrome__toolkit__content__global__i_DOT_png=None), True, None),
+        ("a png that is not a png is not judged, never passed",
+         mutate(chrome__toolkit__content__global__i_DOT_png="NOTAPNG"), True, None),
+        ("an icon whose images are redrawn in the same sizes",
+         mutate(chrome__toolkit__content__global__k_DOT_ico="ICO16+32-redrawn"), False, None),
+        ("a favicon named .ico that is a PNG, redrawn in the same size (the retail ships them)",
+         mutate(chrome__toolkit__content__global__fav_DOT_ico="PNG16x16-redrawn"), False, None),
+        ("an icon one of whose images has another size",
+         mutate(chrome__toolkit__content__global__k_DOT_ico="ICO16+48"), True, None),
+        ("an svg drawn differently in the same box",
+         mutate(chrome__toolkit__content__global__w_DOT_svg='<svg viewBox="0 0 359 80"><g><path d="M1 1h8"/></g></svg>\n'),
+         False, None),
+        ("an svg whose viewBox differs (the wordmarks until firefox-48)",
+         mutate(chrome__toolkit__content__global__w_DOT_svg='<svg viewBox="0 0 372 99"><path d="M0 0h9"/></svg>\n'),
+         True, None),
+        ("an svg whose <style> could size its root",
+         mutate(chrome__toolkit__content__global__w_DOT_svg='<svg viewBox="0 0 359 80"><style>svg{width:9px}</style><path d="M0 0h9"/></svg>\n'),
+         True, None),
+        ("an xhtml whose bytes differ (the updater's about dialog)",
+         mutate(chrome__toolkit__content__global__about_DOT_xhtml="<window><deck/></window>\n"), False, None),
+        ("an html only the retail has", mutate(chrome__toolkit__content__global__buildconfig_DOT_html=None),
+         False, None),
+        ("a .properties whose bytes differ (the brand name)",
+         mutate(**{"chrome/en-US/locale/global/brand.properties": "brandShortName=Nightly\n"}), False, None),
+        ("a stylesheet still compares by its bytes",
+         mutate(chrome__toolkit__content__global__a_DOT_css="body { color: red; }\n"), True, None),
         ("the same registrations split over two manifests",
          mutate(chrome__chrome_DOT_manifest=manifest.replace("content private private/content/\n", ""),
                 chrome__second_DOT_manifest="override chrome://global/content/a.css "
