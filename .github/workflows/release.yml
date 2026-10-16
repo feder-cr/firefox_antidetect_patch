@@ -255,6 +255,22 @@ jobs:
         timeout-minutes: 180
         run: ./mach build
 
+      # The page-surface gate below asks invisible_core which branding archive
+      # it declares (validate_release.declared_branding): an engine with the
+      # branding redirect (P60) serves that archive, not the brand in its
+      # omni.ja, so that archive is what a page reads and what is judged. The
+      # core is the one the drive gate pairs with the binary, core_ref, so both
+      # gates judge the same pairing. An engine without the redirect never asks,
+      # and the install stays unconditional on purpose: every engine built from
+      # a tree with P60 redirects, so a conditional would only be a second place
+      # deciding what serves_declared_branding already decides from the tree,
+      # and a core_ref that cannot install fails the drive gate of the same run.
+      - name: Install the invisible_core the page-surface gate asks for its branding
+        run: |
+          python3 -m pip install --quiet \
+            "git+https://github.com/feder-cr/invisible_core@${{ github.event.inputs.core_ref || 'main' }}"
+          python3 -c "from importlib.metadata import version; print('core asked for the branding:', version('invisible-core'))"
+
       # ── LINUX: dereference symlinks (issue #14) + strip + sanitize + tar@root + GATE
       - name: Package + validate (Linux)
         if: matrix.family == 'linux'
