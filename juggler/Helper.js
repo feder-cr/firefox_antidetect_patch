@@ -151,6 +151,17 @@ export class Helper {
     return '<unknown error>';
   }
 
+  // The sharedData entries that carry a page's and a context's settings to
+  // their content processes: written by TargetRegistry in the parent, read by
+  // content/main.js, named here once for both.
+  pageCookieKey(browserId) {
+    return 'juggler:page-cookie-' + browserId;
+  }
+
+  contextCookieKey(userContextId) {
+    return 'juggler:context-cookie-' + userContextId;
+  }
+
   browsingContextToFrameId(browsingContext) {
     if (!browsingContext)
       return undefined;

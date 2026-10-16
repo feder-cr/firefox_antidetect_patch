@@ -56,8 +56,8 @@ export function initialize(browsingContext, docShell) {
     },
   };
 
-  const contextCrossProcessCookie = Services.cpmm.sharedData.get('juggler:context-cookie-' + browsingContext.originAttributes.userContextId) || { initScripts: [], bindings: [], settings: {} };
-  const pageCrossProcessCookie = Services.cpmm.sharedData.get('juggler:page-cookie-' + browsingContext.browserId) || { initScripts: [], bindings: [], interceptFileChooserDialog: false };
+  const contextCrossProcessCookie = Services.cpmm.sharedData.get(helper.contextCookieKey(browsingContext.originAttributes.userContextId)) || { initScripts: [], bindings: [], settings: {} };
+  const pageCrossProcessCookie = Services.cpmm.sharedData.get(helper.pageCookieKey(browsingContext.browserId)) || { initScripts: [], bindings: [], interceptFileChooserDialog: false };
 
   // STEALTHFOX: qui c'erano docShell.overrideHasFocus e forceActiveState,
   // messi su OGNI documento di primo livello. Sono codice morto: verificato in

@@ -873,8 +873,17 @@ export class PageTarget {
     this._browserContext.grantPermissionsToOrigin(this._url);
   }
 
+  // ⛔ ONE KEY FOR THE LIFE OF THE PAGE, SET HERE AND DELETED IN dispose():
+  // the browserId kept at construction, as the registry's maps do.
+  // sharedData is copied whole into every content process at each flush, and
+  // until firefox-48 nothing deleted a page's entry, so every page ever opened
+  // stayed in it: 31 entries after 30 pages opened and closed, measured.
+  _crossProcessCookieKey() {
+    return helper.pageCookieKey(this._browserId);
+  }
+
   _updateCrossProcessCookie() {
-    Services.ppmm.sharedData.set('juggler:page-cookie-' + this._linkedBrowser.browsingContext.browserId, this.crossProcessCookie);
+    Services.ppmm.sharedData.set(this._crossProcessCookieKey(), this.crossProcessCookie);
     Services.ppmm.sharedData.flush();
   }
 
@@ -1010,6 +1019,10 @@ export class PageTarget {
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._browserId);
+    if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {
+      Services.ppmm.sharedData.delete(this._crossProcessCookieKey());
+      Services.ppmm.sharedData.flush();
+    }
     try {
       helper.removeListeners(this._eventListeners);
     } catch (e) {
@@ -1080,8 +1093,13 @@ class BrowserContext {
     this.pages = new Set();
   }
 
+  // Set here, deleted when the context is removed (destroy()): see the page's.
+  _crossProcessCookieKey() {
+    return helper.contextCookieKey(this.userContextId);
+  }
+
   _updateCrossProcessCookie() {
-    Services.ppmm.sharedData.set('juggler:context-cookie-' + this.userContextId, this.crossProcessCookie);
+    Services.ppmm.sharedData.set(this._crossProcessCookieKey(), this.crossProcessCookie);
     Services.ppmm.sharedData.flush();
   }
 
@@ -1109,6 +1127,10 @@ class BrowserContext {
     }
     this._registry._browserContextIdToBrowserContext.delete(this.browserContextId);
     this._registry._userContextIdToBrowserContext.delete(this.userContextId);
+    if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {
+      Services.ppmm.sharedData.delete(this._crossProcessCookieKey());
+      Services.ppmm.sharedData.flush();
+    }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
     await this.setServiceWorkersBlocked(false);
   }
