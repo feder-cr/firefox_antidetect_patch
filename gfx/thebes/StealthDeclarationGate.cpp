@@ -109,11 +109,12 @@ void StealthAssertDeclarationsComplete() {
       // The branding a page reads, added 2026-10-16. Missing, it would serve
       // the build's own brand: the compiled fallback this gate exists against.
       // "Not declared" here also means "not usable": the same predicate the
-      // content sandbox uses to open the directory, so a launch this gate lets
+      // content sandbox uses to open the archive, so a launch this gate lets
       // through is one whose content processes can read the files.
-      {"zoom.stealth.branding.dir", []() -> bool {
-         nsCOMPtr<nsIFile> dir = mozilla::net::StealthBrandingDeclaredDir();
-         return !dir;
+      {"zoom.stealth.branding.archive", []() -> bool {
+         nsCOMPtr<nsIFile> archive =
+             mozilla::net::StealthBrandingDeclaredArchive();
+         return !archive;
        }},
   };
 
