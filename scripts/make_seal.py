@@ -75,10 +75,21 @@ EXPECTED = {
     ("win32", "x86_64"): "-win-x86_64.zip",
 }
 NAME_RE = re.compile(r"^firefox-(?P<ver>[0-9.]+)-stealth-(?P<os>win|linux|macos)-(?P<arch>x86_64|arm64)\.(zip|tar\.gz)$")
+# What a release tag looks like. The one place that knows: the seal refuses
+# anything else, and release_plan.py asks this before a release run builds.
+RELEASE_TAG_RE = re.compile(r"firefox-(?P<n>\d+)")
 
 
 class SealBuildError(RuntimeError):
     pass
+
+
+def check_release_tag(tag: str) -> int:
+    """N of a `firefox-N` release tag, or SealBuildError."""
+    m = RELEASE_TAG_RE.fullmatch(tag)
+    if not m:
+        raise SealBuildError(f"tag must look like firefox-N, got {tag!r}")
+    return int(m.group("n"))
 
 
 def sha256_path(p: Path) -> str:
@@ -310,8 +321,7 @@ def build_from_assets(tag: str, assets_dir: Path, source_commit: str,
     if missing and not allow_partial:
         raise SealBuildError(f"incomplete release, missing platforms: {sorted(missing)}")
 
-    if not re.fullmatch(r"firefox-\d+", tag):
-        raise SealBuildError(f"tag must look like firefox-N, got {tag!r}")
+    check_release_tag(tag)
 
     # No top-level build_id: there is no single value that is true of all five
     # legs, and a scalar that is true for one platform is a refusal for the other

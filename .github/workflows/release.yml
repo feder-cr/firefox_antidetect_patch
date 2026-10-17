@@ -18,6 +18,9 @@
 # proxy realness gate (fppro/webrtc) stays LOCAL — it needs secrets.
 #
 # Trigger: push a tag `firefox-N`, or run manually.  Hybrid runners, all free.
+# A run by hand is a CANDIDATE (build + gate, nothing published, a green run)
+# unless it says kind=release; the `plan` job decides, once, before any build
+# (scripts/release_plan.py), and every job reads its outputs.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release
 
@@ -29,9 +32,19 @@ on:
       source_ref:
         description: 'firefox_antidetect_patch ref to build'
         default: 'stealth/151'
+      kind:
+        description: >
+          candidate: build and gate, publish nothing (no seal, no draft); its
+          archives stay the run's artifacts, and republish.yml publishes them
+          from its run id. release: also the seal and the DRAFT under
+          release_tag.
+        type: choice
+        options: [candidate, release]
+        default: candidate
       release_tag:
-        description: 'release tag to publish the draft under (e.g. firefox-9)'
-        required: true
+        description: 'firefox-N to publish the draft under; kind=release only, a candidate refuses one'
+        required: false
+        default: ''
       wrapper_ref:
         description: >
           invisible_playwright ref the gate runs against. Defaults to main,
@@ -55,8 +68,40 @@ env:
   SOURCE_REF: ${{ github.event.inputs.source_ref || 'stealth/151' }}
 
 jobs:
+  # What this run is, decided once and before the builds: a release with a bad
+  # tag is refused here in seconds, not at the seal two hours later, and a
+  # candidate never reaches the seal at all.
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      tag: ${{ steps.plan.outputs.tag }}
+      num: ${{ steps.plan.outputs.num }}
+      prevtag: ${{ steps.plan.outputs.prevtag }}
+      seal_tag: ${{ steps.plan.outputs.seal_tag }}
+    steps:
+      - name: Checkout (for scripts/release_plan.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { fetch-depth: 1 }
+      - name: The plan refuses what it must
+        run: python3 scripts/test_release_plan.py
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          KIND: ${{ inputs.kind }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
+            --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" > plan.txt
+          cat plan.txt
+          cat plan.txt >> "$GITHUB_OUTPUT"
+
   build:
     name: build-${{ matrix.leg }}
+    needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     strategy:
@@ -357,7 +402,7 @@ jobs:
   # juggler; bump it in lockstep when the juggler is re-synced from upstream.
   gate:
     name: gate-${{ matrix.leg }}
-    needs: build
+    needs: [plan, build]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     strategy:
@@ -535,7 +580,7 @@ jobs:
           python -m pip install --quiet ".[dev]"
           python -c "from importlib.metadata import version; print('core under test:', version('invisible-core'))"
           python -m invisible_core seal --binary "$FF_EXE" \
-            --tag "${{ github.event.inputs.release_tag || github.ref_name }}" \
+            --tag "${{ needs.plan.outputs.seal_tag }}" \
             -o gate.seal.json
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_hidden_desktop.py \
@@ -544,7 +589,9 @@ jobs:
 
   publish:
     name: publish-draft-release
-    needs: [build, gate]
+    needs: [plan, build, gate]
+    # a candidate publishes nothing: skipped, and the run is green
+    if: needs.plan.outputs.kind == 'release'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -598,23 +645,13 @@ jobs:
           # explicit glob — never include checksums.txt itself (the `*`-includes-itself trap)
           sha256sum firefox-151.0-stealth-* > checksums.txt
           echo "----- checksums.txt -----"; cat checksums.txt
-      - name: Resolve release tag
-        id: tag
-        run: |
-          TAG="${{ github.event.inputs.release_tag }}"
-          [ -z "$TAG" ] && TAG="${GITHUB_REF_NAME}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          # bare revision number for the release title: firefox-10 -> 10
-          N="${TAG#firefox-}"
-          echo "num=$N" >> "$GITHUB_OUTPUT"
-          # previous release tag, for the changelog range (firefox-10 -> firefox-9)
-          case "$N" in (*[!0-9]*|'') echo "prevtag=" >> "$GITHUB_OUTPUT";;
-                        (*) echo "prevtag=firefox-$((N-1))" >> "$GITHUB_OUTPUT";; esac
-          echo "publishing DRAFT release for tag: $TAG"
+      # The tag, its number for the title and the previous tag for the changelog
+      # range are the plan's (scripts/release_plan.py), not derived again here.
       - name: Generate + gate seal.json
         run: |
+          echo "publishing DRAFT release for tag: ${{ needs.plan.outputs.tag }}"
           python3 _src/scripts/make_seal.py \
-            --tag "${{ steps.tag.outputs.tag }}" \
+            --tag "${{ needs.plan.outputs.tag }}" \
             --assets dl \
             --source-commit-file src-meta/source-commit.txt \
             --playwright-range _src/browser/config/stealth_playwright_range.txt \
@@ -632,7 +669,7 @@ jobs:
           # previous release's recorded source commit — gives the changelog range.
           # Missing (first automated notes / firefox-0) -> notes omit the changelog.
           PREV=""
-          PREVTAG="${{ steps.tag.outputs.prevtag }}"
+          PREVTAG="${{ needs.plan.outputs.prevtag }}"
           if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
                --pattern source-commit.txt --dir prev 2>/dev/null; then
             PREV="$(cat prev/source-commit.txt | tr -d '[:space:]')"
@@ -640,7 +677,7 @@ jobs:
           else
             echo "no previous source-commit.txt — changelog section omitted this time"
           fi
-          python scripts/gen_release_notes.py --tag "${{ steps.tag.outputs.tag }}" \
+          python scripts/gen_release_notes.py --tag "${{ needs.plan.outputs.tag }}" \
             --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SOURCE_REPO }}" > body.md
           echo "----- generated body.md -----"; cat body.md
           # publish THIS build's source commit so the next release can diff from it
@@ -648,8 +685,8 @@ jobs:
       - name: Create DRAFT release with all assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: firefox_antidetect_patch (151.0) rev ${{ steps.tag.outputs.num }}
+          tag_name: ${{ needs.plan.outputs.tag }}
+          name: firefox_antidetect_patch (151.0) rev ${{ needs.plan.outputs.num }}
           draft: true
           prerelease: false
           fail_on_unmatched_files: true

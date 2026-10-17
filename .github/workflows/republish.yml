@@ -38,8 +38,35 @@ env:
   SOURCE_REPO: feder-cr/firefox_antidetect_patch
 
 jobs:
+  # Always a release, so the plan only checks the tag and names what comes out
+  # of it (scripts/release_plan.py, the same plan release.yml runs): a bad tag
+  # is refused before the gates instead of at the seal after them.
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      num: ${{ steps.plan.outputs.num }}
+      prevtag: ${{ steps.plan.outputs.prevtag }}
+    steps:
+      - name: Checkout (for scripts/release_plan.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { fetch-depth: 1 }
+      - name: The plan refuses what it must
+        run: python3 scripts/test_release_plan.py
+      - name: Plan
+        id: plan
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -e
+          python3 scripts/release_plan.py --event workflow_dispatch --kind release \
+            --release-tag "$RELEASE_TAG" > plan.txt
+          cat plan.txt
+          cat plan.txt >> "$GITHUB_OUTPUT"
+
   gate:
     name: gate-${{ matrix.leg }}
+    needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     permissions:
@@ -121,7 +148,7 @@ jobs:
 
   publish:
     name: publish-draft-release
-    needs: [gate]
+    needs: [plan, gate]
     runs-on: ubuntu-24.04
     permissions:
       actions: read
@@ -178,16 +205,6 @@ jobs:
           cd dl; ls -la
           sha256sum firefox-151.0-stealth-* > checksums.txt
           echo "----- checksums.txt -----"; cat checksums.txt
-      - name: Resolve release tag
-        id: tag
-        run: |
-          TAG="${{ github.event.inputs.release_tag }}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          N="${TAG#firefox-}"
-          echo "num=$N" >> "$GITHUB_OUTPUT"
-          case "$N" in (*[!0-9]*|'') echo "prevtag=" >> "$GITHUB_OUTPUT";;
-                        (*) echo "prevtag=firefox-$((N-1))" >> "$GITHUB_OUTPUT";; esac
-          echo "publishing DRAFT release for tag: $TAG"
       # The seal is derived from the archives in dl/, so re-deriving it here from
       # the SAME bytes is what makes "republish" mean republish: if it differs
       # from what the tag already carries, the payload changed and the next step
@@ -197,7 +214,7 @@ jobs:
       - name: Generate + gate seal.json
         run: |
           python3 _src/scripts/make_seal.py \
-            --tag "${{ steps.tag.outputs.tag }}" \
+            --tag "${{ needs.plan.outputs.tag }}" \
             --assets dl \
             --source-commit-file src-meta/source-commit.txt \
             --playwright-range _src/browser/config/stealth_playwright_range.txt \
@@ -213,7 +230,7 @@ jobs:
           CUR="$(cat src-meta/source-commit.txt 2>/dev/null | tr -d '[:space:]')"
           echo "this build's source commit: ${CUR:-<none>}"
           PREV=""
-          PREVTAG="${{ steps.tag.outputs.prevtag }}"
+          PREVTAG="${{ needs.plan.outputs.prevtag }}"
           if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
                --pattern source-commit.txt --dir prev 2>/dev/null; then
             PREV="$(cat prev/source-commit.txt | tr -d '[:space:]')"
@@ -221,14 +238,14 @@ jobs:
           else
             echo "no previous source-commit.txt — changelog section omitted this time"
           fi
-          python scripts/gen_release_notes.py --tag "${{ steps.tag.outputs.tag }}" \
+          python scripts/gen_release_notes.py --tag "${{ needs.plan.outputs.tag }}" \
             --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SOURCE_REPO }}" > body.md
           echo "----- generated body.md -----"; cat body.md
           cp src-meta/source-commit.txt dl/source-commit.txt
       - name: Refuse a payload change under an existing tag
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-          TAG: "${{ steps.tag.outputs.tag }}"
+          TAG: "${{ needs.plan.outputs.tag }}"
         run: |
           set -e
           # cmp against a file that is not there reports "differs", and this step
@@ -255,8 +272,8 @@ jobs:
       - name: Create DRAFT release with all assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: firefox_antidetect_patch (151.0) rev ${{ steps.tag.outputs.num }}
+          tag_name: ${{ needs.plan.outputs.tag }}
+          name: firefox_antidetect_patch (151.0) rev ${{ needs.plan.outputs.num }}
           draft: true
           prerelease: false
           fail_on_unmatched_files: true
