@@ -15,6 +15,7 @@ EXPORTS.mozilla.net += [
     "MozSrcProtocolHandler.h",
     "PageThumbProtocolHandler.h",
     "RemoteStreamGetter.h",
+    "StealthBranding.h",
     "SubstitutingJARURI.h",
     "SubstitutingProtocolHandler.h",
     "SubstitutingURL.h",
@@ -31,6 +32,7 @@ UNIFIED_SOURCES += [
     "nsResProtocolHandler.cpp",
     "PageThumbProtocolHandler.cpp",
     "RemoteStreamGetter.cpp",
+    "StealthBranding.cpp",
     "SubstitutingProtocolHandler.cpp",
 ]
 

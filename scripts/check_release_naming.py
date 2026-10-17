@@ -31,6 +31,8 @@ import sys
 
 TARGETS = (
     ".github/workflows/release.yml",
+    ".github/workflows/gate.yml",
+    ".github/workflows/publish.yml",
     ".github/workflows/republish.yml",
     ".github/workflows/verify-assets.yml",
     ".github/workflows/verify-cloak.yml",

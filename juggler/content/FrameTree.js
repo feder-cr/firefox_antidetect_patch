@@ -15,30 +15,12 @@ const helper = new Helper();
 //: navigation id. A restore has no load identifier of its own to borrow.
 let restoredDocuments = 0;
 
-// ⛔ MONDO SCRIPT - leva `STEALTHFOX_SCRIPT_WORLD=1`.
-//
-// E' una variabile d'AMBIENTE e non una pref perche' i mondi si costruiscono
-// prima che le prefs arrivino: su questo percorso Playwright non scrive niente
-// nel profilo, manda le prefs sul filo e `Browser.enable` le applica a browser
-// gia' avviato. Con una pref la leva risultava inerte, e la rilettura da dentro
-// il browser e' cio' che l'ha fatto vedere.
-let _mondoScript = null;
-
-function _leggiMondoScript() {
-  try {
-    return Services.env.get('STEALTHFOX_SCRIPT_WORLD') === '1';
-  } catch (e) {
-    return false;
-  }
-}
+// STEALTHFOX [B322]: the kinds of world a client can declare with
+// `Page.setInitScripts` (`worldKind`). A world's kind is fixed by its first
+// declaration; Frame._globalForWorld says what each one is.
+const WORLD_KINDS = new Set(['isolated', 'caller']);
 
 export class FrameTree {
-  static mondoScript() {
-    if (_mondoScript === null)
-      _mondoScript = _leggiMondoScript();
-    return _mondoScript;
-  }
-
   constructor(rootBrowsingContext) {
     helper.decorateAsEventEmitter(this);
 
@@ -189,7 +171,6 @@ export class FrameTree {
     // `juggler-mouse-event-hit-renderer` instrumentation.
     this._inputEventListeners = [
       helper.addEventListener(chromeEventHandler, 'dragstart', emitInputEvent, options),
-      helper.addEventListener(chromeEventHandler, 'dragover', emitInputEvent, options),
       helper.addEventListener(chromeEventHandler, 'mousemove', recordLanding, options),
       helper.addEventListener(chromeEventHandler, 'mousedown', recordLanding, options),
       helper.addEventListener(chromeEventHandler, 'mouseup', recordLanding, options),
@@ -208,10 +189,10 @@ export class FrameTree {
     for (const world of this._isolatedWorlds.values())
       world._scriptsToEvaluateOnNewDocument = [];
 
-    for (let { worldName, script } of scripts) {
+    for (let { worldName, worldKind, script } of scripts) {
       worldName = worldName || '';
       const existing = this._isolatedWorlds.has(worldName);
-      const world = this._ensureWorld(worldName);
+      const world = this._ensureWorld(worldName, worldKind);
       world._scriptsToEvaluateOnNewDocument.push(script);
       // FIXME: 'should inherit http credentials from browser context' fails without this
       if (worldName && !existing) {
@@ -221,12 +202,20 @@ export class FrameTree {
     }
   }
 
-  _ensureWorld(worldName) {
+  // `kind` is what the client declared, or nothing for a world named by a
+  // binding or by an older client: an existing world keeps its kind, a new one
+  // is isolated. Declaring an existing name with ANOTHER kind is refused rather
+  // than ignored: the client would believe its code runs where it does not.
+  _ensureWorld(worldName, kind) {
     worldName = worldName || '';
+    if (kind !== undefined && (!worldName || !WORLD_KINDS.has(kind)))
+      throw new Error(`worldKind "${kind}" needs a worldName and one of: ${[...WORLD_KINDS].join(', ')}`);
     let world = this._isolatedWorlds.get(worldName);
     if (!world) {
-      world = new IsolatedWorld(worldName);
+      world = new IsolatedWorld(worldName, worldName ? (kind || 'isolated') : null);
       this._isolatedWorlds.set(worldName, world);
+    } else if (kind !== undefined && kind !== world._kind) {
+      throw new Error(`world "${worldName}" is already a ${world._kind} world`);
     }
     return world;
   }
@@ -311,18 +300,32 @@ export class FrameTree {
       frame._addBinding(worldName, name, script);
   }
 
+  /**
+   * The frame of THIS tree whose context is `browsingContext`, or null.
+   *
+   * ⛔ BY THE CONTEXT ITSELF, NOT BY THE FRAME ID ALONE. A frame id names the
+   * frame, not one context: the main frame's is the browser's
+   * (`mainframe-<browserId>`), so every top-level context the tab has had
+   * resolves to it, and with the back-forward cache in the parent each
+   * navigation gives the tab a new top-level context and a new tree in the
+   * same process. Looked up by id, every tree took every top-level docShell of
+   * the tab for its own main frame: a tree whose document was in the cache
+   * built contexts and started navigations for the page that replaced it, from
+   * the process-wide observers that call this, and on a restore the page's
+   * console was reported in a context of the other page (measured, B303 E3);
+   * and when the cache let an old context go, every tree detached its own
+   * children [B292]. That second case had a guard of its own in
+   * `_onBrowsingContextDetached`; it belongs here, for every caller.
+   */
   frameForBrowsingContext(browsingContext) {
     if (!browsingContext)
       return null;
-    const frameId = helper.browsingContextToFrameId(browsingContext);
-    return this._frameIdToFrame.get(frameId) ?? null;
+    const frame = this._frameIdToFrame.get(helper.browsingContextToFrameId(browsingContext));
+    return frame && frame._browsingContext.id === browsingContext.id ? frame : null;
   }
 
   frameForDocShell(docShell) {
-    if (!docShell)
-      return null;
-    const frameId = helper.browsingContextToFrameId(docShell.browsingContext);
-    return this._frameIdToFrame.get(frameId) ?? null;
+    return docShell ? this.frameForBrowsingContext(docShell.browsingContext) : null;
   }
 
   frame(frameId) {
@@ -384,6 +387,12 @@ export class FrameTree {
   _frameNavigationCommitted(frame, url) {
     for (const subframe of frame._children)
       this._detachFrame(subframe);
+    this._commit(frame, url);
+  }
+
+  // The commit itself, without what a NEW document does to the tree: a
+  // document restored from the back-forward cache keeps its children.
+  _commit(frame, url) {
     const navigationId = frame._pendingNavigationId;
     frame._pendingNavigationId = null;
     frame._lastCommittedNavigationId = navigationId;
@@ -459,57 +468,39 @@ export class FrameTree {
       this.emit(FrameTree.Events.SameDocumentNavigation, frame);
       return;
     }
-    if (frame && this._isBackForwardRestore(progress, location)) {
-      // Announcing from here would be too early: the target's channel is still
-      // bound to the actor of the document we are coming BACK FROM, so the
-      // announcement would be dropped. The parent rebinds first and then asks.
-      this._restoredFrame = frame;
-      this._restoredUrl = location.spec;
-      if (this._becameCurrent)
-        this._becameCurrent();
-    }
   }
 
-  _isBackForwardRestore(progress, location) {
-    // A restore arrives with the document ALREADY WHOLE; an ordinary
-    // navigation is notified while its document is still being made. Measured:
-    // every ordinary location change reports `loading`, the restore reports
-    // `complete`. Without a distinguisher this would commit a second
-    // navigation for every page load, which is worse than the defect it fixes.
-    //
-    // `about:` pages are excluded because the startup ones are already
-    // complete when they are announced and would take this branch for nothing.
-    try {
-      const document = progress.DOMWindow.document;
-      return document.readyState === 'complete' &&
-             document.documentURI === location.spec &&
-             !location.spec.startsWith('about:');
-    } catch (e) {
-      return false;
-    }
-  }
-
-  setBecameCurrentNotifier(notifier) {
-    this._becameCurrent = notifier;
-  }
-
+  /**
+   * The main frame's document came back from the back-forward cache, and the
+   * channel is attached to it again: content/main.js runs this as the
+   * channel's reattachment hook, before anything the document said meanwhile
+   * goes out. A reattachment IS a restore - the channel detaches only on the
+   * pagehide of a document going into the cache - so nothing here guesses.
+   */
   announceRestoredDocument() {
-    // Called by the parent once the channel is bound to this document's actor,
-    // so that what follows has somewhere to go.
-    const frame = this._restoredFrame;
-    const url = this._restoredUrl;
-    this._restoredFrame = null;
-    this._restoredUrl = null;
+    const frame = this._mainFrame;
     if (!frame || !this._frameIdToFrame.has(frame.id()))
       return;
-    // The three steps of an ordinary navigation, in the same order. The
+    const url = frame.domWindow()?.location?.href;
+    if (!url)
+      return;
+    // A navigation started and committed, for the client that went back: the
     // navigation id is synthetic because a restore has no load identifier to
     // borrow; it only has to be new.
+    //
+    // ⛔ AND NOTHING THAT A NEW DOCUMENT DOES. Its globals, its iframes and its
+    // execution contexts are the ones it had: clearing the global object made
+    // new contexts under new ids - and ran the init scripts again in a page
+    // that did not load again - while what the page said from its pageshow,
+    // kept by the channel until now, named the contexts it really has, and
+    // the client dropped it for an unknown context; and the commit of a new
+    // document detached the restored page's own iframes from this tree. The
+    // children and the contexts are reported again by PageAgent on
+    // DocumentRestored, as when it attaches to a page.
     frame._pendingNavigationId =
         helper.toProtocolNavigationId('bfcache-' + (++restoredDocuments));
     this.emit(FrameTree.Events.NavigationStarted, frame);
-    frame._onGlobalObjectCleared();
-    this._frameNavigationCommitted(frame, url);
+    this._commit(frame, url);
     // ⛔ AND THE DOCUMENT IS ALREADY LOADED, WHICH NOTHING WOULD EVER SAY.
     // `load` and `DOMContentLoaded` fired when this document was first built
     // and do not fire again on a restore, so a caller waiting for either -
@@ -528,17 +519,10 @@ export class FrameTree {
   }
 
   _onBrowsingContextDetached(browsingContext) {
+    // Only the frame whose context went: frameForBrowsingContext matches the
+    // context itself [B292].
     const frame = this.frameForBrowsingContext(browsingContext);
-    // Only when the context that went IS this frame's. A frame id names the
-    // frame, not one context: the main frame's is the browser's
-    // (`mainframe-<browserId>`), so every top-level context the tab has had
-    // resolves to it. With the back-forward cache in the parent each
-    // navigation gives the tab a new top-level context and a new tree, and
-    // when the cache let an old one go, every tree - the current one too -
-    // took it for its own main frame and detached all its children: the
-    // iframes of the page being loaded, alive in the browser, were reported
-    // detached [B292].
-    if (frame && frame._browsingContext.id === browsingContext.id)
+    if (frame)
       this._detachFrame(frame);
   }
 
@@ -598,8 +582,11 @@ FrameTree.Events = {
 };
 
 class IsolatedWorld {
-  constructor(name) {
+  constructor(name, kind) {
     this._name = name;
+    // 'isolated' or 'caller' for a named world; the main world ('') is the
+    // page's own global and has no kind of its own.
+    this._kind = kind;
     this._scriptsToEvaluateOnNewDocument = [];
     this._bindings = new Map();
   }
@@ -712,115 +699,83 @@ class Frame {
     };
   }
 
-  // STEALTHFOX: l'UNICO punto che sa come si costruisce un mondo. I due mondi
-  // differiscono per una bandiera sola, e prima erano due blocchi separati -
-  // uno qui e uno inline in _initializeWorlds - quindi la differenza fra loro
-  // era invisibile a chi leggeva.
+  // STEALTHFOX: THE ONE PLACE THAT KNOWS HOW A WORLD IS BUILT. A world is its
+  // global, and three things tell the globals apart: the principal, and the
+  // two views of the page's objects a sandbox can ask for.
   //
-  // `wantXrays` decide COSA il mondo vede degli oggetti del contenuto:
-  //   true  = la vista NATIVA. Gli expando che la pagina appiccica a window e
-  //           ai nodi sono nascosti, e i getter che la pagina rimpiazza non
-  //           vengono invocati. E' cio' che serve al MACCHINARIO (i selettori,
-  //           l'actionability): un sito che rimpiazza Element.prototype.matches
-  //           non deve poterlo sviare.
-  //   false = la vista del CONTENUTO, cioe' esattamente quello che vede il
-  //           sito. E' cio' che serve al CODICE DELL'UTENTE, che chiede
-  //           `page.evaluate(() => window.__APP_STATE__)` e si aspetta il
-  //           valore del sito, non undefined.
+  //   'main'     the page's own window. Only what the page must see runs here:
+  //              the clients' init scripts and bindings.
+  //   'isolated' a sandbox with the extended principal [dw] and plain Xrays:
+  //              the page's objects as the standards define them, nothing the
+  //              page added or replaced. What the MACHINERY needs (selectors,
+  //              actionability, serialization): a site that replaces
+  //              Element.prototype.matches must not steer it. It also sees
+  //              closed shadow roots, which the page's principal does not.
+  //   'caller'   [B322] a sandbox with the page's principal and hybrid Xrays
+  //              (`hybridXrays`, js/xpconnect/wrappers/XrayWrapper.h): a name
+  //              the standard defines resolves to the standard definition,
+  //              every other name as the page defined it. Where the CALLER'S
+  //              code runs (page.evaluate and the like): `window.__APP_STATE__`,
+  //              `el.__vue__` and the page's functions are the page's, while
+  //              `document.querySelector` is the native method even when the
+  //              page wrapped it in a Proxy that counts who calls it. A
+  //              Cloudflare challenge does exactly that, and one lookup of its
+  //              token field from the page's realm got its clearance refused.
   //
-  // ⛔ E LA BANDIERA DA SOLA NON BASTA, misurato il 2026-08-23: una sandbox con
-  // `wantXrays: false` ma con l'ExpandedPrincipal continua a vedere la vista
-  // Xray, perche' il principal della sandbox non e' quello del sito. In quella
-  // configurazione `page.evaluate(() => window.__STATO)` torna `undefined`,
-  // `document.title` torna il titolo nativo invece di quello che il getter
-  // della pagina produce, e le funzioni della pagina risultano "is not a
-  // function". **A decidere e' il PRINCIPAL**, non la bandiera: con il
-  // principal della pagina la vista del contenuto si apre da sola, e infatti il
-  // mondo script non ha bisogno di nessun ponte.
+  // ⛔ THE PRINCIPAL DECIDES AS MUCH AS THE FLAGS, measured on 2026-08-23: a
+  // sandbox with `wantXrays: false` and the extended principal still sees
+  // Xrays, because the page's principal does not subsume it. Hence the caller's
+  // world takes the page's principal, and the page in turn reads the caller's
+  // objects transparently, as it did when this code ran in the page's realm.
   //
-  // ⛔ E QUESTA FUNZIONE E' UNA SOLA APPOSTA. Il 2026-08-23 ne era stata
-  // aggiunta una seconda per il mondo script, che differiva per due argomenti:
-  // esattamente i due blocchi separati che il commento qui sopra racconta di
-  // aver eliminato una volta. Rifatta com'era: un posto solo, e la differenza
-  // fra i mondi si legge negli ARGOMENTI, dove e' visibile.
-  //
-  //   principal `[dw]` (esteso) + xray true  -> utility, serializzazione
-  //   principal `dw`            + xray false -> mondo script
-  // ⛔ IL MONDO SCRIPT, e perche' e' un DISEGNO e non una variante.
-  //
-  // Il conflitto che nessuna membrana poteva chiudere: l'invariante dei Proxy
-  // impone di restituire il valore CRUDO su una proprieta' non falsificabile,
-  // ma una funzione cruda chiamata con il Proxy come `this` viene rifiutata da
-  // WebIDL. Non e' un difetto dell'implementazione: "la pagina non deve
-  // vedermi" e "la pagina deve poter usare le mie cose" sono LA STESSA
-  // manopola, il principal, girata nei due versi.
-  //
-  // Qui si smette di girarla in tutti e due i versi nello stesso mondo: il
-  // mondo main prende il principal DELLA PAGINA, quindi niente Xray, niente
-  // waiver, niente conversione - tutto e' trasparente - e il codice utente
-  // resta comunque invisibile alla pagina, perche' il GLOBAL e' un altro.
-  // Misurato: un global dichiarato per sbaglio da un init script oggi la pagina
-  // lo vede, col mondo script no; e su undici banchi il comportamento e'
-  // identico riga per riga.
-  //
-  // Il prezzo, dichiarato: senza ExpandedPrincipal non si vedono le shadow root
-  // CHIUSE. Restano nel mondo utility, dove i locator gia' le vedono.
-
-  _creaMondo(esteso, xray) {
+  // ⛔ AND IT REPLACES THE "SCRIPT WORLD" (`STEALTHFOX_SCRIPT_WORLD=1`, page's
+  // principal and `wantXrays: false`), which never shipped: its view of the
+  // page was transparent, so `document.querySelector` went through the page's
+  // Proxy exactly as in the page's realm. A JS membrane choosing Xray or waiver
+  // per property was tried before that and cannot work: the invariants of
+  // scripted proxies force the raw value on non-configurable properties, and
+  // WebIDL refuses a scripted Proxy as `this`. The hybrid view lives in the
+  // wrapper itself for that reason.
+  _createGlobal(kind) {
     const dw = this.domWindow();
-    return Cu.Sandbox(esteso ? [dw] : dw, {
+    if (kind === 'main')
+      return dw;
+    const options = {
       sandboxPrototype: dw,
       wantComponents: false,
       wantExportHelpers: false,
-      wantXrays: xray,
-    });
+    };
+    if (kind === 'caller')
+      return Cu.Sandbox(dw, { ...options, wantXrays: false, hybridXrays: true });
+    return Cu.Sandbox([dw], { ...options, wantXrays: true });
   }
 
-  // Il MESTIERE del mondo si passa per nome ('main' / 'isolato'), non
-  // codificato dentro `wantXrays` con `null` a significare "e' il main":
-  // era un valore usato per dire un'altra cosa, e costringeva chi legge a
-  // ricordare una convenzione invece di leggere un nome.
-  //
-  // Il quarto argomento e' il global in cui si SERIALIZZANO i valori di ritorno,
-  // e non e' mai quello della pagina: il perche', con i numeri, sta nel
-  // costruttore di ExecutionContext in Runtime.js. E' una sandbox sola per
-  // frame, condivisa da tutti i mondi, creata pigramente perche' un mondo che
-  // non serializza non deve pagarla.
-  // Quale global ospita un mondo. Il parametro dice il MESTIERE, non la
-  // configurazione: la configurazione e' la riga sotto ciascun mestiere, e si
-  // legge tutta insieme.
-  _globalPerMondo(tipo) {
-    if (tipo === 'isolato')
-      return this._creaMondo(true /* principal esteso */, true /* xray */);
-    // 'main' e' il mondo del codice dell'UTENTE.
-    return FrameTree.mondoScript()
-        ? this._creaMondo(false /* principal della pagina */, false /* niente xray */)
-        : this.domWindow();
-  }
-
-  _createWorldContext(name, tipo) {
-    const global = this._globalPerMondo(tipo);
+  // The fourth argument is the global the return values are SERIALIZED in,
+  // never the page's: the reasons, with the numbers, are in the constructor of
+  // ExecutionContext in Runtime.js. One sandbox per frame, shared by every
+  // world, created lazily because a world that never serializes must not pay
+  // for it. It stays for the caller's world too: a returned value can be the
+  // PAGE's object (`() => window.something`), and JSON.stringify would walk its
+  // prototype chain and call its `toJSON`; the serialization sandbox looks
+  // through plain Xrays, which do not expose that chain (P5.2x).
+  _createWorldContext(name, kind) {
+    const global = this._createGlobal(kind);
     const world = this._runtime.createExecutionContext(this.domWindow(), global, {
       frameId: this.id(),
       name,
-    // ⛔ La sandbox di serializzazione RESTA anche col mondo script. Sembra
-    // superflua - il mondo script non e' il realm della pagina - ma il valore
-    // reso puo' essere un oggetto DELLA PAGINA (`() => window.qualcosa`), e
-    // allora `JSON.stringify` ne percorre la catena di prototipi e chiama il
-    // suo `toJSON`. La sandbox di serializzazione guarda con l'Xray, che quella
-    // catena non la espone: e' §5.2x, e vale ancora.
     }, () => this._ensureSerializationSandbox());
     this._worldNameToContext.set(name, world);
     return world;
   }
 
   _createIsolatedContext(name) {
-    return this._createWorldContext(name, 'isolato');
+    const declared = this._frameTree._isolatedWorlds.get(name);
+    return this._createWorldContext(name, declared ? declared._kind : 'isolated');
   }
 
   _ensureSerializationSandbox() {
     if (!this._serializationSandbox)
-      this._serializationSandbox = this._creaMondo(true, true);
+      this._serializationSandbox = this._createGlobal('isolated');
     return this._serializationSandbox;
   }
 
@@ -873,28 +828,13 @@ class Frame {
     // la sandbox di serializzazione appartiene al documento, come i contesti
     this._serializationSandbox = null;
 
-    // ⛔ IL MONDO "main" E' IL GLOBAL DELLA PAGINA, E SPOSTARLO IN UNA SANDBOX
-    // NON E' UNA BANDIERA: PROVATO IL 2026-08-23, MISURE IN 90-firefox-internals.md.
-    //
-    // Il secondo argomento e' il GLOBAL in cui il codice gira. Passando la
-    // window, `page.evaluate()` gira nel compartimento del sito. Sostituirlo con
-    // una sandbox isola davvero - misurato, cio' che l'automazione dichiara
-    // diventa invisibile alla pagina - ma rompe il contratto di `evaluate`, e
-    // rimetterlo in piedi costa piu' di una riga:
-    //
-    //   - `wantXrays: false` NON apre la vista del contenuto: il principal della
-    //     sandbox non e' quello del sito, quindi Gecko tiene l'Xray lo stesso.
-    //   - nemmeno passare la window WAIVED come `sandboxPrototype` la apre: il
-    //     waiver non sopravvive come legame strutturale, viene ri-avvolto al
-    //     confine del compartimento.
-    //   - il waiver funziona solo come VALORE esplicito, `window.wrappedJSObject`,
-    //     ed e' appiccicoso: due salti, gli expando sui nodi e i getter della
-    //     pagina continuano a funzionare da li'.
-    //   - restano due rotture vere: un identificatore nudo della pagina
-    //     (`page.evaluate(() => miaFunzioneGlobale())`) non risolve piu', e un
-    //     oggetto creato NELLA sandbox passato a codice della pagina viene
-    //     rifiutato con "Permission denied to access property". Il secondo non e'
-    //     un difetto: e' la stessa barriera che rende invisibili i nostri global.
+    // ⛔ THE "main" WORLD IS THE PAGE'S OWN GLOBAL, and stays so: the clients'
+    // init scripts and bindings run here because the page must see them. The
+    // caller's code does not: it runs in a 'caller' world the client declares
+    // (_createGlobal). Measured on 2026-08-23 (90-firefox-internals.md) why the
+    // main world itself could not simply become a sandbox: with the extended
+    // principal the page's additions disappear, with the page's principal and
+    // no Xrays its replacements stay in the way.
     this._createWorldContext('', 'main');
     for (const [name, world] of this._frameTree._isolatedWorlds) {
       if (name)

@@ -24,6 +24,9 @@ var SimpleChannel = class SimpleChannel {
       dispose: () => {},
     };
     this._ready = false;
+    // Set by detachFromPeer, cleared by the READY that attaches this end again.
+    this._detached = false;
+    this._onReattached = null;
     this._paused = false;
     this._disposed = false;
 
@@ -93,11 +96,46 @@ var SimpleChannel = class SimpleChannel {
     this._setTimeout(cb, timeout);
   }
 
+  /**
+   * The other end has stopped listening to this one, though the transport is
+   * still there: the parent end follows the CURRENT document's actor, so a
+   * document that goes into the back-forward cache keeps its actor while the
+   * parent rebinds to the next one. Without this the end stayed ready, and a
+   * restored document spoke at once into an actor nothing listened to, and the
+   * READY of the rebinding replayed nothing, since the end was already ready
+   * (B303 E3). Now what is said meanwhile waits, and goes out at the READY,
+   * after the reattachment hook.
+   */
+  detachFromPeer() {
+    if (!this._ready)
+      return;
+    this._ready = false;
+    this._detached = true;
+  }
+
+  /**
+   * `callback` runs when a detached end is attached again, before what it
+   * queued while detached goes out, so that what it says there is heard
+   * first: the restored document announces itself before its console speaks
+   * in a context the client does not know yet.
+   */
+  onReattached(callback) {
+    this._onReattached = callback;
+  }
+
   _markAsReady() {
     if (this._ready)
       return;
     this._ready = true;
-    for (const { message } of this._pendingMessages.values())
+    // Snapshot first: what the hook sends goes out as it is sent, and must not
+    // be sent a second time by the replay below.
+    const queued = [...this._pendingMessages.values()];
+    if (this._detached) {
+      this._detached = false;
+      if (this._onReattached)
+        this._onReattached();
+    }
+    for (const { message } of queued)
       this.transport.sendMessage(message);
   }
 

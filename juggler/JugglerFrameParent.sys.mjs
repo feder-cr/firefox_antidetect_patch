@@ -11,26 +11,22 @@ export class JugglerFrameParent extends JSWindowActorParent {
   }
 
   receiveMessage(message) {
-    // ⛔ THIS IS ONLY REACHED WHILE THE CHANNEL IS NOT BOUND TO THIS ACTOR,
-    // and that is exactly the case worth handling: `SimpleChannel.bindToActor`
-    // binds by replacing an actor's `receiveMessage`, so the bound actor never
-    // arrives here. A document restored from the back-forward cache belongs to
-    // an actor that was created earlier and then stopped being the bound one,
-    // which is why everything it says is dropped today.
+    // ⛔ THIS IS ONLY REACHED WHILE THE CHANNEL IS NOT BOUND TO THIS ACTOR:
+    // `SimpleChannel.bindToActor` binds by replacing an actor's
+    // `receiveMessage`, so the bound actor never arrives here. The one message
+    // that comes this way is a restored document asking to be bound again
+    // (JugglerFrameChild, on its pageshow). Its channel end has been detached
+    // since its pagehide and keeps what it says, so nothing else is sent to an
+    // unbound actor; and the READY of this binding is what makes it announce
+    // itself and then speak (SimpleChannel.detachFromPeer).
     if (message?.name !== 'juggler:became-current')
       return;
     if (this._browserId === undefined || !this.manager?.isCurrentGlobal)
       return;
     const registry = TargetRegistry.instance();
-    const target = registry?.targetForBrowserId(this._browserId);
-    if (!target)
+    if (!registry?.targetForBrowserId(this._browserId))
       return;
     registry.onActorCreated(this, this._browserId);
-    // Only now does the restored document have somewhere to speak, so only now
-    // is it asked to announce itself. The other order loses the announcement,
-    // measured.
-    target._channel.connect('').send('announceRestoredDocument')
-        .catch(e => void e);
   }
 
   async actorCreated() {

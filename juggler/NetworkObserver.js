@@ -121,6 +121,9 @@ class NetworkRequest {
 
     // Stealthfox 2026-08-30: rimesso con la lettura dei corpi.
     this._responseBodyChunks = [];
+    // Set by NetworkObserver._onServiceWorkerResponse when a service worker
+    // answered this request; read once, when the response is reported.
+    this._fulfilledByServiceWorker = false;
 
     this._redirectedIndex = 0;
     if (redirectedFrom) {
@@ -522,11 +525,13 @@ class NetworkRequest {
       isIntercepted,
       requestId: this.requestId,
       redirectedFrom: this.redirectedFromId,
-      // Stealthfox 2026-08-24 stopped cloning and base64-encoding the body of
-      // every POST. It is read again only while interception is on for the
-      // page or its context: a route handler deciding whether to let a
-      // request through needs it, and other sessions keep the saving.
-      postData: this._shouldIntercept() ? readRequestPostData(this.httpChannel) : undefined,
+      // The body of every request that has one, as upstream sends it. From
+      // 2026-08-24 (B170) it was not read, and from 2026-10-03 only while
+      // interception was on, to save a copy of each upload: `request.post_data`
+      // then answered None for every POST of a page with no route, as if the
+      // form had been empty, and nothing said so (B303 E15). The reader leaves
+      // the upload intact and skips bodies over 10 MB.
+      postData: readRequestPostData(this.httpChannel),
       headers: requestHeaders(this.httpChannel),
       method: this.httpChannel.requestMethod,
       navigationId: this.navigationId,
@@ -582,9 +587,10 @@ class NetworkRequest {
 
     pageNetwork.emit(PageNetwork.Events.Response, {
       requestId: this.requestId,
-      // Stealthfox 2026-08-24: niente parsing del certificato per ogni
-      // risposta - nessuno lo chiede senza response.securityDetails().
-      securityDetails: null,
+      // The certificate that served it, as upstream reports it. From
+      // 2026-08-24 (B170) this was always null, which a script read as "not
+      // over TLS" (B303 E15).
+      securityDetails: getSecurityDetails(this.httpChannel),
       fromCache,
       headers,
       remoteIPAddress,
@@ -592,9 +598,9 @@ class NetworkRequest {
       status,
       statusText,
       timing,
-      // Stealthfox 2026-08-24: sempre false, il rilevamento (l'observer
-      // service-worker-synthesized-response) e' sparito.
-      fromServiceWorker: false,
+      // Whether a service worker answered it. From 2026-08-24 (B170) this was
+      // always false (B303 E15).
+      fromServiceWorker: this._fulfilledByServiceWorker,
     }, this._frameId);
   }
 
@@ -684,7 +690,29 @@ export class NetworkObserver {
       helper.addObserver(this._onResponse.bind(this, false /* fromCache */), 'http-on-examine-response'),
       helper.addObserver(this._onResponse.bind(this, true /* fromCache */), 'http-on-examine-cached-response'),
       helper.addObserver(this._onResponse.bind(this, true /* fromCache */), 'http-on-examine-merged-response'),
+      // Gecko's own notification, the one the devtools read, sent before the
+      // synthesized response reaches http-on-examine-response.
+      helper.addObserver(this._onServiceWorkerResponse.bind(this), 'service-worker-synthesized-response'),
     ];
+  }
+
+  /**
+   * A service worker answered `channel`: the request in flight with its id is
+   * marked. By the id, as upstream matched it, because the channel notified
+   * can be another object than the one the request was opened with after the
+   * internal redirect to interception, and the id survives that redirect.
+   * ⛔ ON THE REQUEST, NOT IN A SET: upstream kept the ids in a Set emptied
+   * only when a response was reported, so the id of a channel with no page
+   * stayed there for good. The mark dies with its request.
+   */
+  _onServiceWorkerResponse(channel) {
+    if (!(channel instanceof Ci.nsIHttpChannel))
+      return;
+    const channelId = channel.QueryInterface(Ci.nsIHttpChannel).channelId + '';
+    for (const request of this._channelToRequest.values()) {
+      if (request.requestId === channelId)
+        request._fulfilledByServiceWorker = true;
+    }
   }
 
   _expectRedirect(channelId, previous) {
@@ -827,6 +855,31 @@ function restoreRequestHeaderOrder(httpChannel, order) {
 }
 
 const redirectStatus = [301, 302, 303, 307, 308];
+
+const protocolVersionNames = {
+  [Ci.nsITransportSecurityInfo.TLS_VERSION_1]: 'TLS 1',
+  [Ci.nsITransportSecurityInfo.TLS_VERSION_1_1]: 'TLS 1.1',
+  [Ci.nsITransportSecurityInfo.TLS_VERSION_1_2]: 'TLS 1.2',
+  [Ci.nsITransportSecurityInfo.TLS_VERSION_1_3]: 'TLS 1.3',
+};
+
+// Upstream's, unchanged: what Playwright's response.securityDetails() reads.
+function getSecurityDetails(httpChannel) {
+  const securityInfo = httpChannel.securityInfo;
+  if (!securityInfo)
+    return null;
+  securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
+  if (!securityInfo.serverCert)
+    return null;
+  return {
+    protocol: protocolVersionNames[securityInfo.protocolVersion] || '<unknown>',
+    subjectName: securityInfo.serverCert.commonName,
+    issuer: securityInfo.serverCert.issuerCommonName,
+    // Convert to seconds.
+    validFrom: securityInfo.serverCert.validity.notBefore / 1000 / 1000,
+    validTo: securityInfo.serverCert.validity.notAfter / 1000 / 1000,
+  };
+}
 
 function filterHeadersForRedirect(headers, requestMethod, status) {
     // HTTP-redirect fetch step 13 (https://fetch.spec.whatwg.org/#http-redirect-fetch)

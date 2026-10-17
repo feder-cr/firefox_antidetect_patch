@@ -130,6 +130,11 @@ pageTypes.Clip = {
 pageTypes.InitScript = {
   script: t.String,
   worldName: t.Optional(t.String),
+  // STEALTHFOX [B322]: what kind of world `worldName` is, declared by the
+  // client: 'isolated' (the default, the machinery's world) or 'caller' (where
+  // the caller's code runs, through hybrid Xrays). content/FrameTree.js,
+  // _createGlobal, says what each one is.
+  worldKind: t.Optional(t.Enum(['isolated', 'caller'])),
 };
 
 const runtimeTypes = {};

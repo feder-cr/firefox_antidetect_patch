@@ -72,22 +72,14 @@ export class PageAgent {
     this._docShell = docShell;
 
     // Dispatch frameAttached events for all initial frames
-    for (const frame of this._frameTree.frames()) {
-      this._onFrameAttached(frame);
-      if (frame.url())
-        this._onNavigationCommitted(frame);
-      if (frame.pendingNavigationId())
-        this._onNavigationStarted(frame);
-    }
+    for (const frame of this._frameTree.frames())
+      this._reportFrame(frame);
 
     // Report created workers.
     for (const worker of this._frameTree.workers())
       this._onWorkerCreated(worker);
 
-    // Report execution contexts.
-    this._browserPage.emit('runtimeExecutionContextsCleared', {});
-    for (const context of this._runtime.executionContexts())
-      this._onExecutionContextCreated(context);
+    this._reportExecutionContexts();
 
     if (this._frameTree.isPageReady()) {
       this._browserPage.emit('pageReady', {});
@@ -123,7 +115,7 @@ export class PageAgent {
       // already: its two lifecycle events fired the first time round and
       // will not fire again, so they are reported here or a caller waits
       // for something that can never arrive.
-      helper.on(this._frameTree, 'documentrestored', frame => this._emitAllEvents(frame)),
+      helper.on(this._frameTree, 'documentrestored', this._onDocumentRestored.bind(this)),
       helper.on(this._frameTree, 'navigationaborted', this._onNavigationAborted.bind(this)),
       helper.on(this._frameTree, 'samedocumentnavigation', this._onSameDocumentNavigation.bind(this)),
       helper.on(this._frameTree, 'pageready', () => this._browserPage.emit('pageReady', {})),
@@ -194,6 +186,41 @@ export class PageAgent {
         disposeObject: this._runtime.disposeObject.bind(this._runtime),
       }),
     ];
+  }
+
+  // A frame as it is: attached, its committed document, its navigation in
+  // flight. What the client is told of a page it attaches to.
+  _reportFrame(frame) {
+    this._onFrameAttached(frame);
+    if (frame.url())
+      this._onNavigationCommitted(frame);
+    if (frame.pendingNavigationId())
+      this._onNavigationStarted(frame);
+  }
+
+  // Every execution context there is, after the client drops the ones it held.
+  _reportExecutionContexts() {
+    this._browserPage.emit('runtimeExecutionContextsCleared', {});
+    for (const context of this._runtime.executionContexts())
+      this._onExecutionContextCreated(context);
+  }
+
+  /**
+   * The main frame's document came back from the back-forward cache, and its
+   * navigation is committed (FrameTree.announceRestoredDocument). The client
+   * dropped this page's iframes and contexts when the document that replaced
+   * it committed, and they are all still here, so the page is reported as it
+   * is - the iframes, the contexts it really has - and then as loaded: its
+   * `DOMContentLoaded` and `load` fired the first time round and do not fire
+   * again, so a caller waiting for them would wait for good.
+   */
+  _onDocumentRestored(mainFrame) {
+    for (const frame of this._frameTree.frames()) {
+      if (frame !== mainFrame)
+        this._reportFrame(frame);
+    }
+    this._reportExecutionContexts();
+    this._emitAllEvents(mainFrame);
   }
 
   _emitAllEvents(frame) {

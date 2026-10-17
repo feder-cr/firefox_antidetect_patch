@@ -1,0 +1,181 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# publish.yml — the seal and the DRAFT release of a gated build. Called by
+# release.yml (kind=release) on the archives it just built and by
+# republish.yml on another run's, and written ONCE for both: the two copies
+# had already diverged once (republish's produced no seal, 2026-07-25).
+#
+# The payload refusal was republish's alone; on every publish now, it is also
+# what stops the run that publishing a draft re-triggers (the new tag is a
+# `firefox-*` push) from overwriting the published assets with a rebuild.
+# ─────────────────────────────────────────────────────────────────────────────
+name: publish
+
+on:
+  workflow_call:
+    inputs:
+      build_run_id:
+        description: the run whose asset-* and source-commit artifacts to publish
+        type: string
+        required: true
+      tag:
+        description: the firefox-N tag (the plan's)
+        type: string
+        required: true
+      num:
+        type: string
+        required: true
+      prevtag:
+        type: string
+        required: true
+      wrapper_ref:
+        type: string
+        default: main
+
+env:
+  SOURCE_REPO: feder-cr/firefox_antidetect_patch
+
+jobs:
+  publish:
+    name: publish-draft-release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout wrapper (for scripts/gen_release_notes.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          # ⛔ NOT hardcoded to main. The gate validates the BINARY, and the
+          # wrapper is only the instrument it is driven with: unfinished work
+          # on the wrapper's main must not be able to block a binary release.
+          # Default stays main, because main is what gets published next and is
+          # therefore the honest pairing - this is an escape hatch, not a
+          # change of policy.
+          #
+          # ⛔ AND THIS IS NOT THE SAME QUESTION AS THE CORE, which is
+          # installed from git@main a few steps below and must STAY that way:
+          # during a release the published core is one step behind BY
+          # CONSTRUCTION, because its version derives from a seal that cannot
+          # exist until this binary is built. Pinning the core to the index
+          # tests a pairing no user ever gets, and it bit on firefox-20.
+          ref: ${{ inputs.wrapper_ref }}
+          fetch-depth: 1
+      - name: Checkout source repo (for scripts/make_seal.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: _src, fetch-depth: 1 }
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Download all build assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: asset-*
+          path: dl
+          merge-multiple: true
+          # another run's artifacts need the token; this run's do not
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ inputs.build_run_id != github.run_id && github.token || '' }}
+      - name: Download source-commit metadata
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: source-commit
+          path: src-meta
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ inputs.build_run_id != github.run_id && github.token || '' }}
+      - name: Assert all 3 target archives present (no silent partial release)
+        run: |
+          cd dl
+          EXPECTED="
+          firefox-151.0-stealth-linux-x86_64.tar.gz
+          firefox-151.0-stealth-linux-arm64.tar.gz
+          firefox-151.0-stealth-win-x86_64.zip
+          "
+          for a in $EXPECTED; do
+            [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
+          done
+          echo "all 3 target archives present"
+      - name: Generate checksums.txt
+        run: |
+          cd dl; ls -la
+          # explicit glob — never include checksums.txt itself (the `*`-includes-itself trap)
+          sha256sum firefox-151.0-stealth-* > checksums.txt
+          echo "----- checksums.txt -----"; cat checksums.txt
+      # The tag, its number for the title and the previous tag for the changelog
+      # range are the caller's plan (scripts/release_plan.py), not derived here.
+      - name: Generate + gate seal.json
+        run: |
+          echo "publishing DRAFT release for tag: ${{ inputs.tag }}"
+          python3 _src/scripts/make_seal.py \
+            --tag "${{ inputs.tag }}" \
+            --assets dl \
+            --source-commit-file src-meta/source-commit.txt \
+            --playwright-range _src/browser/config/stealth_playwright_range.txt \
+            -o dl/seal.json
+          echo "----- seal.json -----"; cat dl/seal.json
+      - name: Build release notes from the source commits
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          CUR="$(cat src-meta/source-commit.txt 2>/dev/null | tr -d '[:space:]')"
+          echo "this build's source commit: ${CUR:-<none>}"
+          # previous release's recorded source commit — gives the changelog range.
+          # Missing (first automated notes / firefox-0) -> notes omit the changelog.
+          PREV=""
+          PREVTAG="${{ inputs.prevtag }}"
+          if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
+               --pattern source-commit.txt --dir prev 2>/dev/null; then
+            PREV="$(cat prev/source-commit.txt | tr -d '[:space:]')"
+            echo "previous ($PREVTAG) source commit: $PREV"
+          else
+            echo "no previous source-commit.txt — changelog section omitted this time"
+          fi
+          python scripts/gen_release_notes.py --tag "${{ inputs.tag }}" \
+            --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SOURCE_REPO }}" > body.md
+          echo "----- generated body.md -----"; cat body.md
+          # publish THIS build's source commit so the next release can diff from it
+          cp src-meta/source-commit.txt dl/source-commit.txt
+      - name: Refuse a payload change under an existing tag
+        env:
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          TAG: "${{ inputs.tag }}"
+        run: |
+          set -e
+          # cmp against a file that is not there reports "differs", and this step
+          # would then blame a payload change that never happened while the real
+          # fault is upstream. Name the real fault instead.
+          if [ ! -s dl/seal.json ]; then
+            echo "ERROR: dl/seal.json is missing or empty, so there is nothing to compare"
+            echo "the published seal against and nothing to upload. The 'Generate + gate"
+            echo "seal.json' step must run before this one."
+            exit 1
+          fi
+          if gh release download "$TAG" -R "${{ github.repository }}" \
+               --pattern seal.json --dir published 2>/dev/null; then
+            if ! cmp -s published/seal.json dl/seal.json; then
+              echo "ERROR: $TAG already has a published seal for a DIFFERENT payload."
+              echo "A new payload gets a new tag. Mint firefox-\$((N+1)) from the same artifacts."
+              diff <(python3 -m json.tool published/seal.json) <(python3 -m json.tool dl/seal.json) || true
+              exit 1
+            fi
+            echo "seal identical: metadata-only re-cut, proceeding"
+          else
+            echo "no seal published under $TAG yet (first seal), proceeding"
+          fi
+      - name: Create DRAFT release with all assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: firefox_antidetect_patch (151.0) rev ${{ inputs.num }}
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            dl/*.tar.gz
+            dl/*.zip
+            dl/checksums.txt
+            dl/source-commit.txt
+            dl/seal.json
+          body_path: body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

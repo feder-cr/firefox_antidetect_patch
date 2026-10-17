@@ -20716,6 +20716,20 @@
   value: ""
   mirror: always
 
+# The branding a page reads under chrome://branding/content/ and
+# resource://usercontext-content/branding/: a file: URI of the zip archive whose
+# root entries are the files. invisible_core ships the sets (the retail brand,
+# ours) and accepts a caller's own archive; the engine keeps no stealth copy and
+# serves what is declared here as jar:, the channel class the retail uses. With
+# the engine on, empty, malformed, not a zip or holding anything but root files
+# refuses the launch (StealthDeclarationGate) and fails the load
+# (netwerk/protocol/res/StealthBranding.h) instead of serving the build's own
+# brand.
+- name: zoom.stealth.branding.archive
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # Glyph-edge coverage ladder: the distinct alpha levels a Windows rasteriser
 # produces on an antialiased glyph edge, ascending, comma separated. Measured
 # 2026-08-07 over 48 family/size/weight combinations: Windows yields 9-19

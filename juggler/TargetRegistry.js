@@ -130,9 +130,17 @@ export class TargetRegistry {
     return TargetRegistry._instance || null;
   }
 
-  constructor() {
+  /**
+   * @param {{survivesLastWindow: boolean}} options
+   *   survivesLastWindow: the browser was started with -silent, so Juggler
+   *   holds it in the last-window-closing survival area and closing every
+   *   window does not quit it. Without -silent (a persistent context) the
+   *   last window to close quits the browser.
+   */
+  constructor({ survivesLastWindow }) {
     helper.decorateAsEventEmitter(this);
     TargetRegistry._instance = this;
+    this._survivesLastWindow = survivesLastWindow;
 
     this._browserContextIdToBrowserContext = new Map();
     this._userContextIdToBrowserContext = new Map();
@@ -178,6 +186,7 @@ export class TargetRegistry {
         }
         target.emit(PageTarget.Events.Crashed);
         target.dispose();
+        target.closeCrashedTab();
       }
     }, 'oop-frameloader-crashed');
 
@@ -818,6 +827,30 @@ export class PageTarget {
     });
   }
 
+  /**
+   * After its content process crashed and the client was told, the tab is
+   * closed (the owner's decision, 2026-10-14, as camoufox #794/#795/#803).
+   * Until firefox-48 the crash only disposed the target: the tab stayed in the
+   * parent until the browser exited, 15-60 MB a crash with no bound, and no
+   * command reached it any more, not page.close nor the context's close.
+   *
+   * Called after dispose(), so the TabClose listener finds no target and
+   * nothing is disposed twice. Each page has a window of its own, so the tab
+   * is usually the last of its window and the window closes with it
+   * (browser.tabs.closeWindowWithLastTab). The one tab kept is the last tab of
+   * the last window of a browser that does not survive it, a persistent
+   * context: closing it would quit the browser under the client. It stays as
+   * Firefox keeps every crashed tab, on its crash page.
+   */
+  closeCrashedTab() {
+    if (!this._registry._survivesLastWindow && this._gBrowser.tabs.length === 1) {
+      const windows = [...Services.wm.getEnumerator('navigator:browser')];
+      if (windows.length === 1)
+        return;
+    }
+    this._gBrowser.removeTab(this._tab, { skipPermitUnload: true });
+  }
+
   channel() {
     return this._channel;
   }
@@ -840,8 +873,17 @@ export class PageTarget {
     this._browserContext.grantPermissionsToOrigin(this._url);
   }
 
+  // ⛔ ONE KEY FOR THE LIFE OF THE PAGE, SET HERE AND DELETED IN dispose():
+  // the browserId kept at construction, as the registry's maps do.
+  // sharedData is copied whole into every content process at each flush, and
+  // until firefox-48 nothing deleted a page's entry, so every page ever opened
+  // stayed in it: 31 entries after 30 pages opened and closed, measured.
+  _crossProcessCookieKey() {
+    return helper.pageCookieKey(this._browserId);
+  }
+
   _updateCrossProcessCookie() {
-    Services.ppmm.sharedData.set('juggler:page-cookie-' + this._linkedBrowser.browsingContext.browserId, this.crossProcessCookie);
+    Services.ppmm.sharedData.set(this._crossProcessCookieKey(), this.crossProcessCookie);
     Services.ppmm.sharedData.flush();
   }
 
@@ -977,6 +1019,10 @@ export class PageTarget {
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._browserId);
+    if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {
+      Services.ppmm.sharedData.delete(this._crossProcessCookieKey());
+      Services.ppmm.sharedData.flush();
+    }
     try {
       helper.removeListeners(this._eventListeners);
     } catch (e) {
@@ -1047,8 +1093,13 @@ class BrowserContext {
     this.pages = new Set();
   }
 
+  // Set here, deleted when the context is removed (destroy()): see the page's.
+  _crossProcessCookieKey() {
+    return helper.contextCookieKey(this.userContextId);
+  }
+
   _updateCrossProcessCookie() {
-    Services.ppmm.sharedData.set('juggler:context-cookie-' + this.userContextId, this.crossProcessCookie);
+    Services.ppmm.sharedData.set(this._crossProcessCookieKey(), this.crossProcessCookie);
     Services.ppmm.sharedData.flush();
   }
 
@@ -1076,6 +1127,10 @@ class BrowserContext {
     }
     this._registry._browserContextIdToBrowserContext.delete(this.browserContextId);
     this._registry._userContextIdToBrowserContext.delete(this.userContextId);
+    if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {
+      Services.ppmm.sharedData.delete(this._crossProcessCookieKey());
+      Services.ppmm.sharedData.flush();
+    }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
     await this.setServiceWorkersBlocked(false);
   }

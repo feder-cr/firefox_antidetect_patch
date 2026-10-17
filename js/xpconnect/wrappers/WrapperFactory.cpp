@@ -372,6 +372,7 @@ static void DEBUG_CheckUnwrapSafety(HandleObject obj,
           CompartmentPrivate::Get(target);
       if (!originCompartmentPrivate->wantXrays &&
           !targetCompartmentPrivate->wantXrays &&
+          !targetCompartmentPrivate->hybridXrays &&
           CompartmentsMayHaveHadTransparentCCWs(originCompartmentPrivate,
                                                 targetCompartmentPrivate)) {
         // We should have a transparent CCW, unless we have a cross-origin
@@ -442,6 +443,109 @@ static const Wrapper* SelectWrapper(bool securityWrapper, XrayType xrayType,
   return &FilteringWrapper<CrossCompartmentSecurityWrapper, Opaque>::singleton;
 }
 
+// STEALTHFOX [B322]: what the caller's world reads the page through. A hybrid
+// Xray where the object has a standard view, and the transparent wrapper
+// where it has none (a scripted Proxy, a generator): there the standard view
+// would be empty, so the page's answer is the only one. The rule is written
+// above HybridXrayWrapper in XrayWrapper.h.
+static const Wrapper* SelectHybridWrapper(XrayType xrayType) {
+  if (xrayType == XrayForDOMObject) {
+    return &HybridXrayDOM::singleton;
+  }
+  if (xrayType == XrayForJSObject) {
+    return &HybridXrayJS::singleton;
+  }
+  return &CrossCompartmentWrapper::singleton;
+}
+
+// STEALTHFOX [B322]: what the PAGE reads the caller's objects through, the
+// mirror of the hybrid Xray. An object the caller's code makes and hands to
+// the page (an argument of a page function, `window.x = {...}`, a callback,
+// an event's `detail`) keeps its identity and its own properties, shared both
+// ways; but its STANDARD prototypes are shown as the page's own intrinsics of
+// the same name, and everything inherited is looked up there, in the page's
+// realm. Through a plain transparent wrapper the page saw an object of
+// another realm: `arg instanceof Array` false, `arg.map` the caller's map, and
+// `cb.constructor('return globalThis')()` compiling code in the caller's
+// world. Through this one `instanceof` holds, `arr.map` is the page's own and
+// `cb.constructor` is the page's Function.
+//
+// The function kinds that compile code are mapped too: AsyncFunction,
+// GeneratorFunction and AsyncGeneratorFunction prototypes are plain objects
+// to JS::IdentifyStandardPrototype, and each leads to a constructor that
+// would compile in the caller's realm. What stays reachable is only what the
+// caller's code hands over itself (a sloppy function returning `this`).
+class CallerObjectWrapper : public CrossCompartmentWrapper {
+ public:
+  constexpr CallerObjectWrapper()
+      : CrossCompartmentWrapper(0, /* aHasPrototype = */ true) {}
+
+  virtual bool getPrototype(JSContext* cx, HandleObject wrapper,
+                            MutableHandleObject protop) const override;
+  virtual bool getPrototypeIfOrdinary(
+      JSContext* cx, HandleObject wrapper, bool* isOrdinary,
+      MutableHandleObject protop) const override;
+
+  static const CallerObjectWrapper singleton;
+};
+
+const CallerObjectWrapper CallerObjectWrapper::singleton;
+
+// The intrinsic of the caller's realm `proto` is, or JSProto_Null. Called in
+// the caller's realm.
+static bool CallerIntrinsicKey(JSContext* cx, HandleObject proto,
+                               JSProtoKey* key) {
+  *key = JSProto_Null;
+  if (js::IsCrossCompartmentWrapper(proto)) {
+    // the page's own object, set as a prototype: it crosses back as itself
+    return true;
+  }
+  *key = JS::IdentifyStandardPrototype(proto);
+  if (*key != JSProto_Null) {
+    return true;
+  }
+  for (JSProtoKey k : {JSProto_AsyncFunction, JSProto_GeneratorFunction,
+                       JSProto_AsyncGeneratorFunction}) {
+    RootedObject intrinsic(cx);
+    if (!JS_GetClassPrototype(cx, k, &intrinsic)) {
+      return false;
+    }
+    if (intrinsic == proto) {
+      *key = k;
+      return true;
+    }
+  }
+  return true;
+}
+
+bool CallerObjectWrapper::getPrototype(JSContext* cx, HandleObject wrapper,
+                                       MutableHandleObject protop) const {
+  RootedObject target(cx, wrappedObject(wrapper));
+  JSProtoKey key = JSProto_Null;
+  {
+    JSAutoRealm ar(cx, target);
+    if (!JS_GetPrototype(cx, target, protop)) {
+      return false;
+    }
+    if (protop && !CallerIntrinsicKey(cx, protop, &key)) {
+      return false;
+    }
+  }
+  if (key != JSProto_Null) {
+    // the intrinsic of the realm asking, which is one of the page's
+    return JS_GetClassPrototype(cx, key, protop);
+  }
+  return JS_WrapObject(cx, protop);
+}
+
+bool CallerObjectWrapper::getPrototypeIfOrdinary(
+    JSContext* cx, HandleObject wrapper, bool* isOrdinary,
+    MutableHandleObject protop) const {
+  // Computed for the realm asking, so never the target's own [[Prototype]].
+  *isOrdinary = false;
+  return true;
+}
+
 JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
                                  HandleObject obj) {
   MOZ_ASSERT(!IsWrapper(obj) || GetProxyHandler(obj) == &XrayWaiver ||
@@ -472,6 +576,15 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
       CompartmentPrivate::Get(origin);
   CompartmentPrivate* targetCompartmentPrivate =
       CompartmentPrivate::Get(target);
+
+  // STEALTHFOX [B322]: the caller's world (`hybridXrays`) wants Xrays when IT
+  // reads the page, as a `wantXrays` compartment does, but it does not impose
+  // them on the page reading ITS objects: the page sees those transparently,
+  // as it saw them when the caller's code ran in the page's own realm. Hence
+  // two flags where Gecko had one symmetric test.
+  bool targetHybrid = targetCompartmentPrivate->hybridXrays;
+  bool originForcesXrays = originCompartmentPrivate->wantXrays;
+  bool targetForcesXrays = targetCompartmentPrivate->wantXrays || targetHybrid;
 
   // Track whether we decided to use a transparent wrapper because of
   // document.domain usage, so we don't override that decision.
@@ -512,18 +625,29 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
            // Check for the more rare case of cross-origin objects before doing
            // the more-likely-to-pass checks for wantXrays.
            IsCrossOriginAccessibleObject(obj) &&
-           (!targetSubsumesOrigin || (!originCompartmentPrivate->wantXrays &&
-                                      !targetCompartmentPrivate->wantXrays))) {
+           (!targetSubsumesOrigin ||
+            (!originForcesXrays && !targetForcesXrays))) {
     wrapper = &CrossOriginObjectWrapper::singleton;
+  }
+
+  // STEALTHFOX [B322]: a caller's object, read by the page it shares a
+  // principal with. It goes BEFORE the web-object case below, which would
+  // otherwise take it: the two compartments are same-origin and neither
+  // forces Xrays on the other, so that case hands the page a plain
+  // transparent wrapper, an object of another realm. A page that does not
+  // subsume the caller, or that wants Xrays (another sandbox), still gets
+  // what Gecko's rules give it.
+  else if (originCompartmentPrivate->hybridXrays && !targetHybrid &&
+           !targetIsChrome && targetSubsumesOrigin && !targetForcesXrays) {
+    wrapper = &CallerObjectWrapper::singleton;
   }
 
   // Special handling for other web objects.  Again, we only want this in
   // web-like contexts (symmetric security relationships, no forced Xrays).  In
   // this situation, if the two compartments may ever have had transparent CCWs
   // between them, we want to keep using transparent CCWs.
-  else if (originSubsumesTarget == targetSubsumesOrigin &&
-           !originCompartmentPrivate->wantXrays &&
-           !targetCompartmentPrivate->wantXrays &&
+  else if (originSubsumesTarget == targetSubsumesOrigin && !originForcesXrays &&
+           !targetForcesXrays &&
            CompartmentsMayHaveHadTransparentCCWs(originCompartmentPrivate,
                                                  targetCompartmentPrivate)) {
     isTransparentWrapperDueToDocumentDomain = true;
@@ -547,8 +671,7 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
     //
     // Xrays are a bidirectional protection, since it affords clarity to the
     // caller and privacy to the callee.
-    bool sameOriginXrays = originCompartmentPrivate->wantXrays ||
-                           targetCompartmentPrivate->wantXrays;
+    bool sameOriginXrays = originForcesXrays || targetForcesXrays;
     bool wantXrays = !sameOrigin || sameOriginXrays;
 
     XrayType xrayType = wantXrays ? GetXrayType(obj) : NotXray;
@@ -559,7 +682,11 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
                       targetCompartmentPrivate->allowWaivers &&
                       HasWaiveXrayFlag(obj);
 
-    wrapper = SelectWrapper(securityWrapper, xrayType, waiveXrays, obj);
+    if (targetHybrid && !securityWrapper && !waiveXrays) {
+      wrapper = SelectHybridWrapper(xrayType);
+    } else {
+      wrapper = SelectWrapper(securityWrapper, xrayType, waiveXrays, obj);
+    }
   }
 
   if (!targetSubsumesOrigin && !isTransparentWrapperDueToDocumentDomain) {
