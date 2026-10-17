@@ -630,6 +630,18 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
     wrapper = &CrossOriginObjectWrapper::singleton;
   }
 
+  // STEALTHFOX [B322]: a caller's object, read by the page it shares a
+  // principal with. It goes BEFORE the web-object case below, which would
+  // otherwise take it: the two compartments are same-origin and neither
+  // forces Xrays on the other, so that case hands the page a plain
+  // transparent wrapper, an object of another realm. A page that does not
+  // subsume the caller, or that wants Xrays (another sandbox), still gets
+  // what Gecko's rules give it.
+  else if (originCompartmentPrivate->hybridXrays && !targetHybrid &&
+           !targetIsChrome && targetSubsumesOrigin && !targetForcesXrays) {
+    wrapper = &CallerObjectWrapper::singleton;
+  }
+
   // Special handling for other web objects.  Again, we only want this in
   // web-like contexts (symmetric security relationships, no forced Xrays).  In
   // this situation, if the two compartments may ever have had transparent CCWs
@@ -672,10 +684,6 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
 
     if (targetHybrid && !securityWrapper && !waiveXrays) {
       wrapper = SelectHybridWrapper(xrayType);
-    } else if (originCompartmentPrivate->hybridXrays && !targetHybrid &&
-               !targetIsChrome && !securityWrapper && !wantXrays) {
-      // [B322] a caller's object, read by the page it shares a principal with
-      wrapper = &CallerObjectWrapper::singleton;
     } else {
       wrapper = SelectWrapper(securityWrapper, xrayType, waiveXrays, obj);
     }
