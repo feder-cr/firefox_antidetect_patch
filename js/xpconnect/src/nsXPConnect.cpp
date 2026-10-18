@@ -32,6 +32,7 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/StealthSessionDeclaration.h"
 #include "mozilla/glean/bindings/Glean.h"
 #include "mozilla/glean/bindings/GleanPings.h"
 #include "mozilla/ScriptPreloader.h"
@@ -47,7 +48,6 @@
 #include "nsContentUtils.h"
 #include "nsScriptError.h"
 #include "nsJSUtils.h"
-#include "nsRFPService.h"
 #include "prsystem.h"
 
 #include "xpcprivate.h"
@@ -543,29 +543,11 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
     aOptions.creationOptions().setSecureContext(aSecureContext);
   }
 
-  if (aForceUTC) {
-    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
-    aOptions.behaviors().setTimeZoneOverride(timeZone.get());
-  } else if (!aTimezoneOverride.IsEmpty()) {
-    aOptions.behaviors().setTimeZoneOverride(
-        NS_ConvertUTF16toUTF8(aTimezoneOverride).get());
-  }
   aOptions.creationOptions().setAlwaysUseFdlibm(aAlwaysUseFdlibm);
-  if (aLocaleEnUS) {
-    nsCString locale = nsRFPService::GetSpoofedJSLocale();
-    aOptions.behaviors().setLocaleOverride(locale.get());
-  } else if (!aLanguageOverride.IsEmpty()) {
-    // The override may be an Accept-Language list ("fr-FR, fr") so that
-    // navigator.languages reports the full desktop-default list; the realm's
-    // Intl default locale must be a single BCP-47 tag, so use the primary one.
-    nsAutoCString primaryLocale(aLanguageOverride);
-    int32_t comma = primaryLocale.FindChar(',');
-    if (comma >= 0) {
-      primaryLocale.Truncate(comma);
-    }
-    primaryLocale.Trim(" \t");
-    aOptions.behaviors().setLocaleOverride(primaryLocale.get());
-  }
+  // STEALTHFOX (firefox-50): the zone and the default locale, by the rule the
+  // worker and worklet realms follow too (dom/base/StealthSessionDeclaration).
+  mozilla::dom::SetRealmTimeAndLanguage(aOptions, aForceUTC, aLocaleEnUS,
+                                        aLanguageOverride, aTimezoneOverride);
 }
 
 bool InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal,

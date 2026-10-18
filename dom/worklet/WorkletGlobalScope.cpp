@@ -7,6 +7,7 @@
 #include "js/RealmOptions.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/dom/Console.h"
+#include "mozilla/dom/StealthSessionDeclaration.h"
 #include "mozilla/dom/WorkletGlobalScopeBinding.h"
 #include "mozilla/dom/WorkletImpl.h"
 #include "mozilla/dom/WorkletThread.h"
@@ -130,16 +131,18 @@ void WorkletGlobalScope::Dump(const Optional<nsAString>& aString) const {
 JS::RealmOptions WorkletGlobalScope::CreateRealmOptions() const {
   JS::RealmOptions options;
 
-  if (ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC)) {
-    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
-    options.behaviors().setTimeZoneOverride(timeZone.get());
-  }
+  // STEALTHFOX (firefox-50): the rule of the window's and the workers' realms
+  // (SetRealmTimeAndLanguage), with the language and the zone of the context
+  // that created the worklet. Until firefox-50 a worklet's realm got only
+  // resistFingerprinting's values: it took the process's zone, and a default
+  // locale nobody set (WorkletThread, "FIXME: JS_SetDefaultLocale"), so
+  // Intl in an AudioWorklet answered en-US whatever the session declared.
+  SetRealmTimeAndLanguage(
+      options, ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
+      ShouldResistFingerprinting(RFPTarget::JSLocale),
+      mImpl->LoadInfo().Language(), mImpl->LoadInfo().Timezone());
   options.creationOptions().setAlwaysUseFdlibm(
       ShouldResistFingerprinting(RFPTarget::JSMathFdlibm));
-  if (ShouldResistFingerprinting(RFPTarget::JSLocale)) {
-    nsCString locale = nsRFPService::GetSpoofedJSLocale();
-    options.behaviors().setLocaleOverride(locale.get());
-  }
 
   // The SharedArrayBuffer global constructor property should not be present in
   // a fresh global object when shared memory objects aren't allowed (because

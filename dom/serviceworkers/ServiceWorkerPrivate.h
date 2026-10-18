@@ -243,10 +243,6 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
   void RefreshRemoteWorkerData(
       const RefPtr<ServiceWorkerRegistrationInfo>& aRegistration);
 
-  // STEALTHFOX: the LanguageOverride shared by the open top-level pages of
-  // aPrincipal's user context, or empty. See the definition.
-  static nsCString ContextLanguageOverride(nsIPrincipal* aPrincipal);
-
   nsresult SendCookieChangeEventInternal(
       RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,
       ServiceWorkerCookieChangeEventOpArgs&& aArgs);

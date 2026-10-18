@@ -13,6 +13,7 @@
 #include "mozilla/intl/AppDateTimeFormat.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/OSPreferences.h"
+#include "mozilla/intl/StealthSessionPrefs.h"
 #include "mozilla/intl/locale_service_glue_generated.h"
 #include "nsContentUtils.h"
 #include "nsDirectoryService.h"
@@ -490,6 +491,20 @@ LocaleService::GetAppLocaleAsBCP47(nsACString& aRetVal) {
 
 NS_IMETHODIMP
 LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
+  // STEALTHFOX (firefox-50): the language the session declares is this
+  // process's regional format: the main runtime's default locale
+  // (XPCLocale), the locales form controls expose to a page
+  // (GetWebExposedLocales) and AppDateTimeFormat. Below, all three took the
+  // host's regional settings whenever their language matched the app
+  // locale's, so an en-GB machine gave en-GB under a declared en-US.
+  nsAutoCString declared;
+  SessionLanguageTag(declared);
+  if (!declared.IsEmpty()) {
+    aRetVal.Clear();
+    aRetVal.AppendElement(declared);
+    return NS_OK;
+  }
+
   bool useOSLocales =
       Preferences::GetBool("intl.regional_prefs.use_os_locales", false);
 

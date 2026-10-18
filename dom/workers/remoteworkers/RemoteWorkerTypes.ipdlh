@@ -101,11 +101,13 @@ struct RemoteWorkerData
   // Child process remote type where the worker should only run on.
   nsCString remoteType;
 
-  // STEALTHFOX: the LanguageOverride of the owner's top BrowsingContext,
-  // becoming WorkerLoadInfo::mLanguageOverride (empty: process-wide list).
-  // Shared workers take it from the creating window, service workers from
-  // the context of their registration.
+  // STEALTHFOX: the LanguageOverride and TimezoneOverride of the owner's top
+  // BrowsingContext, becoming WorkerLoadInfo's mLanguageOverride and
+  // mTimezoneOverride (empty: the session's). Shared workers take them from
+  // the creating window, service workers from the context of their
+  // registration.
   nsCString languageOverride;
+  nsString timezoneOverride;
 };
 
 // ErrorData/ErrorDataNote correspond to WorkerErrorReport/WorkerErrorNote

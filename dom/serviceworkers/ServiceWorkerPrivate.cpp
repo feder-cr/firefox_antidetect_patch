@@ -767,7 +767,8 @@ nsresult ServiceWorkerPrivate::Initialize() {
       OriginTrials(), std::move(serviceWorkerData), regInfo->AgentClusterId(),
       remoteType.unwrap(),
       // Filled by RefreshRemoteWorkerData, before every spawn.
-      /* languageOverride */ EmptyCString());
+      /* languageOverride */ EmptyCString(),
+      /* timezoneOverride */ EmptyString());
 
   mRemoteWorkerData.referrerInfo() = MakeAndAddRef<ReferrerInfo>(nullptr);
 
@@ -1836,6 +1837,70 @@ void ServiceWorkerPrivate::Terminated() {
   Shutdown();
 }
 
+// STEALTHFOX: the language and the zone of the context a service worker
+// belongs to.
+//
+// A service worker has no owner document: it is keyed by principal, origin
+// attributes included, so it is shared by every page of ONE user context (one
+// Playwright browser context) and only by them. Juggler writes the same
+// LanguageOverride and TimezoneOverride on every top-level BrowsingContext of
+// a context (PageTarget.updateLanguageOverride, updateTimezoneOverride), so
+// any of those pages answers the question, and the window that registered the
+// worker and the worker itself end up with the same language and the same
+// clock. Retail Firefox 151, measured, gives a window and its dedicated,
+// shared and service workers the same navigator.languages, Intl locale and
+// zone; with one of each per process that is automatic, with one per context
+// it has to be carried here.
+//
+// Each is empty when no open page of that context is found, or when its pages
+// disagree on it (an override set per tab, not by Juggler): the worker then
+// gets the session's declaration in WorkerPrivate.
+static void ContextDeclaration(nsIPrincipal* aPrincipal, nsACString& aLanguage,
+                               nsAString& aZone) {
+  AssertIsOnMainThread();
+  MOZ_ASSERT(aPrincipal);
+
+  aLanguage.Truncate();
+  aZone.Truncate();
+
+  const OriginAttributes& attrs =
+      BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
+
+  nsTArray<RefPtr<BrowsingContextGroup>> groups;
+  BrowsingContextGroup::GetAllGroups(groups);
+
+  bool seen = false;
+  bool languageAgrees = true;
+  bool zoneAgrees = true;
+  for (const RefPtr<BrowsingContextGroup>& group : groups) {
+    for (const RefPtr<BrowsingContext>& top : group->Toplevels()) {
+      if (top->IsDiscarded() || !top->IsContent()) {
+        continue;
+      }
+      const OriginAttributes& topAttrs = top->OriginAttributesRef();
+      if (topAttrs.mUserContextId != attrs.mUserContextId ||
+          topAttrs.mPrivateBrowsingId != attrs.mPrivateBrowsingId) {
+        continue;
+      }
+      if (!seen) {
+        aLanguage = top->GetLanguageOverride();
+        aZone = top->GetTimezoneOverride();
+        seen = true;
+        continue;
+      }
+      languageAgrees =
+          languageAgrees && aLanguage.Equals(top->GetLanguageOverride());
+      zoneAgrees = zoneAgrees && aZone.Equals(top->GetTimezoneOverride());
+    }
+  }
+  if (!languageAgrees) {
+    aLanguage.Truncate();
+  }
+  if (!zoneAgrees) {
+    aZone.Truncate();
+  }
+}
+
 void ServiceWorkerPrivate::RefreshRemoteWorkerData(
     const RefPtr<ServiceWorkerRegistrationInfo>& aRegistration) {
   AssertIsOnMainThread();
@@ -1847,60 +1912,8 @@ void ServiceWorkerPrivate::RefreshRemoteWorkerData(
   serviceWorkerData.registrationDescriptor() =
       aRegistration->Descriptor().ToIPC();
 
-  mRemoteWorkerData.languageOverride() =
-      ContextLanguageOverride(mInfo->Principal());
-}
-
-// STEALTHFOX: the language of the context a service worker belongs to.
-//
-// A service worker has no owner document: it is keyed by principal, origin
-// attributes included, so it is shared by every page of ONE user context (one
-// Playwright browser context) and only by them. Juggler writes the same
-// LanguageOverride on every top-level BrowsingContext of a context
-// (PageTarget.updateLanguageOverride), so any of those pages answers the
-// question, and the window that registered the worker and the worker itself
-// end up speaking the same language. Retail Firefox 151, measured, gives a
-// window and its dedicated, shared and service workers the same
-// navigator.languages and the same Intl locale; with one language per process
-// that is automatic, with one per context it has to be carried here.
-//
-// Empty when no open page of that context is found, or when its pages
-// disagree (an override set per tab, not by Juggler): the worker then gets the
-// session's declaration in WorkerPrivate, like before this change.
-/* static */
-nsCString ServiceWorkerPrivate::ContextLanguageOverride(
-    nsIPrincipal* aPrincipal) {
-  AssertIsOnMainThread();
-  MOZ_ASSERT(aPrincipal);
-
-  const OriginAttributes& attrs =
-      BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
-
-  nsTArray<RefPtr<BrowsingContextGroup>> groups;
-  BrowsingContextGroup::GetAllGroups(groups);
-
-  nsCString found;
-  bool seen = false;
-  for (const RefPtr<BrowsingContextGroup>& group : groups) {
-    for (const RefPtr<BrowsingContext>& top : group->Toplevels()) {
-      if (top->IsDiscarded() || !top->IsContent()) {
-        continue;
-      }
-      const OriginAttributes& topAttrs = top->OriginAttributesRef();
-      if (topAttrs.mUserContextId != attrs.mUserContextId ||
-          topAttrs.mPrivateBrowsingId != attrs.mPrivateBrowsingId) {
-        continue;
-      }
-      const nsCString& language = top->GetLanguageOverride();
-      if (!seen) {
-        found = language;
-        seen = true;
-      } else if (!found.Equals(language)) {
-        return EmptyCString();
-      }
-    }
-  }
-  return found;
+  ContextDeclaration(mInfo->Principal(), mRemoteWorkerData.languageOverride(),
+                     mRemoteWorkerData.timezoneOverride());
 }
 
 RefPtr<FetchServicePromises> ServiceWorkerPrivate::SetupNavigationPreload(

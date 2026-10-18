@@ -9849,6 +9849,33 @@
   mirror: always
 
 #---------------------------------------------------------------------------
+# Prefs starting with "juggler."
+#---------------------------------------------------------------------------
+
+# STEALTHFOX (firefox-50): the time zone and the language the SESSION
+# declares, written by invisible_core: an IANA zone, and an Accept-Language
+# list ("it-IT, it, en-US, en"). The only C++ reader is
+# intl/locale/StealthSessionPrefs.h.
+#
+# Static, with a default, so that they reach content processes: a string pref
+# with no default is kept in the parent (ShouldSanitizePreference), and the
+# language once reached no worker for that reason (71-bug-archive.md [B165]).
+# DataMutexString with a mirror, so that any thread reads them: a worker's
+# realm options are built on the main thread, but the fallback language of
+# text without `lang` may first be asked by an OffscreenCanvas on a worker
+# (nsLanguageAtomService::GetLocaleLanguage). They lived in all.js until
+# firefox-50, readable on the main thread only.
+- name: juggler.locale.override
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+- name: juggler.timezone.override
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+#---------------------------------------------------------------------------
 # Prefs starting with "layers."
 #---------------------------------------------------------------------------
 

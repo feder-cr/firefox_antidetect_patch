@@ -237,6 +237,7 @@
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/dom/StealthSessionDeclaration.h"
 #include "mozilla/dom/StyleSheetApplicableStateChangeEvent.h"
 #include "mozilla/dom/StyleSheetApplicableStateChangeEventBinding.h"
 #include "mozilla/dom/StyleSheetList.h"
@@ -4378,11 +4379,12 @@ void Document::SetDocumentURI(nsIURI* aURI) {
   }
 }
 
-static void GetFormattedTimeString(PRTime aTime, bool aUniversal,
+// STEALTHFOX (firefox-50): the local time of the page, the declared zone's
+// (ExplodeLocalTime), not the C runtime's ([B339]).
+static void GetFormattedTimeString(PRTime aTime, const Document& aDocument,
                                    nsAString& aFormattedTimeString) {
   PRExplodedTime prtime;
-  PR_ExplodeTime(aTime, aUniversal ? PR_GMTParameters : PR_LocalTimeParameters,
-                 &prtime);
+  ExplodeLocalTime(aTime, &aDocument, &prtime);
   // "MM/DD/YYYY hh:mm:ss"
   char formatedTime[24];
   if (SprintfLiteral(formatedTime, "%02d/%02d/%04d %02d:%02d:%02d",
@@ -4400,9 +4402,7 @@ void Document::GetLastModified(nsAString& aLastModified) const {
   if (!mLastModified.IsEmpty()) {
     aLastModified.Assign(mLastModified);
   } else {
-    GetFormattedTimeString(PR_Now(),
-                           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
-                           aLastModified);
+    GetFormattedTimeString(PR_Now(), *this, aLastModified);
   }
 }
 
@@ -11808,9 +11808,7 @@ void Document::RetrieveRelevantHeaders(nsIChannel* aChannel) {
 
   mLastModified.Truncate();
   if (modDate != 0) {
-    GetFormattedTimeString(modDate,
-                           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
-                           mLastModified);
+    GetFormattedTimeString(modDate, *this, mLastModified);
   }
 }
 

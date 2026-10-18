@@ -13,6 +13,7 @@
 #include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/RegisterWorkletBindings.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/StealthSessionDeclaration.h"
 #include "mozilla/dom/WorkletBinding.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
 #include "mozilla/dom/worklet/WorkletModuleLoader.h"
@@ -34,6 +35,8 @@ WorkletLoadInfo::WorkletLoadInfo(nsPIDOMWindowInner* aWindow)
   } else {
     mOuterWindowID = 0;
   }
+  dom::GetDeclaredLanguage(aWindow->GetBrowsingContext(), mLanguage);
+  dom::GetDeclaredTimezone(aWindow->GetBrowsingContext(), mTimezone);
 }
 
 // ---------------------------------------------------------------------------

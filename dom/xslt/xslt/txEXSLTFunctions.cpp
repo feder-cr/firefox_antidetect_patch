@@ -8,6 +8,7 @@
 #include "mozilla/MacroArgs.h"
 #include "mozilla/MacroForEach.h"
 #include "mozilla/dom/DocumentFragmentBinding.h"
+#include "mozilla/dom/StealthSessionDeclaration.h"
 #include "nsAtom.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentCreatorFunctions.h"
@@ -584,11 +585,6 @@ nsresult txEXSLTFunctionCall::evaluate(txIEvalContext* aContext,
       Document* sourceDoc = getSourceDocument(aContext);
       NS_ENSURE_STATE(sourceDoc);
 
-      PRTimeParamFn timezone =
-          sourceDoc->ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC)
-              ? PR_GMTParameters
-              : PR_LocalTimeParameters;
-
       PRTime time =
           sourceDoc->ShouldResistFingerprinting(RFPTarget::ReduceTimerPrecision)
               ? (PRTime)nsRFPService::ReduceTimePrecisionAsSecs(
@@ -596,7 +592,9 @@ nsresult txEXSLTFunctionCall::evaluate(txIEvalContext* aContext,
                     RTPCallerType::ResistFingerprinting) *
                     PR_USEC_PER_SEC
               : PR_Now();
-      PR_ExplodeTime(time, timezone, &prtime);
+      // STEALTHFOX (firefox-50): the page's local time, the declared zone's
+      // (ExplodeLocalTime), not the C runtime's ([B339]).
+      ExplodeLocalTime(time, sourceDoc, &prtime);
 
       int32_t offset =
           (prtime.tm_params.tp_gmt_offset + prtime.tm_params.tp_dst_offset) /

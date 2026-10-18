@@ -284,7 +284,7 @@ export class BrowserHandler {
   }
 
   async ['Browser.setTimezoneOverride']({browserContextId, timezoneId}) {
-    await this._targetRegistry.browserContextForId(browserContextId).applySetting('timezoneId', nullToUndefined(timezoneId));
+    this._targetRegistry.browserContextForId(browserContextId).setTimezoneOverride(nullToUndefined(timezoneId));
   }
 
   async ['Browser.setTouchOverride']({browserContextId, hasTouch}) {

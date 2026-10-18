@@ -213,8 +213,6 @@
 #include "nsIScriptSecurityManager.h"
 #include "nsJSEnvironment.h"
 #include "nsJSUtils.h"
-#include "js/RealmIterators.h"
-#include "js/RealmOptions.h"
 #include "nsMemoryInfoDumper.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
@@ -692,33 +690,14 @@ mozilla::ipc::IPCResult ContentChild::RecvSetXPCOMProcessAttributes(
                                        aXPCOMInit.trrModeFromPref());
   }
 
-  // Stealth: apply timezone override from pref, and watch for future changes.
-  // Content processes from the pool may already be running when the pref is set,
-  // so we need both an immediate check AND a callback for dynamic pref sync.
-  // 150-specific: use per-Realm SetRealmTimezoneOverride (Mozilla removed
-  // the global nsJSUtils::SetTimeZoneOverride). Iterate every Realm in the
-  // process and apply the override.
-  {
-    static auto sTzPrefChanged = [](const char*, void*) {
-      nsAutoString tzOverride;
-      Preferences::GetString("juggler.timezone.override", tzOverride);
-      if (tzOverride.IsEmpty()) {
-        return;
-      }
-      nsAutoCString tzAscii = NS_LossyConvertUTF16toASCII(tzOverride);
-      AutoJSAPI jsapi;
-      if (!jsapi.Init(xpc::PrivilegedJunkScope())) {
-        return;
-      }
-      JS::IterateRealms(jsapi.cx(), const_cast<char*>(tzAscii.get()),
-        [](JSContext*, void* aData, JS::Realm* aRealm,
-           const JS::AutoRequireNoGC&) {
-          JS::SetRealmTimezoneOverride(aRealm, static_cast<const char*>(aData));
-        });
-    };
-    sTzPrefChanged(nullptr, nullptr);
-    Preferences::RegisterCallback(sTzPrefChanged, "juggler.timezone.override");
-  }
+  // STEALTHFOX (firefox-50): the block that applied `juggler.timezone.override`
+  // to every realm of this process is gone. It never ran - the pref had no
+  // default, so it arrived empty here - and from firefox-50 it would have:
+  // the pref has a default (StaticPrefList.yaml) so the session's zone
+  // reaches content processes, and one zone stamped on every realm of a
+  // process would have overridden a context's own. Every realm takes its zone
+  // at birth from its context (dom/base/StealthSessionDeclaration.h), and
+  // BrowsingContext::DidSet carries a change to the realms already alive.
 
   return IPC_OK();
 }
