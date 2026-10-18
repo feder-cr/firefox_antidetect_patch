@@ -7,6 +7,7 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/OSPreferences.h"
+#include "mozilla/intl/StealthSessionPrefs.h"
 #include "MainThreadUtils.h"
 #include "nsGkAtoms.h"
 #include "nsUConvPropertySearch.h"
@@ -114,6 +115,20 @@ nsAtom* nsLanguageAtomService::GetLocaleLanguage() {
 
   AutoWriteLock lock(mLock);
   if (!mLocaleLanguage) {
+    // STEALTHFOX (firefox-50): the language the session declares is the
+    // language of text that declares none, which picks the fonts of its
+    // language group (nsFontCache, EncodingToLang, a canvas with no `lang`).
+    // It was the host's regional settings, below. Per process, not per
+    // context: a second context with a language of its own keeps the
+    // session's here, in its layout and its canvas alike.
+    nsAutoCString declared;
+    intl::SessionLanguageTag(declared);
+    if (!declared.IsEmpty()) {
+      ToLowerCase(declared);
+      mLocaleLanguage = NS_Atomize(declared);
+      return mLocaleLanguage;
+    }
+
     AutoTArray<nsCString, 10> regionalPrefsLocales;
     // XXX Are the OSPreferences calls here safe to call from any thread?
     // In practice GetLocaleLanguage will be called early on the main thread

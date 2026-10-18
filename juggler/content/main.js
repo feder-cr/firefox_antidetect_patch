@@ -18,7 +18,7 @@ const {PageAgent} = ChromeUtils.importESModule('resource://gre/modules/juggler/c
 const helper = new Helper();
 
 export function initialize(browsingContext, docShell) {
-  const data = { channel: undefined, pageAgent: undefined, frameTree: undefined, failedToOverrideTimezone: false };
+  const data = { channel: undefined, pageAgent: undefined, frameTree: undefined };
 
   const applySetting = {
     geolocation: (geolocation) => {
@@ -43,13 +43,10 @@ export function initialize(browsingContext, docShell) {
       docShell.bypassCSPEnabled = bypassCSP;
     },
 
-    timezoneId: (timezoneId) => {
-      data.failedToOverrideTimezone = !docShell.overrideTimezone(timezoneId);
-    },
-
-    // No `locale` here: the context's language list is the BrowsingContext's
-    // LanguageOverride field, set from the parent (see
-    // PageTarget.updateLanguageOverride in TargetRegistry.js).
+    // No `locale` and no `timezoneId` here: the context's language list and
+    // zone are the BrowsingContext's LanguageOverride and TimezoneOverride
+    // fields, set from the parent (see PageTarget.updateLanguageOverride and
+    // updateTimezoneOverride in TargetRegistry.js).
 
     javaScriptDisabled: (javaScriptDisabled) => {
       data.frameTree.setJavaScriptDisabled(javaScriptDisabled);
@@ -109,10 +106,6 @@ export function initialize(browsingContext, docShell) {
 
     ensurePermissions() {
       // noop, just a rountrip.
-    },
-
-    hasFailedToOverrideTimezone() {
-      return data.failedToOverrideTimezone;
     },
 
     // In device pixels: see PageTarget._awaitContentSize. One device pixel of

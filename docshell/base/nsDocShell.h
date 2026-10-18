@@ -1327,10 +1327,6 @@ class nsDocShell final : public nsDocLoader,
   bool mFileInputInterceptionEnabled : 1;
   bool mBypassCSPEnabled : 1;
 
-  // Stealthfox: backing storage for nsIDocShell.languageOverride.  Stored
-  // only; actual locale propagation handled separately.
-  nsString mLanguageOverride;
-
   bool mInvisible : 1;
 
   // There has been an OnStartRequest for a non-about:blank URI

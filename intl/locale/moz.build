@@ -39,6 +39,7 @@ EXPORTS.mozilla.intl += [
     "MozLocaleBindings.h",
     "OSPreferences.h",
     "Quotes.h",
+    "StealthSessionPrefs.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -50,6 +51,7 @@ UNIFIED_SOURCES += [
     "nsUConvPropertySearch.cpp",
     "OSPreferences.cpp",
     "Quotes.cpp",
+    "StealthSessionPrefs.cpp",
 ]
 
 EXTRA_JS_MODULES += [

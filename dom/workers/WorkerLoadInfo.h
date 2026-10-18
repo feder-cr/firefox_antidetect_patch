@@ -140,16 +140,19 @@ struct WorkerLoadInfoData {
   bool mIsThirdPartyContext;
   bool mIsOn3PCBExceptionList;
 
-  // STEALTHFOX: the LanguageOverride of the top BrowsingContext this worker
-  // belongs to (an Accept-Language list such as "de-DE, de, en-US, en", or
-  // empty). Filled where the owner is known: the creating window for dedicated
-  // and shared workers (GetLoadInfo, then RemoteWorkerData for shared ones),
-  // the context of the registration for service workers
-  // (ServiceWorkerPrivate::RefreshRemoteWorkerData). WorkerPrivate turns it
-  // into the realm's default Intl locale and into navigator.languages, so a
-  // worker speaks the language of the document that created it instead of the
-  // process-wide one.
+  // STEALTHFOX: the LanguageOverride and TimezoneOverride of the top
+  // BrowsingContext this worker belongs to (an Accept-Language list such as
+  // "de-DE, de, en-US, en", and an IANA zone). Filled where the owner is
+  // known: the creating window for dedicated and shared workers (GetLoadInfo,
+  // then RemoteWorkerData for shared ones), the context of the registration
+  // for service workers (ServiceWorkerPrivate::RefreshRemoteWorkerData).
+  // WorkerPrivate's constructor fills an empty one with the session's
+  // (intl/locale/StealthSessionPrefs.h) and turns them into the realm's zone
+  // and default Intl locale and into navigator.languages, so a worker keeps
+  // the time and speaks the language of the document that created it instead
+  // of the process-wide ones.
   nsCString mLanguageOverride;
+  nsString mTimezoneOverride;
 
   // The header the main script was served with.
   nsCString mReportingEndpointsHeader;

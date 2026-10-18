@@ -36,6 +36,7 @@
 #include "mozilla/dom/MaybeCrossOriginObject.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/ProxyHandlerUtils.h"
+#include "mozilla/dom/StealthSessionDeclaration.h"
 #include "mozilla/dom/Storage.h"
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/StorageEventBinding.h"
@@ -2064,13 +2065,18 @@ static nsresult CreateNativeGlobalForInner(
   creationOptions.setDefineSharedArrayBufferConstructor(
       aDefineSharedArrayBufferConstructor);
 
+  // STEALTHFOX (firefox-50): the declaration of this document's context, or
+  // the session's when the context carries none (StealthSessionDeclaration).
+  nsAutoCString declaredLanguage;
+  nsAutoString declaredZone;
+  GetDeclaredLanguage(aDocument->GetBrowsingContext(), declaredLanguage);
+  GetDeclaredTimezone(aDocument->GetBrowsingContext(), declaredZone);
   xpc::InitGlobalObjectOptions(
       options, principal->IsSystemPrincipal(), aIsSecureContext,
       aDocument->ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
       aDocument->ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
       aDocument->ShouldResistFingerprinting(RFPTarget::JSLocale),
-      aDocument->GetBrowsingContext()->Top()->GetLanguageOverride(),
-      aDocument->GetBrowsingContext()->Top()->GetTimezoneOverride());
+      declaredLanguage, declaredZone);
 
   // Determine if we need the Components object.
   bool needComponents = principal->IsSystemPrincipal();

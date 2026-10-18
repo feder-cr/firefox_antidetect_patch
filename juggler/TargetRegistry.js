@@ -423,6 +423,11 @@ export class TargetRegistry {
 
   async _newPageInternal({browserContextId}) {
     const browserContext = this.browserContextForId(browserContextId);
+    // The message Playwright turns into "Invalid timezone ID": see
+    // BrowserContext.setTimezoneOverride. Asked before the window opens, so a
+    // refused page leaves no window behind.
+    if (browserContext.invalidTimezoneId !== undefined)
+      throw new Error('Failed to override timezone');
     const features = "chrome,dialog=no,all";
     // See _callWithURIToLoad in browser.js for the structure of window.arguments
     // window.arguments[1]: unused (bug 871161)
@@ -466,10 +471,6 @@ export class TargetRegistry {
       target = this._browserToTarget.get(browser);
     }
     browser.focus();
-    if (browserContext.crossProcessCookie.settings.timezoneId) {
-      if (await target.hasFailedToOverrideTimezone())
-        throw new Error('Failed to override timezone');
-    }
     didCreateFirstPage = true;
     return target.id();
   }
@@ -652,6 +653,7 @@ export class PageTarget {
     this.updateForceOffline(browsingContext);
     this.updateCacheDisabled(browsingContext);
     this.updateLanguageOverride(browsingContext);
+    this.updateTimezoneOverride(browsingContext);
   }
 
   // The context's language list goes into the BrowsingContext's
@@ -671,6 +673,24 @@ export class PageTarget {
     if (this._browserContext.languageOverride === undefined)
       return;
     (browsingContext || this._linkedBrowser.browsingContext).languageOverride = this._browserContext.languageOverride;
+  }
+
+  // The context's zone goes into the BrowsingContext's TimezoneOverride
+  // field, the same channel as the language above: its DidSet re-zones the
+  // realms already alive in every process, and every realm, worker and
+  // worklet created later takes the field at birth
+  // (dom/base/StealthSessionDeclaration.h). BrowsingContext::Attach seeds the
+  // field from juggler.timezone.override, so a context that never asked keeps
+  // the session's zone.
+  //
+  // Until firefox-50 this went to docShell.overrideTimezone, from the content
+  // process, on whatever realm was current when the setting arrived: the
+  // realms created afterwards, the workers and the worklets took the
+  // session's zone instead, and so did document.lastModified.
+  updateTimezoneOverride(browsingContext = undefined) {
+    if (this._browserContext.timezoneOverride === undefined)
+      return;
+    (browsingContext || this._linkedBrowser.browsingContext).timezoneOverride = this._browserContext.timezoneOverride;
   }
 
   updateForceOffline(browsingContext = undefined) {
@@ -911,10 +931,6 @@ export class PageTarget {
     await this._channel.connect('').send('applyContextSetting', { name, value }).catch(e => void e);
   }
 
-  async hasFailedToOverrideTimezone() {
-    return await this._channel.connect('').send('hasFailedToOverrideTimezone').catch(e => true);
-  }
-
   /**
    * Starts streaming JPEG frames of this page's window.
    *
@@ -1050,6 +1066,23 @@ function fromProtocolColorScheme(colorScheme) {
   throw new Error('Unknown color scheme: ' + colorScheme);
 }
 
+// The zone as ICU spells it, or undefined when it is not an IANA zone. Intl
+// matches a zone name without regard to case and answers with ICU's spelling,
+// while ICU's own lookup, the one a realm's override goes through, is exact:
+// "america/phoenix" passes Intl and fails there. An offset ("+05:00") is a
+// valid Intl time zone but not a zone ICU opens by name, so it is refused too.
+function ianaZone(timezoneId) {
+  let zone;
+  try {
+    zone = new Intl.DateTimeFormat('en-US', { timeZone: timezoneId }).resolvedOptions().timeZone;
+  } catch (e) {
+    return undefined;
+  }
+  if (zone.startsWith('+') || zone.startsWith('-'))
+    return undefined;
+  return zone;
+}
+
 class BrowserContext {
   constructor(registry, browserContextId, removeOnDetach) {
     this._registry = registry;
@@ -1085,6 +1118,9 @@ class BrowserContext {
     this.colorScheme = 'none';
     // undefined until Browser.setLocaleOverride: see PageTarget.updateLanguageOverride.
     this.languageOverride = undefined;
+    // undefined until Browser.setTimezoneOverride: see setTimezoneOverride.
+    this.timezoneOverride = undefined;
+    this.invalidTimezoneId = undefined;
     this.crossProcessCookie = {
       initScripts: [],
       bindings: [],
@@ -1242,6 +1278,32 @@ class BrowserContext {
       page.updateLanguageOverride();
   }
 
+  // An IANA zone ("America/Phoenix"). Clearing goes back to the session's
+  // zone, the one BrowsingContext::Attach seeds every top-level context with,
+  // as setLanguageOverride does for the language.
+  //
+  // A zone ICU cannot open never reaches the field: SpiderMonkey resolves an
+  // override it cannot open to the MACHINE's zone, in silence
+  // (js/src/vm/DateTime.cpp, DateTimeInfo::timeZone). It is kept aside
+  // instead, and the next Browser.newPage answers 'Failed to override
+  // timezone', the message Playwright reports as "Invalid timezone ID".
+  setTimezoneOverride(timezoneId) {
+    if (timezoneId === undefined) {
+      this.timezoneOverride = Services.prefs.getStringPref('juggler.timezone.override', '');
+      this.invalidTimezoneId = undefined;
+    } else {
+      const zone = ianaZone(timezoneId);
+      if (zone === undefined) {
+        this.invalidTimezoneId = timezoneId;
+        return;
+      }
+      this.timezoneOverride = zone;
+      this.invalidTimezoneId = undefined;
+    }
+    for (const page of this.pages)
+      page.updateTimezoneOverride();
+  }
+
   setTouchOverride(touchOverride) {
     this.touchOverride = touchOverride;
     for (const page of this.pages)
@@ -1281,16 +1343,6 @@ class BrowserContext {
   async applySetting(name, value) {
     this.crossProcessCookie.settings[name] = value;
     this._updateCrossProcessCookie();
-    // Stealth: propagate timezone to ALL content processes (including ServiceWorker
-    // processes that don't have a docShell). Set a pref + fire system notification
-    // → ContentChild::RecvSystemTimezoneChanged() reads the pref and applies it.
-    if (name === 'timezoneId' && value) {
-      try {
-        Services.prefs.setStringPref('juggler.timezone.override', value);
-        Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment).set('TZ', value);
-        Services.obs.notifyObservers(null, 'default-timezone-changed');
-      } catch(e) {}
-    }
     await Promise.all(Array.from(this.pages).map(page => page.applyContextSetting(name, value)));
   }
 

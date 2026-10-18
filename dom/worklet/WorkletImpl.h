@@ -13,6 +13,7 @@
 #include "mozilla/dom/OffThreadCSPContext.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsRFPService.h"
+#include "nsString.h"
 
 class nsPIDOMWindowInner;
 class nsIPrincipal;
@@ -35,10 +36,19 @@ class WorkletLoadInfo {
   uint64_t OuterWindowID() const { return mOuterWindowID; }
   uint64_t InnerWindowID() const { return mInnerWindowID; }
 
+  // STEALTHFOX (firefox-50): the language and the zone the creating window's
+  // context declares, read on the main thread when the worklet is created,
+  // for the realm the worklet thread creates later
+  // (WorkletGlobalScope::CreateRealmOptions). Any thread: never modified.
+  const nsCString& Language() const { return mLanguage; }
+  const nsString& Timezone() const { return mTimezone; }
+
  private:
   // Modified only in constructor.
   uint64_t mOuterWindowID;
   const uint64_t mInnerWindowID;
+  nsCString mLanguage;
+  nsString mTimezone;
 };
 
 /**

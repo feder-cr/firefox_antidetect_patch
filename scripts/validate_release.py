@@ -333,7 +333,13 @@ def declared_branding() -> Path:
         raise ValidationError(
             "this engine serves the branding invisible_core declares, and no invisible_core "
             f"is installed to say which: {exc}") from exc
-    spec = translate_profile_to_prefs(generate_profile(seed=1)).get("zoom.stealth.branding.archive")
+    # A launch declares the session's zone, and since invisible_core 49.46.0 a
+    # profile translated without one is refused, because an undeclared zone is
+    # the host's. The branding does not depend on the zone: any IANA name the
+    # core accepts asks the question a launch asks. Without it, every release
+    # run of firefox-50 died here, at the packaging step of all three legs.
+    prefs = translate_profile_to_prefs(generate_profile(seed=1), timezone="UTC")
+    spec = prefs.get("zoom.stealth.branding.archive")
     if not spec:
         raise ValidationError("the installed invisible_core declares no zoom.stealth.branding.archive: "
                               "it is older than the engine, and the engine refuses to launch with it")
