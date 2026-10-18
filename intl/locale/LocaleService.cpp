@@ -489,14 +489,17 @@ LocaleService::GetAppLocaleAsBCP47(nsACString& aRetVal) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
-  // STEALTHFOX (firefox-50): the language the session declares is this
-  // process's regional format: the main runtime's default locale
-  // (XPCLocale), the locales form controls expose to a page
-  // (GetWebExposedLocales) and AppDateTimeFormat. Below, all three took the
-  // host's regional settings whenever their language matched the app
-  // locale's, so an en-GB machine gave en-GB under a declared en-US.
+// STEALTHFOX (firefox-50): the regional settings of the machine the session
+// declares, in place of this machine's: its language when one is declared,
+// else what the operating system says. Only the INPUT changes; the rule
+// below, which keeps the app locale unless the regional language matches
+// it, stays upstream's, because this is an en-US build and a real en-US
+// build on a de-DE machine formats as en-US. Before, the input was the
+// host's, so the same session gave en-GB on an en-GB machine and en-US on
+// any other, in the main runtime's default locale (XPCLocale), the locales
+// date and time inputs render with (GetWebExposedLocales, datetimebox.js)
+// and AppDateTimeFormat.
+static nsresult MachineRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
   nsAutoCString declared;
   SessionLanguageTag(declared);
   if (!declared.IsEmpty()) {
@@ -504,15 +507,18 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
     aRetVal.AppendElement(declared);
     return NS_OK;
   }
+  return OSPreferences::GetInstance()->GetRegionalPrefsLocales(aRetVal);
+}
 
+NS_IMETHODIMP
+LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
   bool useOSLocales =
       Preferences::GetBool("intl.regional_prefs.use_os_locales", false);
 
   // If the user specified that they want to use OS Regional Preferences
   // locales, try to retrieve them and use.
   if (useOSLocales) {
-    if (NS_SUCCEEDED(
-            OSPreferences::GetInstance()->GetRegionalPrefsLocales(aRetVal))) {
+    if (NS_SUCCEEDED(MachineRegionalPrefsLocales(aRetVal))) {
       return NS_OK;
     }
 
@@ -531,8 +537,7 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
   AutoTArray<nsCString, 10> regionalPrefsLocales;
   LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
 
-  if (NS_FAILED(OSPreferences::GetInstance()->GetRegionalPrefsLocales(
-          regionalPrefsLocales))) {
+  if (NS_FAILED(MachineRegionalPrefsLocales(regionalPrefsLocales))) {
     GetAppLocalesAsBCP47(aRetVal);
     return NS_OK;
   }

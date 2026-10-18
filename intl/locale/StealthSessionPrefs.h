@@ -21,10 +21,11 @@ namespace mozilla::intl {
  * A context may carry its own zone and language, in its top BrowsingContext's
  * TimezoneOverride and LanguageOverride fields; the session's are the floor
  * under them (dom/base/StealthSessionDeclaration.h), and the answer to the
- * process-wide questions that have no context to ask: the regional format of
- * the main runtime (LocaleService::GetRegionalPrefsLocales) and the fallback
- * language of text without `lang` (nsLanguageAtomService::GetLocaleLanguage).
- * Both asked the host's OSPreferences, so a page measured the machine.
+ * process-wide questions that have no context to ask: the regional settings
+ * of the machine (LocaleService::GetRegionalPrefsLocales, which still weighs
+ * them against the app locale as upstream does) and the fallback language of
+ * text without `lang` (nsLanguageAtomService::GetLocaleLanguage). Both asked
+ * the host's OSPreferences, so a page measured the machine.
  *
  * Empty only when nothing is declared, i.e. the engine was launched without
  * the core: every caller then keeps Firefox's own path.
