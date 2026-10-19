@@ -1511,12 +1511,12 @@ already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
   // cost a readback per drawImage that the real browser does not pay.
   if (aTarget && aTarget->IsRecording() &&
       drawn->GetType() == SurfaceType::RECORDING) {
-    const int32_t seed = CanvasUtils::StealthNoiseSeed(NodePrincipal());
-    if (!seed) {
+    const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(NodePrincipal());
+    if (!noise) {
       return drawn.forget();
     }
     return static_cast<DrawTargetRecording*>(aTarget)->StealthProjectedSurface(
-        drawn, premultiplied, seed);
+        drawn, premultiplied, noise);
   }
   return CanvasUtils::StealthProjectSnapshot(drawn, premultiplied,
                                              NodePrincipal());

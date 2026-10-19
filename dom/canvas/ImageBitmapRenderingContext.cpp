@@ -193,9 +193,9 @@ mozilla::UniquePtr<uint8_t[]> ImageBitmapRenderingContext::GetImageBuffer(
 
   // toDataURL/toBlob of a bitmaprenderer canvas: the canvas noise, the image
   // HTMLCanvasElement::GetSurfaceSnapshot gives a page for the same canvas.
-  if (const int32_t seed = CanvasUtils::StealthNoiseSeed(PrincipalOrNull())) {
+  if (const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull())) {
     data = gfx::StealthProjectedRegion(
-        data, gfx::IntRect(gfx::IntPoint(), data->GetSize()), true, seed);
+        data, gfx::IntRect(gfx::IntPoint(), data->GetSize()), true, noise);
     if (!data) {
       return nullptr;
     }

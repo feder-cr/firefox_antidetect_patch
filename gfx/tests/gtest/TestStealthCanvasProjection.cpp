@@ -63,10 +63,12 @@ std::vector<uint8_t> Drawing(bool aAlpha) {
 }
 
 bool Project(std::vector<uint8_t>& aPx, SurfaceFormat aFormat,
-             bool aPremult = true, int32_t aSeed = kSeed) {
+             bool aPremult = true, int32_t aSeed = kSeed,
+             int32_t aEdgeStep = 255) {
   return StealthProjectPixels(aPx.data(), kW * 4, IntSize(kW, kH), aFormat,
                               IntRect(0, 0, kW, kH), aPx.data(), kW * 4,
-                              aPremult, aSeed);
+                              aPremult,
+                              StealthCanvasNoise{aSeed, aEdgeStep});
 }
 
 std::vector<uint8_t> SwapRB(const std::vector<uint8_t>& aPx) {
@@ -187,7 +189,7 @@ TEST(StealthCanvasProjection, ARectangleIsTheWholeCropped)
 
   const IntRect rect(4, 2, 19, 15);  // its edges cut through the drawing
   RefPtr<DataSourceSurface> part =
-      StealthProjectedRegion(surf, rect, true, kSeed);
+      StealthProjectedRegion(surf, rect, true, StealthCanvasNoise{kSeed, 255});
   ASSERT_TRUE(part);
   DataSourceSurface::ScopedMap map(part, DataSourceSurface::READ);
   ASSERT_TRUE(map.IsMapped());
@@ -197,4 +199,37 @@ TEST(StealthCanvasProjection, ARectangleIsTheWholeCropped)
                         rect.Width() * 4))
         << "row " << y;
   }
+}
+
+TEST(StealthCanvasProjection, EdgeStepLeavesWideStepsAlone)
+{
+  // Two columns of coverage-like levels 64 apart, and a ramp 2 apart: with a
+  // step of 8 only the ramp may move, and it does.
+  std::vector<uint8_t> px(kW * kH * 4, 255);
+  for (int32_t y = 0; y < kH; ++y) {
+    for (int32_t x = 0; x < kW; ++x) {
+      uint8_t* p = &px[(y * kW + x) * 4];
+      uint8_t v = 255;
+      if (x < 12) {
+        v = uint8_t((x % 4) * 64);  // wide steps
+      } else if (x >= 20) {
+        v = uint8_t(100 + (x - 20) * 2);  // a smooth ramp
+      }
+      p[0] = p[1] = p[2] = v;
+    }
+  }
+  const std::vector<uint8_t> drawn = px;
+  ASSERT_TRUE(Project(px, SurfaceFormat::R8G8B8A8, true, kSeed, 8));
+  bool rampMoved = false;
+  for (int32_t y = 0; y < kH; ++y) {
+    for (int32_t x = 0; x < 11; ++x) {
+      const size_t i = (y * kW + x) * 4;
+      EXPECT_EQ(0, memcmp(&drawn[i], &px[i], 4)) << x << "," << y;
+    }
+    for (int32_t x = 21; x < kW - 1; ++x) {
+      const size_t i = (y * kW + x) * 4;
+      rampMoved |= memcmp(&drawn[i], &px[i], 4) != 0;
+    }
+  }
+  EXPECT_TRUE(rampMoved);
 }

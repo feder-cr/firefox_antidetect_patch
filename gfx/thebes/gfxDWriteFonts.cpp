@@ -35,7 +35,31 @@ using namespace mozilla::gfx;
 
 // Cleartype can be dynamically enabled/disabled, so we have to allow for
 // dynamically updating it.
+//
+// Stealth: with the engine on, the text quality is DECLARED
+// (zoom.stealth.text.system_quality) and the host is never asked. It decides
+// two things a page reads: the antialiasing of canvas text (NONE, GRAY or
+// SUBPIXEL through GetSystemDefaultAAMode), and whether the declared ClearType
+// parameters apply at all (UpdateClearTypeVars reads them only under
+// CLEARTYPE_QUALITY). Asking SystemParametersInfo made the same binary draw
+// different text on a machine with ClearType off - an RDP session, a VM, a
+// server - which is engine rule 7-quater (70-known-bugs.md [B362]). The
+// declaration gate refuses a launch without it.
 static BYTE GetSystemTextQuality() {
+  if (mozilla::gfx::StealthEngineActive()) {
+    const int32_t declared = StaticPrefs::zoom_stealth_text_system_quality();
+    if (declared == DEFAULT_QUALITY || declared == ANTIALIASED_QUALITY ||
+        declared == CLEARTYPE_QUALITY) {
+      return BYTE(declared);
+    }
+    MOZ_CRASH_UNSAFE_PRINTF(
+        "stealth: zoom.stealth.text.system_quality is %d, not one of 0 "
+        "(DEFAULT_QUALITY), 4 (ANTIALIASED_QUALITY), 5 (CLEARTYPE_QUALITY). "
+        "Engine rule 7: a finite-domain value lives only in invisible_core, "
+        "and a missing or malformed declaration refuses rather than asking "
+        "the host.",
+        int(declared));
+  }
   BOOL font_smoothing;
   UINT smoothing_type;
 
@@ -65,6 +89,12 @@ static BYTE GetSystemTextQuality() {
 
 // "Retrieves a contrast value that is used in ClearType smoothing. Valid
 // contrast values are from 1000 to 2200. The default value is 1400."
+//
+// Stealth: still read from the host, on purpose (engine rule 7-bis). It only
+// feeds the GDI-classic rendering settings (DWriteSettings::Get(true)), and
+// canvas text never takes that road: CanvasRenderingContext2D sets
+// allowForceGDIClassic = false on every font it uses. No page can read a pixel
+// this value shapes.
 static FLOAT GetSystemGDIGamma() {
   UINT value = 0;
   if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGCONTRAST, 0, &value, 0) ||
@@ -204,9 +234,16 @@ void gfxDWriteFont::UpdateClearTypeVars() {
   // answer happens to be the one we want.
   //
   // Skipping the block leaves the hard-coded defaults above (ClearType level
-  // 1.0, contrast 1.0, gamma 2.2, RGB geometry, DEFAULT rendering mode), which
-  // are the canonical Windows values and are host-independent by construction,
-  // and the prefs below then declare the actual identity. Note gamma 2.2 here
+  // 1.0, contrast 1.0, gamma 2.2, RGB geometry, DEFAULT rendering mode).
+  // This comment used to call them "the canonical Windows values". They are
+  // not: they are stock Firefox's own starting point. An untuned Windows renders text at DWrite's
+  // default gamma, measured 1.8 against the retail 151 (70-known-bugs.md
+  // [B361]); 2.2 is no machine's default. With the engine on they are never
+  // what a page sees: every one of them is declared (the declaration gate
+  // refuses a launch without them), and the override below always runs,
+  // because the text quality it is gated on is declared as well
+  // (GetSystemTextQuality, [B362]). So these six numbers matter only with the
+  // engine OFF, as stock Firefox. Note gamma 2.2 here
   // against Skia's LINEAR default on Linux (DrawTargetSkia.cpp:1850-1856) -
   // that asymmetry is the reason the two platforms rasterise glyph coverage
   // differently, and it cannot be closed while either side reads its host.
@@ -251,7 +288,14 @@ void gfxDWriteFont::UpdateClearTypeVars() {
   // gfxWindowsPlatform::SetupClearTypeParams, but it seems odd because the
   // default params will still be the ClearType ones although we won't use the
   // anti-alias for ClearType because of GetSystemDefaultAAMode.
-  if (gfxVars::SystemTextQuality() == CLEARTYPE_QUALITY) {
+  //
+  // Stealth: with the engine on the declared parameters apply whatever the
+  // declared quality. Stock Firefox, ClearType off, still renders with the
+  // system's DWrite parameters (CreateRenderingParams above), and the declared
+  // values stand for exactly those; skipping them here would leave the
+  // hard-coded 2.2 and 1.0 deciding grayscale text, a compiled second value
+  // next to the declaration (engine rule 7, [B362]).
+  if (stealthDeclared || gfxVars::SystemTextQuality() == CLEARTYPE_QUALITY) {
     int32_t prefInt = Preferences::GetInt(GFX_CLEARTYPE_PARAMS_LEVEL, -1);
     if (prefInt >= 0 && prefInt <= 100) {
       clearTypeLevel = float(prefInt / 100.0);

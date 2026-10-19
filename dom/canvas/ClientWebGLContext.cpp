@@ -5619,7 +5619,7 @@ void ClientWebGLContext::StealthProjectReadPixelsPbo(
       !aDesc.size.y) {
     return;
   }
-  if (!CanvasUtils::StealthNoiseSeed(PrincipalOrNull())) {
+  if (!CanvasUtils::StealthNoise(PrincipalOrNull())) {
     return;
   }
   const auto& bound = State().mBoundBufferByTarget;
@@ -5818,8 +5818,8 @@ void ClientWebGLContext::StealthProjectReadPixels(
       aDesc.pi.type != LOCAL_GL_UNSIGNED_BYTE) {
     return;
   }
-  const int32_t seed = CanvasUtils::StealthNoiseSeed(PrincipalOrNull());
-  if (!seed || aWritten.subrect.IsEmpty() || !aWritten.byteStride) {
+  const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull());
+  if (!noise || aWritten.subrect.IsEmpty() || !aWritten.byteStride) {
     return;
   }
   // The same rectangle one pixel larger on every side, tightly packed: the
@@ -5857,7 +5857,7 @@ void ClientWebGLContext::StealthProjectReadPixels(
       fbBase + size_t(asked.Y()) * wideStride + size_t(asked.X()) * 4;
   if (!gfx::StealthProjectPixels(fbBase, int32_t(wideStride), fb.Size(),
                                  gfx::SurfaceFormat::R8G8B8A8, asked, askedBase,
-                                 int32_t(wideStride), premultiplied, seed)) {
+                                 int32_t(wideStride), premultiplied, noise)) {
     return;
   }
   // Back where the page's read put them, with the page's own packing.

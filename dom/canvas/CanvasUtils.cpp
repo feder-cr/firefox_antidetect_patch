@@ -746,21 +746,21 @@ bool HasDrawWindowPrivilege(JSContext* aCx, JSObject* /* unused */) {
                                              nsGkAtoms::all_urlsPermission);
 }
 
-int32_t StealthNoiseSeed(nsIPrincipal* aCanvasPrincipal) {
+gfx::StealthCanvasNoise StealthNoise(nsIPrincipal* aCanvasPrincipal) {
   if (aCanvasPrincipal && (aCanvasPrincipal->IsSystemPrincipal() ||
                            aCanvasPrincipal->SchemeIs("chrome") ||
                            aCanvasPrincipal->SchemeIs("resource"))) {
-    return 0;
+    return gfx::StealthCanvasNoise::Off();
   }
-  return gfx::StealthCanvasNoiseSeed();
+  return gfx::StealthCanvasNoiseDeclared();
 }
 
 already_AddRefed<gfx::SourceSurface> StealthProjectSnapshot(
     gfx::SourceSurface* aSnapshot, bool aPremultiplied,
     nsIPrincipal* aCanvasPrincipal) {
   RefPtr<gfx::SourceSurface> result = aSnapshot;
-  const int32_t seed = StealthNoiseSeed(aCanvasPrincipal);
-  if (!aSnapshot || !seed) {
+  const gfx::StealthCanvasNoise noise = StealthNoise(aCanvasPrincipal);
+  if (!aSnapshot || !noise) {
     return result.forget();
   }
   RefPtr<gfx::DataSourceSurface> data = aSnapshot->GetDataSurface();
@@ -769,7 +769,7 @@ already_AddRefed<gfx::SourceSurface> StealthProjectSnapshot(
   }
   RefPtr<gfx::DataSourceSurface> projected = gfx::StealthProjectedRegion(
       data, gfx::IntRect(gfx::IntPoint(), data->GetSize()), aPremultiplied,
-      seed);
+      noise);
   if (projected) {
     result = projected;
   }

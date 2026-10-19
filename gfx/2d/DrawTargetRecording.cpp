@@ -96,10 +96,10 @@ class SourceSurfaceRecording : public SourceSurface {
   already_AddRefed<DataSourceSurface> GetDataSurface() override {
     if (mOriginalSurface) {
       RefPtr<DataSourceSurface> data = mOriginalSurface->GetDataSurface();
-      if (data && mStealthSeed) {
+      if (data && mStealthNoise) {
         // The projected stand-in reads as projected here too.
         return StealthProjectedRegion(data, IntRect(IntPoint(), mSize),
-                                      mStealthPremultiplied, mStealthSeed);
+                                      mStealthPremultiplied, mStealthNoise);
       }
       return data.forget();
     }
@@ -117,7 +117,7 @@ class SourceSurfaceRecording : public SourceSurface {
   // optimized to return its GetDataSurface.
   RefPtr<SourceSurface> mOriginalSurface;
   // Set on the stand-in DrawTargetRecording::StealthProjectedSurface makes.
-  int32_t mStealthSeed = 0;
+  StealthCanvasNoise mStealthNoise = StealthCanvasNoise::Off();
   bool mStealthPremultiplied = true;
 };
 
@@ -784,16 +784,17 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
 }
 
 already_AddRefed<SourceSurface> DrawTargetRecording::StealthProjectedSurface(
-    SourceSurface* aSurface, bool aPremultiplied, int32_t aSeed) {
-  if (!aSurface || aSurface->GetType() != SurfaceType::RECORDING || !aSeed) {
+    SourceSurface* aSurface, bool aPremultiplied,
+    const StealthCanvasNoise& aNoise) {
+  if (!aSurface || aSurface->GetType() != SurfaceType::RECORDING || !aNoise) {
     return nullptr;
   }
   RefPtr<SourceSurfaceRecording> retSurf = new SourceSurfaceRecording(
       aSurface->GetSize(), aSurface->GetFormat(), mRecorder, aSurface);
-  retSurf->mStealthSeed = aSeed;
+  retSurf->mStealthNoise = aNoise;
   retSurf->mStealthPremultiplied = aPremultiplied;
   RecordEventSelfSkipFlushTransform(RecordedStealthProjectSurface(
-      aSurface, retSurf, aPremultiplied, aSeed));
+      aSurface, retSurf, aPremultiplied, aNoise));
   return retSurf.forget();
 }
 

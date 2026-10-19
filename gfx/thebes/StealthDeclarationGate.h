@@ -8,6 +8,7 @@
 #include "Units.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_zoom.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 #include "nsPoint.h"
 
 namespace mozilla {
@@ -43,17 +44,20 @@ inline bool StealthEngineActive() {
 }
 
 /**
- * The seed the canvas noise uses, or 0 when the canvas is to be left exactly
- * as drawn: the engine is off, or invisible_core declared the canvas noise off
- * (zoom.stealth.canvas.substitute_pixels). Every place that applies
- * gfx::StealthProjectPixels asks here, so the on/off rule is written once.
+ * The canvas noise as invisible_core declared it: the seed, or 0 when the
+ * canvas is to be left exactly as drawn (the engine is off, or the canvas noise
+ * is declared off, zoom.stealth.canvas.substitute_pixels), and the largest
+ * step to a neighbour of a touched pixel (zoom.stealth.canvas.edge_step,
+ * 1-255, refused at launch when missing). Every place that applies gfx::StealthProjectPixels
+ * asks here, so the rule is written once.
  */
-inline int32_t StealthCanvasNoiseSeed() {
+inline gfx::StealthCanvasNoise StealthCanvasNoiseDeclared() {
   if (!StealthEngineActive() ||
       !StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
-    return 0;
+    return gfx::StealthCanvasNoise::Off();
   }
-  return StaticPrefs::zoom_stealth_fpp_hw_seed();
+  return {StaticPrefs::zoom_stealth_fpp_hw_seed(),
+          StaticPrefs::zoom_stealth_canvas_edge_step()};
 }
 
 /**

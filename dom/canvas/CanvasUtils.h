@@ -12,6 +12,7 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 
 class nsIPrincipal;
 
@@ -214,14 +215,14 @@ void DashArrayToJSVal(nsTArray<T>& dashes, JSContext* cx,
 bool CheckWriteOnlySecurity(bool aCORSUsed, nsIPrincipal* aPrincipal,
                             bool aHadCrossOriginRedirects);
 
-// The seed of the canvas noise (gfx::StealthProjectPixels) for a canvas owned
-// by aCanvasPrincipal, or 0 to leave its pixels as drawn. 0 for a canvas the
+// The canvas noise (gfx::StealthProjectPixels) for a canvas owned by
+// aCanvasPrincipal; a zero seed leaves its pixels as drawn. Zero for a canvas the
 // browser itself owns - system, chrome or resource principal - because those
 // are the automation's own canvases (a screenshot draws the page into one and
 // reads it back) and never a page's: noise there buys nothing and corrupts the
 // screenshot (wrapper issue #49). Decided by the canvas that HOLDS the pixels,
 // never by who calls: the same canvas reads the same bytes for every reader.
-int32_t StealthNoiseSeed(nsIPrincipal* aCanvasPrincipal);
+gfx::StealthCanvasNoise StealthNoise(nsIPrincipal* aCanvasPrincipal);
 
 // A snapshot of a canvas as a page reads it: the canvas noise applied to its
 // stored pixels, a new data surface; the snapshot itself is left untouched,

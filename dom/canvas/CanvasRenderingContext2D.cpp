@@ -2307,10 +2307,10 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
   if (snapshot) {
     RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
     if (data && data->GetSize() == GetSize()) {
-      if (const int32_t seed =
-              CanvasUtils::StealthNoiseSeed(PrincipalOrNull())) {
+      if (const gfx::StealthCanvasNoise noise =
+              CanvasUtils::StealthNoise(PrincipalOrNull())) {
         data = gfx::StealthProjectedRegion(
-            data, IntRect(IntPoint(), data->GetSize()), true, seed);
+            data, IntRect(IntPoint(), data->GetSize()), true, noise);
       }
     }
     if (data && data->GetSize() == GetSize()) {
@@ -6899,8 +6899,8 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
   // starts in canvas coordinates.
   IntPoint readOrigin;
   if (readback) {
-    if (const int32_t seed = CanvasUtils::StealthNoiseSeed(PrincipalOrNull())) {
-      readback = gfx::StealthProjectedRegion(readback, srcReadRect, true, seed);
+    if (const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull())) {
+      readback = gfx::StealthProjectedRegion(readback, srcReadRect, true, noise);
       readOrigin = srcReadRect.TopLeft();
     }
   }

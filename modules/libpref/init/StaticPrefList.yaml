@@ -20708,6 +20708,16 @@
   value: false
   mirror: always
 
+# The largest step, channel by channel and with the low bit of R, G and B
+# cleared, from a pixel the canvas noise touches to any of its four neighbours
+# (255 = any edge). Text coverage on Windows moves in 16 wide levels and must
+# not gain a 17th grey; gradients, blur and shadows move in small steps. Declared
+# by invisible_core; -1 is NOT DECLARED, and the declaration gate refuses it.
+- name: zoom.stealth.canvas.edge_step
+  type: RelaxedAtomicInt32
+  value: -1
+  mirror: always
+
 # Synthetic speech voices (comma-separated entries, each "NAME|LANG|D|L").
 # Read by SpeechSynthesis::GetVoices — when set, bypass the OS voice
 # registry entirely and return fabricated voices with these fields. Accessors
@@ -20750,6 +20760,19 @@
 - name: zoom.stealth.text.coverage_ladder
   type: DataMutexString
   value: ""
+  mirror: always
+
+# The Windows text quality, declared instead of asked of the host
+# (SystemParametersInfo SPI_GETFONTSMOOTHING / SPI_GETFONTSMOOTHINGTYPE):
+# 0 = no smoothing (DEFAULT_QUALITY), 4 = standard antialiasing
+# (ANTIALIASED_QUALITY), 5 = ClearType (CLEARTYPE_QUALITY). It sets the
+# antialiasing of canvas text and gates whether the declared
+# gfx.font_rendering.cleartype_params.* apply at all; asked of the host, an RDP
+# session or a server with ClearType off drew different text from the same
+# binary ([B362]). -1 is NOT DECLARED, and the declaration gate refuses it.
+- name: zoom.stealth.text.system_quality
+  type: RelaxedAtomicInt32
+  value: -1
   mirror: always
 
 # The whole font manifest, carried by invisible_core and preferred over the

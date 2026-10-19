@@ -1166,19 +1166,21 @@ class RecordedOptimizeSourceSurface
 // (gfx::StealthProjectPixels on the source's stored pixels), so the drawing
 // carries the same image every reader of the source reads, without bringing
 // the source back to the content process. The seed travels with the event:
-// the content process decides it (StealthNoiseSeed, with the canvas's
+// the content process decides it (StealthNoise, with the canvas's
 // principal), and the GPU process does not read the pref.
 class RecordedStealthProjectSurface
     : public RecordedEventDerived<RecordedStealthProjectSurface> {
  public:
   RecordedStealthProjectSurface(ReferencePtr aSurface,
                                 ReferencePtr aProjectedSurface,
-                                bool aPremultiplied, int32_t aSeed)
+                                bool aPremultiplied,
+                                const StealthCanvasNoise& aNoise)
       : RecordedEventDerived(STEALTHPROJECTSURFACE),
         mSurface(aSurface),
         mProjectedSurface(aProjectedSurface),
         mPremultiplied(aPremultiplied),
-        mSeed(aSeed) {}
+        mSeed(aNoise.mSeed),
+        mEdgeStep(aNoise.mEdgeStep) {}
 
   bool PlayEvent(Translator* aTranslator) const override;
 
@@ -1195,6 +1197,7 @@ class RecordedStealthProjectSurface
   ReferencePtr mProjectedSurface;
   bool mPremultiplied = true;
   int32_t mSeed = 0;
+  int32_t mEdgeStep = 0;
 
   template <class S>
   MOZ_IMPLICIT RecordedStealthProjectSurface(S& aStream);
@@ -3809,7 +3812,8 @@ inline bool RecordedStealthProjectSurface::PlayEvent(
     return false;
   }
   RefPtr<SourceSurface> projected = StealthProjectedRegion(
-      data, IntRect(IntPoint(), data->GetSize()), mPremultiplied, mSeed);
+      data, IntRect(IntPoint(), data->GetSize()), mPremultiplied,
+      StealthCanvasNoise{mSeed, mEdgeStep});
   if (!projected) {
     return false;
   }
@@ -3823,6 +3827,7 @@ void RecordedStealthProjectSurface::Record(S& aStream) const {
   WriteElement(aStream, mProjectedSurface);
   WriteElement(aStream, mPremultiplied);
   WriteElement(aStream, mSeed);
+  WriteElement(aStream, mEdgeStep);
 }
 
 template <class S>
@@ -3832,6 +3837,7 @@ RecordedStealthProjectSurface::RecordedStealthProjectSurface(S& aStream)
   ReadElement(aStream, mProjectedSurface);
   ReadElement(aStream, mPremultiplied);
   ReadElement(aStream, mSeed);
+  ReadElement(aStream, mEdgeStep);
 }
 
 inline void RecordedStealthProjectSurface::OutputSimpleEventInfo(

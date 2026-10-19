@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include <algorithm>
+
 #include "mozilla/gfx/2D.h"
 #include "nsTArray.h"
 
@@ -59,15 +61,26 @@ inline uint32_t Canonical(const uint8_t* aPx, const Layout& aL) {
          (uint32_t(aPx[aL.b] & 0xfe) << 8) | a;
 }
 
+// The largest difference, channel by channel, between two canonical values.
+inline uint32_t Step(uint32_t a, uint32_t b) {
+  uint32_t m = 0;
+  for (int shift = 0; shift < 32; shift += 8) {
+    const int32_t d = int32_t((a >> shift) & 0xffu) - int32_t((b >> shift) & 0xffu);
+    const uint32_t ad = uint32_t(d < 0 ? -d : d);
+    m = ad > m ? ad : m;
+  }
+  return m;
+}
+
 }  // namespace
 
 bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
                           const IntSize& aSrcSize, SurfaceFormat aFormat,
                           const IntRect& aRect, uint8_t* aDst,
                           int32_t aDstStride, bool aPremultiplied,
-                          int32_t aSeed) {
+                          const StealthCanvasNoise& aNoise) {
   Layout l;
-  if (aSeed == 0 || !aSrc || !aDst || !LayoutOf(aFormat, &l)) {
+  if (!aNoise || !aSrc || !aDst || !LayoutOf(aFormat, &l)) {
     return false;
   }
   const IntRect rect = aRect.Intersect(IntRect(IntPoint(), aSrcSize));
@@ -76,7 +89,14 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
   }
   const int32_t w = aSrcSize.width;
   const int32_t h = aSrcSize.height;
-  const uint32_t seed = Mix(uint32_t(aSeed) ^ 0x2545f491u);
+  const uint32_t seed = Mix(uint32_t(aNoise.mSeed) ^ 0x2545f491u);
+  // A seed without its step is a declaration only half carried: refused, not
+  // read as "any edge" (the noise before the step existed, measured wrong on
+  // text) and not as "no edge" (a noise silently off).
+  if (aNoise.mEdgeStep < 1 || aNoise.mEdgeStep > 255) {
+    MOZ_CRASH("stealth: the canvas noise has a seed but no declared edge step");
+  }
+  const uint32_t maxStep = uint32_t(aNoise.mEdgeStep);
 
   // Three rows of canonical values, each padded by one pixel on both sides
   // with the clamped neighbour, so the inner loop has no bounds tests.
@@ -110,7 +130,14 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
         continue;
       }
       // An edge: a 4-neighbour differs. A flat area is left exactly as drawn.
-      if (c == up[i] && c == down[i] && c == mid[i - 1] && c == mid[i + 1]) {
+      // And a CONTINUOUS one: no 4-neighbour more than the declared step
+      // away. A gradient, a blur, a shadow change in small steps; the coverage
+      // of text on Windows moves in 16 levels, and a touched pixel there is a
+      // 17th grey a real DirectWrite never produces.
+      const uint32_t step =
+          std::max(std::max(Step(c, up[i]), Step(c, down[i])),
+                   std::max(Step(c, mid[i - 1]), Step(c, mid[i + 1])));
+      if (step == 0 || step > maxStep) {
         continue;
       }
       // The 3x3 neighbourhood through a SUM: independent of row order and of
@@ -122,7 +149,14 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
                               Mix(down[i + 1]);
       const uint32_t key =
           Mix(seed ^ Mix(c * 0x9e3779b1u + 0x632be5abu) ^ (around * 0x27d4eb2fu));
-      uint8_t bit = uint8_t(key >> 31);
+      // The LOW bit of the key. db967d50 took the top one; a version with
+      // zoom.stealth.canvas.edge_share chose WHICH edges to touch from the top
+      // eight bits, and the bit written had to stay independent of that choice,
+      // so it moved down. edge_share is gone (it changed nothing the bench could
+      // measure once the edge step existed), and both bits of Mix are uniform;
+      // the low one stays because the measured builds (2026-10-19, edge_step 2
+      // on canvas_form_b) used it.
+      uint8_t bit = uint8_t(key & 1u);
       const uint8_t r0 = uint8_t(c >> 24);
       const uint8_t g0 = uint8_t(c >> 16);
       const uint8_t b0 = uint8_t(c >> 8);
@@ -144,7 +178,7 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
 
 already_AddRefed<DataSourceSurface> StealthProjectedRegion(
     DataSourceSurface* aSource, const IntRect& aRect, bool aPremultiplied,
-    int32_t aSeed) {
+    const StealthCanvasNoise& aNoise) {
   if (!aSource || aRect.IsEmpty()) {
     return nullptr;
   }
@@ -172,7 +206,7 @@ already_AddRefed<DataSourceSurface> StealthProjectedRegion(
            size_t(inside.Width()) * bpp);
   }
   StealthProjectPixels(src.GetData(), src.GetStride(), size, format, aRect,
-                       dst.GetData(), dst.GetStride(), aPremultiplied, aSeed);
+                       dst.GetData(), dst.GetStride(), aPremultiplied, aNoise);
   return out.forget();
 }
 
