@@ -71,7 +71,12 @@ class OffscreenCanvasDisplayHelper final {
   bool CanElementCaptureStream() const;
   bool UsingElementCaptureStream() const;
 
+  // The placeholder's pixels as a page reads them (with the canvas noise).
   already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot();
+  // The placeholder's pixels as drawn: for the browser's own readers, which
+  // show the canvas and never hand its bytes to a page (the screen,
+  // -moz-element, the drag image, the taskbar preview).
+  already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshotAsDrawn();
   already_AddRefed<mozilla::layers::Image> GetAsImage();
   UniquePtr<uint8_t[]> GetImageBuffer(
       CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,

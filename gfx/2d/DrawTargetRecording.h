@@ -410,6 +410,18 @@ class DrawTargetRecording final : public DrawTarget {
   already_AddRefed<SourceSurface> CreateExternalSourceSurface(
       const IntSize& aSize, SurfaceFormat aFormat);
 
+ public:
+  /**
+   * A recording surface standing for aSurface with the canvas noise applied
+   * in the process that replays the recording (RecordedStealthProjectSurface),
+   * or null if aSurface is not a recording surface. Read back in this process,
+   * it gives the same projection computed here.
+   */
+  already_AddRefed<SourceSurface> StealthProjectedSurface(
+      SourceSurface* aSurface, bool aPremultiplied, int32_t aSeed);
+
+ private:
+
   friend class ::nsICanvasRenderingContextInternal;
 
   already_AddRefed<SourceSurface> SnapshotExternalCanvas(

@@ -19,6 +19,7 @@
 #include "nsXULAppAPI.h"  // for XRE_IsContentProcess()
 #include "RecordingTypes.h"
 #include "RecordedEventImpl.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 
 namespace mozilla {
 namespace gfx {
@@ -94,7 +95,13 @@ class SourceSurfaceRecording : public SourceSurface {
   SurfaceFormat GetFormat() const override { return mFormat; }
   already_AddRefed<DataSourceSurface> GetDataSurface() override {
     if (mOriginalSurface) {
-      return mOriginalSurface->GetDataSurface();
+      RefPtr<DataSourceSurface> data = mOriginalSurface->GetDataSurface();
+      if (data && mStealthSeed) {
+        // The projected stand-in reads as projected here too.
+        return StealthProjectedRegion(data, IntRect(IntPoint(), mSize),
+                                      mStealthPremultiplied, mStealthSeed);
+      }
+      return data.forget();
     }
 
     return nullptr;
@@ -109,6 +116,9 @@ class SourceSurfaceRecording : public SourceSurface {
   // we need GetDataSurface to work, so we hold the original surface we
   // optimized to return its GetDataSurface.
   RefPtr<SourceSurface> mOriginalSurface;
+  // Set on the stand-in DrawTargetRecording::StealthProjectedSurface makes.
+  int32_t mStealthSeed = 0;
+  bool mStealthPremultiplied = true;
 };
 
 class GradientStopsRecording : public GradientStops {
@@ -770,6 +780,20 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
       RecordedOptimizeSourceSurface(aSurface, retSurf));
   userData->optimizedSurface = retSurf;
 
+  return retSurf.forget();
+}
+
+already_AddRefed<SourceSurface> DrawTargetRecording::StealthProjectedSurface(
+    SourceSurface* aSurface, bool aPremultiplied, int32_t aSeed) {
+  if (!aSurface || aSurface->GetType() != SurfaceType::RECORDING || !aSeed) {
+    return nullptr;
+  }
+  RefPtr<SourceSurfaceRecording> retSurf = new SourceSurfaceRecording(
+      aSurface->GetSize(), aSurface->GetFormat(), mRecorder, aSurface);
+  retSurf->mStealthSeed = aSeed;
+  retSurf->mStealthPremultiplied = aPremultiplied;
+  RecordEventSelfSkipFlushTransform(RecordedStealthProjectSurface(
+      aSurface, retSurf, aPremultiplied, aSeed));
   return retSurf.forget();
 }
 

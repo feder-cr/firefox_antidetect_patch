@@ -14,6 +14,7 @@
 #include "Logging.h"
 #include "ScaledFontBase.h"
 #include "SFNTData.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 
 #include "mozilla/dom/CanvasRenderingContextHelper.h"
 #include "mozilla/layers/BuildConstants.h"
@@ -1158,6 +1159,45 @@ class RecordedOptimizeSourceSurface
 
   template <class S>
   MOZ_IMPLICIT RecordedOptimizeSourceSurface(S& aStream);
+};
+
+// The canvas noise applied where the pixels live: a canvas drawn onto a
+// canvas that records for the GPU process is projected THERE
+// (gfx::StealthProjectPixels on the source's stored pixels), so the drawing
+// carries the same image every reader of the source reads, without bringing
+// the source back to the content process. The seed travels with the event:
+// the content process decides it (StealthNoiseSeed, with the canvas's
+// principal), and the GPU process does not read the pref.
+class RecordedStealthProjectSurface
+    : public RecordedEventDerived<RecordedStealthProjectSurface> {
+ public:
+  RecordedStealthProjectSurface(ReferencePtr aSurface,
+                                ReferencePtr aProjectedSurface,
+                                bool aPremultiplied, int32_t aSeed)
+      : RecordedEventDerived(STEALTHPROJECTSURFACE),
+        mSurface(aSurface),
+        mProjectedSurface(aProjectedSurface),
+        mPremultiplied(aPremultiplied),
+        mSeed(aSeed) {}
+
+  bool PlayEvent(Translator* aTranslator) const override;
+
+  template <class S>
+  void Record(S& aStream) const;
+  void OutputSimpleEventInfo(std::stringstream& aStringStream) const override;
+
+  std::string GetName() const override { return "StealthProjectSurface"; }
+
+ private:
+  friend class RecordedEvent;
+
+  ReferencePtr mSurface;
+  ReferencePtr mProjectedSurface;
+  bool mPremultiplied = true;
+  int32_t mSeed = 0;
+
+  template <class S>
+  MOZ_IMPLICIT RecordedStealthProjectSurface(S& aStream);
 };
 
 class RecordedExternalSurfaceCreation
@@ -3756,6 +3796,49 @@ RecordedOptimizeSourceSurface::RecordedOptimizeSourceSurface(S& aStream)
   ReadElement(aStream, mOptimizedSurface);
 }
 
+inline bool RecordedStealthProjectSurface::PlayEvent(
+    Translator* aTranslator) const {
+  SourceSurface* surface = aTranslator->LookupSourceSurface(mSurface);
+  if (!surface) {
+    return false;
+  }
+  // No road back to the raw pixels: a source that cannot be read here fails
+  // the event like any other unresolvable surface, it is not drawn unprojected.
+  RefPtr<DataSourceSurface> data = surface->GetDataSurface();
+  if (!data) {
+    return false;
+  }
+  RefPtr<SourceSurface> projected = StealthProjectedRegion(
+      data, IntRect(IntPoint(), data->GetSize()), mPremultiplied, mSeed);
+  if (!projected) {
+    return false;
+  }
+  aTranslator->AddSourceSurface(mProjectedSurface, projected);
+  return true;
+}
+
+template <class S>
+void RecordedStealthProjectSurface::Record(S& aStream) const {
+  WriteElement(aStream, mSurface);
+  WriteElement(aStream, mProjectedSurface);
+  WriteElement(aStream, mPremultiplied);
+  WriteElement(aStream, mSeed);
+}
+
+template <class S>
+RecordedStealthProjectSurface::RecordedStealthProjectSurface(S& aStream)
+    : RecordedEventDerived(STEALTHPROJECTSURFACE) {
+  ReadElement(aStream, mSurface);
+  ReadElement(aStream, mProjectedSurface);
+  ReadElement(aStream, mPremultiplied);
+  ReadElement(aStream, mSeed);
+}
+
+inline void RecordedStealthProjectSurface::OutputSimpleEventInfo(
+    std::stringstream& aStringStream) const {
+  aStringStream << "[" << mSurface << "] Surface projected";
+}
+
 inline void RecordedOptimizeSourceSurface::OutputSimpleEventInfo(
     std::stringstream& aStringStream) const {
   aStringStream << "[" << mSurface << "] Surface Optimized";
@@ -4757,6 +4840,7 @@ inline void RecordedAccessibleId::OutputSimpleEventInfo(
   f(FLUSH, RecordedFlush);                                         \
   f(DETACHALLSNAPSHOTS, RecordedDetachAllSnapshots);               \
   f(OPTIMIZESOURCESURFACE, RecordedOptimizeSourceSurface);         \
+  f(STEALTHPROJECTSURFACE, RecordedStealthProjectSurface);         \
   f(LINK, RecordedLink);                                           \
   f(ACCESSIBLEID, RecordedAccessibleId);                           \
   f(DESTINATION, RecordedDestination);

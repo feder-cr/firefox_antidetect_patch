@@ -1435,7 +1435,11 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   bool writeOnly =
       aCanvasCtx.GetCanvas()->IsWriteOnly() || aCanvasCtx.IsWriteOnly();
 
-  RefPtr<SourceSurface> surface = aCanvasCtx.GetSurfaceSnapshot();
+  // The context's pixels as a page reads them (the canvas noise), the same
+  // image createImageBitmap(canvas) reads through the element.
+  RefPtr<SourceSurface> drawn = aCanvasCtx.GetSurfaceSnapshot();
+  RefPtr<SourceSurface> surface = CanvasUtils::StealthProjectSnapshot(
+      drawn, true, aCanvasCtx.PrincipalOrNull());
 
   if (NS_WARN_IF(!surface)) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);

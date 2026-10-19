@@ -588,7 +588,18 @@ already_AddRefed<gfx::SourceSurface> OffscreenCanvas::GetSurfaceSnapshot(
     return nullptr;
   }
 
-  return mCurrentContext->GetSurfaceSnapshot(aOutAlphaType);
+  // An OffscreenCanvas as a page reads it, with the canvas noise: every caller
+  // here is a page drawing with it or reading it (HTMLCanvasElement's twin).
+  gfxAlphaType alphaType = gfxAlphaType::Premult;
+  RefPtr<gfx::SourceSurface> drawn = mCurrentContext->GetSurfaceSnapshot(
+      aOutAlphaType ? &alphaType : nullptr);
+  if (aOutAlphaType) {
+    *aOutAlphaType = alphaType;
+  }
+  nsIGlobalObject* global = GetParentObject();
+  return CanvasUtils::StealthProjectSnapshot(
+      drawn, alphaType != gfxAlphaType::NonPremult,
+      global ? global->PrincipalOrNull() : nullptr);
 }
 
 void OffscreenCanvas::SetWriteOnly(RefPtr<nsIPrincipal>&& aExpandedReader) {

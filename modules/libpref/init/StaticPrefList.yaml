@@ -20334,8 +20334,13 @@
 #endif
   mirror: always
 
+# The session seed. Atomic because it is read off the main thread: the canvas
+# noise runs on worker threads (an OffscreenCanvas in a worker) and in the GPU
+# process on the CanvasTranslator's task queue, and a plain int32_t mirror is
+# only safe to read from the main thread. Same name and same values as before:
+# it is the contract with invisible_core.
 - name: zoom.stealth.fpp.hw_seed
-  type: int32_t
+  type: RelaxedAtomicInt32
   value: -1
   mirror: always
 
@@ -20673,19 +20678,6 @@
   value: ""
   mirror: always
 
-# Stealth (Option B): replace WebGL readback/snapshot RGB with hash(seed,index)
-# (endpoint-preserving: 0/255 bytes kept so pixelscan's red-box `oe` term passes)
-# instead of the per-channel gamma LUT. Makes the WebGL render hash a pure function
-# of (seed, dimensions) — HOST-INDEPENDENT (the gamma preserves the real GPU's
-# render structure, so its clean-render-seed pool is per-host calibrated). OFF by
-# default: it overwrites the real render, so legitimate WebGL readback/display is
-# lost. Enable only where host-independence matters more than WebGL fidelity
-# (multi-GPU headless fleets). Read by ApplyStealthWebGLPixels.
-- name: zoom.stealth.webgl.substitute_pixels
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
 # Per-profile font allow-list (comma-separated lowercase family names) = the set
 # the page may enumerate. Sampled by the Python _fpforge (core always +
 # conditioned optional subset) and applied to the native system font list AT
@@ -20704,33 +20696,16 @@
   value: ""
   mirror: always
 
-# Canvas pixel substitution mode (Bool). When true, GetImageBuffer replaces
-# every RGB pixel with a deterministic hash of (seed, pixel_index) instead of
-# adding ±1 additive noise. Alpha channel preserved. Small canvases (<64x64)
-# skipped. Use to eliminate OS-level canvas rendering signatures (Mesa/Linux
-# vs ANGLE/Windows) when spoofing a different target OS at the JS layer —
-# the resulting canvas fingerprint is purely seed-driven, OS-independent.
+# The canvas noise is on: the 2D, WebGL and OffscreenCanvas pixels a page
+# reads, and the pixels a canvas hands over as the source of another drawing,
+# go through gfx::StealthProjectPixels (gfx/2d/StealthCanvasProjection.h). One
+# switch for every kind of canvas, declared by invisible_core. The name is the
+# one the core has always written; it used to choose between two older
+# algorithms, and zoom.stealth.webgl.substitute_pixels and
+# zoom.stealth.canvas.noise_skip_mask, which tuned them, are gone with them.
 - name: zoom.stealth.canvas.substitute_pixels
   type: RelaxedAtomicBool
   value: false
-  mirror: always
-
-# Mask used by ApplyStealthCanvasPixelNoise to choose which pixels get the
-# +/-1 noise. A pixel is modified iff (per_pixel_hash & mask) == 0, so a
-# mask of 2^N - 1 yields a 1/2^N modification rate. Defaults to 7 = 1/8
-# pixels (~12.5%). Set to 15 (= 1/16, ~6.25%) for low-variance GPU stacks
-# (Intel HD) where the default rate over-amplifies the FP Pro tampering ML
-# score; set to 31 for the most conservative noise.
-# -1 means NOT DECLARED, and that is the whole point of the value.
-# It used to be 7, which is a plausible number: the core declares 15, so the
-# two disagreed by a factor of two in noise density AND the declaration gate
-# could not tell a missing value from a deliberate 7. Every sibling here uses
-# -1 as its sentinel; this one was the exception, so it was the one hole the
-# gate could not see. Reached only with the engine on - the noise function
-# returns early when the seed is not positive - so a bare binary never reads it.
-- name: zoom.stealth.canvas.noise_skip_mask
-  type: RelaxedAtomicInt32
-  value: -1
   mirror: always
 
 # Synthetic speech voices (comma-separated entries, each "NAME|LANG|D|L").

@@ -9,12 +9,17 @@
 #include "js/Array.h"               // JS::GetArrayLength
 #include "js/PropertyAndElement.h"  // JS_GetElement
 #include "jsapi.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/ToJSValue.h"
 
 class nsIPrincipal;
 
 namespace mozilla {
+
+namespace gfx {
+class SourceSurface;
+}  // namespace gfx
 
 namespace dom {
 class Document;
@@ -208,6 +213,24 @@ void DashArrayToJSVal(nsTArray<T>& dashes, JSContext* cx,
 // the incumbent global.
 bool CheckWriteOnlySecurity(bool aCORSUsed, nsIPrincipal* aPrincipal,
                             bool aHadCrossOriginRedirects);
+
+// The seed of the canvas noise (gfx::StealthProjectPixels) for a canvas owned
+// by aCanvasPrincipal, or 0 to leave its pixels as drawn. 0 for a canvas the
+// browser itself owns - system, chrome or resource principal - because those
+// are the automation's own canvases (a screenshot draws the page into one and
+// reads it back) and never a page's: noise there buys nothing and corrupts the
+// screenshot (wrapper issue #49). Decided by the canvas that HOLDS the pixels,
+// never by who calls: the same canvas reads the same bytes for every reader.
+int32_t StealthNoiseSeed(nsIPrincipal* aCanvasPrincipal);
+
+// A snapshot of a canvas as a page reads it: the canvas noise applied to its
+// stored pixels, a new data surface; the snapshot itself is left untouched,
+// because it is also what the screen and -moz-element show. aSnapshot back
+// unchanged when the seed is 0. aPremultiplied: the snapshot's alpha type is
+// not NonPremult.
+already_AddRefed<gfx::SourceSurface> StealthProjectSnapshot(
+    gfx::SourceSurface* aSnapshot, bool aPremultiplied,
+    nsIPrincipal* aCanvasPrincipal);
 
 }  // namespace CanvasUtils
 }  // namespace mozilla

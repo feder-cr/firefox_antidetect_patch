@@ -43,6 +43,20 @@ inline bool StealthEngineActive() {
 }
 
 /**
+ * The seed the canvas noise uses, or 0 when the canvas is to be left exactly
+ * as drawn: the engine is off, or invisible_core declared the canvas noise off
+ * (zoom.stealth.canvas.substitute_pixels). Every place that applies
+ * gfx::StealthProjectPixels asks here, so the on/off rule is written once.
+ */
+inline int32_t StealthCanvasNoiseSeed() {
+  if (!StealthEngineActive() ||
+      !StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
+    return 0;
+  }
+  return StaticPrefs::zoom_stealth_fpp_hw_seed();
+}
+
+/**
  * Refuse to run with an incomplete declaration.
  *
  * Engine rule 7, in the form the owner dictated on 2026-08-09: a value whose

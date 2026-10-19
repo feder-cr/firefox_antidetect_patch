@@ -22,6 +22,7 @@ UNIFIED_SOURCES += [
     "TestQcms.cpp",
     "TestRegion.cpp",
     "TestSkipChars.cpp",
+    "TestStealthCanvasProjection.cpp",
     "TestSwizzle.cpp",
     "TestTextures.cpp",
     "TestTreeTraversal.cpp",

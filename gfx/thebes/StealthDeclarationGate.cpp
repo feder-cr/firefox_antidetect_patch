@@ -137,8 +137,6 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_screen_color_depth(); }, 1},
       {"zoom.stealth.max_touch_points",
        []() { return StaticPrefs::zoom_stealth_max_touch_points(); }, 0},
-      {"zoom.stealth.canvas.noise_skip_mask",
-       []() { return StaticPrefs::zoom_stealth_canvas_noise_skip_mask(); }, 0},
       // Lo stile di hinting e l'antialias di FreeType, aggiunti il 2026-08-16.
       // Senza di loro `PrepareFontOptions` torna a chiedere al pattern
       // fontconfig, cioe' alla macchina: stesso binario, stessa pagina, hash

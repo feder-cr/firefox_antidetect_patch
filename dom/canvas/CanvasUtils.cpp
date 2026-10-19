@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 
+#include "StealthDeclarationGate.h"
 #include "WebGL2Context.h"
 #include "jsapi.h"
 #include "mozIThirdPartyUtil.h"
@@ -24,6 +25,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/gfx/Matrix.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsContentUtils.h"
 #include "nsGfxCIID.h"
@@ -742,6 +744,36 @@ bool CoerceDouble(const JS::Value& v, double* d) {
 bool HasDrawWindowPrivilege(JSContext* aCx, JSObject* /* unused */) {
   return nsContentUtils::CallerHasPermission(aCx,
                                              nsGkAtoms::all_urlsPermission);
+}
+
+int32_t StealthNoiseSeed(nsIPrincipal* aCanvasPrincipal) {
+  if (aCanvasPrincipal && (aCanvasPrincipal->IsSystemPrincipal() ||
+                           aCanvasPrincipal->SchemeIs("chrome") ||
+                           aCanvasPrincipal->SchemeIs("resource"))) {
+    return 0;
+  }
+  return gfx::StealthCanvasNoiseSeed();
+}
+
+already_AddRefed<gfx::SourceSurface> StealthProjectSnapshot(
+    gfx::SourceSurface* aSnapshot, bool aPremultiplied,
+    nsIPrincipal* aCanvasPrincipal) {
+  RefPtr<gfx::SourceSurface> result = aSnapshot;
+  const int32_t seed = StealthNoiseSeed(aCanvasPrincipal);
+  if (!aSnapshot || !seed) {
+    return result.forget();
+  }
+  RefPtr<gfx::DataSourceSurface> data = aSnapshot->GetDataSurface();
+  if (!data) {
+    return result.forget();
+  }
+  RefPtr<gfx::DataSourceSurface> projected = gfx::StealthProjectedRegion(
+      data, gfx::IntRect(gfx::IntPoint(), data->GetSize()), aPremultiplied,
+      seed);
+  if (projected) {
+    result = projected;
+  }
+  return result.forget();
 }
 
 bool CheckWriteOnlySecurity(bool aCORSUsed, nsIPrincipal* aPrincipal,

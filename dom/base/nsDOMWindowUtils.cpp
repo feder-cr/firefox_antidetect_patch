@@ -1536,7 +1536,9 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY, float aTopSize,
 static already_AddRefed<DataSourceSurface> CanvasToDataSourceSurface(
     HTMLCanvasElement* aCanvas) {
   MOZ_ASSERT(aCanvas);
-  SurfaceFromElementResult result = nsLayoutUtils::SurfaceFromElement(aCanvas);
+  // Chrome-only test hook (compareCanvases): the canvases as drawn.
+  SurfaceFromElementResult result =
+      nsLayoutUtils::SurfaceFromElement(aCanvas, nsLayoutUtils::SFE_AS_DRAWN);
   const RefPtr<SourceSurface> surf = result.GetSourceSurface();
   if (!surf) {
     return nullptr;

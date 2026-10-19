@@ -332,7 +332,8 @@ TaskbarPreviewCallback::Done(nsISupports* aCanvas, bool aDrawBorder) {
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshot();
+  // The taskbar shows the canvas; a page never reads it back.
+  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshotAsDrawn();
   if (!source) {
     return NS_ERROR_FAILURE;
   }

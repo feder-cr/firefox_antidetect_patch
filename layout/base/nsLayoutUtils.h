@@ -2319,6 +2319,12 @@ class nsLayoutUtils {
     SFE_ORIENTATION_FROM_IMAGE = 1 << 7,
     /* Caller handles SFER::mCropRect.isSome() */
     SFE_ALLOW_UNCROPPED_UNSCALED = 1 << 8,
+    /* A canvas as DRAWN, without the canvas noise: for the browser's own
+       readers that show it and never hand its bytes to a page (-moz-element,
+       nsDOMWindowUtils). Every other caller is a page reading the canvas or
+       drawing with it, and gets what HTMLCanvasElement::GetSurfaceSnapshot
+       and OffscreenCanvas::GetSurfaceSnapshot give a page. */
+    SFE_AS_DRAWN = 1 << 9,
   };
 
   // This function can be called on any thread.
