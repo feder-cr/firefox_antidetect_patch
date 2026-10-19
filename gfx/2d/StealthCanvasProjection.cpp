@@ -220,9 +220,43 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
           ((r0 | 1u) > alpha || (g0 | 1u) > alpha || (b0 | 1u) > alpha)) {
         bit = 0;  // a premultiplied channel never exceeds its alpha
       }
-      out[l.r] = uint8_t(r0 | bit);
-      out[l.g] = uint8_t(g0 | bit);
-      out[l.b] = uint8_t(b0 | bit);
+      // WHICH channels carry the bit: only one whose value differs from that
+      // channel in all eight neighbours. Values that differ are two apart once
+      // the low bit is cleared, so a bit of noise on either side cannot swap
+      // or level them, and every difference between neighbours keeps the sign
+      // the drawing gave it: no new local extremum in any direction. The bit
+      // on all three channels at once turned a channel constant across a shape
+      // (the 0 of a red-green WebGL gradient) into isolated 1s, and a slow
+      // gradient into +-1 spikes, the high-frequency signature that a page
+      // reading back its own render can count (test_fingerprint_surface.py of
+      // the wrapper, 117 spikes against 0). A channel left out keeps the drawn
+      // value, low bit included. Channels equal to each other decide together,
+      // so a grey stays grey.
+      const uint8_t ch[3] = {r0, g0, b0};
+      bool apart[3];
+      for (int k = 0; k < 3; ++k) {
+        const int shift = 24 - 8 * k;
+        apart[k] = true;
+        for (int n = 0; n < 9 && apart[k]; ++n) {
+          apart[k] = n == 4 || uint8_t(around9[n] >> shift) != ch[k];
+        }
+      }
+      bool carry[3];
+      for (int k = 0; k < 3; ++k) {
+        carry[k] = apart[k];
+        for (int j = 0; j < 3; ++j) {
+          carry[k] = carry[k] && (ch[j] != ch[k] || apart[j]);
+        }
+      }
+      if (carry[0]) {
+        out[l.r] = uint8_t(r0 | bit);
+      }
+      if (carry[1]) {
+        out[l.g] = uint8_t(g0 | bit);
+      }
+      if (carry[2]) {
+        out[l.b] = uint8_t(b0 | bit);
+      }
     }
     uint32_t* t = up;
     up = mid;

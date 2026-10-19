@@ -166,12 +166,22 @@ TEST(StealthCanvasProjection, GreysStayGreyAndPremultipliedStaysValid)
     if (drawn[i] == drawn[i + 1] && drawn[i + 1] == drawn[i + 2]) {
       EXPECT_TRUE(px[i] == px[i + 1] && px[i + 1] == px[i + 2]);
     }
-    // One bit on the three channels: every touched pixel moved R, G and B the
-    // same way, which is what keeps a grey grey where a grey is touched.
+    // One bit per pixel: every channel that moved carries the same one, and
+    // channels drawn equal stay equal.
     if (memcmp(&drawn[i], &px[i], 4) != 0) {
       touched = true;
-      EXPECT_EQ(px[i] & 1, px[i + 1] & 1) << i;
-      EXPECT_EQ(px[i + 1] & 1, px[i + 2] & 1) << i;
+      int bit = -1;
+      for (int k = 0; k < 3; ++k) {
+        if (drawn[i + k] != px[i + k]) {
+          EXPECT_TRUE(bit == -1 || bit == (px[i + k] & 1)) << i;
+          bit = px[i + k] & 1;
+        }
+        for (int j = 0; j < 3; ++j) {
+          if (drawn[i + k] == drawn[i + j]) {
+            EXPECT_EQ(px[i + k], px[i + j]) << i;
+          }
+        }
+      }
     }
     EXPECT_LE(px[i], px[i + 3]);
     EXPECT_LE(px[i + 1], px[i + 3]);
@@ -272,6 +282,85 @@ TEST(StealthCanvasProjection, AThirdColourIsTouched)
       const size_t i = (y * kW + x) * 4;
       moved += memcmp(&drawn[i], &a[i], 4) != 0;
     }
+  }
+  EXPECT_GT(moved, 0u);
+}
+
+namespace {
+
+// The WebGL probe of the wrapper's test_webgl_readpixels_no_masking_signature,
+// in miniature: a triangle whose red follows x and whose green follows y, blue
+// 0 throughout, antialiased over a transparent background. Every neighbourhood
+// inside holds a plane of colours, not a segment, so the noise touches it.
+std::vector<uint8_t> GradientTriangle() {
+  std::vector<uint8_t> px(kW * kH * 4, 0);
+  for (int32_t y = 0; y < kH; ++y) {
+    for (int32_t x = 0; x < kW; ++x) {
+      // Coverage in 1/8: inside below the diagonal, a soft step across it.
+      const int32_t d = (x * kH - y * kW) / 8;
+      const int32_t cover = d < 0 ? 0 : (d > 8 ? 8 : d);
+      if (!cover) {
+        continue;
+      }
+      uint8_t* p = &px[(y * kW + x) * 4];
+      const uint8_t a = uint8_t(cover * 255 / 8);
+      p[0] = uint8_t((x * 255 / (kW - 1)) * a / 255);
+      p[1] = uint8_t((y * 2 * 255 / kH % 256) * a / 255);
+      p[2] = 0;
+      p[3] = a;
+    }
+  }
+  return px;
+}
+
+int Sign(int aV) { return (aV > 0) - (aV < 0); }
+
+}  // namespace
+
+TEST(StealthCanvasProjection, NoNewExtremum)
+{
+  // Every difference between two neighbours, in each direction and on each
+  // channel, keeps the sign the drawing gave it. A bit on a channel whose
+  // value equals a neighbour's would flip a 0 into a +-1: the isolated spike
+  // a page reading back a smooth render counts.
+  const int32_t dirs[4][2] = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
+  for (const std::vector<uint8_t>& drawn : {GradientTriangle(), Drawing(true),
+                                            Drawing(false)}) {
+    std::vector<uint8_t> px = drawn;
+    ASSERT_TRUE(Project(px, SurfaceFormat::R8G8B8A8));
+    EXPECT_NE(drawn, px) << "nothing was touched: the test proves nothing";
+    for (int32_t y = 0; y < kH; ++y) {
+      for (int32_t x = 0; x < kW; ++x) {
+        for (const auto& d : dirs) {
+          const int32_t x2 = x + d[0];
+          const int32_t y2 = y + d[1];
+          if (x2 < 0 || x2 >= kW || y2 < 0 || y2 >= kH) {
+            continue;
+          }
+          const size_t i = (y * kW + x) * 4;
+          const size_t j = (y2 * kW + x2) * 4;
+          for (int k = 0; k < 3; ++k) {
+            ASSERT_EQ(Sign(int(drawn[i + k]) - drawn[j + k]),
+                      Sign(int(px[i + k]) - px[j + k]))
+                << x << "," << y << " to " << x2 << "," << y2 << " channel " << k;
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(StealthCanvasProjection, AConstantChannelStaysConstant)
+{
+  // The blue of the gradient triangle is 0 everywhere: it stays 0, while red
+  // and green carry the noise.
+  const std::vector<uint8_t> drawn = GradientTriangle();
+  std::vector<uint8_t> px = drawn;
+  ASSERT_TRUE(Project(px, SurfaceFormat::R8G8B8A8));
+  size_t moved = 0;
+  for (size_t i = 0; i < px.size(); i += 4) {
+    EXPECT_EQ(0, px[i + 2]) << i;
+    moved += px[i] != drawn[i] || px[i + 1] != drawn[i + 1];
   }
   EXPECT_GT(moved, 0u);
 }
