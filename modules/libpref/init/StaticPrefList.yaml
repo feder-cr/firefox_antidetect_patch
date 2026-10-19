@@ -20708,12 +20708,14 @@
   value: false
   mirror: always
 
-# The largest step, channel by channel and with the low bit of R, G and B
-# cleared, from a pixel the canvas noise touches to any of its four neighbours
-# (255 = any edge). Text coverage on Windows moves in 16 wide levels and must
-# not gain a 17th grey; gradients, blur and shadows move in small steps. Declared
-# by invisible_core; -1 is NOT DECLARED, and the declaration gate refuses it.
-- name: zoom.stealth.canvas.edge_step
+# How far, in RGBA channel units with the low bit of R, G and B cleared, a
+# colour of a pixel's 3x3 neighbourhood may sit from the segment between the two
+# farthest colours there and still count as a BLEND OF TWO. Such a pixel (text
+# at any contrast, the antialiased edge between two fills, a two-stop gradient)
+# is left exactly as drawn by the canvas noise; only a neighbourhood with a third
+# independent colour is touched. Declared by invisible_core (0-255); -1 is NOT
+# DECLARED, and the declaration gate refuses it.
+- name: zoom.stealth.canvas.edge_tolerance
   type: RelaxedAtomicInt32
   value: -1
   mirror: always

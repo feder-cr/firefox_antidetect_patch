@@ -46,9 +46,9 @@ inline bool StealthEngineActive() {
 /**
  * The canvas noise as invisible_core declared it: the seed, or 0 when the
  * canvas is to be left exactly as drawn (the engine is off, or the canvas noise
- * is declared off, zoom.stealth.canvas.substitute_pixels), and the largest
- * step to a neighbour of a touched pixel (zoom.stealth.canvas.edge_step,
- * 1-255, refused at launch when missing). Every place that applies gfx::StealthProjectPixels
+ * is declared off, zoom.stealth.canvas.substitute_pixels), and the tolerance
+ * that tells a blend of two colours from a neighbourhood with a third
+ * (zoom.stealth.canvas.edge_tolerance, 0-255, refused at launch when missing). Every place that applies gfx::StealthProjectPixels
  * asks here, so the rule is written once.
  */
 inline gfx::StealthCanvasNoise StealthCanvasNoiseDeclared() {
@@ -57,7 +57,7 @@ inline gfx::StealthCanvasNoise StealthCanvasNoiseDeclared() {
     return gfx::StealthCanvasNoise::Off();
   }
   return {StaticPrefs::zoom_stealth_fpp_hw_seed(),
-          StaticPrefs::zoom_stealth_canvas_edge_step()};
+          StaticPrefs::zoom_stealth_canvas_edge_tolerance()};
 }
 
 /**

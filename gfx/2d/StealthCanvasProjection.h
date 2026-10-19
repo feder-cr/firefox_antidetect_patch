@@ -24,23 +24,24 @@ class DataSourceSurface;
  * CanvasUtils::StealthNoise, which adds the canvas's principal).
  *
  * Built only two ways: Off() ("leave the pixels as drawn"), or with the seed
- * AND the step together. There is no default constructor and no constructor
- * from the seed alone, so a seed that travels without its declared step does
- * not compile: the step used to default to 255, "touch every edge", which is
- * the noise measured wrong on text, sitting next to the declaration as a second
- * value (engine rule 7).
+ * AND the tolerance together. There is no default constructor and no
+ * constructor from the seed alone, so a seed that travels without its declared
+ * tolerance does not compile: the parameter that came before it defaulted to
+ * "touch every edge", the noise measured wrong on text, sitting next to the
+ * declaration as a second value (engine rule 7).
  */
 class StealthCanvasNoise {
  public:
   static StealthCanvasNoise Off() { return StealthCanvasNoise(0, 0); }
-  StealthCanvasNoise(int32_t aSeed, int32_t aEdgeStep)
-      : mSeed(aSeed), mEdgeStep(aEdgeStep) {}
+  StealthCanvasNoise(int32_t aSeed, int32_t aEdgeTolerance)
+      : mSeed(aSeed), mEdgeTolerance(aEdgeTolerance) {}
   explicit operator bool() const { return mSeed != 0; }
 
   int32_t mSeed;
-  // The largest step, in LSB-cleared channel values, to a 4-neighbour of a
-  // pixel that is touched (zoom.stealth.canvas.edge_step, 1-255).
-  int32_t mEdgeStep;
+  // How far, in LSB-cleared RGBA channel units, a colour of the 3x3
+  // neighbourhood may sit from the segment between its two farthest colours and
+  // still count as a blend of two (zoom.stealth.canvas.edge_tolerance, 0-255).
+  int32_t mEdgeTolerance;
 };
 
 /**
@@ -62,10 +63,13 @@ class StealthCanvasNoise {
  *   - every value is looked at with the low bit of R, G and B CLEARED (alpha is
  *     never touched, so it is read whole);
  *   - the pixel is touched only if it differs from one of its four neighbours
- *     (an edge, never a flat area) and by no more than the step invisible_core
- *     declares (zoom.stealth.canvas.edge_step): a gradient, a blur, a shadow,
- *     and not the wide steps of text coverage, which on Windows has 16 levels
- *     and would read an extra grey where any pixel of it moved. A white
+ *     (an edge, never a flat area), and only if its 3x3 neighbourhood is NOT a
+ *     blend of two colours within the tolerance invisible_core declares
+ *     (zoom.stealth.canvas.edge_tolerance): text at any contrast, the edge
+ *     between two fills and a two-stop gradient stay exactly as drawn, because a
+ *     touched pixel there is a level the rasteriser does not produce (an 18th
+ *     grey of DirectWrite text); a shadow over a fill, an emoji, the junction of
+ *     three shapes carry the noise. A white
  *     background stays white and a filled rectangle reads back the colour it
  *     was filled with, which is what a real machine's variation looks like;
  *   - the low bit of R, G and B is replaced by ONE bit, the same on the three

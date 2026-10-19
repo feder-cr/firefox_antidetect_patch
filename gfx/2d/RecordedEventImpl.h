@@ -1180,7 +1180,7 @@ class RecordedStealthProjectSurface
         mProjectedSurface(aProjectedSurface),
         mPremultiplied(aPremultiplied),
         mSeed(aNoise.mSeed),
-        mEdgeStep(aNoise.mEdgeStep) {}
+        mEdgeTolerance(aNoise.mEdgeTolerance) {}
 
   bool PlayEvent(Translator* aTranslator) const override;
 
@@ -1197,7 +1197,7 @@ class RecordedStealthProjectSurface
   ReferencePtr mProjectedSurface;
   bool mPremultiplied = true;
   int32_t mSeed = 0;
-  int32_t mEdgeStep = 0;
+  int32_t mEdgeTolerance = 0;
 
   template <class S>
   MOZ_IMPLICIT RecordedStealthProjectSurface(S& aStream);
@@ -3813,7 +3813,7 @@ inline bool RecordedStealthProjectSurface::PlayEvent(
   }
   RefPtr<SourceSurface> projected = StealthProjectedRegion(
       data, IntRect(IntPoint(), data->GetSize()), mPremultiplied,
-      StealthCanvasNoise{mSeed, mEdgeStep});
+      StealthCanvasNoise{mSeed, mEdgeTolerance});
   if (!projected) {
     return false;
   }
@@ -3827,7 +3827,7 @@ void RecordedStealthProjectSurface::Record(S& aStream) const {
   WriteElement(aStream, mProjectedSurface);
   WriteElement(aStream, mPremultiplied);
   WriteElement(aStream, mSeed);
-  WriteElement(aStream, mEdgeStep);
+  WriteElement(aStream, mEdgeTolerance);
 }
 
 template <class S>
@@ -3837,7 +3837,7 @@ RecordedStealthProjectSurface::RecordedStealthProjectSurface(S& aStream)
   ReadElement(aStream, mProjectedSurface);
   ReadElement(aStream, mPremultiplied);
   ReadElement(aStream, mSeed);
-  ReadElement(aStream, mEdgeStep);
+  ReadElement(aStream, mEdgeTolerance);
 }
 
 inline void RecordedStealthProjectSurface::OutputSimpleEventInfo(

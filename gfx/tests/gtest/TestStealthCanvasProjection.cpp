@@ -9,6 +9,8 @@
 
 #include <string.h>
 
+#include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -23,9 +25,13 @@ namespace {
 constexpr int32_t kW = 37;
 constexpr int32_t kH = 23;
 constexpr int32_t kSeed = 8;
+// The tolerance invisible_core declares (zoom.stealth.canvas.edge_tolerance).
+constexpr int32_t kTolerance = 4;
 
-// A drawing with flat areas, hard edges and an antialiased-looking ramp, as
-// RGBA, opaque unless aAlpha.
+// A drawing with flat areas, hard edges, a ramp of greys (a blend of two
+// colours, left alone) and, from row 18, independent colours (a third colour
+// in every neighbourhood, the part the noise touches), as RGBA, opaque unless
+// aAlpha.
 std::vector<uint8_t> Drawing(bool aAlpha) {
   std::vector<uint8_t> px(kW * kH * 4);
   uint32_t state = 12345;
@@ -38,10 +44,16 @@ std::vector<uint8_t> Drawing(bool aAlpha) {
         g = 120;
         b = 200;
       }
-      if (y >= 14) {  // a ramp
+      if (y >= 14 && y < 18) {  // a ramp
         state = state * 1103515245u + 12345u;
         const uint8_t v = uint8_t((x * 7 + (state >> 28)) & 0xff);
         r = g = b = v;  // greys
+      }
+      if (y >= 18) {  // independent colours
+        state = state * 1103515245u + 12345u;
+        r = uint8_t(state >> 24);
+        g = uint8_t(state >> 16);
+        b = uint8_t(state >> 8);
       }
       uint8_t a = 255;
       if (aAlpha && x >= 25) {
@@ -64,11 +76,11 @@ std::vector<uint8_t> Drawing(bool aAlpha) {
 
 bool Project(std::vector<uint8_t>& aPx, SurfaceFormat aFormat,
              bool aPremult = true, int32_t aSeed = kSeed,
-             int32_t aEdgeStep = 255) {
+             int32_t aEdgeTolerance = kTolerance) {
   return StealthProjectPixels(aPx.data(), kW * 4, IntSize(kW, kH), aFormat,
                               IntRect(0, 0, kW, kH), aPx.data(), kW * 4,
                               aPremult,
-                              StealthCanvasNoise{aSeed, aEdgeStep});
+                              StealthCanvasNoise{aSeed, aEdgeTolerance});
 }
 
 std::vector<uint8_t> SwapRB(const std::vector<uint8_t>& aPx) {
@@ -149,14 +161,23 @@ TEST(StealthCanvasProjection, GreysStayGreyAndPremultipliedStaysValid)
   std::vector<uint8_t> px = Drawing(true);
   const std::vector<uint8_t> drawn = px;
   ASSERT_TRUE(Project(px, SurfaceFormat::R8G8B8A8));
+  bool touched = false;
   for (size_t i = 0; i < px.size(); i += 4) {
     if (drawn[i] == drawn[i + 1] && drawn[i + 1] == drawn[i + 2]) {
       EXPECT_TRUE(px[i] == px[i + 1] && px[i + 1] == px[i + 2]);
+    }
+    // One bit on the three channels: every touched pixel moved R, G and B the
+    // same way, which is what keeps a grey grey where a grey is touched.
+    if (memcmp(&drawn[i], &px[i], 4) != 0) {
+      touched = true;
+      EXPECT_EQ(px[i] & 1, px[i + 1] & 1) << i;
+      EXPECT_EQ(px[i + 1] & 1, px[i + 2] & 1) << i;
     }
     EXPECT_LE(px[i], px[i + 3]);
     EXPECT_LE(px[i + 1], px[i + 3]);
     EXPECT_LE(px[i + 2], px[i + 3]);
   }
+  EXPECT_TRUE(touched) << "nothing was touched: the test proves nothing";
 }
 
 TEST(StealthCanvasProjection, SeedDecides)
@@ -189,7 +210,7 @@ TEST(StealthCanvasProjection, ARectangleIsTheWholeCropped)
 
   const IntRect rect(4, 2, 19, 15);  // its edges cut through the drawing
   RefPtr<DataSourceSurface> part =
-      StealthProjectedRegion(surf, rect, true, StealthCanvasNoise{kSeed, 255});
+      StealthProjectedRegion(surf, rect, true, StealthCanvasNoise{kSeed, kTolerance});
   ASSERT_TRUE(part);
   DataSourceSurface::ScopedMap map(part, DataSourceSurface::READ);
   ASSERT_TRUE(map.IsMapped());
@@ -201,35 +222,56 @@ TEST(StealthCanvasProjection, ARectangleIsTheWholeCropped)
   }
 }
 
-TEST(StealthCanvasProjection, EdgeStepLeavesWideStepsAlone)
+TEST(StealthCanvasProjection, ABlendOfTwoColoursIsLeftAlone)
 {
-  // Two columns of coverage-like levels 64 apart, and a ramp 2 apart: with a
-  // step of 8 only the ramp may move, and it does.
-  std::vector<uint8_t> px(kW * kH * 4, 255);
-  for (int32_t y = 0; y < kH; ++y) {
-    for (int32_t x = 0; x < kW; ++x) {
-      uint8_t* p = &px[(y * kW + x) * 4];
-      uint8_t v = 255;
-      if (x < 12) {
-        v = uint8_t((x % 4) * 64);  // wide steps
-      } else if (x >= 20) {
-        v = uint8_t(100 + (x - 20) * 2);  // a smooth ramp
+  // Text at any contrast is the ink blended over the background: every pixel
+  // on the segment between two colours. Coverage levels of a low-contrast
+  // coloured ink (FingerprintJS's rgba(102,204,0,0.2) over white has steps of
+  // 1-5 per channel), a black-on-white ramp, and the antialiased edge between
+  // two fills: none of it may move, whatever the step between neighbours.
+  // Each blend in a buffer of its own: two of them side by side would put a
+  // third colour in the neighbourhoods along their border, which the noise
+  // touches on purpose (two inks a pixel apart are three colours).
+  auto blend = [](const uint8_t aFrom[3], const uint8_t aTo[3]) {
+    std::vector<uint8_t> px(kW * kH * 4, 255);
+    for (int32_t y = 0; y < kH; ++y) {
+      for (int32_t x = 0; x < kW; ++x) {
+        uint8_t* p = &px[(y * kW + x) * 4];
+        const int32_t level = (x * 7 + y * 3) % 17;  // 17 coverage levels
+        for (int k = 0; k < 3; ++k) {
+          p[k] = uint8_t(aFrom[k] + (int32_t(aTo[k]) - aFrom[k]) * level / 16);
+        }
       }
-      p[0] = p[1] = p[2] = v;
+    }
+    return px;
+  };
+  const uint8_t white[3] = {255, 255, 255};
+  const uint8_t green02[3] = {224, 245, 204};  // the 0.2 green at full coverage
+  const uint8_t black[3] = {0, 0, 0};
+  const uint8_t red[3] = {200, 0, 0};
+  const uint8_t blue[3] = {0, 0, 220};
+  for (const auto& [from, to] : {std::pair{white, green02}, std::pair{white, black},
+                                 std::pair{red, blue}}) {
+    std::vector<uint8_t> px = blend(from, to);
+    const std::vector<uint8_t> drawn = px;
+    ASSERT_TRUE(Project(px, SurfaceFormat::R8G8B8A8));
+    EXPECT_EQ(drawn, px) << int(to[0]) << "," << int(to[1]) << "," << int(to[2]);
+  }
+}
+
+TEST(StealthCanvasProjection, AThirdColourIsTouched)
+{
+  // The independent colours of the test drawing: a third colour in every
+  // neighbourhood. They carry the noise, and the two seeds disagree there.
+  std::vector<uint8_t> a = Drawing(false);
+  const std::vector<uint8_t> drawn = a;
+  ASSERT_TRUE(Project(a, SurfaceFormat::R8G8B8A8));
+  size_t moved = 0;
+  for (int32_t y = 19; y < kH - 1; ++y) {
+    for (int32_t x = 1; x < kW - 1; ++x) {
+      const size_t i = (y * kW + x) * 4;
+      moved += memcmp(&drawn[i], &a[i], 4) != 0;
     }
   }
-  const std::vector<uint8_t> drawn = px;
-  ASSERT_TRUE(Project(px, SurfaceFormat::R8G8B8A8, true, kSeed, 8));
-  bool rampMoved = false;
-  for (int32_t y = 0; y < kH; ++y) {
-    for (int32_t x = 0; x < 11; ++x) {
-      const size_t i = (y * kW + x) * 4;
-      EXPECT_EQ(0, memcmp(&drawn[i], &px[i], 4)) << x << "," << y;
-    }
-    for (int32_t x = 21; x < kW - 1; ++x) {
-      const size_t i = (y * kW + x) * 4;
-      rampMoved |= memcmp(&drawn[i], &px[i], 4) != 0;
-    }
-  }
-  EXPECT_TRUE(rampMoved);
+  EXPECT_GT(moved, 0u);
 }

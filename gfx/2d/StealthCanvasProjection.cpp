@@ -7,8 +7,6 @@
 
 #include <string.h>
 
-#include <algorithm>
-
 #include "mozilla/gfx/2D.h"
 #include "nsTArray.h"
 
@@ -61,15 +59,70 @@ inline uint32_t Canonical(const uint8_t* aPx, const Layout& aL) {
          (uint32_t(aPx[aL.b] & 0xfe) << 8) | a;
 }
 
-// The largest difference, channel by channel, between two canonical values.
-inline uint32_t Step(uint32_t a, uint32_t b) {
-  uint32_t m = 0;
+// The squared distance between two canonical values, in RGBA channel units.
+inline int64_t Dist2(uint32_t a, uint32_t b) {
+  int64_t s = 0;
   for (int shift = 0; shift < 32; shift += 8) {
-    const int32_t d = int32_t((a >> shift) & 0xffu) - int32_t((b >> shift) & 0xffu);
-    const uint32_t ad = uint32_t(d < 0 ? -d : d);
-    m = ad > m ? ad : m;
+    const int64_t d = int64_t((a >> shift) & 0xffu) - int64_t((b >> shift) & 0xffu);
+    s += d * d;
   }
-  return m;
+  return s;
+}
+
+// Do these colours all lie on ONE straight segment, between the two of them
+// farthest apart, within aTol channel units? That is what a pixel looks like
+// when it is a blend of two colours: text (the ink over the background at a
+// coverage level, at ANY contrast), the antialiased edge between two fills, a
+// two-stop gradient. A real machine differs from another there in WHICH blend
+// a pixel gets, never by a third colour, and a touched pixel would be a level
+// that rasteriser does not produce (an 18th grey in DirectWrite text).
+//
+// Integer arithmetic only, so the content process, the GPU process and a
+// worker, on Windows and on Linux, decide every pixel the same way: a float
+// compared with a threshold could split them. The farthest pair is the first
+// found in a fixed order; the distance from a colour r to the segment p-q is
+// tested as |r-p|^2 * L - t^2 <= tol^2 * L, with t = (r-p).(q-p) and L = |q-p|^2,
+// clamped to the end points.
+bool OnOneSegment(const uint32_t (&aColours)[9], int64_t aTol) {
+  int64_t len = -1;
+  int pi = 0;
+  int qi = 0;
+  for (int i = 0; i < 9; ++i) {
+    for (int j = i + 1; j < 9; ++j) {
+      const int64_t d = Dist2(aColours[i], aColours[j]);
+      if (d > len) {
+        len = d;
+        pi = i;
+        qi = j;
+      }
+    }
+  }
+  if (len <= 0) {
+    return true;  // one colour
+  }
+  const uint32_t p = aColours[pi];
+  const uint32_t q = aColours[qi];
+  const int64_t tol2 = aTol * aTol;
+  for (uint32_t r : aColours) {
+    int64_t t = 0;
+    for (int shift = 0; shift < 32; shift += 8) {
+      const int64_t w = int64_t((r >> shift) & 0xffu) - int64_t((p >> shift) & 0xffu);
+      const int64_t v = int64_t((q >> shift) & 0xffu) - int64_t((p >> shift) & 0xffu);
+      t += w * v;
+    }
+    bool near;
+    if (t <= 0) {
+      near = Dist2(r, p) <= tol2;
+    } else if (t >= len) {
+      near = Dist2(r, q) <= tol2;
+    } else {
+      near = Dist2(r, p) * len - t * t <= tol2 * len;
+    }
+    if (!near) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -90,13 +143,12 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
   const int32_t w = aSrcSize.width;
   const int32_t h = aSrcSize.height;
   const uint32_t seed = Mix(uint32_t(aNoise.mSeed) ^ 0x2545f491u);
-  // A seed without its step is a declaration only half carried: refused, not
-  // read as "any edge" (the noise before the step existed, measured wrong on
-  // text) and not as "no edge" (a noise silently off).
-  if (aNoise.mEdgeStep < 1 || aNoise.mEdgeStep > 255) {
-    MOZ_CRASH("stealth: the canvas noise has a seed but no declared edge step");
+  // A seed without its tolerance is a declaration only half carried: refused,
+  // not read as some built-in tolerance.
+  if (aNoise.mEdgeTolerance < 0 || aNoise.mEdgeTolerance > 255) {
+    MOZ_CRASH("stealth: the canvas noise has a seed but no declared edge tolerance");
   }
-  const uint32_t maxStep = uint32_t(aNoise.mEdgeStep);
+  const int64_t tolerance = aNoise.mEdgeTolerance;
 
   // Three rows of canonical values, each padded by one pixel on both sides
   // with the clamped neighbour, so the inner loop has no bounds tests.
@@ -130,14 +182,20 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
         continue;
       }
       // An edge: a 4-neighbour differs. A flat area is left exactly as drawn.
-      // And a CONTINUOUS one: no 4-neighbour more than the declared step
-      // away. A gradient, a blur, a shadow change in small steps; the coverage
-      // of text on Windows moves in 16 levels, and a touched pixel there is a
-      // 17th grey a real DirectWrite never produces.
-      const uint32_t step =
-          std::max(std::max(Step(c, up[i]), Step(c, down[i])),
-                   std::max(Step(c, mid[i - 1]), Step(c, mid[i + 1])));
-      if (step == 0 || step > maxStep) {
+      if (c == up[i] && c == down[i] && c == mid[i - 1] && c == mid[i + 1]) {
+        continue;
+      }
+      // And not a blend of TWO colours: the 3x3 neighbourhood must hold a third,
+      // independent one (a shadow over a fill and the background, an emoji, the
+      // junction of three shapes). Text at any contrast and the edge between two
+      // fills are left exactly as drawn. This replaced a band on the step to the
+      // neighbours (zoom.stealth.canvas.edge_step), which no step value could
+      // make separate low-contrast coloured text from a gradient: FingerprintJS's
+      // own rgba(102,204,0,0.2) line has the steps of a gradient on retail too.
+      const uint32_t around9[9] = {up[i - 1],  up[i],  up[i + 1],
+                                   mid[i - 1], c,      mid[i + 1],
+                                   down[i - 1], down[i], down[i + 1]};
+      if (OnOneSegment(around9, tolerance)) {
         continue;
       }
       // The 3x3 neighbourhood through a SUM: independent of row order and of
@@ -152,10 +210,8 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
       // The LOW bit of the key. db967d50 took the top one; a version with
       // zoom.stealth.canvas.edge_share chose WHICH edges to touch from the top
       // eight bits, and the bit written had to stay independent of that choice,
-      // so it moved down. edge_share is gone (it changed nothing the bench could
-      // measure once the edge step existed), and both bits of Mix are uniform;
-      // the low one stays because the measured builds (2026-10-19, edge_step 2
-      // on canvas_form_b) used it.
+      // so it moved down. edge_share is gone, and both bits of Mix are uniform;
+      // the low one stays because the measured builds of 2026-10-19 used it.
       uint8_t bit = uint8_t(key & 1u);
       const uint8_t r0 = uint8_t(c >> 24);
       const uint8_t g0 = uint8_t(c >> 16);

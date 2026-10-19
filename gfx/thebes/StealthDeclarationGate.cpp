@@ -151,11 +151,12 @@ void StealthAssertDeclarationsComplete() {
       // piattaforma di proposito: una dichiarazione che vale per una sola
       // build e' una dichiarazione che qualcuno dimentichera' di spedire, e la
       // build che la dimentica non e' quella che se ne accorge.
-      // The largest step to a neighbour of a touched pixel, added
-      // 2026-10-19 with the single canvas function: text coverage moves in
-      // wide steps, gradients in small ones. 0 would touch nothing.
-      {"zoom.stealth.canvas.edge_step",
-       []() { return StaticPrefs::zoom_stealth_canvas_edge_step(); }, 1},
+      // The tolerance of the canvas noise's two-colour test, added 2026-10-19
+      // with the single canvas function: a pixel whose neighbourhood is a
+      // blend of two colours within it (text, two-colour antialiasing) is left
+      // as drawn. 0 is a valid declaration; the undeclared -1 is not.
+      {"zoom.stealth.canvas.edge_tolerance",
+       []() { return StaticPrefs::zoom_stealth_canvas_edge_tolerance(); }, 0},
       // The Windows text quality, added 2026-10-19 ([B362]): read by
       // gfxDWriteFonts' GetSystemTextQuality instead of SystemParametersInfo.
       // Required on both platforms, like the cleartype_params it gates: a
