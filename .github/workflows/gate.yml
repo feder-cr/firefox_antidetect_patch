@@ -210,30 +210,42 @@ jobs:
       # (47.x) and the published one (46.x) cannot even find the juggler. With
       # the old order the wrapper of main kept its 46 pin, the import-time
       # enforce_core_pin repaired the core back to 46, and every leg failed on a
-      # binary that was fine. In this order the pairing under test is the one pip
-      # resolves from the declared pins, which is the pairing a user gets: pass
-      # a wrapper_ref whose pin names the core core_ref builds. A mismatch does
-      # not get papered over - pip downgrades to the index core and the gate
-      # fails on it, which is the truth about that pairing.
+      # binary that was fine.
       #
-      # ⛔ BUT IT FAILED IN THE WRONG PLACE, AND SILENTLY. firefox-51 (run
-      # 39398286614): core_ref built 51.48.0, the wrapper of main pinned 50.48.0,
-      # pip put the published core back, and this step PRINTED "core under test:
-      # 50.48.0" and went on. The engine then refused the launch on the two
-      # declarations 50.48.0 does not emit (edge_tolerance, system_quality),
-      # and a release build's MOZ_CRASH prints nothing: three legs red with
-      # "the browser exited during startup ... printed: (nothing)", which reads
-      # as a broken binary. So the core under test is now ASSERTED before any
-      # browser starts: it must be the git install of exactly core_ref
-      # (direct_url.json, which pip writes for a VCS install and an index
-      # install does not have), read AFTER importing the wrapper, because the
-      # import-time pin repair is the second way the published core comes back.
+      # ⛔ AND THE CORE-FIRST ORDER FAILED TOO, IN THE WRONG PLACE AND SILENTLY
+      # (firefox-51, run 39398286614). It needed a wrapper_ref whose pin names
+      # the version core_ref builds, and during a release that version exists
+      # only on a transition seal: core_ref built 51.48.0, the wrapper of main
+      # pinned 50.48.0, pip put the published core back, and this step PRINTED
+      # "core under test: 50.48.0" and went on. The engine refused the launch on
+      # the two declarations 50.48.0 does not emit (edge_tolerance,
+      # system_quality), and a release build's MOZ_CRASH prints nothing: three
+      # legs red with "the browser exited during startup ... printed:
+      # (nothing)", which reads as a broken binary. A wrapper branch pinned to
+      # 51.48.0 was tried and is not the fix: its own suite runs against the
+      # transition seal, which has no assets, and goes red for that.
+      #
+      # SO THE GATE RUNS EXACTLY core_ref, WHATEVER THE WRAPPER PINS. The wrapper
+      # goes in first, for its dependencies; core_ref is force-installed over it
+      # from git, with its own dependencies; and the import-time repair that
+      # broke firefox-47 is switched off for the whole step with the core's own
+      # switches, INVISIBLE_CORE_AUTOFIX=off (no repair) and INVISIBLE_CORE_PIN=
+      # allow (the pin mismatch warns instead of refusing the import). Then the
+      # core under test is ASSERTED before any browser starts: the git install of
+      # exactly core_ref (direct_url.json, which pip writes for a VCS install and
+      # an index install does not have), read AFTER importing the wrapper, so a
+      # repair that came back any other way is caught here and named.
+      # Measured locally on firefox-51's engine: without the two switches the
+      # repair reinstalls 50.48.0 and the assertion stops the step with that
+      # cause; with them the core stays 51.48.0 and the browser launches and
+      # evaluates with no prefs passed by hand.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
         run: |
-          python -m pip install --quiet \
-            "git+https://github.com/feder-cr/invisible_core@${{ inputs.core_ref }}"
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
           python -m pip install --quiet ".[dev]"
+          python -m pip install --quiet --force-reinstall \
+            "git+https://github.com/feder-cr/invisible_core@${{ inputs.core_ref }}"
           CORE_REF="${{ inputs.core_ref }}" python - <<'PY'
           import json, os, re, subprocess, sys
           from importlib.metadata import distribution, version
@@ -252,9 +264,9 @@ jobs:
           print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
           if not want or got != want:
               sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s. "
-                       "Pass a wrapper_ref whose pin names the version core_ref builds: with any other pin, "
-                       "pip or the wrapper's import-time repair puts the published core back, and the engine "
-                       "refuses the launch on the declarations that core does not emit."
+                       "Something put another core over the git install (an install after it, or the wrapper's "
+                       "import-time repair with INVISIBLE_CORE_AUTOFIX not off), and with the published core "
+                       "the engine refuses the launch on the declarations that core does not emit."
                        % (version("invisible-core"), got or "the index", ref,
                           want or "not a full sha nor a ref of invisible_core"))
           PY
