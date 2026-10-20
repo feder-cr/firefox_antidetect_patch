@@ -4,6 +4,8 @@
 
 #include "ClientWebGLContext.h"
 
+#include "mozilla/gfx/StealthCanvasProjection.h"
+
 #include <fmt/format.h>
 
 #include <bitset>
@@ -55,165 +57,6 @@ std::string SanitizeVendor(const std::string&);
 }  // namespace webgl
 
 // -
-
-// Stealth: seed-derived WebGL readPixels noise. Stessa logica e stesso seed di
-// CanvasRenderingContext2D::ApplyStealthCanvasPixelNoise, propagato via
-// zoom.stealth.fpp.hw_seed (mirror:always). Copre il fingerprinting WebGL dei
-// fingerprinter che fanno render → readPixels → hash (CreepJS webgl image,
-// FP Pro gl pixel checksums). Vincoli:
-//   - solo format RGBA (0x1908) + type UNSIGNED_BYTE (0x1401): altri formati
-//     (FLOAT/HALF_FLOAT/INT) hanno semantica multi-byte, noising un singolo
-//     byte li corromperebbe.
-//   - NESSUNA soglia di dimensione minima: CreepJS usa subregion 17x42 (2856
-//     byte) su canvas 256x256, ben sotto la 64x64 della Canvas2D. reCAPTCHA
-//     NON usa WebGL readPixels — la protezione small-canvas non è necessaria
-//     qui e ci costerebbe la distinctness di canvasWebgl.pixels.
-//   - skip alpha channel (i % 4 == 3) e zero-value channels (clearRect trap
-//     ≡ framebuffer clear-to-zero che qualche fingerprinter usa come trap).
-//   - ±1 su un canale per ~12.5% dei pixel (allineato con canvas 2D).
-static void ApplyStealthWebGLReadPixelsNoise(uint8_t* aBuf, size_t aSize,
-                                             GLenum aFormat, GLenum aType,
-                                             int32_t aSeed) {
-  if (!aBuf || aSize < 4 || aSeed <= 0) return;
-  if (aFormat != LOCAL_GL_RGBA) return;
-  if (aType != LOCAL_GL_UNSIGNED_BYTE) return;
-
-  // STEALTHFOX_WEBGL_NOISE_UNIFORM_SKIP v1
-  // Skip near-uniform "reference" readbacks (very few distinct colours), e.g. a
-  // fixed solid-colour WebGL box that consistency scanners hash and compare to a
-  // universal constant. On Windows the solid render reads back
-  // perfectly pure and the gamma LUT preserves it; on Linux the GL backend
-  // (ANGLE-over-GL / llvmpipe, not real D3D11) lets a few hundred pixels drift one
-  // step under the LUT, breaking that fixed hash -> "masking". A uniform render has
-  // ZERO unlinkability to gain from noise (nothing to vary), so leaving it exact is
-  // both safe and more realistic. Real fingerprint renders (gradients/shaders/text)
-  // are high-entropy -> the early-exit trips and the gamma still applies.
-  {
-    const uint32_t kMaxRefColors = 16;  // skip near-uniform refs (<=15 colours). NOTE: 4 regressed FP Pro tml (b005 0.435->0.74, deterministic across 5 IPs) - reverted 2026-06-22
-    uint32_t seen[kMaxRefColors];
-    uint32_t nSeen = 0;
-    bool uniform = true;
-    for (size_t i = 0; i + 3 < aSize; i += 4) {
-      const uint32_t px = (uint32_t(aBuf[i]) << 24) | (uint32_t(aBuf[i + 1]) << 16) |
-                          (uint32_t(aBuf[i + 2]) << 8) | uint32_t(aBuf[i + 3]);
-      bool found = false;
-      for (uint32_t k = 0; k < nSeen; ++k) {
-        if (seen[k] == px) { found = true; break; }
-      }
-      if (!found) {
-        if (nSeen >= kMaxRefColors) { uniform = false; break; }
-        seen[nSeen++] = px;
-      }
-    }
-    if (uniform) return;  // reference/solid render -> leave pixels exact (oe etc.)
-  }
-
-  // Per-seed gamma LUT (NOT isolated +-1 flips). Isolated +-1 noise reads as an
-  // unnatural high-frequency spike on an otherwise smooth GPU render and gets
-  // flagged as fingerprint "masking" by consistency scanners. A monotonic per-channel
-  // gamma remap instead looks like a genuine display/GPU colour-profile
-  // difference (the same kind of variation the DWrite gamma jitter produces),
-  // yet still makes the readback hash differ per profile. Per-channel (R/G/B
-  // independent) -> 33^3 distinct curves for robust per-profile unlinkability.
-  uint32_t hg = uint32_t(aSeed);
-  hg ^= hg >> 16; hg *= 0x85ebca6bu; hg ^= hg >> 13;
-  hg *= 0xc2b2ae35u; hg ^= hg >> 16;
-  uint8_t lut[3][256];
-  for (int ch = 0; ch < 3; ++ch) {
-    const double gamma =
-        1.0 + (double(int32_t((hg >> (ch * 6)) % 33) - 16) * 0.0025);
-    for (int v = 0; v < 256; ++v) {
-      double n = std::pow(double(v) / 255.0, gamma);
-      int o = int(n * 255.0 + 0.5);
-      lut[ch][v] = uint8_t(o < 0 ? 0 : (o > 255 ? 255 : o));
-    }
-  }
-  for (size_t i = 0; i + 3 < aSize; i += 4) {
-    aBuf[i + 0] = lut[0][aBuf[i + 0]];
-    aBuf[i + 1] = lut[1][aBuf[i + 1]];
-    aBuf[i + 2] = lut[2][aBuf[i + 2]];  // alpha (i+3) unchanged
-  }
-}
-
-// Stealth: HOST-INDEPENDENT render hash (Option B, endpoint-preserving). Replaces
-// each pixel's INTERMEDIATE (1..254) RGB bytes with a deterministic hash of
-// (seed, byte-index) while leaving SATURATED bytes (0/255) untouched, so the
-// readback/snapshot depends ONLY on (seed, dimensions) for real content — NOT the
-// host GPU's rasterization — yet a solid flat fill (all endpoints) stays byte-exact
-// (passes pixelscan's red-box `oe` masking term; see the loop below). The
-// gamma LUT above only REMAPS colours (it preserves the GPU's edge/AA/sub-pixel
-// structure), so the clean-render-seed pool the wrapper draws from is calibrated
-// per-host. Substitution removes that dependency: every machine emits the same
-// pixels for a given seed, so a multi-user fleet needs no per-host calibration.
-// Gated by zoom.stealth.webgl.substitute_pixels (OFF by default — it overwrites
-// the real render, so legitimate WebGL readback/display is lost; only enable
-// where host-independence matters more than WebGL fidelity, e.g. headless
-// automation). Same RGBA+UNSIGNED_BYTE guard as the gamma path; alpha preserved;
-// fully-transparent pixels skipped (CreepJS clearRect-zero trap). Mirrors the
-// canvas-2D ApplyStealthCanvasPixelSubstitution, verified clean on FP Pro.
-static void ApplyStealthWebGLPixelSubstitution(uint8_t* aBuf, size_t aSize,
-                                               GLenum aFormat, GLenum aType,
-                                               int32_t aSeed) {
-  if (!aBuf || aSize < 4 || aSeed <= 0) return;
-  if (aFormat != LOCAL_GL_RGBA) return;
-  if (aType != LOCAL_GL_UNSIGNED_BYTE) return;
-  // Skip near-uniform "reference" renders (<=16 distinct colours), e.g. pixelscan's
-  // solid red-box whose SHA-256 (`oe` masking term) must equal a universal constant.
-  // Leaving them byte-exact passes that check; a uniform render has ZERO unlinkability
-  // to gain from substitution anyway. Same guard the gamma path uses. The FP Pro WebGL
-  // test scene is high-entropy (gradients/shaders -> many colours), so it is NOT skipped
-  // and gets the full host-independent overwrite below (proven: the gamma moved tml, so
-  // that render trips this early-exit's else branch).
-  {
-    const uint32_t kMaxRefColors = 16;  // skip near-uniform refs (<=15 colours). NOTE: 4 regressed FP Pro tml (b005 0.435->0.74, deterministic across 5 IPs) - reverted 2026-06-22
-    uint32_t seen[kMaxRefColors];
-    uint32_t nSeen = 0;
-    bool uniform = true;
-    for (size_t i = 0; i + 3 < aSize; i += 4) {
-      const uint32_t px = (uint32_t(aBuf[i]) << 24) | (uint32_t(aBuf[i + 1]) << 16) |
-                          (uint32_t(aBuf[i + 2]) << 8) | uint32_t(aBuf[i + 3]);
-      bool found = false;
-      for (uint32_t k = 0; k < nSeen; ++k) {
-        if (seen[k] == px) { found = true; break; }
-      }
-      if (!found) {
-        if (nSeen >= kMaxRefColors) { uniform = false; break; }
-        seen[nSeen++] = px;
-      }
-    }
-    if (uniform) return;  // reference/solid render -> leave exact (pixelscan oe etc.)
-  }
-  uint32_t h0 = uint32_t(aSeed);
-  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
-  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
-  for (size_t i = 0; i + 3 < aSize; i += 4) {
-    if (aBuf[i + 3] == 0) continue;  // preserve fully-transparent (clearRect trap)
-    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
-    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
-    x *= 0xc2b2ae35u; x ^= x >> 16;
-    // FULL overwrite (host-independent): every non-transparent pixel's RGB = f(seed,
-    // index), so a high-entropy render becomes a pure function of (seed, index) =
-    // byte-identical on every GPU/OS. Endpoint-preserving (the prior version) left the
-    // host's 0/255 edge pattern intact -> Win-D3D11 vs Linux-GL diverged (the residual
-    // that made Windows seeds fail while Linux passed). Uniform reference renders are
-    // already left exact by the early-exit above, so the red-box stays pixelscan-safe.
-    aBuf[i + 0] = uint8_t(x & 0xffu);
-    aBuf[i + 1] = uint8_t((x >> 8) & 0xffu);
-    aBuf[i + 2] = uint8_t((x >> 16) & 0xffu);  // alpha (i+3) unchanged
-  }
-}
-
-// Dispatcher: single branch point for the WebGL render-hash stealth. Substitution
-// (host-independent) when zoom.stealth.webgl.substitute_pixels is set, else the
-// per-seed gamma LUT (the default — subtle, keeps WebGL rendering usable).
-static void ApplyStealthWebGLPixels(uint8_t* aBuf, size_t aSize, GLenum aFormat,
-                                    GLenum aType, int32_t aSeed) {
-  if (StaticPrefs::zoom_stealth_webgl_substitute_pixels()) {
-    ApplyStealthWebGLPixelSubstitution(aBuf, aSize, aFormat, aType, aSeed);
-  } else {
-    ApplyStealthWebGLReadPixelsNoise(aBuf, aSize, aFormat, aType, aSeed);
-  }
-}
 
 webgl::NotLostData::NotLostData(ClientWebGLContext& _context)
     : context(_context) {}
@@ -1336,29 +1179,10 @@ already_AddRefed<gfx::SourceSurface> ClientWebGLContext::GetSurfaceSnapshot(
   auto ret = BackBufferSnapshot();
   if (!ret) return nullptr;
 
-  // Stealth: apply seed-derived noise on the WebGL canvas snapshot used by
-  // canvas.toDataURL() / toBlob() / captureStream(). The surface format here
-  // is B8G8R8A8 or B8G8R8X8 — alpha is still byte index 3, R/G/B are
-  // indices 0/1/2 (swapped order vs RGBA but our noise works on any single
-  // non-alpha channel, so byte ordering is irrelevant to the hash-breaking
-  // property).
-  {
-    const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (stealthSeed > 0) {
-      const gfx::DataSourceSurface::ScopedMap map(
-          ret, gfx::DataSourceSurface::READ_WRITE);
-      if (map.IsMapped()) {
-        const auto size = ret->GetSize();
-        const auto stride = map.GetStride();
-        uint8_t* data = map.GetData();
-        const size_t byteSize = size_t(stride) * size_t(size.height);
-        // Format is always 4bpp here (B8G8R8A8 / B8G8R8X8) so we pass
-        // synthetic format/type matching our RGBA+UNSIGNED_BYTE guard.
-        ApplyStealthWebGLPixels(data, byteSize, LOCAL_GL_RGBA,
-                                LOCAL_GL_UNSIGNED_BYTE, stealthSeed);
-      }
-    }
-  }
+  // No canvas noise here: this snapshot is also what the screen, -moz-element
+  // and the GPU-side copies are made from. A page reads it through
+  // HTMLCanvasElement::GetSurfaceSnapshot or through the readers below, which
+  // apply gfx::StealthProjectPixels once, on these stored pixels.
 
   // -
 
@@ -1596,6 +1420,9 @@ UniquePtr<uint8_t[]> ClientWebGLContext::GetImageBuffer(
   gfxAlphaType any;
   RefPtr<gfx::SourceSurface> snapshot = GetSurfaceSnapshot(&any);
   if (!snapshot) return nullptr;
+  // toDataURL/toBlob: the canvas noise, as every reader of this canvas reads.
+  snapshot = CanvasUtils::StealthProjectSnapshot(
+      snapshot, any != gfxAlphaType::NonPremult, PrincipalOrNull());
 
   RefPtr<gfx::DataSourceSurface> dataSurface = snapshot->GetDataSurface();
 
@@ -1626,6 +1453,9 @@ ClientWebGLContext::GetInputStream(
   gfxAlphaType any;
   RefPtr<gfx::SourceSurface> snapshot = GetSurfaceSnapshot(&any);
   if (!snapshot) return NS_ERROR_FAILURE;
+  // toDataURL/toBlob: the canvas noise, as every reader of this canvas reads.
+  snapshot = CanvasUtils::StealthProjectSnapshot(
+      snapshot, any != gfxAlphaType::NonPremult, PrincipalOrNull());
 
   RefPtr<gfx::DataSourceSurface> dataSurface = snapshot->GetDataSurface();
   const auto& premultAlpha = notLost->info.options.premultipliedAlpha;
@@ -2992,29 +2822,30 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
   }
 }
 
+Maybe<double> ClientWebGLContext::BufferParameter(GLenum target,
+                                                  GLenum pname) const {
+  RefPtr<webgl::NotLostData> notLost(mNotLost);
+  if (!notLost) {
+    return Nothing();
+  }
+  const auto& inProcess = notLost->inProcess;
+  if (inProcess) {
+    return inProcess->GetBufferParameter(target, pname);
+  }
+  const auto& child = notLost->outOfProcess;
+  child->FlushPendingCmds();
+  Maybe<double> ret;
+  if (!child->SendGetBufferParameter(target, pname, &ret)) {
+    ret.reset();
+  }
+  return ret;
+}
+
 void ClientWebGLContext::GetBufferParameter(
     JSContext* cx, GLenum target, GLenum pname,
     JS::MutableHandle<JS::Value> retval) const {
   retval.set(JS::NullValue());
-  RefPtr<webgl::NotLostData> notLost(mNotLost);
-  if (!notLost) {
-    return;
-  }
-
-  const auto maybe = [&]() {
-    const auto& inProcess = notLost->inProcess;
-    if (inProcess) {
-      return inProcess->GetBufferParameter(target, pname);
-    }
-    const auto& child = notLost->outOfProcess;
-    child->FlushPendingCmds();
-    Maybe<double> ret;
-    if (!child->SendGetBufferParameter(target, pname, &ret)) {
-      ret.reset();
-    }
-    return ret;
-  }();
-  if (maybe) {
+  if (const auto maybe = BufferParameter(target, pname)) {
     retval.set(JS::NumberValue(*maybe));
   }
 }
@@ -5778,6 +5609,66 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
                                           {format, type},
                                           state.mPixelPackState};
   Run<RPROC(ReadPixelsPbo)>(desc, static_cast<uint64_t>(offset));
+  StealthProjectReadPixelsPbo(desc, static_cast<uint64_t>(offset));
+}
+
+void ClientWebGLContext::StealthProjectReadPixelsPbo(
+    const webgl::ReadPixelsDesc& aDesc, const uint64_t aOffset) const {
+  if (aDesc.pi.format != LOCAL_GL_RGBA ||
+      aDesc.pi.type != LOCAL_GL_UNSIGNED_BYTE || !aDesc.size.x ||
+      !aDesc.size.y) {
+    return;
+  }
+  if (!CanvasUtils::StealthNoise(PrincipalOrNull())) {
+    return;
+  }
+  const auto& bound = State().mBoundBufferByTarget;
+  const auto found = bound.find(LOCAL_GL_PIXEL_PACK_BUFFER);
+  if (found == bound.end() || !found->second) {
+    return;  // the host refused the read and raised the error
+  }
+  const RefPtr<WebGLBufferJS> pbo = found->second;
+  // Where the page's packing put each row in the buffer. For UNSIGNED_BYTE
+  // the alignment is in bytes.
+  const auto& packing = aDesc.packState;
+  const uint64_t rowPixels = packing.rowLength ? packing.rowLength : aDesc.size.x;
+  const uint64_t align = packing.alignmentInTypeElems;
+  const uint64_t stride = (rowPixels * 4 + align - 1) / align * align;
+  const uint64_t needed = aOffset +
+                          (packing.skipRows + aDesc.size.y - 1) * stride +
+                          (packing.skipPixels + aDesc.size.x) * 4;
+  const auto size = BufferParameter(LOCAL_GL_PIXEL_PACK_BUFFER,
+                                    LOCAL_GL_BUFFER_SIZE);
+  if (!size || needed > uint64_t(*size)) {
+    return;  // too small: the host refused the read and wrote nothing
+  }
+  // The same pixels read into memory, with the buffer unbound for the time of
+  // the read, and the noise applied as readPixels into an array applies it.
+  webgl::ReadPixelsDesc tight = aDesc;
+  tight.packState = {};
+  std::vector<uint8_t> bytes(size_t(aDesc.size.x) * aDesc.size.y * 4);
+  Run<RPROC(BindBuffer)>(LOCAL_GL_PIXEL_PACK_BUFFER, 0);
+  const auto written = DoReadPixels(tight, Span<uint8_t>(bytes));
+  if (written) {
+    StealthProjectReadPixels(tight, Span<uint8_t>(bytes), *written);
+  }
+  Run<RPROC(BindBuffer)>(LOCAL_GL_PIXEL_PACK_BUFFER, pbo->mId);
+  if (!written || written->subrect.IsEmpty()) {
+    return;
+  }
+  // Over the bytes the host wrote, row by row, so the gaps a packing leaves
+  // between rows stay what they were.
+  const auto& sub = written->subrect;
+  for (int32_t y = sub.Y(); y < sub.YMost(); ++y) {
+    const uint64_t dst = aOffset + (packing.skipRows + uint64_t(y)) * stride +
+                         (packing.skipPixels + uint64_t(sub.X())) * 4;
+    const uint8_t* src =
+        bytes.data() + size_t(y) * written->byteStride + size_t(sub.X()) * 4;
+    Run<RPROC(BufferSubData)>(
+        LOCAL_GL_PIXEL_PACK_BUFFER, dst,
+        Span<const uint8_t>(src, size_t(sub.Width()) * 4),
+        /* unsynchronized */ false);
+  }
 }
 
 void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
@@ -5825,8 +5716,9 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
                                             *uvec2::From(width, height),
                                             {format, type},
                                             state.mPixelPackState};
-    bool succeeded = DoReadPixels(desc, *range);
-    if (succeeded) {
+    const auto written = DoReadPixels(desc, *range);
+    if (written) {
+      StealthProjectReadPixels(desc, *range, *written);
       CanvasUtils::ImageExtraction extraction =
           ImageExtractionResult(mCanvasElement, mOffscreenCanvas);
 
@@ -5861,23 +5753,15 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
   });
 }
 
-bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
-                                      const Span<uint8_t> dest) const {
+Maybe<webgl::ReadPixelsResult> ClientWebGLContext::DoReadPixels(
+    const webgl::ReadPixelsDesc& desc, const Span<uint8_t> dest) const {
   RefPtr<webgl::NotLostData> notLost(mNotLost);
   if (!notLost) {
-    return false;
+    return Nothing();
   }
   const auto& inProcess = notLost->inProcess;
   if (inProcess) {
-    inProcess->ReadPixelsInto(desc, dest);
-    // Stealth: seed-derived render-hash on the just-written destination
-    // (gamma, or substitution when zoom.stealth.webgl.substitute_pixels).
-    const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (stealthSeed > 0) {
-      ApplyStealthWebGLPixels(dest.Elements(), dest.Length(),
-                              desc.pi.format, desc.pi.type, stealthSeed);
-    }
-    return true;
+    return Some(inProcess->ReadPixelsInto(desc, dest));
   }
   const auto& child = notLost->outOfProcess;
   child->FlushPendingCmds();
@@ -5885,13 +5769,13 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
   if (!child->SendReadPixels(desc, dest.size(), &res)) {
     res = {};
   }
-  if (!res.byteStride || !res.shmem) return false;
+  if (!res.byteStride || !res.shmem) return Nothing();
   const auto& byteStride = res.byteStride;
   const auto& subrect = res.subrect;
   const webgl::RaiiShmem shmem{child, res.shmem.ref()};
   if (!shmem) {
     EnqueueError(LOCAL_GL_OUT_OF_MEMORY, "Failed to map in back buffer.");
-    return false;
+    return Nothing();
   }
 
   const auto& shmemBytes = Span{shmem.ByteRange()};
@@ -5899,7 +5783,7 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
   const auto pii = webgl::PackingInfoInfo::For(desc.pi);
   if (!pii) {
     gfxCriticalError() << "ReadPixels: Bad " << desc.pi;
-    return false;
+    return Nothing();
   }
   const auto bpp = pii->BytesPerPixel();
 
@@ -5920,15 +5804,78 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
     Memcpy(&destRow, srcRow);
   }
 
-  // Stealth: seed-derived render-hash on the just-copied destination
-  // (gamma, or substitution when zoom.stealth.webgl.substitute_pixels).
-  const int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-  if (stealthSeed > 0) {
-    ApplyStealthWebGLPixels(dest.Elements(), dest.Length(),
-                            desc.pi.format, desc.pi.type, stealthSeed);
-  }
+  return Some(webgl::ReadPixelsResult{subrect, byteStride});
+}
 
-  return true;
+void ClientWebGLContext::StealthProjectReadPixels(
+    const webgl::ReadPixelsDesc& aDesc, const Span<uint8_t> aDest,
+    const webgl::ReadPixelsResult& aWritten) const {
+  // RGBA/UNSIGNED_BYTE only, the format of every default framebuffer and the
+  // one readPixels always accepts. The float and integer formats of a user
+  // framebuffer need their own definition of the bit the noise owns (an open
+  // entry in the workbench docs); until then they read as drawn.
+  if (aDesc.pi.format != LOCAL_GL_RGBA ||
+      aDesc.pi.type != LOCAL_GL_UNSIGNED_BYTE) {
+    return;
+  }
+  const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull());
+  if (!noise || aWritten.subrect.IsEmpty() || !aWritten.byteStride) {
+    return;
+  }
+  // The same rectangle one pixel larger on every side, tightly packed: the
+  // function needs each pixel's neighbours, and a pixel at the edge of the
+  // request has neighbours outside it. The part of it the framebuffer holds is
+  // `fb`; beyond the framebuffer the function repeats the edge pixel, as it
+  // does at the edge of every canvas.
+  webgl::ReadPixelsDesc wide = aDesc;
+  wide.srcOffset = {aDesc.srcOffset.x - 1, aDesc.srcOffset.y - 1};
+  wide.size = {aDesc.size.x + 2, aDesc.size.y + 2};
+  wide.packState = {};
+  const size_t wideStride = size_t(wide.size.x) * 4;
+  std::vector<uint8_t> wideBytes(wideStride * wide.size.y);
+  const auto wideRead = DoReadPixels(wide, Span<uint8_t>(wideBytes));
+  if (!wideRead || wideRead->subrect.IsEmpty() ||
+      wideRead->byteStride != wideStride) {
+    return;
+  }
+  const gfx::IntRect fb = wideRead->subrect;
+  uint8_t* const fbBase =
+      wideBytes.data() + size_t(fb.Y()) * wideStride + size_t(fb.X()) * 4;
+  // The page's pixels inside the framebuffer, in `fb` coordinates.
+  const gfx::IntRect asked =
+      (aWritten.subrect + gfx::IntPoint(1, 1) - fb.TopLeft())
+          .Intersect(gfx::IntRect(gfx::IntPoint(), fb.Size()));
+  if (asked.IsEmpty()) {
+    return;
+  }
+  // The default framebuffer of a premultipliedAlpha context stores
+  // premultiplied pixels; a user framebuffer stores whatever was drawn.
+  const auto& options = mNotLost->info.options;
+  const bool premultiplied =
+      !State().mBoundReadFb && options.alpha && options.premultipliedAlpha;
+  uint8_t* const askedBase =
+      fbBase + size_t(asked.Y()) * wideStride + size_t(asked.X()) * 4;
+  if (!gfx::StealthProjectPixels(fbBase, int32_t(wideStride), fb.Size(),
+                                 gfx::SurfaceFormat::R8G8B8A8, asked, askedBase,
+                                 int32_t(wideStride), premultiplied, noise)) {
+    return;
+  }
+  // Back where the page's read put them, with the page's own packing.
+  const auto& packing = aDesc.packState;
+  const size_t bytes = size_t(asked.Width()) * 4;
+  for (int32_t row = 0; row < asked.Height(); ++row) {
+    // Request coordinates of this row's first pixel.
+    const int32_t rx = asked.X() + fb.X() - 1;
+    const int32_t ry = asked.Y() + fb.Y() - 1 + row;
+    const size_t destOffset =
+        size_t(packing.skipRows + ry) * aWritten.byteStride +
+        size_t(packing.skipPixels + rx) * 4;
+    if (destOffset + bytes > aDest.size()) {
+      return;
+    }
+    memcpy(aDest.data() + destOffset, askedBase + size_t(row) * wideStride,
+           bytes);
+  }
 }
 
 bool ClientWebGLContext::ReadPixels_SharedPrecheck(

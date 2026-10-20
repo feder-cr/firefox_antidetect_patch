@@ -22,6 +22,7 @@ UNIFIED_SOURCES += [
     "TestQcms.cpp",
     "TestRegion.cpp",
     "TestSkipChars.cpp",
+    "TestStealthCanvasProjection.cpp",
     "TestSwizzle.cpp",
     "TestTextures.cpp",
     "TestTreeTraversal.cpp",
@@ -32,6 +33,12 @@ UNIFIED_SOURCES += [
 if CONFIG["OS_TARGET"] != "Android":
     UNIFIED_SOURCES += [
         "TestRect.cpp",
+    ]
+
+if CONFIG["OS_TARGET"] == "WINNT":
+    # gfxDWriteFonts' text quality and ClearType parameters, Windows only.
+    UNIFIED_SOURCES += [
+        "TestStealthTextQuality.cpp",
     ]
 
 if CONFIG["OS_TARGET"] == "Darwin":

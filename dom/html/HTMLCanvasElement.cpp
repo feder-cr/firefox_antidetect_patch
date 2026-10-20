@@ -26,6 +26,7 @@
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/CanvasCaptureMediaStream.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/gfx/DrawTargetRecording.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
@@ -1494,10 +1495,39 @@ void HTMLCanvasElement::SetFrameCapture(
 
 already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
     gfxAlphaType* const aOutAlphaType, DrawTarget* aTarget) {
+  gfxAlphaType alphaType = gfxAlphaType::Premult;
+  RefPtr<SourceSurface> drawn =
+      GetSurfaceSnapshotAsDrawn(aOutAlphaType ? &alphaType : nullptr, aTarget);
+  if (aOutAlphaType) {
+    *aOutAlphaType = alphaType;
+  }
+  if (!drawn) {
+    return nullptr;
+  }
+  const bool premultiplied = alphaType != gfxAlphaType::NonPremult;
+  // A canvas drawn onto a canvas that records for the GPU process stays on the
+  // GPU: the projection is recorded and runs there, where the pixels are
+  // (RecordedStealthProjectSurface). Reading it back here to project it would
+  // cost a readback per drawImage that the real browser does not pay.
+  if (aTarget && aTarget->IsRecording() &&
+      drawn->GetType() == SurfaceType::RECORDING) {
+    const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(NodePrincipal());
+    if (!noise) {
+      return drawn.forget();
+    }
+    return static_cast<DrawTargetRecording*>(aTarget)->StealthProjectedSurface(
+        drawn, premultiplied, noise);
+  }
+  return CanvasUtils::StealthProjectSnapshot(drawn, premultiplied,
+                                             NodePrincipal());
+}
+
+already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshotAsDrawn(
+    gfxAlphaType* const aOutAlphaType, DrawTarget* aTarget) {
   if (mCurrentContext) {
     return mCurrentContext->GetOptimizedSnapshot(aTarget, aOutAlphaType);
   } else if (mOffscreenDisplay) {
-    return mOffscreenDisplay->GetSurfaceSnapshot();
+    return mOffscreenDisplay->GetSurfaceSnapshotAsDrawn();
   }
   return nullptr;
 }

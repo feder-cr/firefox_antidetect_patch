@@ -83,6 +83,7 @@
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/gfx/PatternHelpers.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
@@ -2261,97 +2262,13 @@ CanvasRenderingContext2D::SetContextOptions(JSContext* aCx,
   return NS_OK;
 }
 
-// Stealth: seed-derived canvas pixel noise. Coerente con le altre patch
-// (TextMetrics offset, DWrite gamma/ClearType, font filter) — stesso seed
-// propagato via zoom.stealth.fpp.hw_seed (mirror:always → tutti i processi).
-// Applicato al pixel buffer prima del ritorno di toDataURL/getImageData:
-// - Skip canvases < 64x64 (reCAPTCHA probe canvases, favicon-size assets) per
-//   evitare di alterare segnali che reCAPTCHA usa per coerenza behavioral.
-// - Skip alpha channel (i % 4 == 3) per preservare trasparenza.
-// - Skip zero-value channels per preservare il clearRect trap di CreepJS
-//   (CreepJS disegna, poi clearRect, poi rilegge — se i pixel "clearati"
-//   non sono 0 flag lied=true).
-// - ±1 su UN canale per ~12.5% dei pixel → molto meno invasivo del 50%,
-//   sufficiente a rompere MD5 hash di fp.canvas.geometry senza alterare
-//   fingerprint sottili (es. segnali statistici che reCAPTCHA può estrarre).
-// Seed → Fibonacci hash mixed col pixel index → deterministico per seed.
-static void ApplyStealthCanvasPixelNoise(uint8_t* aBuf, size_t aSize,
-                                         int32_t aSeed) {
-  if (!aBuf || aSize < 4 || aSeed <= 0) return;
-  // Skip small canvases (< 64x64 RGBA = 16384 bytes). Tipicamente reCAPTCHA
-  // probe canvases, favicon-size sprites o WebGL pixel-readback di 1x1.
-  // Fingerprinters seri (FP Pro, CreepJS) usano canvas ≥ 280x60 per geometry.
-  if (aSize < 64u * 64u * 4u) return;
-  // Skip-mask is configurable via pref (default 7 = 1/8 = ~12.5%).
-  // Higher mask → lower noise density. Intel HD profiles use 15 (~6.25%) to
-  // stay below FP Pro's tampering_ml threshold. Sanitize: must be 2^N-1.
-  // Il default compilato e' stato tolto DAL RAMO ESPLICITO (regola 7,
-  // 2026-08-09): l'"if (maskPref < 0) maskPref = 7" che stava qui era un
-  // rivale di un valore dichiarato, e nemmeno lo stesso - il core pinna la
-  // maschera a 15, il tasso Intel, quindi le due risposte differivano di un
-  // fattore due in densita' di rumore.
-  //
-  // MA UN 7 SOPRAVVIVE, ed e' la riga della normalizzazione qui sotto. Con la
-  // pref non dichiarata (-1) il cast a uint32_t da' 4294967295, il ciclo fa
-  // traboccare `bit` a zero e il ternario cade su `7u`: esattamente il valore
-  // che questo commento dichiarava rimosso. Trovato dalla revisione a sedici
-  // lenti il 2026-08-10, e il commento e' rimasto falso per un giorno.
-  //
-  // Misurato prima di decidere se toccarlo: nella configurazione reale la pref
-  // vale 15, quindi quel ramo NON e' raggiungibile e nessuna pagina puo'
-  // vederlo (regola 7-bis: cio' che non si osserva non si tocca). Resta come
-  // difetto latente e non come tell, ed e' scritto qui perche' un commento che
-  // afferma il falso e' esso stesso un difetto in un progetto che ricostruisce
-  // il proprio perche' dai commenti.
-  //
-  // Il rifiuto per dichiarazione mancante vive in StealthDeclarationGate, che
-  // pero' e' armato SOLO nel processo padre: qui siamo nel contenuto, quindi
-  // la chiamata sotto non puo' fermare nulla. E' il seguito aperto registrato
-  // in quel file.
-  mozilla::gfx::StealthAssertDeclarationsComplete();
-  const int32_t maskPref = StaticPrefs::zoom_stealth_canvas_noise_skip_mask();
-  uint32_t skipMask = uint32_t(maskPref);
-  // Force to next-lower power-of-two-minus-1 if not already.
-  uint32_t bit = 1u; while (bit && bit <= skipMask) bit <<= 1;
-  skipMask = bit ? (bit - 1) : 7u;
-  uint32_t h0 = uint32_t(aSeed);
-  // Mix seed to spread entropy (finalizer from splitmix)
-  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
-  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
-  for (size_t i = 0; i + 3 < aSize; i += 4) {
-    // Per-pixel hash
-    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u);
-    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
-    x *= 0xc2b2ae35u; x ^= x >> 16;
-    if ((x & skipMask) != 0) continue;  // 1/(skipMask+1) noise rate
-    // Pick channel 0/1/2 (skip alpha = 3)
-    int ch = int((x >> 3) % 3);
-    uint8_t* p = &aBuf[i + ch];
-    if (*p == 0) continue;  // preserve clearRect-zero trap
-    // ±1 based on separate bit; clamp at boundaries
-    if (x & 0x100) {
-      *p = (*p < 255) ? (*p + 1) : (*p - 1);
-    } else {
-      *p = (*p > 0) ? (*p - 1) : (*p + 1);
-    }
-  }
-}
-
-// Stealth substitution mode: replace RGB of every non-transparent pixel with
-// a deterministic hash of (seed, pixel_index). Alpha preserved. The resulting
-// canvas fingerprint depends only on (seed, dimensions) — entirely OS-
-// independent, so FP Pro's OS-specific canvas hash tables can't detect
-// Linux/Mesa base rendering under a Windows target spoof.
-// Stealth: privileged (system/chrome/resource) readbacks are automation/UA reads
-// (e.g. Playwright page.screenshot() via drawWindow), never web content, so
-// spoofing them buys no anti-fingerprinting and only corrupts automation output
-// (wrapper issue #49). Same exemption CanvasUtils uses for canvas protection.
-static bool StealthSkipPrivilegedReadback(nsIPrincipal* aPrincipal) {
-  return aPrincipal && (aPrincipal->IsSystemPrincipal() ||
-                        aPrincipal->SchemeIs("chrome") ||
-                        aPrincipal->SchemeIs("resource"));
-}
-
+// The canvas noise is gfx::StealthProjectPixels, applied to the STORED pixels
+// (BGRA, premultiplied) before any reader converts them: the same function the
+// WebGL readers, the drawImage/createImageBitmap/VideoFrame/WebGPU sources and
+// the GPU process apply, so every reader of one canvas reads one image. It used
+// to be two algorithms here (a +/-1 noise and a hash substitution), each run on
+// the reader's own output buffer, which is why getImageData and toDataURL of
+// the same canvas disagreed. gfx/2d/StealthCanvasProjection.h has the why.
 // STEALTH: the coverage ladder used to live here, applied to the composited
 // RGBA buffer, and it moved to the A8 GLYPH MASK on 2026-08-08 -
 // SkScalerContext::getImage, via mozilla/gfx/StealthGlyphCoverage.h.
@@ -2374,104 +2291,6 @@ static bool StealthSkipPrivilegedReadback(nsIPrincipal* aPrincipal) {
 // is the pattern this codebase rejects, and it also reached path antialiasing,
 // where retail Windows produces the full 256 levels and we were producing 17.
 
-
-// Only kicks in when zoom.stealth.canvas.substitute_pixels is true.
-static void ApplyStealthCanvasPixelSubstitution(uint8_t* aBuf, size_t aSize,
-                                                int32_t aSeed) {
-  if (!aBuf || aSize < 4 || aSeed <= 0) return;
-  // 64x64 floor (mirrors the additive-noise path above): leave SMALL canvases
-  // (<64x64 RGBA) byte-EXACT. pixelscan's canvasNoiseOn2d masking probe fills 14 solid
-  // reference colours in a 70x5 canvas and checks they read back unmodified; ANY
-  // substitution there sets isCanvas=false -> pixelscan serves the 271-font all-OS probe
-  // list (instead of the 49 Windows-standard fonts) -> osFontsStatus=false -> "masking
-  // detected" (RE 2026-06-22, px294.js: jsFontsKey/canvasFonts gated on isCanvas).
-  // The earlier no-floor rationale (small font/text canvas leaks the host text render)
-  // was a red-herring: the real FP Pro tampering_ml driver was the OfflineAudioContext
-  // noise (zoom.stealth.audio.fp_noise), NOT canvasSmall. Real fingerprint canvases
-  // (FP Pro 280x60, CreepJS) are >=64x64 -> still get the full host-independent
-  // substitution below, so cross-OS "always Windows" stays intact.
-  if (aSize < 64u * 64u * 4u) return;
-  // Uniform-skip (mirrors the WebGL substitution path): leave near-uniform "reference"
-  // renders (<=16 distinct colours, e.g. a solid red-box a scanner hashes against a
-  // universal constant) byte-EXACT so their hash stays that constant -> masking-safe.
-  // A uniform render has zero unlinkability to gain from substitution anyway. The real
-  // fingerprint canvas (text + gradients) is high-entropy -> NOT skipped -> gets the
-  // full host-independent overwrite below (the host's text rasterization is the signal).
-  {
-    // 16: skip near-uniform reference renders (<=15 distinct colours, e.g. pixelscan's
-    // solid red-box). NOTE 2026-06-22: lowering to 4 had ZERO effect on FP Pro's
-    // raw_canvas_text (eab471a3 unchanged, b005 still 0.4349) — its text canvas is not
-    // reached by this hook (low-entropy text skipped even at 4, and/or read via a path we
-    // don't cover). The Win-vs-Linux canvas_text/emoji difference turned out to be a
-    // red-herring: the real FP Pro tampering_ml driver was the OfflineAudioContext noise
-    // (see zoom.stealth.audio.fp_noise). Keep 16 (pixelscan-safe, no behavioural change).
-    const uint32_t kMaxRefColors = 16;
-    uint32_t seen[kMaxRefColors];
-    uint32_t nSeen = 0;
-    bool uniform = true;
-    for (size_t i = 0; i + 3 < aSize; i += 4) {
-      const uint32_t px = (uint32_t(aBuf[i]) << 24) | (uint32_t(aBuf[i + 1]) << 16) |
-                          (uint32_t(aBuf[i + 2]) << 8) | uint32_t(aBuf[i + 3]);
-      bool found = false;
-      for (uint32_t k = 0; k < nSeen; ++k) {
-        if (seen[k] == px) { found = true; break; }
-      }
-      if (!found) {
-        if (nSeen >= kMaxRefColors) { uniform = false; break; }
-        seen[nSeen++] = px;
-      }
-    }
-    if (uniform) return;  // reference/solid render -> leave exact (masking-safe)
-  }
-  uint32_t h0 = uint32_t(aSeed);
-  h0 ^= h0 >> 16; h0 *= 0x85ebca6bu; h0 ^= h0 >> 13;
-  h0 *= 0xc2b2ae35u; h0 ^= h0 >> 16;
-  for (size_t i = 0; i + 3 < aSize; i += 4) {
-    // Preserve alpha; if fully transparent, leave pixel (clearRect-zero trap).
-    uint8_t alpha = aBuf[i + 3];
-    if (alpha == 0) continue;
-    // IL PIXEL ORIGINALE ENTRA NELL'HASH, dal 2026-08-15. Prima non c'era, e la
-    // sostituzione era funzione del solo (seme, offset): su un canvas OPACO -
-    // dove l'alfa vale 255 ovunque e quindi non porta niente - l'uscita non
-    // dipendeva PER NIENTE da cio' che era stato disegnato. Misurato: cinque
-    // disegni diversi su 240x70 (il pangramma di FP Pro, una stringa opposta, la
-    // lettera A, la lettera B) davano lo STESSO identico md5 e lo stesso
-    // conteggio di colori.
-    //
-    // E' il tell piu' economico che esista da cercare: due fillText e un
-    // confronto, nessun corpus di riferimento, e nessun browser vero puo'
-    // produrre un canvas costante. Scattava sull'82% delle combinazioni misurate
-    // su Linux e sul 9% su Windows - e quel 9% e' il pangramma di FP Pro su
-    // Arial, Times New Roman, Courier New, Tahoma e Georgia.
-    //
-    // Non si e' TOLTA la sostituzione, che era la strada ovvia: senza di lei due
-    // SEMI diversi sulla stessa macchina darebbero lo stesso canvas, cioe' i
-    // profili diventerebbero collegabili fra loro - la famiglia dello stato
-    // condiviso fra sessioni, che questo progetto tratta come peggiore di un tell
-    // singolo. Il difetto non era che la sostituzione ci fosse: era che
-    // IGNORASSE IL PROPRIO INPUT.
-    //
-    // Cosa questo scambia, detto perche' e' uno scambio e non un miglioramento
-    // puro: su un canvas opaco l'uscita passa da indipendente dalla piattaforma
-    // (costante) a dipendente da essa. E' il verso giusto - distinguere il nostro
-    // canvas da quello di un Windows vero vuole un corpus di riferimento, e i
-    // canvas Windows veri variano gia' enormemente fra GPU, driver e versioni dei
-    // font, mentre accorgersi che e' COSTANTE non vuole niente. E sul canvas che
-    // il rilevatore usa davvero quella dipendenza c'era gia', perche' l'alfa
-    // passa intatta e con lei la forma del glifo: misurati 3656 colori contro
-    // 3711 fra le due build CON la sostituzione attiva.
-    const uint32_t orig = (uint32_t(aBuf[i + 0]) << 16) |
-                          (uint32_t(aBuf[i + 1]) << 8) | uint32_t(aBuf[i + 2]);
-    uint32_t x = h0 ^ (uint32_t(i) * 2654435761u) ^ (orig * 0x9e3779b9u);
-    x ^= x >> 16; x *= 0x85ebca6bu; x ^= x >> 13;
-    x *= 0xc2b2ae35u; x ^= x >> 16;
-    aBuf[i + 0] = uint8_t(x & 0xffu);
-    aBuf[i + 1] = uint8_t((x >> 8) & 0xffu);
-    aBuf[i + 2] = uint8_t((x >> 16) & 0xffu);
-    // alpha unchanged
-  }
-}
-
 UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
     mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
     int32_t* out_format, gfx::IntSize* out_imageSize) {
@@ -2487,6 +2306,13 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
   RefPtr<SourceSurface> snapshot = mBufferProvider->BorrowSnapshot();
   if (snapshot) {
     RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
+    if (data && data->GetSize() == GetSize()) {
+      if (const gfx::StealthCanvasNoise noise =
+              CanvasUtils::StealthNoise(PrincipalOrNull())) {
+        data = gfx::StealthProjectedRegion(
+            data, IntRect(IntPoint(), data->GetSize()), true, noise);
+      }
+    }
     if (data && data->GetSize() == GetSize()) {
       *out_format = imgIEncoder::INPUT_FORMAT_HOSTARGB;
       *out_imageSize = data->GetSize();
@@ -2507,30 +2333,6 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
           out_imageSize->width, out_imageSize->height,
           out_imageSize->width * out_imageSize->height * 4,
           SurfaceFormat::A8R8G8B8_UINT32);
-    }
-  }
-
-  // Stealth: seed-derived per-pixel noise (indipendente dall'RFP path).
-  // Copre toDataURL/toBlob → fp.canvas.geometry varia per seed.
-  // Two modes (mutually exclusive):
-  //   substitute: replace RGB entirely (OS-independent) → use when host OS
-  //               differs from target OS (Linux-built spoofing Windows)
-  //   additive:   ±1 on ~12.5% of pixels (default) → preserves real rendering
-  //               pattern, only randomizes hash
-  if (ret && !StealthSkipPrivilegedReadback(PrincipalOrNull())) {
-    int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-    if (stealthSeed > 0) {
-      size_t bufSize =
-          size_t(out_imageSize->width) * size_t(out_imageSize->height) * 4;
-      // The coverage ladder used to run here, ahead of the colour pass, because
-      // the colour pass destroys the r==g==b test it depended on. It runs on the
-      // glyph mask now, before any of this exists - see the note above
-      // StealthSkipPrivilegedReadback for why that guess was the wrong half.
-      if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
-        ApplyStealthCanvasPixelSubstitution(ret.get(), bufSize, stealthSeed);
-      } else {
-        ApplyStealthCanvasPixelNoise(ret.get(), bufSize, stealthSeed);
-      }
     }
   }
 
@@ -2877,8 +2679,9 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     // Special case for Canvas, which could be an Azure canvas!
     nsICanvasRenderingContextInternal* srcCanvas = canvas->GetCurrentContext();
     if (srcCanvas) {
-      // This might not be an Azure canvas!
-      RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
+      // This might not be an Azure canvas! Read through the element, as a
+      // page reads it (the canvas noise).
+      RefPtr<SourceSurface> srcSurf = canvas->GetSurfaceSnapshot();
       if (!srcSurf) {
         aError.ThrowInvalidStateError(
             "CanvasRenderingContext2D.createPattern() failed to snapshot source"
@@ -2920,7 +2723,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     nsICanvasRenderingContextInternal* srcCanvas =
         offscreenCanvas->GetContext();
     if (srcCanvas) {
-      RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
+      RefPtr<SourceSurface> srcSurf = offscreenCanvas->GetSurfaceSnapshot();
       if (!srcSurf) {
         aError.ThrowInvalidStateError(
             "Passed-in canvas failed to create snapshot");
@@ -7090,6 +6893,18 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
   RefPtr<DataSourceSurface> readback = snapshot->GetDataSurface();
   mBufferProvider->ReturnSnapshot(snapshot.forget());
 
+  // The canvas noise, on the stored pixels of the rectangle read, its
+  // neighbours taken from the whole canvas: so a rectangle reads the same bytes
+  // as the same area of a whole read. `readOrigin` is where the projected copy
+  // starts in canvas coordinates.
+  IntPoint readOrigin;
+  if (readback) {
+    if (const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull())) {
+      readback = gfx::StealthProjectedRegion(readback, srcReadRect, true, noise);
+      readOrigin = srcReadRect.TopLeft();
+    }
+  }
+
   // Check for site-specific permission.
   CanvasUtils::ImageExtraction extractionBehavior =
       CanvasUtils::ImageExtraction::Unrestricted;
@@ -7151,8 +6966,9 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
     }
 
     uint32_t srcStride = rawData.mStride;
-    uint8_t* src =
-        rawData.mData + srcReadRect.y * srcStride + srcReadRect.x * 4;
+    uint8_t* src = rawData.mData +
+                   (srcReadRect.y - readOrigin.y) * srcStride +
+                   (srcReadRect.x - readOrigin.x) * 4;
 
     uint8_t* dst = data + dstWriteRect.y * (aWidth * 4) + dstWriteRect.x * 4;
 
@@ -7163,29 +6979,6 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
       UnpremultiplyData(src, srcStride, SurfaceFormat::A8R8G8B8_UINT32, dst,
                         aWidth * 4, SurfaceFormat::R8G8B8A8,
                         dstWriteRect.Size());
-    }
-
-    // Stealth: seed-derived per-pixel noise on the OUTPUT buffer (the JS
-    // Uint8ClampedArray's backing store, which is writable). The original
-    // attempt to spoof rawData.mData crashed during teardown on GPU-backed
-    // surfaces because readback->Map(READ) returns write-protected memory
-    // on those surfaces. Writing to it segfaults: reproduced reliably on
-    // Windows alt-desktop by a real site that draws to a GPU-backed surface.
-    // See wrapper repo issue #18.
-    // Spoofing the output buffer is functionally equivalent (callers consume
-    // the JS array, not the source surface) and avoids the read-only map.
-    {
-      int32_t stealthSeed = StaticPrefs::zoom_stealth_fpp_hw_seed();
-      if (stealthSeed > 0 && !StealthSkipPrivilegedReadback(&aSubjectPrincipal)) {
-        size_t bufSize = size_t(aWidth) * size_t(aHeight) * 4;
-        // The coverage ladder used to run here too. It is on the glyph mask
-        // now - see the twin call site in GetImageBuffer.
-        if (StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
-          ApplyStealthCanvasPixelSubstitution(data, bufSize, stealthSeed);
-        } else {
-          ApplyStealthCanvasPixelNoise(data, bufSize, stealthSeed);
-        }
-      }
     }
   } while (false);
 

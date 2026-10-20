@@ -216,7 +216,9 @@ bool nsImageRenderer::PrepareImage() {
             mForFrame->FirstContinuation(), mImage->AsElement().AsAtom());
     // If the referenced element is an <img>, <canvas>, or <video> element,
     // prefer SurfaceFromElement as it's more reliable.
-    mImageElementSurface = nsLayoutUtils::SurfaceFromElement(paintElement);
+    // -moz-element SHOWS the element, like the screen: a canvas as drawn.
+    mImageElementSurface = nsLayoutUtils::SurfaceFromElement(
+        paintElement, nsLayoutUtils::SFE_AS_DRAWN);
 
     if (!mImageElementSurface.GetSourceSurface()) {
       nsIFrame* paintServerFrame =

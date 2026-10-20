@@ -8,6 +8,7 @@
 #include "Units.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_zoom.h"
+#include "mozilla/gfx/StealthCanvasProjection.h"
 #include "nsPoint.h"
 
 namespace mozilla {
@@ -40,6 +41,23 @@ namespace gfx {
  */
 inline bool StealthEngineActive() {
   return StaticPrefs::zoom_stealth_fpp_hw_seed() > 0;
+}
+
+/**
+ * The canvas noise as invisible_core declared it: the seed, or 0 when the
+ * canvas is to be left exactly as drawn (the engine is off, or the canvas noise
+ * is declared off, zoom.stealth.canvas.substitute_pixels), and the tolerance
+ * that tells a blend of two colours from a neighbourhood with a third
+ * (zoom.stealth.canvas.edge_tolerance, 0-255, refused at launch when missing). Every place that applies gfx::StealthProjectPixels
+ * asks here, so the rule is written once.
+ */
+inline gfx::StealthCanvasNoise StealthCanvasNoiseDeclared() {
+  if (!StealthEngineActive() ||
+      !StaticPrefs::zoom_stealth_canvas_substitute_pixels()) {
+    return gfx::StealthCanvasNoise::Off();
+  }
+  return {StaticPrefs::zoom_stealth_fpp_hw_seed(),
+          StaticPrefs::zoom_stealth_canvas_edge_tolerance()};
 }
 
 /**

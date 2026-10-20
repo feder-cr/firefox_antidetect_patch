@@ -6,6 +6,7 @@
 #define MOZILLA_GFX_DRAWTARGETRECORDING_H_
 
 #include "2D.h"
+#include "StealthCanvasProjection.h"
 #include "DrawEventRecorder.h"
 
 class nsICanvasRenderingContextInternal;
@@ -409,6 +410,19 @@ class DrawTargetRecording final : public DrawTarget {
 
   already_AddRefed<SourceSurface> CreateExternalSourceSurface(
       const IntSize& aSize, SurfaceFormat aFormat);
+
+ public:
+  /**
+   * A recording surface standing for aSurface with the canvas noise applied
+   * in the process that replays the recording (RecordedStealthProjectSurface),
+   * or null if aSurface is not a recording surface. Read back in this process,
+   * it gives the same projection computed here.
+   */
+  already_AddRefed<SourceSurface> StealthProjectedSurface(
+      SourceSurface* aSurface, bool aPremultiplied,
+      const StealthCanvasNoise& aNoise);
+
+ private:
 
   friend class ::nsICanvasRenderingContextInternal;
 

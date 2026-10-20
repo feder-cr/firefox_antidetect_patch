@@ -137,8 +137,6 @@ void StealthAssertDeclarationsComplete() {
        []() { return StaticPrefs::zoom_stealth_screen_color_depth(); }, 1},
       {"zoom.stealth.max_touch_points",
        []() { return StaticPrefs::zoom_stealth_max_touch_points(); }, 0},
-      {"zoom.stealth.canvas.noise_skip_mask",
-       []() { return StaticPrefs::zoom_stealth_canvas_noise_skip_mask(); }, 0},
       // Lo stile di hinting e l'antialias di FreeType, aggiunti il 2026-08-16.
       // Senza di loro `PrepareFontOptions` torna a chiedere al pattern
       // fontconfig, cioe' alla macchina: stesso binario, stessa pagina, hash
@@ -153,6 +151,19 @@ void StealthAssertDeclarationsComplete() {
       // piattaforma di proposito: una dichiarazione che vale per una sola
       // build e' una dichiarazione che qualcuno dimentichera' di spedire, e la
       // build che la dimentica non e' quella che se ne accorge.
+      // The tolerance of the canvas noise's two-colour test, added 2026-10-19
+      // with the single canvas function: a pixel whose neighbourhood is a
+      // blend of two colours within it (text, two-colour antialiasing) is left
+      // as drawn. 0 is a valid declaration; the undeclared -1 is not.
+      {"zoom.stealth.canvas.edge_tolerance",
+       []() { return StaticPrefs::zoom_stealth_canvas_edge_tolerance(); }, 0},
+      // The Windows text quality, added 2026-10-19 ([B362]): read by
+      // gfxDWriteFonts' GetSystemTextQuality instead of SystemParametersInfo.
+      // Required on both platforms, like the cleartype_params it gates: a
+      // profile is complete or it is not. The floor refuses the undeclared -1;
+      // a value outside 0/4/5 is refused where it is read.
+      {"zoom.stealth.text.system_quality",
+       []() { return StaticPrefs::zoom_stealth_text_system_quality(); }, 0},
       {"zoom.stealth.text.freetype_hintstyle",
        []() { return StaticPrefs::zoom_stealth_text_freetype_hintstyle(); }, 0},
       {"zoom.stealth.text.freetype_antialias",
