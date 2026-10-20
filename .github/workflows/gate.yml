@@ -215,13 +215,49 @@ jobs:
       # a wrapper_ref whose pin names the core core_ref builds. A mismatch does
       # not get papered over - pip downgrades to the index core and the gate
       # fails on it, which is the truth about that pairing.
+      #
+      # ⛔ BUT IT FAILED IN THE WRONG PLACE, AND SILENTLY. firefox-51 (run
+      # 39398286614): core_ref built 51.48.0, the wrapper of main pinned 50.48.0,
+      # pip put the published core back, and this step PRINTED "core under test:
+      # 50.48.0" and went on. The engine then refused the launch on the two
+      # declarations 50.48.0 does not emit (edge_tolerance, system_quality),
+      # and a release build's MOZ_CRASH prints nothing: three legs red with
+      # "the browser exited during startup ... printed: (nothing)", which reads
+      # as a broken binary. So the core under test is now ASSERTED before any
+      # browser starts: it must be the git install of exactly core_ref
+      # (direct_url.json, which pip writes for a VCS install and an index
+      # install does not have), read AFTER importing the wrapper, because the
+      # import-time pin repair is the second way the published core comes back.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
         run: |
           python -m pip install --quiet \
             "git+https://github.com/feder-cr/invisible_core@${{ inputs.core_ref }}"
           python -m pip install --quiet ".[dev]"
-          python -c "from importlib.metadata import version; print('core under test:', version('invisible-core'))"
+          CORE_REF="${{ inputs.core_ref }}" python - <<'PY'
+          import json, os, re, subprocess, sys
+          from importlib.metadata import distribution, version
+          ref = os.environ["CORE_REF"]
+          if re.fullmatch(r"[0-9a-f]{40}", ref):
+              want = ref
+          else:
+              rows = [line.split() for line in subprocess.run(
+                  ["git", "ls-remote", "https://github.com/feder-cr/invisible_core", ref, ref + "^{}"],
+                  capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()]
+              peeled = [s for s, r in rows if r.endswith("^{}")]  # an annotated tag: its commit, not the tag object
+              want = (peeled or [s for s, _ in rows] or [""])[0]
+          import invisible_playwright  # noqa: F401 - the import-time pin repair runs here, as under pytest
+          raw = distribution("invisible-core").read_text("direct_url.json")
+          got = (json.loads(raw).get("vcs_info") or {}).get("commit_id") if raw else None
+          print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
+          if not want or got != want:
+              sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s. "
+                       "Pass a wrapper_ref whose pin names the version core_ref builds: with any other pin, "
+                       "pip or the wrapper's import-time repair puts the published core back, and the engine "
+                       "refuses the launch on the declarations that core does not emit."
+                       % (version("invisible-core"), got or "the index", ref,
+                          want or "not a full sha nor a ref of invisible_core"))
+          PY
           python -m invisible_core seal --binary "$FF_EXE" \
             --tag "${{ inputs.seal_tag }}" \
             -o gate.seal.json
