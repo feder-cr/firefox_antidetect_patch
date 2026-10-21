@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/StealthRefuse.h"
 #include "nsTArray.h"
 
 namespace mozilla {
@@ -146,7 +147,10 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
   // A seed without its tolerance is a declaration only half carried: refused,
   // not read as some built-in tolerance.
   if (aNoise.mEdgeTolerance < 0 || aNoise.mEdgeTolerance > 255) {
-    MOZ_CRASH("stealth: the canvas noise has a seed but no declared edge tolerance");
+    StealthRefuse(
+        "stealth: the canvas noise has a seed but no declared edge tolerance "
+        "(zoom.stealth.canvas.edge_tolerance is %d, not 0-255)",
+        int(aNoise.mEdgeTolerance));
   }
   const int64_t tolerance = aNoise.mEdgeTolerance;
 

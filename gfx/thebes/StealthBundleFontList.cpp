@@ -15,6 +15,7 @@
 #include "gfxFontConstants.h"
 #include "gfxFontUtils.h"
 #include "mozilla/FontPropertyTypes.h"
+#include "mozilla/gfx/StealthRefuse.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "prenv.h"
 #include "nsIFile.h"
@@ -549,7 +550,7 @@ StealthBundleFontList* StealthBundleFontList::Get() {
     // it is present in both objdirs and both release archives, so this is a
     // broken installation and not a configuration we support. A broken install
     // has to stop, not quietly become a different browser.
-    MOZ_CRASH(
+    mozilla::gfx::StealthRefuse(
         "stealth: bundle-fonts.list not loadable from env, pref or GRE_DIR - "
         "refusing to run with host fonts");
   }();
