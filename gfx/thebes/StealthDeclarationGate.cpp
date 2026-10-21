@@ -6,6 +6,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/gfx/StealthRefuse.h"
 #include "mozilla/Preferences.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/StaticPrefs_zoom.h"
@@ -17,6 +18,17 @@ namespace mozilla {
 namespace gfx {
 
 namespace {
+
+// The refusal of a missing declaration, one sentence for every list below.
+[[noreturn]] void RefuseUndeclared(const char* aName) {
+  StealthRefuse(
+      "stealth: %s is not declared. Engine rule 7 - a finite-domain value "
+      "lives only in invisible_core, and a missing declaration refuses "
+      "rather than falling back to a compiled default or to the host. "
+      "Launch through invisible_core, or clear zoom.stealth.fpp.hw_seed to "
+      "run as stock Firefox.",
+      aName);
+}
 
 // One row per declaration whose domain is finite, i.e. per value that
 // invisible_core is the single source of. Adding a declared surface means
@@ -120,13 +132,7 @@ void StealthAssertDeclarationsComplete() {
 
   for (const auto& d : kStrings) {
     if (d.mIsEmpty()) {
-      MOZ_CRASH_UNSAFE_PRINTF(
-          "stealth: %s is not declared. Engine rule 7 - a finite-domain value "
-          "lives only in invisible_core, and a missing declaration refuses "
-          "rather than falling back to a compiled default or to the host. "
-          "Launch through invisible_core, or clear zoom.stealth.fpp.hw_seed to "
-          "run as stock Firefox.",
-          d.mName);
+      RefuseUndeclared(d.mName);
     }
   }
 
@@ -258,25 +264,13 @@ void StealthAssertDeclarationsComplete() {
   };
   for (const char* name : kRasterInts) {
     if (Preferences::GetInt(name, -1) < 0) {
-      MOZ_CRASH_UNSAFE_PRINTF(
-          "stealth: %s is not declared. Engine rule 7 - a finite-domain value "
-          "lives only in invisible_core, and a missing declaration refuses "
-          "rather than falling back to a compiled default or to the host. "
-          "Launch through invisible_core, or clear zoom.stealth.fpp.hw_seed to "
-          "run as stock Firefox.",
-          name);
+      RefuseUndeclared(name);
     }
   }
 
   for (const auto& d : kInts) {
     if (d.mGet() < d.mFloor) {
-      MOZ_CRASH_UNSAFE_PRINTF(
-          "stealth: %s is not declared. Engine rule 7 - a finite-domain value "
-          "lives only in invisible_core, and a missing declaration refuses "
-          "rather than falling back to a compiled default or to the host. "
-          "Launch through invisible_core, or clear zoom.stealth.fpp.hw_seed to "
-          "run as stock Firefox.",
-          d.mName);
+      RefuseUndeclared(d.mName);
     }
   }
 }

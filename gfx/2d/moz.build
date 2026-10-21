@@ -58,6 +58,7 @@ EXPORTS.mozilla.gfx += [
     "StackArray.h",
     "StealthCanvasProjection.h",
     "StealthGlyphCoverage.h",
+    "StealthRefuse.h",
     "Swizzle.h",
     "Tools.h",
     "Triangle.h",

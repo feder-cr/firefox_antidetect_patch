@@ -12,6 +12,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DWriteSettings.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/StealthRefuse.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_zoom.h"
@@ -52,7 +53,7 @@ static BYTE GetSystemTextQuality() {
         declared == CLEARTYPE_QUALITY) {
       return BYTE(declared);
     }
-    MOZ_CRASH_UNSAFE_PRINTF(
+    mozilla::gfx::StealthRefuse(
         "stealth: zoom.stealth.text.system_quality is %d, not one of 0 "
         "(DEFAULT_QUALITY), 4 (ANTIALIASED_QUALITY), 5 (CLEARTYPE_QUALITY). "
         "Engine rule 7: a finite-domain value lives only in invisible_core, "
