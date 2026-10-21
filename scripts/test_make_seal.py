@@ -320,6 +320,86 @@ def test_a_missing_playwright_range_file_writes_no_seal(d: Path):
     raise AssertionError("a missing range file produced a range")
 
 
+# ------------------------------------------- the coupled engine+core bootstrap
+#
+# A --from-tree seal pins the engine SOURCE (so the core's pref/type/manifest
+# tests read the NEW engine) while carrying no assets, so a core holding it
+# cannot be published. source_commit used to be hardcoded empty, which made
+# those tests SKIP instead of verify - a fail-open the bootstrap walked into.
+
+def _unpacked_tree(d: Path, version: str = "151.0",
+                   build_id: str = "20261020000535") -> Path:
+    tree = d / "tree"
+    tree.mkdir()
+    (tree / "application.ini").write_bytes(_app_ini(version, build_id))
+    return tree
+
+
+@case
+def test_a_from_tree_seal_records_the_source_commit_it_is_given(d: Path):
+    """The fix: a from-tree seal carries the engine commit it was told about."""
+    commit = "17140065a1b0477fabecf16f921120176803aa8b"
+    seal = m.build_from_tree("firefox-51", _unpacked_tree(d),
+                             "1.55.0", "1.61.0", commit)
+    assert seal["source_commit"] == commit, seal["source_commit"]
+    assert seal["assets"] == {}, "a from-tree seal has no assets, so it cannot ship"
+    assert seal["build_id"] == "20261020000535"
+    assert seal["tag"] == "firefox-51"
+
+
+@case
+def test_a_from_tree_seal_without_a_commit_leaves_source_commit_empty(d: Path):
+    """The plain local-dev seal is unchanged: no commit given, none recorded."""
+    seal = m.build_from_tree("local", _unpacked_tree(d), "1.55.0", "1.61.0")
+    assert seal["source_commit"] == "", seal["source_commit"]
+    assert seal["assets"] == {}
+
+
+# The two cases above call build_from_tree directly, so they cannot see the
+# join: main() reading --source-commit-file and handing it on. That join is
+# where the commit was lost, so it is driven here through the command line.
+
+def _cli(d: Path, commit_file: Path | None) -> tuple[int, Path]:
+    rng = d / "range.txt"
+    rng.write_bytes(b"1.55.0\n1.61.0\n")
+    out = d / "seal.json"
+    argv = ["--tag", "firefox-51", "--from-tree", str(_unpacked_tree(d)),
+            "--playwright-range", str(rng), "-o", str(out)]
+    if commit_file is not None:
+        argv += ["--source-commit-file", str(commit_file)]
+    return m.main(argv), out
+
+
+@case
+def test_the_command_line_records_the_commit_file_in_a_from_tree_seal(d: Path):
+    commit = "17140065a1b0477fabecf16f921120176803aa8b"
+    f = d / "source-commit.txt"
+    f.write_bytes((commit + "\n").encode("ascii"))
+    rc, out = _cli(d, f)
+    assert rc == 0, rc
+    assert json.loads(out.read_bytes())["source_commit"] == commit
+
+
+@case
+def test_a_commit_file_that_is_named_but_missing_is_a_failed_seal(d: Path):
+    """It used to read as no commit at all, and a seal came out without one."""
+    rc, out = _cli(d, d / "nowhere.txt")
+    assert rc == 1, rc
+    assert not out.exists(), "a refused seal must not be written"
+
+
+@case
+def test_a_commit_file_that_holds_no_commit_id_is_a_failed_seal(d: Path):
+    for i, content in enumerate((b"", b"17140065\n", b"not a commit\n")):
+        sub = d / str(i)
+        sub.mkdir()
+        f = sub / "source-commit.txt"
+        f.write_bytes(content)
+        rc, out = _cli(sub, f)
+        assert rc == 1, (content, rc)
+        assert not out.exists(), content
+
+
 # ----------------------------------------------------------------- runner
 
 def _expect(d: Path, needle: str, *, tag: str = "firefox-18") -> None:

@@ -287,6 +287,28 @@ def read_playwright_range(path: Path | None) -> tuple[str, str]:
     return lo, hi
 
 
+def read_source_commit(path: Path | None) -> str:
+    """The engine commit the seal records, or "" when none is asked for.
+
+    The same silent fallback the Playwright window had: the file was read only
+    `if a.source_commit_file and a.source_commit_file.exists()`, so a misspelled
+    or missing file gave a seal with no source_commit and a log that said
+    nothing. The core's pref, type and manifest tests read the engine source at
+    the seal's source_commit and SKIP without one, so that seal passes a check it
+    never ran. Asked for and unreadable, or not a full commit id, is a failed
+    seal.
+    """
+    if path is None:
+        return ""
+    if not path.is_file():
+        raise SealBuildError(f"--source-commit-file {path} does not exist.")
+    commit = path.read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise SealBuildError(
+            f"--source-commit-file {path} holds {commit!r}, not a full 40-hex commit id.")
+    return commit
+
+
 def build_from_assets(tag: str, assets_dir: Path, source_commit: str,
                       pw_min: str, pw_max: str, allow_partial: bool) -> tuple[dict, list]:
     archives = sorted(p for p in assets_dir.iterdir()
@@ -345,7 +367,23 @@ def build_from_assets(tag: str, assets_dir: Path, source_commit: str,
     }, rows)
 
 
-def build_from_tree(tag: str, tree: Path, pw_min: str, pw_max: str) -> dict:
+def build_from_tree(tag: str, tree: Path, pw_min: str, pw_max: str,
+                    source_commit: str = "") -> dict:
+    """A LOCAL seal for an unpacked build: no assets, so it can verify a binary
+    but never download one.
+
+    `source_commit` is recorded when the caller supplies one
+    (--source-commit-file), and left empty otherwise. It used to be hardcoded
+    empty, which was harmless for a dev seal but defeated the coupled
+    engine+core bootstrap: the core's pref/type/manifest tests read the engine
+    SOURCE at the seal's source_commit, so a seal with none makes them SKIP
+    instead of verify, which is a fail-open. Giving a from-tree seal the new
+    engine's commit lets the core branch pin the engine it is transitioning to
+    while still carrying no assets - so a core holding it cannot be published
+    (seal.py treats no assets as not downloadable, and the publish gate refuses
+    to upload one). The real release seal, with the published asset hashes,
+    replaces it via roll_seal.py before the core ships.
+    """
     root = tree
     if (tree / "Firefox.app" / "Contents" / "Resources" / "application.ini").exists():
         root = tree / "Firefox.app" / "Contents" / "Resources"
@@ -359,7 +397,7 @@ def build_from_tree(tag: str, tree: Path, pw_min: str, pw_max: str) -> dict:
         "tag": tag,
         "upstream_version": ini["App"]["Version"],
         "build_id": ini["App"]["BuildID"],
-        "source_commit": "",
+        "source_commit": source_commit,
         "playwright": {"min": pw_min, "max": pw_max},
         "assets": {},
     }
@@ -386,7 +424,10 @@ def main(argv=None) -> int:
     ap.add_argument("--tag", required=True)
     ap.add_argument("--assets", type=Path)
     ap.add_argument("--from-tree", type=Path)
-    ap.add_argument("--source-commit-file", type=Path)
+    ap.add_argument("--source-commit-file", type=Path,
+                    help="a file holding the engine commit this build is of. "
+                         "Recorded as the seal's source_commit for BOTH --assets "
+                         "and --from-tree; the core's engine-source tests read it.")
     ap.add_argument("--playwright-range", type=Path,
                     help=f"the two-line supported-Playwright window "
                          f"(default: {PW_RANGE_REL} in this tree). No built-in default "
@@ -395,17 +436,14 @@ def main(argv=None) -> int:
     ap.add_argument("-o", "--out", type=Path, required=True)
     a = ap.parse_args(argv)
 
-    commit = ""
-    if a.source_commit_file and a.source_commit_file.exists():
-        commit = a.source_commit_file.read_text().strip()
-
     rows: list = []
     try:
+        commit = read_source_commit(a.source_commit_file)
         pw_range = a.playwright_range or (REPO_ROOT / PW_RANGE_REL)
         pw_min, pw_max = read_playwright_range(pw_range)
         print(f"playwright window: {pw_min} .. {pw_max}  (from {pw_range})")
         if a.from_tree:
-            seal = build_from_tree(a.tag, a.from_tree, pw_min, pw_max)
+            seal = build_from_tree(a.tag, a.from_tree, pw_min, pw_max, commit)
         elif a.assets:
             seal, rows = build_from_assets(a.tag, a.assets, commit, pw_min, pw_max,
                                            a.allow_partial)
