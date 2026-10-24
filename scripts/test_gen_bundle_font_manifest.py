@@ -23,7 +23,17 @@ FONTS = os.path.normpath(os.path.join(os.path.dirname(__file__), "..",
                                       "browser", "fonts"))
 MANIFEST = os.path.join(FONTS, "bundle-fonts.list")
 
-# Le 68 famiglie del set Windows, i due font di ICONE e quella che Firefox imbarca di suo.
+# Le 64 famiglie del set Windows, i due font di ICONE e quella che Firefox imbarca di suo.
+#
+# ⛔ QUATTRO FAMIGLIE SONO USCITE IL 2026-10-24: Leelawadee, Microsoft Uighur,
+# Wingdings 2 e Wingdings 3. Un Windows 11 26H2 pulito, senza Office, non ne ha
+# nessuna (registro dei font di sistema e dell'utente, letti quel giorno), e il
+# Firefox 151 retail su quella macchina non le vede. Leelawadee e Microsoft Uighur
+# sono font di lingua che Windows installa con il tailandese e con le lingue in
+# alfabeto arabo (Features on Demand), e StandardFonts-win10.inc le nomina solo
+# nelle regole per locale (th; ar, fa), mai in kBaseFonts; Wingdings 2 e 3 non
+# sono nelle tabelle di base di Windows 10 e 11. Un set con queste quattro non e'
+# quello di nessuna macchina reale con quel Windows.
 #
 # "Twemoji Mozilla" non e' un font di Windows e per un anno e' stata esclusa
 # apposta: il predicato del generatore chiedeva "viene da Microsoft?". La
@@ -44,20 +54,20 @@ MANIFEST = os.path.join(FONTS, "bundle-fonts.list")
 # La deriva che quel commento temeva e' REALE e si e' verificata quel giorno:
 # questa lista e' passata a 71 famiglie e l'altra e' rimasta a 68, per mezz'ora,
 # perche' stanno in due repository e nessun test le confronta.
-EXPECTED_71 = {
+EXPECTED_67 = {
     "Arial","Bahnschrift","Calibri","Cambria","Cambria Math","Candara",
     "Comic Sans MS","Consolas","Constantia","Corbel","Courier New","Ebrima","Franklin Gothic",
     "Gabriola","Gadugi","Georgia","Impact","Ink Free","Javanese Text",
-    "Leelawadee","Leelawadee UI","Lucida Console","Lucida Sans Unicode","MS Gothic","MS PGothic",
+    "Leelawadee UI","Lucida Console","Lucida Sans Unicode","MS Gothic","MS PGothic",
     "MS UI Gothic","MV Boli","Malgun Gothic","Marlett","Microsoft Himalaya","Microsoft JhengHei",
     "Microsoft JhengHei UI","Microsoft New Tai Lue","Microsoft PhagsPa","Microsoft Sans Serif",
-    "Microsoft Tai Le","Microsoft Uighur","Microsoft YaHei","Microsoft YaHei UI","Microsoft Yi Baiti",
+    "Microsoft Tai Le","Microsoft YaHei","Microsoft YaHei UI","Microsoft Yi Baiti",
     "MingLiU-ExtB","Mongolian Baiti","Myanmar Text","NSimSun","Nirmala UI","PMingLiU-ExtB",
     "Palatino Linotype","Segoe Print","Segoe Script",
     "Segoe UI","Segoe UI Emoji","Segoe UI Historic","Segoe UI Symbol","SimSun","SimSun-ExtB",
     "Sitka Small","Sylfaen","Symbol","Tahoma","Times New Roman","Trebuchet MS","Verdana",
     "Segoe Fluent Icons","Segoe MDL2 Assets","Twemoji Mozilla",
-    "Webdings","Wingdings","Wingdings 2","Wingdings 3","Yu Gothic","Yu Gothic UI",
+    "Webdings","Wingdings","Yu Gothic","Yu Gothic UI",
 }
 
 # v2 record: f|file|index|w_min|w_max|stretch_min|stretch_max|style|psname
@@ -66,9 +76,9 @@ EXPECTED_71 = {
 FACE_FIELDS = 19
 
 
-def test_manifest_family_set_equals_the_71():
+def test_manifest_family_set_equals_the_67():
     names = {f["name"] for f in build_manifest(FONTS)["families"]}
-    assert names == EXPECTED_71, f"missing={EXPECTED_71-names} extra={names-EXPECTED_71}"
+    assert names == EXPECTED_67, f"missing={EXPECTED_67-names} extra={names-EXPECTED_67}"
 
 
 def test_every_face_references_an_existing_file():
@@ -92,6 +102,32 @@ def test_checked_in_manifest_matches_the_generator():
     assert on_disk == regenerated, (
         "browser/fonts/bundle-fonts.list is not what the generator emits - "
         "re-run scripts/gen_bundle_font_manifest.py (never hand-edit it)")
+
+
+def test_names_are_read_by_the_generators_rule_not_the_librarys():
+    """The same files must give the same manifest whatever fontTools is
+    installed. 4.67 changed `getDebugName` to prefer the Windows record, and
+    Microsoft Himalaya's PostScript name differs between its two records:
+    the regenerated manifest changed one row with no file changed (2026-10-25).
+    Here on the real file, and on a table with only one of the two records."""
+    from fontTools.ttLib import TTFont, newTable
+    from gen_bundle_font_manifest import _name
+
+    himalaya = TTFont(os.path.join(FONTS, "himalaya5_23.ttf"), lazy=True)["name"]
+    records = {(r.platformID, r.langID): r.toUnicode()
+               for r in himalaya.names if r.nameID == 6}
+    assert records[(1, 0)] != records[(3, 0x409)], (
+        "the file no longer has two different PostScript names: this test "
+        "needs another face that does")
+    assert _name(himalaya, 6) == "MicrosoftHimalaya"
+    with open(MANIFEST, "r", encoding="ascii") as f:
+        assert "|normal|MicrosoftHimalaya|" in f.read()
+
+    windows_only = newTable("name")
+    windows_only.names = []
+    windows_only.setName("Only Windows", 6, 3, 1, 0x409)
+    assert _name(windows_only, 6) == "Only Windows"
+    assert _name(windows_only, 16) is None
 
 
 def test_every_face_record_has_the_v2_field_count():

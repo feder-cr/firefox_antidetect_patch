@@ -12,9 +12,29 @@ if (!this.Debugger) {
   addDebuggerToGlobal(Components.utils.getGlobalForObject(globalThis));
 }
 
+// ⛔ AN ID NAMES ONE OBJECT FOR THE WHOLE SESSION, NOT FOR ONE PROCESS.
+//
+// Every other id Juggler hands out is a UUID (Helper.generateId); these were
+// a counter, and this file is loaded once per content process and once per
+// worker, so every process counted id-1, id-2... from the start. A page that
+// moves to another process - a document served with
+// Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy and the one
+// after it, measured 2026-10-24 - had its new worlds named exactly as the old
+// ones, in the same order: the utility world was id-8 in both, and a client
+// still holding the old id-8 and an object of it (id-10) was answered by the
+// new id-8 with "Cannot find object with id = id-10". A context id or an
+// object id from a process that is gone can now only be unknown, which the
+// engine already answers as such ("Failed to find execution context",
+// "Cannot find object"); it can no longer name something else, and an
+// element handle kept across the move can no longer reach a different node.
+//
+// Math.random, not Services or crypto: this file must load in a worker too
+// (see the note at the top), and two draws give about 80 bits, so two
+// processes of one session never share a prefix.
+let idPrefix = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
 let lastId = 0;
 function generateId() {
-  return 'id-' + (++lastId);
+  return 'id-' + idPrefix + '-' + (++lastId);
 }
 
 // Stealth: JSON stringify helper source, re-evaluated on debugger re-attach.
