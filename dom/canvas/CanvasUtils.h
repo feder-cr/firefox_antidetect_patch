@@ -224,7 +224,18 @@ bool CheckWriteOnlySecurity(bool aCORSUsed, nsIPrincipal* aPrincipal,
 // never by who calls: the same canvas reads the same bytes for every reader.
 gfx::StealthCanvasNoise StealthNoise(nsIPrincipal* aCanvasPrincipal);
 
-// A snapshot of a canvas as a page reads it: the canvas noise applied to its
+// Whether a canvas of this context type goes through the canvas noise at all:
+// WebGL and WebGPU only. A 2D canvas, on the page or offscreen, and a
+// bitmaprenderer read back exactly as drawn, as on retail; a bitmap taken from
+// a WebGL canvas was already projected when it was taken.
+inline bool StealthProjectsContextType(dom::CanvasContextType aType) {
+  return aType == dom::CanvasContextType::WebGL1 ||
+         aType == dom::CanvasContextType::WebGL2 ||
+         aType == dom::CanvasContextType::WebGPU;
+}
+
+// A snapshot of a WebGL or WebGPU canvas as a page reads it (a 2D canvas is
+// never projected): the canvas noise applied to its
 // stored pixels, a new data surface; the snapshot itself is left untouched,
 // because it is also what the screen and -moz-element show. aSnapshot back
 // unchanged when the seed is 0. aPremultiplied: the snapshot's alpha type is

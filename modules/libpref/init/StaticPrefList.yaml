@@ -20696,13 +20696,14 @@
   value: ""
   mirror: always
 
-# The canvas noise is on: the 2D, WebGL and OffscreenCanvas pixels a page
-# reads, and the pixels a canvas hands over as the source of another drawing,
-# go through gfx::StealthProjectPixels (gfx/2d/StealthCanvasProjection.h). One
-# switch for every kind of canvas, declared by invisible_core. The name is the
-# one the core has always written; it used to choose between two older
-# algorithms, and zoom.stealth.webgl.substitute_pixels and
-# zoom.stealth.canvas.noise_skip_mask, which tuned them, are gone with them.
+# The canvas noise is on: the WebGL and WebGPU pixels a page reads, and the
+# pixels such a canvas hands over as the source of another drawing, go through
+# gfx::StealthProjectPixels (gfx/2d/StealthCanvasProjection.h). A 2D canvas is
+# never projected (from firefox-52): it reads back as drawn, as on retail.
+# Declared by invisible_core. The name is the one the core has always written;
+# it used to choose between two older algorithms, and
+# zoom.stealth.webgl.substitute_pixels and zoom.stealth.canvas.noise_skip_mask,
+# which tuned them, are gone with them.
 - name: zoom.stealth.canvas.substitute_pixels
   type: RelaxedAtomicBool
   value: false

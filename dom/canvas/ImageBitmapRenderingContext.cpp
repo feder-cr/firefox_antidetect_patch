@@ -4,8 +4,6 @@
 
 #include "ImageBitmapRenderingContext.h"
 
-#include "mozilla/gfx/StealthCanvasProjection.h"
-
 #include "ImageContainer.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
@@ -186,16 +184,6 @@ mozilla::UniquePtr<uint8_t[]> ImageBitmapRenderingContext::GetImageBuffer(
 
   if (data->GetSize() != gfx::IntSize(mWidth, mHeight)) {
     data = MatchWithIntrinsicSize();
-    if (!data) {
-      return nullptr;
-    }
-  }
-
-  // toDataURL/toBlob of a bitmaprenderer canvas: the canvas noise, the image
-  // HTMLCanvasElement::GetSurfaceSnapshot gives a page for the same canvas.
-  if (const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull())) {
-    data = gfx::StealthProjectedRegion(
-        data, gfx::IntRect(gfx::IntPoint(), data->GetSize()), true, noise);
     if (!data) {
       return nullptr;
     }

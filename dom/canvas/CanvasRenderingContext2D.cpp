@@ -83,7 +83,6 @@
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/gfx/PatternHelpers.h"
-#include "mozilla/gfx/StealthCanvasProjection.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
@@ -2262,13 +2261,14 @@ CanvasRenderingContext2D::SetContextOptions(JSContext* aCx,
   return NS_OK;
 }
 
-// The canvas noise is gfx::StealthProjectPixels, applied to the STORED pixels
-// (BGRA, premultiplied) before any reader converts them: the same function the
-// WebGL readers, the drawImage/createImageBitmap/VideoFrame/WebGPU sources and
-// the GPU process apply, so every reader of one canvas reads one image. It used
-// to be two algorithms here (a +/-1 noise and a hash substitution), each run on
-// the reader's own output buffer, which is why getImageData and toDataURL of
-// the same canvas disagreed. gfx/2d/StealthCanvasProjection.h has the why.
+// STEALTH: a 2D canvas reads back exactly as it was drawn, as on retail
+// Firefox, so these readers are stock. The canvas noise
+// (gfx::StealthProjectPixels) is a WebGL/WebGPU readback only: a public
+// fingerprinting test draws 64 random 1x1 pixels on a 2D canvas and reads them
+// back, and the projection changed 6 of 64 where retail 151 changed 0
+// (measured 2026-10-24). What makes two machines' 2D canvases differ is how
+// they draw - display scale, ClearType tuning, fonts - and those are declared,
+// not added at readback.
 // STEALTH: the coverage ladder used to live here, applied to the composited
 // RGBA buffer, and it moved to the A8 GLYPH MASK on 2026-08-08 -
 // SkScalerContext::getImage, via mozilla/gfx/StealthGlyphCoverage.h.
@@ -2306,13 +2306,6 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
   RefPtr<SourceSurface> snapshot = mBufferProvider->BorrowSnapshot();
   if (snapshot) {
     RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
-    if (data && data->GetSize() == GetSize()) {
-      if (const gfx::StealthCanvasNoise noise =
-              CanvasUtils::StealthNoise(PrincipalOrNull())) {
-        data = gfx::StealthProjectedRegion(
-            data, IntRect(IntPoint(), data->GetSize()), true, noise);
-      }
-    }
     if (data && data->GetSize() == GetSize()) {
       *out_format = imgIEncoder::INPUT_FORMAT_HOSTARGB;
       *out_imageSize = data->GetSize();
@@ -2680,7 +2673,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     nsICanvasRenderingContextInternal* srcCanvas = canvas->GetCurrentContext();
     if (srcCanvas) {
       // This might not be an Azure canvas! Read through the element, as a
-      // page reads it (the canvas noise).
+      // page reads it (the canvas noise, for a WebGL/WebGPU source only).
       RefPtr<SourceSurface> srcSurf = canvas->GetSurfaceSnapshot();
       if (!srcSurf) {
         aError.ThrowInvalidStateError(
@@ -6893,18 +6886,6 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
   RefPtr<DataSourceSurface> readback = snapshot->GetDataSurface();
   mBufferProvider->ReturnSnapshot(snapshot.forget());
 
-  // The canvas noise, on the stored pixels of the rectangle read, its
-  // neighbours taken from the whole canvas: so a rectangle reads the same bytes
-  // as the same area of a whole read. `readOrigin` is where the projected copy
-  // starts in canvas coordinates.
-  IntPoint readOrigin;
-  if (readback) {
-    if (const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(PrincipalOrNull())) {
-      readback = gfx::StealthProjectedRegion(readback, srcReadRect, true, noise);
-      readOrigin = srcReadRect.TopLeft();
-    }
-  }
-
   // Check for site-specific permission.
   CanvasUtils::ImageExtraction extractionBehavior =
       CanvasUtils::ImageExtraction::Unrestricted;
@@ -6966,9 +6947,8 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
     }
 
     uint32_t srcStride = rawData.mStride;
-    uint8_t* src = rawData.mData +
-                   (srcReadRect.y - readOrigin.y) * srcStride +
-                   (srcReadRect.x - readOrigin.x) * 4;
+    uint8_t* src =
+        rawData.mData + srcReadRect.y * srcStride + srcReadRect.x * 4;
 
     uint8_t* dst = data + dstWriteRect.y * (aWidth * 4) + dstWriteRect.x * 4;
 

@@ -1504,6 +1504,11 @@ already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
   if (!drawn) {
     return nullptr;
   }
+  // A 2D or bitmaprenderer canvas is a source as it was drawn, as on retail:
+  // the canvas noise is a WebGL/WebGPU readback only.
+  if (!CanvasUtils::StealthProjectsContextType(GetCurrentContextType())) {
+    return drawn.forget();
+  }
   const bool premultiplied = alphaType != gfxAlphaType::NonPremult;
   // A canvas drawn onto a canvas that records for the GPU process stays on the
   // GPU: the projection is recorded and runs there, where the pixels are
