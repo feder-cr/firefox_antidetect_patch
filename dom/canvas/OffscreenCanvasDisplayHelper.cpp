@@ -4,6 +4,7 @@
 
 #include "OffscreenCanvasDisplayHelper.h"
 
+#include "CanvasUtils.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/dom/Document.h"
@@ -458,14 +459,17 @@ OffscreenCanvasDisplayHelper::TransformSurface(gfx::SourceSurface* aSurface,
 already_AddRefed<gfx::SourceSurface>
 OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
   MOZ_ASSERT(NS_IsMainThread());
-  // What a page reads of the placeholder: the worker's front buffer with the
-  // canvas noise, the same function the worker's own convertToBlob and
-  // getImageData apply, so the two sides of a transferControlToOffscreen read
-  // one image. TransformSurface hands back premultiplied or opaque pixels.
+  // What a page reads of the placeholder: the worker's front buffer, through
+  // the canvas noise only for a WebGL/WebGPU context, the same rule the
+  // worker's own readers follow, so the two sides of a transferControlToOffscreen
+  // read one image. TransformSurface hands back premultiplied or opaque pixels.
   RefPtr<gfx::SourceSurface> drawn = GetSurfaceSnapshotAsDrawn();
   nsCOMPtr<nsIPrincipal> principal;
   {
     MutexAutoLock lock(mMutex);
+    if (!CanvasUtils::StealthProjectsContextType(mType)) {
+      return drawn.forget();
+    }
     if (mCanvasElement) {
       principal = mCanvasElement->NodePrincipal();
     }

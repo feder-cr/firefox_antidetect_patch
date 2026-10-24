@@ -49,6 +49,10 @@ class StealthCanvasNoise {
  * applied wherever a canvas becomes bytes for the page or the source of another
  * drawing ("form B", 29-canvas-buffer-unico.md in the workbench docs).
  *
+ * From firefox-52 only WebGL and WebGPU canvases go through it. A 2D canvas
+ * reads back exactly as drawn, as on retail: a public test's grid of random
+ * 1x1 pixels caught the projection on 2D (6 of 64 changed, retail 0).
+ *
  * WHY ONE FUNCTION. Until firefox-50 the noise was three algorithms bolted onto
  * five read METHODS (getImageData, toDataURL/toBlob, readPixels, the WebGL
  * snapshot), each on its own buffer layout: every other road - drawImage onto
