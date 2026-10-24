@@ -104,6 +104,32 @@ def test_checked_in_manifest_matches_the_generator():
         "re-run scripts/gen_bundle_font_manifest.py (never hand-edit it)")
 
 
+def test_names_are_read_by_the_generators_rule_not_the_librarys():
+    """The same files must give the same manifest whatever fontTools is
+    installed. 4.67 changed `getDebugName` to prefer the Windows record, and
+    Microsoft Himalaya's PostScript name differs between its two records:
+    the regenerated manifest changed one row with no file changed (2026-10-25).
+    Here on the real file, and on a table with only one of the two records."""
+    from fontTools.ttLib import TTFont, newTable
+    from gen_bundle_font_manifest import _name
+
+    himalaya = TTFont(os.path.join(FONTS, "himalaya5_23.ttf"), lazy=True)["name"]
+    records = {(r.platformID, r.langID): r.toUnicode()
+               for r in himalaya.names if r.nameID == 6}
+    assert records[(1, 0)] != records[(3, 0x409)], (
+        "the file no longer has two different PostScript names: this test "
+        "needs another face that does")
+    assert _name(himalaya, 6) == "MicrosoftHimalaya"
+    with open(MANIFEST, "r", encoding="ascii") as f:
+        assert "|normal|MicrosoftHimalaya|" in f.read()
+
+    windows_only = newTable("name")
+    windows_only.names = []
+    windows_only.setName("Only Windows", 6, 3, 1, 0x409)
+    assert _name(windows_only, 6) == "Only Windows"
+    assert _name(windows_only, 16) is None
+
+
 def test_every_face_record_has_the_v2_field_count():
     with open(MANIFEST, "r", encoding="ascii") as f:
         for n, line in enumerate(f, 1):

@@ -129,9 +129,40 @@ _ATTRIBUTION_NAME_IDS = (0, 7, 8, 9, 13, 14)
 _FIREFOX_SUPPLIED_FILES = ("TwemojiMozilla.ttf",)
 
 
+def _name(name_table, name_id):
+    """Record `name_id` of a face, read by THIS generator's rule: the first
+    English record in table order - Macintosh (1, 0) or Windows (3, 0x409),
+    and the table is sorted by platform, so Macintosh when a font has both -
+    else any record that decodes, else None.
+
+    ⛔ OUR RULE, NOT THE LIBRARY'S. This was `name_table.getDebugName`, whose
+    preference is fontTools' to change, and fontTools 4.67 changed it to the
+    Windows record first. Microsoft Himalaya carries 'MicrosoftHimalaya'
+    (Macintosh) and 'Microsoft Himalaya' (Windows) as its PostScript name, so
+    the same 120 files gave two different manifests depending on what was
+    installed (measured 2026-10-25, 4.60 against 4.67), and nothing in CI ran
+    the generator to notice. The rule kept is the one every manifest so far
+    was generated with: the face names it picks are the ones the release gate
+    validated, the PostScript name included, which is what CoreText matches a
+    face by (CoreTextFontList.cpp).
+    """
+    any_name = None
+    for record in name_table.names:
+        if record.nameID != name_id:
+            continue
+        try:
+            value = record.toUnicode()
+        except UnicodeDecodeError:
+            continue
+        if (record.platformID, record.langID) in ((1, 0), (3, 0x409)):
+            return value
+        any_name = value
+    return any_name
+
+
 def _is_microsoft_supplied(name_table) -> bool:
     for name_id in _ATTRIBUTION_NAME_IDS:
-        value = name_table.getDebugName(name_id)
+        value = _name(name_table, name_id)
         if value and "Microsoft" in value:
             return True
     return False
@@ -672,7 +703,7 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
             continue
 
         name_table = tt["name"]
-        gdi_name = name_table.getDebugName(1)
+        gdi_name = _name(name_table, 1)
         if not gdi_name:
             continue
         if not _ships_with_a_real_firefox(file_name, name_table):
@@ -705,9 +736,9 @@ def build_manifest(fonts_dir: str, gfx_dir: str | None = None) -> dict:
         # dichiarati in nessuna famiglia: 743.840 byte spediti che nessuna
         # pagina poteva raggiungere.
 
-        typo_name = name_table.getDebugName(16)
-        wws_name = name_table.getDebugName(21)
-        psname = name_table.getDebugName(6) or ""
+        typo_name = _name(name_table, 16)
+        wws_name = _name(name_table, 21)
+        psname = _name(name_table, 6) or ""
 
         os2 = tt["OS/2"]
         head = tt["head"]
