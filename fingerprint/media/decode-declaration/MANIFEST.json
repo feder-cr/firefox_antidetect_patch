@@ -1,0 +1,104 @@
+{
+ "modified": [
+  "dom/media/DecoderTraits.cpp",
+  "dom/media/mediacapabilities/MediaCapabilities.cpp",
+  "dom/media/moz.build",
+  "dom/media/platforms/PDMFactory.cpp"
+ ],
+ "added": {
+  "dom/media/StealthMediaDeclaration.cpp": "100644",
+  "dom/media/StealthMediaDeclaration.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "dom/media/DecoderTraits.cpp",
+   "category": "other",
+   "feature": "media-codecs-declared",
+   "prefs": [],
+   "added": 13,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "CanHandleMediaType (comment above it)",
+   "evidence": [
+    "+// Stealth: there is deliberately no declared-answer hook here any more.",
+    "+// The declaration moved one layer down, to PDMFactory::Supports, where the key"
+   ],
+   "notes": "Comment-only (13 lines) recording that a codec-string table was removed on 2026-08-08 and that the declaration now lives in PDMFactory::Supports (dom/media/StealthMediaDeclaration.h, not in this group). No code in the diff. Drop the comment from the patch.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/media/mediacapabilities/MediaCapabilities.cpp",
+   "category": "spoof",
+   "feature": "media-decode-declaration",
+   "prefs": [],
+   "added": 101,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 41,
+   "hookable": "movable",
+   "anchor": "new file-scope StealthDeclaredDecodingInfoFor (hunk @@ -233) and the promise lambda in MediaCapabilities::CreateNonWebRTCDecodingInfo (hunk @@ -1159)",
+   "evidence": [
+    "+static bool StealthDeclaredDecodingInfoFor(",
+    "+  if (DecoderTraits::CanHandleContainerType(*container, nullptr) == CANPLAY_NO) {",
+    "+                   promise->MaybeResolve(std::move(declaredInfo));"
+   ],
+   "notes": "The helper loops over codecs and calls StealthDeclaredDecodingInfo (StealthMediaDeclaration.*, not in this group). Move the helper to StealthMediaDeclaration.cpp; the Mozilla file keeps the include and one call in the lambda that returns early. The declared answer overrides on both resolve branches, not only on reject. Comments are long measurement narratives (2026-08-08) and belong in docs. Audio is excluded on purpose per the comment. Counts are approximate (non-comment, non-include, non-brace added lines).",
+   "verifier": {
+    "changed": [
+     "evidence"
+    ],
+    "why": "Third evidence quote had wrong indentation; replaced with the verbatim diff line."
+   }
+  },
+  {
+   "file": "dom/media/moz.build",
+   "category": "build",
+   "feature": "media-decode-declaration",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS += [...] and UNIFIED_SOURCES += [...] in dom/media/moz.build",
+   "evidence": [
+    "+    \"StealthMediaDeclaration.h\",",
+    "+    \"StealthMediaDeclaration.cpp\","
+   ],
+   "notes": "",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  },
+  {
+   "file": "dom/media/platforms/PDMFactory.cpp",
+   "category": "spoof",
+   "feature": "media-decode-declaration",
+   "prefs": [],
+   "added": 27,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 8,
+   "hookable": "movable",
+   "anchor": "PDMFactory::Supports(const SupportDecoderParams&, DecoderDoctorDiagnostics*) const",
+   "evidence": [
+    "+    if (StealthDeclaredDecodeSupport(aParams.MimeType(), sw, hw)) {",
+    "+      DecodeSupportSet declared{};",
+    "+      return declared;"
+   ],
+   "notes": "The block maps two bools to a DecodeSupportSet inside Mozilla code. Movable: one hook such as an if-let on a StealthDecodeSupport(aParams) result, with the bit mapping in our file. The hook returns before the mEMEPDM->Supports branch, so declared answers also override EME answers when EME is present. Verify that is intended. [verified: CONFIRMED that the hook precedes the EME branch, PDMFactory.cpp:487 vs :500; whether it is intended is unverified.] Comment says query paths only (MP4Decoder, MatroskaDecoder, WebMDecoder, MediaCapabilities, MFMediaEngineDecoderModule) and decoder creation is untouched.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "EME-override claim checked: the hook returns at PDMFactory.cpp:487-497 before mEMEPDM->Supports at :500, so confirmed; intent still unverified."
+   }
+  }
+ ]
+}

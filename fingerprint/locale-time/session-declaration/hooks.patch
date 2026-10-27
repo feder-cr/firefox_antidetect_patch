@@ -1,0 +1,20 @@
+diff --git a/dom/base/moz.build b/dom/base/moz.build
+index 108ccbfc967df85249e32c465db0b874d125daa7..bc95f7db0ca1cb7097d4366184aa79dbcf1037cb 100644
+--- a/dom/base/moz.build
++++ b/dom/base/moz.build
+@@ -273,6 +273,7 @@ EXPORTS.mozilla.dom += [
+     "SpeculationRulesManager.h",
+     "StaticAtomSet.h",
+     "StaticRange.h",
++    "StealthSessionDeclaration.h",
+     "StructuredCloneBlob.h",
+     "StructuredCloneHolder.h",
+     "StructuredCloneTags.h",
+@@ -490,6 +491,7 @@ UNIFIED_SOURCES += [
+     "SpeculationRuleSet.cpp",
+     "SpeculationRulesManager.cpp",
+     "StaticRange.cpp",
++    "StealthSessionDeclaration.cpp",
+     "StorageAccessPermissionRequest.cpp",
+     "StructuredCloneBlob.cpp",
+     "StructuredCloneHolder.cpp",

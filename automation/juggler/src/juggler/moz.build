@@ -1,0 +1,52 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+DIRS += ["components", "pipe"]
+
+# The screencast rests on DesktopCaptureImpl, which dom/media/systemservices
+# only builds when webrtc is in. Without the directory the XPCOM class is not
+# registered and TargetRegistry.js falls back to refusing the three commands,
+# which is what this whole subsystem did for its first year: it was never in
+# this list, so it was never compiled, and the contract id always threw.
+if CONFIG["MOZ_WEBRTC"]:
+    DIRS += ["screencast"]
+
+# Juggler is served from resource://gre/modules/juggler/, never from a chrome
+# package. The parent sends every registered chrome package to each content
+# process, and a page tells a registered name from an absent one: new
+# Worker("chrome://<name>/...") returns for the first and throws SecurityError at
+# once for the second. resource://gre is in every Firefox, and inside it a page
+# cannot tell which files exist. A renamed package would only move the tell.
+FINAL_TARGET_FILES.modules.juggler += [
+    "ChannelEventSink.sys.mjs",
+    "content/JugglerFrameChild.jsm",
+    "content/JugglerFrameChild.sys.mjs",
+    "Helper.js",
+    "JugglerFrameParent.jsm",
+    "JugglerFrameParent.sys.mjs",
+    "NetworkObserver.js",
+    "SessionRoute.js",
+    "SimpleChannel.js",
+    "StealthCursor.js",
+    "TargetRegistry.js",
+]
+FINAL_TARGET_FILES.modules.juggler.components += ["components/Juggler.js"]
+FINAL_TARGET_FILES.modules.juggler.content += [
+    "content/FrameTree.js",
+    "content/hidden-scrollbars.css",
+    "content/main.js",
+    "content/PageAgent.js",
+    "content/Runtime.js",
+    "content/WorkerMain.js",
+]
+FINAL_TARGET_FILES.modules.juggler.protocol += [
+    "protocol/BrowserHandler.js",
+    "protocol/Dispatcher.js",
+    "protocol/PageHandler.js",
+    "protocol/PrimitiveTypes.js",
+    "protocol/Protocol.js",
+]
+with Files("**"):
+    BUG_COMPONENT = ("Testing", "Juggler")
+

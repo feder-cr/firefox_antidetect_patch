@@ -1,0 +1,101 @@
+{
+ "modified": [
+  "modules/libpref/moz.build",
+  "toolkit/toolkit.mozbuild"
+ ],
+ "added": {
+  "juggler/ChannelEventSink.sys.mjs": "100644",
+  "juggler/Helper.js": "100644",
+  "juggler/JugglerFrameParent.jsm": "100644",
+  "juggler/JugglerFrameParent.sys.mjs": "100644",
+  "juggler/NetworkObserver.js": "100644",
+  "juggler/SessionRoute.js": "100644",
+  "juggler/SimpleChannel.js": "100644",
+  "juggler/StealthCursor.js": "100644",
+  "juggler/TargetRegistry.js": "100644",
+  "juggler/components/Juggler.js": "100644",
+  "juggler/components/components.conf": "100644",
+  "juggler/components/moz.build": "100644",
+  "juggler/content/FrameTree.js": "100644",
+  "juggler/content/JugglerFrameChild.jsm": "100644",
+  "juggler/content/JugglerFrameChild.sys.mjs": "100644",
+  "juggler/content/PageAgent.js": "100644",
+  "juggler/content/Runtime.js": "100644",
+  "juggler/content/WorkerMain.js": "100644",
+  "juggler/content/hidden-scrollbars.css": "100644",
+  "juggler/content/main.js": "100644",
+  "juggler/moz.build": "100644",
+  "juggler/pipe/components.conf": "100644",
+  "juggler/pipe/moz.build": "100644",
+  "juggler/pipe/nsIRemoteDebuggingPipe.idl": "100644",
+  "juggler/pipe/nsRemoteDebuggingPipe.cpp": "100644",
+  "juggler/pipe/nsRemoteDebuggingPipe.h": "100644",
+  "juggler/protocol/BrowserHandler.js": "100644",
+  "juggler/protocol/Dispatcher.js": "100644",
+  "juggler/protocol/PageHandler.js": "100644",
+  "juggler/protocol/PrimitiveTypes.js": "100644",
+  "juggler/protocol/Protocol.js": "100644",
+  "juggler/screencast/components.conf": "100644",
+  "juggler/screencast/moz.build": "100644",
+  "juggler/screencast/nsIScreencastService.idl": "100644",
+  "juggler/screencast/nsScreencastService.cpp": "100644",
+  "juggler/screencast/nsScreencastService.h": "100644",
+  "juggler/tests/bfcache_reattach.test.mjs": "100644",
+  "juggler/tests/caller_world.test.mjs": "100644",
+  "juggler/tests/crashed_tab_is_closed.test.mjs": "100644",
+  "juggler/tests/frame_tree.test.mjs": "100644",
+  "juggler/tests/input_waits_are_bounded.test.mjs": "100644",
+  "juggler/tests/navigation_abort.test.mjs": "100644",
+  "juggler/tests/not_a_chrome_package.test.mjs": "100644",
+  "juggler/tests/request_body_is_always_read.test.mjs": "100644",
+  "juggler/tests/response_tells_its_security_and_service_worker.test.mjs": "100644",
+  "juggler/tests/runtime_ids_are_unique_per_session.test.mjs": "100644",
+  "juggler/tests/shared_cookies_leave_with_their_owner.test.mjs": "100644",
+  "juggler/tests/simple_channel.test.mjs": "100644",
+  "juggler/tests/worker_debugger_manager_is_a_service.test.mjs": "100644"
+ },
+ "inventory": [
+  {
+   "file": "modules/libpref/moz.build",
+   "category": "build",
+   "feature": "juggler-prefs",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "pref_groups list",
+   "evidence": [
+    "+    \"juggler\","
+   ],
+   "notes": "Registers the 'juggler' pref group, so the juggler.* entries in StaticPrefList.yaml are built into the generated StaticPrefs headers. Pure registration.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "toolkit/toolkit.mozbuild",
+   "category": "build",
+   "feature": "juggler-build",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "if CONFIG[\"ENABLE_WEBDRIVER\"]: DIRS list (hunk header line 152)",
+   "evidence": [
+    "+        \"/juggler\","
+   ],
+   "notes": "Registers the Juggler directory when ENABLE_WEBDRIVER is set. The /juggler directory is our own code and is not in this list; Verified: C:/ff/source/juggler exists (moz.build, TargetRegistry.js, SessionRoute.js, components/).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Verified juggler directory exists."
+   }
+  }
+ ]
+}

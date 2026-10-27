@@ -1,0 +1,149 @@
+{
+ "modified": [
+  "js/xpconnect/src/Sandbox.cpp",
+  "js/xpconnect/src/XPCJSRuntime.cpp",
+  "js/xpconnect/src/xpcprivate.h",
+  "js/xpconnect/wrappers/WrapperFactory.cpp",
+  "js/xpconnect/wrappers/XrayWrapper.cpp",
+  "js/xpconnect/wrappers/XrayWrapper.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "js/xpconnect/src/Sandbox.cpp",
+   "category": "juggler",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 36,
+   "removed": 2,
+   "hunks": 7,
+   "inline_logic_lines": 22,
+   "hookable": "movable",
+   "anchor": "SandboxProxyHandler::getPropertyDescriptorImpl; xpc::CreateSandboxObject; SandboxOptions::Parse",
+   "evidence": [
+    "+  } else if (xpc::IsHybridXrayWrapper(obj)) {",
+    "+  if (options.hybridXrays &&",
+    "+        primaryLocale.Truncate(comma);"
+   ],
+   "notes": "Support for Juggler's caller world only (the hybridXrays sandbox option, which only Juggler passes); the page-visible effect lives in WrapperFactory.cpp (spoof). Movable parts: the hybridXrays validation (about 7 lines) and the locale block (about 8 lines). The locale block reimplements the primary-tag step (FindChar, Truncate, Trim) instead of calling intl::PrimaryLanguageTag, which BrowsingContext.cpp already uses and which is declared in intl/locale/StealthSessionPrefs.h. Two copies of the same rule can diverge; it should call the helper. Feature field is hybrid-xrays; the locale part is timezone-locale-override. Hunk map: hybrid-xrays = hunks 1 (include), 2 (getPropertyDescriptorImpl), 3 (CreateSandboxObject validation), 5-6 (compartment flag assert and set), 7 (Parse); timezone-locale-override = hunk 4 (locale primary-tag block, about 8 lines). Verified: only Juggler passes hybridXrays (juggler/content/FrameTree.js:753); the duplicated primary-tag block versus intl::PrimaryLanguageTag (intl/locale/StealthSessionPrefs.cpp:41-48) is confirmed identical in behaviour.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added hunk-to-feature map and confirmed the Juggler-only use and the duplicated helper."
+   }
+  },
+  {
+   "file": "js/xpconnect/src/XPCJSRuntime.cpp",
+   "category": "juggler",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "CompartmentPrivate::CompartmentPrivate",
+   "evidence": [
+    "+      hybridXrays(false),"
+   ],
+   "notes": "Initialiser for the new CompartmentPrivate member. It must stay in declaration order (right after wantXrays in xpcprivate.h), or the compiler warns about reordered initialisers.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  },
+  {
+   "file": "js/xpconnect/src/xpcprivate.h",
+   "category": "juggler",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 12,
+   "removed": 1,
+   "hunks": 4,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "SandboxOptions::SandboxOptions (constructor); class SandboxOptions (member); CompartmentPrivate::CanShareCompartmentWith; class CompartmentPrivate (member)",
+   "evidence": [
+    "+    return !wantXrays && !hybridXrays && !isWebExtensionContentScript &&",
+    "+  bool hybridXrays;",
+    "+        hybridXrays(false),"
+   ],
+   "notes": "Declarations for the hybridXrays flag on SandboxOptions and CompartmentPrivate. The one real Mozilla logic change is in CanShareCompartmentWith: a hybrid compartment is never shared. Comments refer to rule text in XrayWrapper.h.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  },
+  {
+   "file": "js/xpconnect/wrappers/WrapperFactory.cpp",
+   "category": "spoof",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 135,
+   "removed": 8,
+   "hunks": 6,
+   "inline_logic_lines": 80,
+   "hookable": "hard",
+   "anchor": "DEBUG_CheckUnwrapSafety; SelectHybridWrapper (new, before WrapperFactory::Rewrap); CallerObjectWrapper::getPrototype / getPrototypeIfOrdinary (new); WrapperFactory::Rewrap",
+   "evidence": [
+    "+  bool targetHybrid = targetCompartmentPrivate->hybridXrays;",
+    "-           (!targetSubsumesOrigin || (!originCompartmentPrivate->wantXrays &&",
+    "+  else if (originCompartmentPrivate->hybridXrays && !targetHybrid &&"
+   ],
+   "notes": "Page-observable: an object the caller's world hands to the page keeps its identity, but its standard prototypes are the page's own (instanceof Array holds, constructor is the page's Function). The new CallerObjectWrapper class (about 60 lines) and CallerIntrinsicKey could move to our own file behind a declaration. Hard because Rewrap's own predicates are edited in place: wantXrays is replaced by originForcesXrays / targetForcesXrays in three places (the cross-origin condition, the web-objects condition and sameOriginXrays), plus a hybridXrays term in DEBUG_CheckUnwrapSafety and the wrapper choice is branched. Those edits must stay in the Mozilla function. Category is spoof because the page reads these objects; the caller side is juggler.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Corrected the count of edited wantXrays conditions in notes from four to three (plus the debug check)."
+   }
+  },
+  {
+   "file": "js/xpconnect/wrappers/XrayWrapper.cpp",
+   "category": "juggler",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 458,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 370,
+   "hookable": "movable",
+   "anchor": "new code after XrayWrapper<Base,Traits>::getPropertyKeys: IsHybridXrayWrapper, HybridXrayWrapper<Traits> methods, IsStandardLevel, NativeOwn, ChainLookup, ContentLookup, HybridXrayGetBareName, ContentGet",
+   "evidence": [
+    "+bool IsHybridXrayWrapper(JSObject* obj) {",
+    "+static bool ChainLookup(JSContext* cx, HandleObject wrapper, HandleId id,",
+    "+template class HybridXrayDOM;"
+   ],
+   "notes": "Single pure addition of about 460 lines in one place, with no edits to existing Mozilla code, so it moves to our own file. Access needed: IsTypedArrayKey is file-local (inline, XrayWrapper.cpp:77), so it must be exposed first. ensureHolder (XrayWrapper.h:102), getProtoKey (:266) and isPrototype (:271) are already public members, so they need no change (the first pass said they must be made reachable: refuted). The page's chain is walked in ChainLookup: a scripted Proxy in the page's prototype chain has its traps run (stated price, per the header comment). Not reached by page code: the view is for the caller's world only.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Refuted the claim that ensureHolder/getProtoKey/isPrototype must be made reachable; they are already public."
+   }
+  },
+  {
+   "file": "js/xpconnect/wrappers/XrayWrapper.h",
+   "category": "juggler",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 131,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 20,
+   "hookable": "movable",
+   "anchor": "class XrayWrapper (new protected constructor); new class HybridXrayWrapper; free functions IsHybridXrayWrapper and HybridXrayGetBareName (declarations)",
+   "evidence": [
+    "+  constexpr XrayWrapper(unsigned flags, bool aHasPrototype)",
+    "+class HybridXrayWrapper",
+    "+bool IsHybridXrayWrapper(JSObject* obj);"
+   ],
+   "notes": "Only the protected constructor added to XrayWrapper must stay in this Mozilla header. The new class declarations and the design comment (about 70 lines of comment, which states the name rule) could move to our own header included from here. The hunk adds a bare 'public:' followed by a blank line (cosmetic).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  }
+ ]
+}

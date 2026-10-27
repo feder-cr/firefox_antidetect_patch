@@ -1,0 +1,53 @@
+{
+ "modified": [
+  "docshell/base/nsDocShell.h",
+  "docshell/base/nsIDocShell.idl"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "docshell/base/nsDocShell.h",
+   "category": "juggler",
+   "feature": "juggler-docshell-attrs",
+   "prefs": [],
+   "added": 7,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "class nsDocShell (member bit-fields, after mIsExecutingOnLoadHandler)",
+   "evidence": [
+    "+  bool mFileInputInterceptionEnabled : 1;",
+    "+  bool mBypassCSPEnabled : 1;"
+   ],
+   "notes": "Storage for the two Juggler attributes declared in nsIDocShell.idl. These bit-fields must be initialised in the nsDocShell constructor (nsDocShell.cpp), which is what the fix there does; the two files must move together.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  },
+  {
+   "file": "docshell/base/nsIDocShell.idl",
+   "category": "juggler",
+   "feature": "juggler-docshell-attrs",
+   "prefs": [],
+   "added": 15,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "interface nsIDocShell (after synchronizeLayoutHistoryState)",
+   "evidence": [
+    "+  attribute boolean fileInputInterceptionEnabled;",
+    "+  attribute boolean bypassCSPEnabled;"
+   ],
+   "notes": "Two attribute declarations, the rest is comment. The comment says overrideHasFocus, forceActiveState, disallowBFCache, languageOverride, overrideTimezone and overrideLocale are gone; grep of C:/ff/source finds no declaration of any of them in this file, so the comment matches the tree. The comment names the readers (HTMLInputElement for the file picker, CSP_IsBypassedFor for CSP); those readers are not in this group and were not checked. The comment also points to dom/base/StealthSessionDeclaration.h, which is ours. Verified readers: HTMLInputElement.cpp:1018 calls GetFileInputInterceptionEnabled and nsCSPUtils.cpp:141 calls GetBypassCSPEnabled (both confirmed); the removed attributes named in the comment are absent from nsIDocShell.idl and nsDocShell.h (comment lines 690-696 only).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Confirmed the two readers the first pass left unchecked."
+   }
+  }
+ ]
+}

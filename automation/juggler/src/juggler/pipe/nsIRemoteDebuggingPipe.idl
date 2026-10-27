@@ -1,0 +1,24 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+[scriptable, uuid(7910c231-971a-4653-abdc-a8599a986c4c)]
+interface nsIRemoteDebuggingPipeClient : nsISupports
+{
+  void receiveMessage(in AString message);
+  void disconnected();
+};
+
+[scriptable, uuid(b7bfb66b-fd46-4aa2-b4ad-396177186d94)]
+interface nsIRemoteDebuggingPipe : nsISupports
+{
+  void init(in nsIRemoteDebuggingPipeClient client);
+  void sendMessage(in AString message);
+  void stop();
+  // True between init() and stop(): an automation client is attached. Read by
+  // nsCertOverrideService the way it reads a running Marionette or Remote
+  // Agent, so a client can turn on ignoreHTTPSErrors for its own context.
+  readonly attribute boolean connected;
+};

@@ -1,0 +1,79 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsIDocShell;
+
+/**
+ * Receives the frames of one screencast session. Implemented in JavaScript
+ * by the page target; every call arrives on the main thread.
+ */
+[scriptable, uuid(60131c29-8447-4192-aa81-ee80148d5934)]
+interface nsIScreencastServiceClient : nsISupports
+{
+  /**
+   * One JPEG frame, base64 encoded. deviceWidth/deviceHeight are the size of
+   * the captured area BEFORE the scale-to-fit, in device pixels.
+   */
+  void screencastFrame(in AString frame, in uint32_t deviceWidth, in uint32_t deviceHeight);
+  void screencastStopped();
+};
+
+/**
+ * Live JPEG frames of a browser WINDOW, delivered over the protocol.
+ *
+ * This is the JPEG half of Playwright's Juggler screencast, rebuilt on the
+ * capture module Firefox itself uses for screen sharing (DesktopCaptureImpl)
+ * instead of Playwright's private extension of it (VideoCaptureModuleEx),
+ * which this tree never carried. The video-file half (VP8/WebM) is not here:
+ * nothing in this product records videos.
+ *
+ * What is captured is the platform WINDOW, the same pixels a person sitting
+ * at the machine sees, and the page's content process is never involved: the
+ * capture runs in the parent process, on a dedicated thread, through the
+ * operating system's window capture. Nothing is injected into the page, no
+ * script runs in it, and the content process is not told any of this is
+ * happening.
+ *
+ * offsetTop crops the browser chrome off the top of every frame, which is
+ * what Playwright wanted because it was recording the PAGE. Passing
+ * fullWindow keeps the whole window instead - tabs, address bar, and the
+ * chrome-side pointer overlay, which lives in the chrome document and is
+ * therefore absent from every page screenshot by construction.
+ *
+ * Headless builds have no native window to capture and are refused with
+ * NS_ERROR_NOT_AVAILABLE rather than served a blank stream.
+ */
+[scriptable, uuid(8b0e8994-eeae-4736-ab16-07a4f3022d93)]
+interface nsIScreencastService : nsISupports
+{
+  /**
+   * Starts capturing the window that hosts docShell and returns the session
+   * id.
+   *
+   * width/height bound the frame size: frames are scaled down to fit, never
+   * up. quality is the JPEG quality, 1-100. viewportWidth/Height, when
+   * non-zero, clamp the captured area to the content viewport. offsetTop is
+   * how many device pixels of chrome to drop from the top, and is IGNORED
+   * when fullWindow is true. fps is the capture rate.
+   *
+   * One session per window: a second start on the same window fails with
+   * NS_ERROR_ALREADY_INITIALIZED, because the capture module holds one sink.
+   */
+  AString startScreencast(in nsIScreencastServiceClient client,
+                          in nsIDocShell docShell,
+                          in uint32_t width, in uint32_t height,
+                          in uint32_t quality,
+                          in uint32_t viewportWidth, in uint32_t viewportHeight,
+                          in uint32_t offsetTop,
+                          in boolean fullWindow,
+                          in uint32_t fps);
+  void stopScreencast(in AString sessionId);
+  /**
+   * Flow control: at most one frame is in flight until the client
+   * acknowledges it. A slow client sees fewer frames, never a growing queue.
+   */
+  void screencastFrameAck(in AString sessionId);
+};

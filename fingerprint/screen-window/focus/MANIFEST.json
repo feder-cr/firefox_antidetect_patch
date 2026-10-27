@@ -1,0 +1,35 @@
+{
+ "modified": [
+  "xpfe/appshell/AppWindow.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "xpfe/appshell/AppWindow.cpp",
+   "category": "spoof",
+   "feature": "focus-ignore-os-deactivation",
+   "prefs": [
+    "zoom.stealth.focus.ignore_os_deactivation"
+   ],
+   "added": 30,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 6,
+   "hookable": "already-hook",
+   "anchor": "AppWindow::WindowActivated (hunk 2, line 2746); AppWindow::WindowDeactivated (hunk 3, line 2757); hunk 1 is an include",
+   "evidence": [
+    "+        if (StaticPrefs::zoom_stealth_focus_ignore_os_deactivation()) {",
+    "+            fm->WindowLowered(active, nsFocusManager::GenerateFocusActionId());",
+    "+    return;"
+   ],
+   "notes": "The window keeps focus when the OS takes it away, so document.hasFocus() stays true (page-observable, hence spoof). WindowDeactivated now returns early under the pref, so Mozilla's deactivation body is skipped. The lowering block in WindowActivated (4 logic lines) could move to our own file. Pref accessor needs the pref declared in StaticPrefList (not in this list). Verified: zoom.stealth.focus.ignore_os_deactivation is declared at modules/libpref/init/StaticPrefList.yaml:21567.",
+   "verifier": {
+    "changed": [
+     "evidence",
+     "notes"
+    ],
+    "why": "Evidence line 2 did not match the diff verbatim (indentation); replaced with the exact line."
+   }
+  }
+ ]
+}

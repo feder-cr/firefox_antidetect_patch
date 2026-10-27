@@ -1,0 +1,67 @@
+{
+ "modified": [
+  "dom/media/webrtc/transport/nr_socket_prsock.cpp",
+  "netwerk/base/nsUDPSocket.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/media/webrtc/transport/nr_socket_prsock.cpp",
+   "category": "spoof",
+   "feature": "proxy-udp-egress",
+   "prefs": [
+    "zoom.stealth.webrtc.no_direct_udp"
+   ],
+   "added": 77,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 43,
+   "hookable": "movable",
+   "anchor": "new static StealthUscitaUdpDirettaVietata (before NrSocket::sendto); hooks in NrSocket::sendto and NrUdpSocketIpc::sendto",
+   "evidence": [
+    "+static bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {",
+    "+  if (StealthUscitaUdpDirettaVietata(to)) {",
+    "+    ABORT(R_REJECTED);"
+   ],
+   "notes": "About 36 lines of address-range decision logic sit inside the Mozilla file, plus two 3-4 line hooks. The function can move to nr_stealth_bridge.cpp behind one call. Pref zoom.stealth.webrtc.no_direct_udp defined at StaticPrefList.yaml:21539. IPv4 0.0.0.0 passes (if (a == 0) return false), but IPv6 unspecified '::' is refused: all-zero bytes leave loopback=true, b[15]!=1, so the function returns true (CONFIRMED from the diff logic); real-world impact unverified. NrUdpSocketIpc::sendto returns R_REJECTED with no log line, unlike the NrSocket path. Merge note: upstream's comment '// This should be called on the STS thread.' now sits above the new block comment/function instead of above NrSocket::sendto.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Verified IPv6 :: logic from the diff; added the displaced upstream comment as a merge note."
+   }
+  },
+  {
+   "file": "netwerk/base/nsUDPSocket.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [
+    "network.proxy.socks_remote_udp",
+    "network.proxy.type",
+    "network.proxy.socks_version",
+    "network.proxy.socks",
+    "network.proxy.socks_port",
+    "network.proxy.socks_username",
+    "network.proxy.socks_password"
+   ],
+   "added": 39,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 26,
+   "hookable": "movable",
+   "anchor": "nsUDPSocket::InitWithAddress (block before the FUZZING check)",
+   "evidence": [
+    "+  if (mozilla::Preferences::GetBool(\"network.proxy.socks_remote_udp\", false)) {",
+    "+        nsresult sr = mozilla::net::nsSOCKSUDPIOLayerAddToSocket(",
+    "+            mFD, host.get(), port, user.get(), pass.get());"
+   ],
+   "notes": "With SOCKS5 and network.proxy.socks_remote_udp set, pushes the SOCKS UDP layer (netwerk/socket/nsSOCKSUDPIOLayer.h:50, implemented at nsSOCKSUDPIOLayer.cpp:351) onto the new fd so QUIC/HTTP3 traffic goes through the proxy. network.proxy.socks_remote_udp is not defined in modules/libpref/init (read by string with default false). RISK CONFIRMED (from diff): if the layer attach fails the code logs 'falling back to direct UDP' and continues with direct UDP, and the block runs for every nsUDPSocket::InitWithAddress call with no check of the destination or purpose; whether callers avoid that path is unverified. The two Stealthfox comment blocks repeat each other. The block (about 26 logic lines) can move behind one call.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added confirmed facts: pref not predefined, hook applies to every UDP socket; fallback behaviour confirmed from the diff."
+   }
+  }
+ ]
+}

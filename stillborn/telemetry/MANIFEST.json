@@ -1,0 +1,60 @@
+{
+ "modified": [
+  "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
+  "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
+   "category": "stillborn",
+   "feature": "pingsender-session-route",
+   "prefs": [],
+   "added": 72,
+   "removed": 14,
+   "hunks": 4,
+   "inline_logic_lines": 27,
+   "hookable": "movable",
+   "anchor": "sendStandalonePing (module-level, hunk 2); TelemetrySendImpl.runPingSender (hunks 3 and 4); new module-level function sessionRoute() at end of file",
+   "evidence": [
+    "-    if (lazy.NimbusFeatures.pingsender.getVariable(\"backgroundTaskEnabled\")) {",
+    "+    let params = [\"--backgroundtask\", \"pingsender\"];",
+    "+    Services.env.set(PINGSENDER_ROUTE_ENV, JSON.stringify(sessionRoute()));"
+   ],
+   "notes": "Category is stillborn because it reroutes Firefox's own telemetry pings (rule: reroute or silence of phone-home traffic). The standalone pingsender executable path and the Nimbus gate are removed, so the firefox --backgroundtask path is always used. Pings now carry the session proxy from Juggler's TargetRegistry and the profile prefs.js path, passed through an environment variable set around runAsync. Move sessionRoute and the env handling into our own file, keeping a one-line hook in runPingSender. The removed NimbusFeatures import is also a change to Mozilla's lazy import list. Verified: SessionRoute.js exports newProxyInfoFor (line 70), proxyForHost (93), proxyAuthCallbacks (110); TargetRegistry.js:392 defines proxyRecordFor. The added code in this file reads no pref by name; network.proxy.* and zoom.stealth.dns.* are only named in a comment and take effect through the prefs.js the child reads.",
+   "verifier": {
+    "changed": [
+     "category",
+     "notes"
+    ],
+    "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
+   }
+  },
+  {
+   "file": "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs",
+   "category": "stillborn",
+   "feature": "pingsender-session-route",
+   "prefs": [],
+   "added": 70,
+   "removed": 7,
+   "hunks": 3,
+   "inline_logic_lines": 36,
+   "hookable": "movable",
+   "anchor": "runBackgroundTask (export async function, hunk 1); sendPing (module-level async function, hunks 2 and 3); new takeSessionRoute() at file level",
+   "evidence": [
+    "+  const proxy = takeSessionRoute();",
+    "+  Services.prefs.readUserPrefsFromFile(prefsFile);",
+    "+    .registerChannelFilter(",
+    "-  await sendStandalonePing(endpoint, json, {"
+   ],
+   "notes": "takeSessionRoute reads the env variable, reads the session prefs.js into this empty profile, and registers a proxy channel filter at priority 0. It refuses to send when the env variable is missing (no fallback), which is the intended fail-closed behaviour. It depends on resource://gre/modules/juggler/SessionRoute.js, which is not in this list. The largest logic block in this group: move takeSessionRoute and the filter into our own file. Clears the env variable after reading it, so child processes do not inherit the proxy password. Verified: SessionRoute.js exports newProxyInfoFor (line 70), proxyForHost (93), proxyAuthCallbacks (110); TargetRegistry.js:392 defines proxyRecordFor. The added code in this file reads no pref by name; network.proxy.* and zoom.stealth.dns.* are only named in a comment and take effect through the prefs.js the child reads.",
+   "verifier": {
+    "changed": [
+     "category",
+     "notes"
+    ],
+    "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
+   }
+  }
+ ]
+}

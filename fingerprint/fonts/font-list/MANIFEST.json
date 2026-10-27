@@ -1,0 +1,137 @@
+{
+ "modified": [
+  "gfx/thebes/CoreTextFontList.cpp",
+  "gfx/thebes/gfxDWriteFontList.cpp",
+  "gfx/thebes/gfxFcPlatformFontList.cpp",
+  "gfx/thebes/gfxPlatformFontList.cpp",
+  "gfx/thebes/gfxPlatformFontList.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "gfx/thebes/CoreTextFontList.cpp",
+   "category": "spoof",
+   "feature": "font-list-bundle-only",
+   "prefs": [],
+   "added": 126,
+   "removed": 1,
+   "hunks": 7,
+   "inline_logic_lines": 67,
+   "hookable": "movable",
+   "anchor": "CTFontEntry::ReadCMAP; CoreTextFontList::AddFamily; CoreTextFontList::InitSharedFontListForPlatform; CoreTextFontList::CreateFontEntry; CoreTextFontList::GetFacesInitDataForFamily; CoreTextFontList::GetDefaultFontForPlatform",
+   "evidence": [
+    "+  if (mStealthBundleOnly && !mBundledFamilies.Contains(aFamilyName)) {",
+    "+    FontFamily f = FindFamily(aFontVisibilityProvider, \"Segoe UI\"_ns);",
+    "-    if (!IsUserFont() && mShmemFace && mShmemFamily) {"
+   ],
+   "notes": "Bundle-only on macOS: AddFamily drops every family not in the bundle (CoreText merges host and bundled fonts into one enumeration, so the filter is per family here); InitSharedFontListForPlatform builds the family list from the manifest; CreateFontEntry has a ~47-line branch that wraps the bundle bytes with CFDataCreateWithBytesNoCopy and picks the face by PostScript name. GetDefaultFontForPlatform returns 'Segoe UI' instead of the macOS UI font. ReadCMAP now uses ShouldPublishCharacterMap(). Movable: the CreateFontEntry branch can move into StealthBundleFontList behind a short hook. Not compiled or tested on macOS in this inventory.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxDWriteFontList.cpp",
+   "category": "spoof",
+   "feature": "font-list-bundle-only",
+   "prefs": [],
+   "added": 161,
+   "removed": 52,
+   "hunks": 13,
+   "inline_logic_lines": 75,
+   "hookable": "movable",
+   "anchor": "gfxDWriteFontEntry::ReadCMAP; gfxDWriteFontEntry::CreateFontInstance; gfxDWriteFontEntry::CreateFontFace; gfxDWriteFontList::CreateFontEntry; gfxDWriteFontList::GetFacesInitDataForFamily; gfxDWriteFontList::ReadFaceNames; gfxDWriteFontList::ReadFaceNamesForFamily; gfxDWriteFontList::InitSharedFontListForPlatform; gfxDWriteFontList::InitFontListForPlatform",
+   "evidence": [
+    "+  if (mStealthBundleOnly) {",
+    "-      AutoTArray<nsCString, 4> otherFamilyNames;",
+    "+    entry->mBundleFaceIndex = aFace->mIndex;"
+   ],
+   "notes": "Primary feature is bundle-only: host collection enumeration is skipped, the family list is the manifest, and GetDirectWriteSubstitutes/GetFontSubstitutes are skipped when the manifest has aliases. CreateFontEntry gets a ~60-line bundle branch (borrowed bytes, face index, sets mShmemFace through InitializeFrom). Other features in this file: bundle file path (mBundleFilePath passed to UnscaledFontDWrite) and a refactor that moves the name-table loop into gfxPlatformFontList::RecordFaceNamesFromTable. The comment cites [B317] for bundle name tables. One added comment mentions gfx.windows-font-substitutes.always (default false, modules/libpref/init/StaticPrefList.yaml:7821). The added code does not read it, but unchanged upstream code in this file does (gfxDWriteFontList.cpp:2180 and :2236, StaticPrefs::gfx_windows_font_substitutes_always_AtStartup). Verifier: the first-pass claim \"no code reads it\" is refuted. Movable: the bundle branch can move into StealthBundleFontList behind a short hook.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The pref is one comment in the diff (not two) and upstream code in the same file reads it at lines 2180 and 2236."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFcPlatformFontList.cpp",
+   "category": "spoof",
+   "feature": "font-list-bundle-only",
+   "prefs": [
+    "zoom.stealth.text.freetype_hintstyle",
+    "zoom.stealth.text.freetype_antialias"
+   ],
+   "added": 268,
+   "removed": 22,
+   "hunks": 17,
+   "inline_logic_lines": 86,
+   "hookable": "movable",
+   "anchor": "gfxFontconfigFontEntry::gfxFontconfigFontEntry (data-font constructor); gfxFontconfigFontEntry::GetHBFace; gfxFontconfigFontEntry::ReadCMAP; gfxFontconfigFontEntry::HasFontTableInternal; gfxFontconfigFontEntry::GetFontTableInternal; gfxFontconfigFontEntry::CreateFontInstance; gfxFcPlatformFontList::AddPatternToFontList; gfxFcPlatformFontList::InitFontListForPlatform; gfxFcPlatformFontList::InitSharedFontListForPlatform; gfxFcPlatformFontList::CreateFontEntry; gfxFcPlatformFontList::FindAndAddFamiliesLocked; gfxFcPlatformFontList::AddGenericFonts",
+   "evidence": [
+    "+        StaticPrefs::zoom_stealth_text_freetype_hintstyle();",
+    "-  if (!face->GetData()) {",
+    "+  if (aFile && *aFile) {"
+   ],
+   "notes": "Primary feature is bundle-only on Linux: host fontconfig enumeration is skipped, bundle faces are built through FTUserFontData with the Prestito::Si borrow, FindAndAddFamiliesLocked delegates to the base class (no host fontconfig name resolution), and AddGenericFonts is forced onto the base path. Other features in this file: (1) font-bundle-file-path, the FC_FILE/FC_INDEX that CreatePatternForFace strips are re-added for bundle faces, and CreateFontInstance chooses the file by path instead of GetData(); (2) font-ttc-face-index, face index passed to HasFontTable/GetFontTable; (3) text-freetype-hinting, zoom.stealth.text.freetype_hintstyle and zoom.stealth.text.freetype_antialias are written into renderPattern, read by both PrepareFontOptions and the WebRender options (the comment says both must agree). Both pref definitions confirmed in modules/libpref/init/StaticPrefList.yaml:21732 and :21737 (RelaxedAtomicInt32, default -1, so the override is off unless declared). The gfx.bundled-fonts.activate read is upstream context, not a change. Movable: the bundle CreateFontEntry branch (~80 lines) can move into StealthBundleFontList.",
+   "verifier": {
+    "changed": [
+     "prefs",
+     "notes"
+    ],
+    "why": "The real pref names use an underscore (freetype_hintstyle, freetype_antialias), not a dot; checked in StaticPrefList.yaml."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxPlatformFontList.cpp",
+   "category": "spoof",
+   "feature": "font-list-bundle-only",
+   "prefs": [
+    "zoom.stealth.fonts.generics",
+    "gfx.font_rendering.fallback.async"
+   ],
+   "added": 395,
+   "removed": 24,
+   "hunks": 15,
+   "inline_logic_lines": 147,
+   "hookable": "movable",
+   "anchor": "gfxPlatformFontList::MemoryReporter::CollectReports; gfxPlatformFontList::gfxPlatformFontList (constructor); gfxPlatformFontList::RecordFaceNamesFromTable (new); gfxPlatformFontList::ReadFaceNamesForFamily (new); gfxPlatformFontList::ReadFaceNames (new); gfxPlatformFontList::CommonFontFallback; gfxPlatformFontList::GlobalFontFallback; gfxPlatformFontList::FindAndAddFamiliesLocked; gfxPlatformFontList::MayDeferCmapLoading (new); gfxPlatformFontList::InitializeFamily; GetSystemUIFontFamilies; StealthDeclaredGenericFont (new static); gfxPlatformFontList::ResolveGenericFontNames; gfxPlatformFontList::ResolveEmojiFontNames",
+   "evidence": [
+    "+  mStealthBundleOnly = true;",
+    "+        if (!family.IsFullyInitialized() && MayDeferCmapLoading()) {",
+    "+  aFamilies.AppendElement(\"Segoe UI\"_ns);"
+   ],
+   "notes": "Many features in one file. Primary: bundle-only (constructor sets mStealthBundleOnly = true; the memory reporter adds the bundle file sizes). Also: font-src-local-names (RecordFaceNamesFromTable moved here from DirectWrite, ReadFaceNamesForFamily and ReadFaceNames for bundle faces, per [B317]); font-fallback-bundle (CommonFontFallback takes names from the manifest and, for the classification, reuses the upstream symbol test; GlobalFontFallback always uses the cmap route under bundle-only; MayDeferCmapLoading is the shared predicate); font-aliases-manifest (FindAndAddFamiliesLocked applies the manifest alias table first); font-generic-families (StealthDeclaredGenericFont reads zoom.stealth.fonts.generics; ResolveEmojiFontNames prepends Segoe UI Emoji); InitializeFamily now loads missing cmaps outside its else branch, which changes upstream control flow. Note: GetSystemUIFontFamilies gets an early return, so the upstream body after it is unreachable and should be deleted when this moves. The pref gfx.font_rendering.fallback.async is read by upstream code through MayDeferCmapLoading. Movable: most blocks can move into StealthBundleFontList and StealthDeclaredGenericFont into our file, but the InitializeFamily restructuring has to stay in place. Verifier: zoom.stealth.fonts.generics confirmed at StaticPrefList.yaml:21906 (DataMutexString, default empty); gfx.font_rendering.fallback.async at StaticPrefList.yaml:7886 (default true) is read by the ADDED MayDeferCmapLoading body, so it stays in prefs. The comment above StealthDeclaredGenericFont still says an empty pref \"falls through to the compiled table below\", but a later comment in ResolveGenericFontNames says that table was deleted: stale comment, and the function returns false (no generic prepended) when the pref is empty.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added pref-definition confirmation and a stale-comment finding."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxPlatformFontList.h",
+   "category": "spoof",
+   "feature": "font-list-bundle-only",
+   "prefs": [],
+   "added": 45,
+   "removed": 4,
+   "hunks": 5,
+   "inline_logic_lines": 10,
+   "hookable": "movable",
+   "anchor": "gfxPlatformFontList class: MayDeferCmapLoading and StealthBundleOnly declarations; ReadFaceNames and ReadFaceNamesForFamily (now real virtuals, previously no-ops); RecordFaceNamesFromTable declaration; mStealthBundleOnly member",
+   "evidence": [
+    "+  bool StealthBundleOnly() const { return mStealthBundleOnly; }",
+    "+  bool mStealthBundleOnly = false;",
+    "-                             nsCString& aPSName, nsCString& aFullName) {"
+   ],
+   "notes": "ReadFaceNames and ReadFaceNamesForFamily change from empty inline stubs to declarations with a real base implementation, so the DirectWrite override delegates to it. This changes the upstream virtual contract. The member is set in the constructor (gfxPlatformFontList.cpp). One added blank line (after the FontWhitelistPrefChanged region) is cosmetic. Movable in the sense that the inline accessor and the new declarations are small; the virtual-contract change itself is upstream API.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The diff adds one stray blank line outside comments, not two."
+   }
+  }
+ ]
+}

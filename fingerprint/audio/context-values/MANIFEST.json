@@ -1,0 +1,32 @@
+{
+ "modified": [
+  "dom/media/webaudio/AudioContext.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/media/webaudio/AudioContext.cpp",
+   "category": "spoof",
+   "feature": "audio-context-values",
+   "prefs": [
+    "zoom.stealth.audio.output_latency_ms",
+    "zoom.stealth.audio.max_channel_count"
+   ],
+   "added": 13,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "AudioContext::OutputLatency and AudioContext::MaxChannelCount",
+   "evidence": [
+    "+    int32_t latency_ms = mozilla::StaticPrefs::zoom_stealth_audio_output_latency_ms();",
+    "+    int32_t ch = mozilla::StaticPrefs::zoom_stealth_audio_max_channel_count();"
+   ],
+   "notes": "Two values under one feature name: outputLatency and maxChannelCount. Each returns the pref when it is > 0, before the resistFingerprinting branch. The include hunk adds two stray blank lines after StaticPrefs_zoom.h (cosmetic).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  }
+ ]
+}

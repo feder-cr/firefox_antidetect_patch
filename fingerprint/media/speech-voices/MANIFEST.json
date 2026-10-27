@@ -1,0 +1,59 @@
+{
+ "modified": [
+  "dom/media/webspeech/synth/SpeechSynthesis.cpp",
+  "dom/media/webspeech/synth/SpeechSynthesisVoice.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/media/webspeech/synth/SpeechSynthesis.cpp",
+   "category": "spoof",
+   "feature": "speech-voices-declared",
+   "prefs": [
+    "zoom.stealth.voices.list"
+   ],
+   "added": 40,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 24,
+   "hookable": "movable",
+   "anchor": "SpeechSynthesis::GetVoices (block before nsSynthVoiceRegistry::GetVoiceCount)",
+   "evidence": [
+    "+    if (!voicesPref.IsEmpty()) {",
+    "+        aResult.AppendElement(voice);",
+    "+  // Stealth: if zoom.stealth.voices.list pref is set, fabricate voices from"
+   ],
+   "notes": "When the pref is non-empty the OS voice registry is never consulted, so the list replaces the real voices instead of overriding them. The NAME|LANG|D|L parsing and the stealth-voice: URI construction live in Mozilla code; move them to our file behind one call. Synthetic voices are never registered with the OS. [verified: CONFIRMED functional gap, not a crash: SpeakUtterance passes voice->GetVoiceURI() (nsSynthVoiceRegistry.cpp:633) to FindBestMatch, which looks it up in mUriVoiceMap (:574-580) and, finding nothing, falls back to a voice chosen by language or default (:582-622). The utterance is spoken with an OS voice other than the one the page selected.]",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Voice-resolution risk checked in nsSynthVoiceRegistry.cpp: speaking with a stealth voice does not fail but silently falls back to a language/default voice."
+   }
+  },
+  {
+   "file": "dom/media/webspeech/synth/SpeechSynthesisVoice.cpp",
+   "category": "spoof",
+   "feature": "speech-voices-declared",
+   "prefs": [],
+   "added": 82,
+   "removed": 0,
+   "hunks": 5,
+   "inline_logic_lines": 42,
+   "hookable": "movable",
+   "anchor": "file-scope IsStealthVoiceURI and GetStealthVoiceField (new, top of file); SpeechSynthesisVoice::GetVoiceURI, GetName, GetLang, LocalService, Default",
+   "evidence": [
+    "+static bool IsStealthVoiceURI(const nsAString& aUri) {",
+    "+  if (IsStealthVoiceURI(mUri)) {",
+    "+    aRetval.AssignLiteral(u\"urn:moz-tts:sapi:\");"
+   ],
+   "notes": "The accessors each have a 2-4 line prefix that is already a hook. The parser (about 25 lines) and the GetVoiceURI rewrite (about 8 lines) should move to our file. GetVoiceURI now returns the urn:moz-tts:sapi: scheme on every platform, including Linux and macOS builds, by design (per the comment). The GetVoiceURI comment is a long Italian narrative with measurement dates; translate and trim it, or move it out of the Mozilla file. The comment also names a voice ('Microsoft David') and a product. [verified: the rewritten urn:moz-tts:sapi: string is what SpeakUtterance sends to the parent (nsSynthVoiceRegistry.cpp:633), where FindBestMatch cannot match it in mUriVoiceMap (:574-580) and falls back to a language/default voice.]",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added the verified consequence of the GetVoiceURI rewrite for the speak path."
+   }
+  }
+ ]
+}

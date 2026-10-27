@@ -1,0 +1,150 @@
+{
+ "modified": [
+  "dom/canvas/WebGLContext.cpp",
+  "dom/canvas/WebGLContext.h",
+  "dom/canvas/WebGLShader.cpp",
+  "dom/canvas/WebGLShader.h",
+  "dom/canvas/WebGLShaderValidator.cpp",
+  "dom/canvas/WebGLShaderValidator.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/canvas/WebGLContext.cpp",
+   "category": "spoof",
+   "feature": "webgl-shader-output-language",
+   "prefs": [],
+   "added": 9,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "WebGLContext::GetCompileResult (translatedSource)",
+   "evidence": [
+    "-    ret.translatedSource = ToCString(info->mObjectCode);",
+    "+    const auto& perLaPagina = shader.ObjectCodePerLaPagina();",
+    "+        perLaPagina.empty() ? info->mObjectCode : perLaPagina);"
+   ],
+   "notes": "getTranslatedShaderSource returns the page-language translation when a declared language differs from the context's, and the driver output otherwise (empty string means nothing declared, which is every Windows build). The added comment block is in Italian, while the rest of the tree is English; flag for the maintainer.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/canvas/WebGLContext.h",
+   "category": "spoof",
+   "feature": "webgl-shader-output-language",
+   "prefs": [],
+   "added": 6,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "WebGLContext::CreateShaderValidator (declaration)",
+   "evidence": [
+    "-      GLenum shaderType) const;",
+    "+      GLenum shaderType, bool aPerLaPagina = false) const;"
+   ],
+   "notes": "Adds a defaulted bool flag to choose the page-facing output language. The comment block is in Italian (same flag as in WebGLContext.cpp).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/canvas/WebGLShader.cpp",
+   "category": "spoof",
+   "feature": "webgl-shader-output-language",
+   "prefs": [],
+   "added": 40,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 14,
+   "hookable": "movable",
+   "anchor": "WebGLShader::CompileShader",
+   "evidence": [
+    "+  mObjectCodePerLaPagina.clear();",
+    "+    if (dichiarata && *dichiarata != webgl::ShaderOutputPerIlDriver(gl)) {",
+    "+      const auto perLaPagina = mContext->CreateShaderValidator(mType, true);"
+   ],
+   "notes": "No pref is read in this file's lines; zoom.stealth.webgl.shader_output_language is read indirectly through webgl::StealthDeclaredShaderOutput (WebGLShaderValidator.cpp). When the declared language differs from the driver's, the shader is translated a second time through ANGLE on every compile, so non-Windows builds with the pref set pay for an extra translation per shader. A failed second translation keeps the driver output and emits NS_WARNING. The stored string is cleared before the success check, so a failed compile cannot leave a stale value. The ~14 logic lines can move into a helper in an own file behind a one-line call. Comments are in Italian and one comment carries a warning emoji (U+26D4).",
+   "verifier": {
+    "changed": [
+     "prefs",
+     "notes"
+    ],
+    "why": "The added lines in this file do not name or read any pref; the pref is read only inside StealthDeclaredShaderOutput() in WebGLShaderValidator.cpp."
+   }
+  },
+  {
+   "file": "dom/canvas/WebGLShader.h",
+   "category": "spoof",
+   "feature": "webgl-shader-output-language",
+   "prefs": [],
+   "added": 15,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "class WebGLShader (ObjectCodePerLaPagina accessor, mObjectCodePerLaPagina member)",
+   "evidence": [
+    "+  const std::string& ObjectCodePerLaPagina() const {",
+    "+  std::string mObjectCodePerLaPagina;"
+   ],
+   "notes": "Adds one std::string member per shader, empty on Windows. Comments are in Italian.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/canvas/WebGLShaderValidator.cpp",
+   "category": "spoof",
+   "feature": "webgl-shader-output-language",
+   "prefs": [
+    "zoom.stealth.webgl.shader_output_language"
+   ],
+   "added": 41,
+   "removed": 7,
+   "hunks": 3,
+   "inline_logic_lines": 16,
+   "hookable": "movable",
+   "anchor": "webgl::StealthDeclaredShaderOutput (new, inside namespace webgl), webgl::ShaderOutputPerIlDriver (renamed from static ShaderOutput), WebGLContext::CreateShaderValidator",
+   "evidence": [
+    "-static ShShaderOutput ShaderOutput(gl::GLContext* gl) {",
+    "+ShShaderOutput ShaderOutputPerIlDriver(gl::GLContext* gl) {",
+    "+  auto lock = StaticPrefs::zoom_stealth_webgl_shader_output_language();",
+    "+      (aPerLaPagina && dichiarata) ? *dichiarata"
+   ],
+   "notes": "ShaderOutput lost its static linkage and was renamed; grep of dom/canvas finds no other caller of the old name (only WebGLShader.cpp:132 and this file call the new ones), so the rename is complete. The function also moved from namespace mozilla into mozilla::webgl (the closing brace of namespace webgl moved below it). The pref is read on every CreateShaderValidator call, with no caching. An unknown declared name logs NS_WARNING and falls back to the driver language. The body of StealthDeclaredShaderOutput (about 12 lines: pref read, string comparison) can move to an own file behind a one-line call. Comments are in Italian.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Checked the rename claim: no other caller of the old name exists in dom/canvas; also the function moved from namespace mozilla into mozilla::webgl."
+   }
+  },
+  {
+   "file": "dom/canvas/WebGLShaderValidator.h",
+   "category": "spoof",
+   "feature": "webgl-shader-output-language",
+   "prefs": [],
+   "added": 15,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "namespace mozilla::webgl (ShaderOutputPerIlDriver and StealthDeclaredShaderOutput declarations)",
+   "evidence": [
+    "+ShShaderOutput ShaderOutputPerIlDriver(gl::GLContext* gl);",
+    "+Maybe<ShShaderOutput> StealthDeclaredShaderOutput();"
+   ],
+   "notes": "Declarations only, plus a forward declaration of gl::GLContext and an include of mozilla/Maybe.h. Comments are in Italian.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  }
+ ]
+}

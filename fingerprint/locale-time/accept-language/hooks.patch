@@ -1,0 +1,90 @@
+diff --git a/netwerk/protocol/http/nsHttpHandler.cpp b/netwerk/protocol/http/nsHttpHandler.cpp
+index 0699d970c4d1fdeb054474b57bffa4f945196cec..783e4a6e2ac2f07592182a59b6ec7233712a0c2f 100644
+--- a/netwerk/protocol/http/nsHttpHandler.cpp
++++ b/netwerk/protocol/http/nsHttpHandler.cpp
+@@ -745,6 +745,9 @@ nsresult nsHttpHandler::AddAcceptAndDictionaryHeaders(
+   return rv;
+ }
+ 
++static nsresult PrepareAcceptLanguages(const char* i_AcceptLanguages,
++                                       nsACString& o_AcceptLanguages);
++
+ nsresult nsHttpHandler::AddStandardRequestHeaders(
+     nsHttpRequestHead* request, nsIURI* aURI, bool aIsHTTPS,
+     ExtContentPolicyType aContentPolicyType, bool aShouldResistFingerprinting,
+@@ -783,11 +786,25 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
+   if (NS_FAILED(rv)) return rv;
+ 
+   if (!aLanguageOverride.IsEmpty()) {
++    // STEALTHFOX: the override is a language LIST here, not one tag.
++    // `juggler.locale.override` seeds the BrowsingContext LanguageOverride
++    // field with the same list invisible_core writes to intl.accept_languages
++    // ("it-IT, it, en-US, en"), because navigator.languages is split from it.
++    // Copied verbatim it went out as that raw list, spaces and no q-values, on
++    // every request with a BrowsingContext, while requests without one (worker
++    // fetches, service workers) took the branch below and sent the prepared
++    // form: two different headers in one session, and only the second is what
++    // Firefox sends. The list is prepared here by the same function that
++    // prepares intl.accept_languages, so a list sends exactly what Firefox
++    // sends for it. A single tag ("de-DE") prepares to itself.
+     nsAutoCString acceptLanguage;
+-    acceptLanguage.Assign(aLanguageOverride.get());
+-    rv = request->SetHeader(nsHttp::Accept_Language, acceptLanguage, false,
+-                            nsHttpHeaderArray::eVarietyRequestOverride);
++    rv = PrepareAcceptLanguages(aLanguageOverride.get(), acceptLanguage);
+     if (NS_FAILED(rv)) return rv;
++    if (!acceptLanguage.IsEmpty()) {
++      rv = request->SetHeader(nsHttp::Accept_Language, acceptLanguage, false,
++                              nsHttpHeaderArray::eVarietyRequestOverride);
++      if (NS_FAILED(rv)) return rv;
++    }
+   } else {
+     // Add the "Accept-Language" header.  This header is also exposed to the
+     // service worker.
+diff --git a/netwerk/test/browser/browser_accept_language_override.js b/netwerk/test/browser/browser_accept_language_override.js
+index 68acd49eb93a132e917baca7a5f3fe7bbce1960f..58ee6fea357fa0d72e2d845ca6684a3d4a083fd6 100644
+--- a/netwerk/test/browser/browser_accept_language_override.js
++++ b/netwerk/test/browser/browser_accept_language_override.js
+@@ -134,6 +134,42 @@ add_task(async function test_set_language_override_in_different_contexts() {
+   BrowserTestUtils.removeTab(tab2);
+ });
+ 
++// STEALTHFOX: the override can carry a language list (juggler.locale.override
++// seeds it with the same list as intl.accept_languages). It must go out the
++// way Firefox sends that list from intl.accept_languages, q-values included,
++// not as the raw list.
++add_task(async function test_language_override_list_is_prepared() {
++  const list = "it-IT, it, en-US, en";
++  const tab = BrowserTestUtils.addTab(gBrowser, PAGE_URL);
++  const browser = gBrowser.getBrowserForTab(tab);
++  await BrowserTestUtils.browserLoaded(browser);
++
++  info("The header Firefox sends for the list as intl.accept_languages");
++  await SpecialPowers.pushPrefEnv({ set: [["intl.accept_languages", list]] });
++  const fromPref = await getAcceptLanguageHeader(browser);
++  await SpecialPowers.popPrefEnv();
++  is(
++    fromPref,
++    "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
++    "intl.accept_languages is prepared with q-values"
++  );
++
++  info("The same list as a language override");
++  browser.browsingContext.languageOverride = list;
++  is(
++    await getAcceptLanguageHeader(browser),
++    fromPref,
++    '"Accept-Language" from an override list is what the pref would send'
++  );
++  const languages = await SpecialPowers.spawn(browser, [], () =>
++    content.navigator.languages.join("|")
++  );
++  is(languages, "it-IT|it|en-US|en", "navigator.languages is the list");
++
++  browser.browsingContext.languageOverride = "";
++  BrowserTestUtils.removeTab(tab);
++});
++
+ function getLanguageToOverride(defaultLanguage) {
+   return languages.find(lang => lang !== defaultLanguage);
+ }

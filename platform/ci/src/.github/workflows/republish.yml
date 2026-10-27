@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# republish.yml — re-gate + publish an EXISTING build's artifacts WITHOUT rebuilding.
+#
+# When a release run's builds all SUCCEEDED but the publish was blocked by a
+# GATE/TEST bug (not a binary defect), rebuilding every target (hours) just to
+# re-run a few-minute test is wasteful. Erano cinque fino a firefox-20, sono tre
+# dal 21: il numero non e' scritto qui apposta, la matrice sotto e' l'autorita'.
+#
+# ⛔ E il caso vero e' successo il 2026-08-26: le tre build di firefox-21 erano
+# verdi e i tre job `gate` sono usciti rossi per un comando di protocollo tolto
+# per sbaglio. Questo workflow sarebbe stato la via d'uscita - e non avrebbe
+# funzionato, perche' il suo assert pretendeva ancora i due archivi macOS che una
+# release a tre gambe non produce. La via d'uscita era rotta nel momento in cui
+# serviva, e nessuno poteva saperlo: questo workflow si lancia a mano. This workflow downloads the binary artifacts
+# from a prior `release` run, re-runs the (now-fixed) drive gate + hidden-desktop/WebGL guards
+# against those exact byte-identical binaries on their native runners, and — only if
+# green — publishes the DRAFT release. Same publish logic as release.yml (draft, notes,
+# checksums, source-commit) so the human still runs the realness gate before un-drafting.
+#
+# Inputs:
+#   build_run_id : the `release` run whose `asset-*` + `source-commit` artifacts to reuse
+#                  (must be within the 7-day artifact retention window).
+#   release_tag  : tag to publish the draft under (e.g. firefox-11).
+# ─────────────────────────────────────────────────────────────────────────────
+name: republish
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'release run id whose built artifacts to reuse (no rebuild)'
+        required: true
+      release_tag:
+        description: 'release tag to publish the draft under (e.g. firefox-11)'
+        required: true
+      wrapper_ref:
+        description: 'invisible_playwright ref the gate drives with (as in release.yml)'
+        default: 'main'
+      core_ref:
+        description: 'invisible_core ref the gate installs (as in release.yml)'
+        default: 'main'
+
+env:
+  SOURCE_REPO: feder-cr/firefox_antidetect_patch
+
+jobs:
+  # Always a release, so the plan only checks the tag and names what comes out
+  # of it (scripts/release_plan.py, the same plan release.yml runs): a bad tag
+  # is refused before the gates instead of at the seal after them.
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      num: ${{ steps.plan.outputs.num }}
+      prevtag: ${{ steps.plan.outputs.prevtag }}
+    steps:
+      - name: Checkout (for scripts/release_plan.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { fetch-depth: 1 }
+      - name: The plan refuses what it must
+        run: python3 scripts/test_release_plan.py
+      - name: Plan
+        id: plan
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -e
+          python3 scripts/release_plan.py --event workflow_dispatch --kind release \
+            --release-tag "$RELEASE_TAG" > plan.txt
+          cat plan.txt
+          cat plan.txt >> "$GITHUB_OUTPUT"
+
+  # The same gate and publish release.yml runs (gate.yml, publish.yml), on the
+  # archives of the build run named above.
+  gate:
+    needs: plan
+    permissions: { actions: read, contents: read }
+    uses: ./.github/workflows/gate.yml
+    with:
+      build_run_id: ${{ inputs.build_run_id }}
+      seal_tag: ${{ needs.plan.outputs.tag }}
+      wrapper_ref: ${{ inputs.wrapper_ref }}
+      core_ref: ${{ inputs.core_ref }}
+
+  publish:
+    needs: [plan, gate]
+    permissions: { actions: read, contents: write }
+    uses: ./.github/workflows/publish.yml
+    with:
+      build_run_id: ${{ inputs.build_run_id }}
+      tag: ${{ needs.plan.outputs.tag }}
+      num: ${{ needs.plan.outputs.num }}
+      prevtag: ${{ needs.plan.outputs.prevtag }}
+      wrapper_ref: ${{ inputs.wrapper_ref }}

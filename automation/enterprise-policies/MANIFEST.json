@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "toolkit/components/enterprisepolicies/EnterprisePoliciesParent.sys.mjs"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "toolkit/components/enterprisepolicies/EnterprisePoliciesParent.sys.mjs",
+   "category": "juggler",
+   "feature": "juggler-enterprise-policies",
+   "prefs": [
+    "browser.policies.alternatePath"
+   ],
+   "added": 13,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 9,
+   "hookable": "movable",
+   "anchor": "module scope, new class PlaywrightPoliciesProvider after class JSONPoliciesProvider (line 688 in the Mozilla base)",
+   "evidence": [
+    "+class PlaywrightPoliciesProvider extends JSONPoliciesProvider {",
+    "+    dump(`Playwright: loading enterprise policies from ${prefPath}\\n`);"
+   ],
+   "notes": "The class is defined but NOT registered in this file: the provider list at line 176 still pushes only the stock providers, so the class is dead code. JSONPoliciesProvider is module-local, so moving the class to our own file needs an export or a shim. The dump() string contains a product name (Playwright) in code, check it against the no-vendor-names rule. Verified dead: git grep over the whole tracked C:/ff/source tree finds PlaywrightPoliciesProvider only at EnterprisePoliciesParent.sys.mjs:798 (provider list pushes only the stock JSONPoliciesProvider at line 176). Reads the existing pref browser.policies.alternatePath (PREF_ALTERNATE_PATH, line 30). Candidate to drop from the series.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Whole-tree grep confirms the class is never referenced; flagged as dead code."
+   }
+  }
+ ]
+}

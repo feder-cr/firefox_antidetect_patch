@@ -1,0 +1,177 @@
+{
+ "modified": [
+  "gfx/skia/skia/src/core/SkScalerContext.cpp",
+  "gfx/thebes/gfxDWriteFonts.cpp",
+  "gfx/thebes/gfxFT2FontBase.cpp",
+  "gfx/thebes/gfxFont.cpp",
+  "gfx/thebes/gfxFont.h",
+  "gfx/thebes/gfxHarfBuzzShaper.cpp",
+  "gfx/thebes/gfxHarfBuzzShaper.h"
+ ],
+ "added": {
+  "gfx/2d/StealthGlyphCoverage.cpp": "100644",
+  "gfx/2d/StealthGlyphCoverage.h": "100644",
+  "gfx/tests/gtest/TestStealthTextQuality.cpp": "100644"
+ },
+ "inventory": [
+  {
+   "file": "gfx/skia/skia/src/core/SkScalerContext.cpp",
+   "category": "spoof",
+   "feature": "glyph-coverage-quantise",
+   "prefs": [],
+   "added": 24,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "SkScalerContext::getImage",
+   "evidence": [
+    "+#include \"mozilla/gfx/StealthGlyphCoverage.h\"",
+    "+    if (unfilteredGlyph->maskFormat() == SkMask::kA8_Format) {",
+    "+        mozilla::gfx::StealthQuantiseGlyphCoverage("
+   ],
+   "notes": "This file is in the vendored Skia tree, so every Skia update conflicts with this block. The call sits before the mask filter on purpose: a blur must act on the already quantised mask, as the comment explains. The include is the only Mozilla header in this file (other Skia files do include mozilla/ headers, e.g. gfx/skia/skia/src/ports/SkMemory_mozalloc.cpp:12). The comment says this replaces the readback-time coverage ladder that was removed from CanvasRenderingContext2D.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The claim that this is the only Mozilla header in Skia is false (SkMemory_mozalloc.cpp, SkASAN.h, SkMacros.h, SkTypeface_win_dw.h include mozilla headers); it holds only for this file."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxDWriteFonts.cpp",
+   "category": "spoof",
+   "feature": "cleartype-declared",
+   "prefs": [
+    "zoom.stealth.text.system_quality"
+   ],
+   "added": 71,
+   "removed": 3,
+   "hunks": 6,
+   "inline_logic_lines": 14,
+   "hookable": "movable",
+   "anchor": "GetSystemTextQuality; GetSystemGDIGamma (comment only); gfxDWriteFont::UpdateClearTypeVars",
+   "evidence": [
+    "+  if (mozilla::gfx::StealthEngineActive()) {",
+    "+    const int32_t declared = StaticPrefs::zoom_stealth_text_system_quality();",
+    "-  HRESULT hr = Factory::GetDWriteFactory()->CreateRenderingParams("
+   ],
+   "notes": "With the engine on, GetSystemTextQuality returns the declared zoom.stealth.text.system_quality (only 0, 4 or 5 accepted; anything else calls StealthRefuse) and never asks SystemParametersInfo. UpdateClearTypeVars skips CreateRenderingParams (stealthDeclared forces E_FAIL) and always applies the declared ClearType values. The six hard-coded defaults remain as the stock Firefox baseline. GDI gamma is still read from the host, on purpose (comment: canvas never uses that path). Movable: the engine-on branches can move into a helper in our own file. Pref read through StaticPrefs; definition confirmed at modules/libpref/init/StaticPrefList.yaml:21885 (zoom.stealth.text.system_quality, RelaxedAtomicInt32, default -1). The ClearType level/contrast/gamma prefs are read by unchanged upstream lines whose condition the diff widens (stealthDeclared ||), they are not added reads.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Pref name confirmed in StaticPrefList.yaml; clarified which reads are added."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFT2FontBase.cpp",
+   "category": "spoof",
+   "feature": "font-design-metrics",
+   "prefs": [],
+   "added": 113,
+   "removed": 7,
+   "hunks": 4,
+   "inline_logic_lines": 27,
+   "hookable": "movable",
+   "anchor": "gfxFT2FontBase::GetFTGlyphExtents; gfxFT2FontBase::GetGlyphBounds",
+   "evidence": [
+    "+    if (mozilla::gfx::StealthEngineActive() &&",
+    "+      if (shaper && upem && shaper->GetDesignAdvance(aGID, designAdvance)) {",
+    "+  if (mozilla::gfx::StealthEngineActive()) {"
+   ],
+   "notes": "With the engine on, the advance and the ink box come from HarfBuzz design-space values (GetDesignAdvance and GetDesignGlyphExtents) scaled by the unrounded size, not from FreeType's hinted values. No fallback to FreeType on this path (engine rule 7 in comments). The declaredAdvance flag skips the hinting round and the extentsScale multiply. Comments include the measured Courier New case at 13.383333 px. Non-engine behaviour is unchanged. Movable: both declared paths can move into helpers in our own file behind 2-3 line hooks.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFont.cpp",
+   "category": "spoof",
+   "feature": "font-metrics-declared",
+   "prefs": [],
+   "added": 152,
+   "removed": 0,
+   "hunks": 5,
+   "inline_logic_lines": 66,
+   "hookable": "movable",
+   "anchor": "gfxFont::GetStealthHostIndepVMetrics (new, placed before InitMetricsFromSfntTables); GetStealthBundleVMetrics (new static); gfxFont::SanitizeMetrics",
+   "evidence": [
+    "+bool gfxFont::GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,",
+    "+  if (GetStealthBundleVMetrics(mFontEntry, vm)) {",
+    "+  aMaxAscent = uint16_t(os2->usWinAscent) * mFUnitsConvFactor;"
+   ],
+   "notes": "SanitizeMetrics is the shared point where DirectWrite, FreeType and CoreText finish their metrics. For a bundled face, the manifest's vertical metrics overwrite maxAscent/maxDescent/emHeight/emAscent/emDescent/internalLeading/externalLeading and xHeight/capHeight/underline/strikeout when the manifest has them, then the existing clamps run. GetStealthHostIndepVMetrics reads OS/2 directly for canvas TextMetrics; its caller is outside this list. GetStealthBundleVMetrics is keyed on mShmemFace and the manifest lookup. The manifest type StealthBundleVMetrics is defined in StealthBundleFontList.h, which is not in this list. Movable: the whole override block can move into a helper in our own file behind one call. Verifier: the caller exists, dom/canvas/CanvasRenderingContext2D.cpp:5454 (font->GetStealthHostIndepVMetrics). Placement caveat: the new function sits in the middle of an upstream comment block (the upstream lines \"Return FALSE if the gfxFontEntry subclass does not implement GetFontTable()...\" now precede our function and \"If this returns TRUE without setting the mIsValid flag...\" follows it), so upstream comments are split; move it elsewhere when relocating.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Found the canvas caller and that the insertion splits an upstream comment."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFont.h",
+   "category": "spoof",
+   "feature": "font-metrics-declared",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "gfxFont class, public: GetStealthHostIndepVMetrics declaration (next to the mVerticalMetrics accessor)",
+   "evidence": [
+    "+  bool GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,"
+   ],
+   "notes": "Declaration only; definition is in gfxFont.cpp. The comment says it exists to make canvas TextMetrics vertical fields host-independent.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxHarfBuzzShaper.cpp",
+   "category": "spoof",
+   "feature": "font-design-metrics",
+   "prefs": [],
+   "added": 153,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 49,
+   "hookable": "movable",
+   "anchor": "gfxHarfBuzzShaper::~gfxHarfBuzzShaper; gfxHarfBuzzShaper::GetDesignFont (new); gfxHarfBuzzShaper::GetDesignGlyphExtents (new); gfxHarfBuzzShaper::GetDesignAdvance (new); gfxHarfBuzzShaper::ShapeText (comment only)",
+   "evidence": [
+    "+  const auto face(mFont->GetFontEntry()->GetHBFace());",
+    "+  hb_font_destroy(mDesignFont);  // null is fine, hb_font_destroy takes it",
+    "+  hb_ot_font_set_funcs(font);"
+   ],
+   "notes": "GetDesignFont builds a second hb_font on the same face, used only for design-space metrics and never for shaping: scale = upem, hb_ot_font_set_funcs pinned, variations applied. It holds mMutex (recursive) because the shaper is shared through gfxFontCache. Primary issue: the face is bound through a named AutoHBFace; the comment says an earlier unnamed binding was a dangling pointer (feature hb-face-lifetime). The ShapeText hunk is comment only: the per-run advance jitter it describes is not in this diff. Movable: GetDesignFont and the two getters can move into our own file, keeping only the mDesignFont member in the header.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxHarfBuzzShaper.h",
+   "category": "spoof",
+   "feature": "font-design-metrics",
+   "prefs": [],
+   "added": 36,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 6,
+   "hookable": "already-hook",
+   "anchor": "gfxHarfBuzzShaper class: public GetDesignGlyphExtents and GetDesignAdvance declarations; private mDesignFont member and GetDesignFont declaration",
+   "evidence": [
+    "+  bool GetDesignGlyphExtents(uint16_t aGID, int32_t& aXBearing,",
+    "+  mutable hb_font_t* mDesignFont = nullptr;"
+   ],
+   "notes": "Declarations and a mutable cache member for the design font. The header comment gives the measurement that motivates the change (Windows 12960/12960 matched, Linux 1440 differing). One stray blank line is added, no functional change.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  }
+ ]
+}

@@ -1,0 +1,220 @@
+{
+ "modified": [
+  "dom/base/nsDOMWindowUtils.cpp",
+  "dom/events/EventStateManager.cpp",
+  "dom/events/EventStateManager.h",
+  "dom/interfaces/base/nsIDOMWindowUtils.idl",
+  "dom/ipc/CoalescedMouseData.cpp",
+  "layout/base/PresShell.cpp",
+  "widget/MouseEvents.h",
+  "widget/nsGUIEventIPC.h",
+  "xpcom/reflect/xptinfo/xptinfo.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/base/nsDOMWindowUtils.cpp",
+   "category": "juggler",
+   "feature": "juggler-input-dispatch",
+   "prefs": [],
+   "added": 146,
+   "removed": 2,
+   "hunks": 4,
+   "inline_logic_lines": 80,
+   "hookable": "movable",
+   "anchor": "nsDOMWindowUtils::JugglerSendMouseEvent (new); nsDOMWindowUtils::JugglerSendDragEvent (new); nsDOMWindowUtils::SendWheelEvent; CanvasToDataSourceSurface",
+   "evidence": [
+    "+  *aJugglerEventId = ++sJugglerEventId;",
+    "+  event.mInputSource = dom::MouseEvent_Binding::MOZ_SOURCE_MOUSE;",
+    "+    wheelEvent.mTimeStamp = nsContentUtils::InputEventBirth(aLatency);"
+   ],
+   "notes": "Four pieces in one file. (1) juggler: JugglerSendMouseEvent (new, about 45 lines) with a plain static counter sJugglerEventId. (2) juggler: JugglerSendDragEvent (new, about 60 lines) dispatches WidgetDragEvent directly and sets the drag session action from the modifier keys (B212). (3) spoof, input-event-birth: SendWheelEvent gets aLatency and sets mTimeStamp (same hunk as the signature change). (4) spoof, feature canvas-noise-as-drawn: CanvasToDataSourceSurface now passes SFE_AS_DRAWN (our flag, layout/base/nsLayoutUtils.h:2392, handled at nsLayoutUtils.cpp:7452) so the browser's own reader gets the canvas without the canvas noise; it belongs with the nsLayoutUtils change, not with the Juggler input feature (call site now at nsDOMWindowUtils.cpp:1539). The two new methods can move wholesale to our file, leaving one-line XPCOM methods. JugglerSendMouseEvent's last input (aLatency) replaced aDisablePointerEvent, per the comment in the diff.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The unverified claim about SFE_AS_DRAWN is resolved: it is our canvas-noise bypass flag."
+   }
+  },
+  {
+   "file": "dom/events/EventStateManager.cpp",
+   "category": "juggler",
+   "feature": "juggler-drag-gesture",
+   "prefs": [],
+   "added": 19,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "EventStateManager::BeginTrackingDragGesture; EventStateManager::GenerateDragGesture",
+   "evidence": [
+    "+  mGestureDownFromJuggler = aMouseDownOrTouchDragEvent.mJugglerEventId != 0;",
+    "+    if ((mouseEvent->mJugglerEventId != 0) != mGestureDownFromJuggler) {",
+    "+      return;"
+   ],
+   "notes": "B288: a drag gesture started by a Juggler press continues only with Juggler moves, so native moves during a Juggler press no longer start a native drag. The early return skips only the gesture update; the move is still dispatched (per the comment). Relies on WidgetMouseEvent::mJugglerEventId, defined outside this group (MouseEvents.h, not checked). VERIFIED: WidgetMouseEvent::mJugglerEventId is defined at widget/MouseEvents.h:249.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Unchecked definition of mJugglerEventId resolved."
+   }
+  },
+  {
+   "file": "dom/events/EventStateManager.h",
+   "category": "juggler",
+   "feature": "juggler-drag-gesture",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "EventStateManager (members)",
+   "evidence": [
+    "+  bool mGestureDownFromJuggler = false;"
+   ],
+   "notes": "One member with a comment. It is the Mozilla-side state of the feature and cannot move out of the class.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/interfaces/base/nsIDOMWindowUtils.idl",
+   "category": "juggler",
+   "feature": "juggler-input-dispatch",
+   "prefs": [],
+   "added": 47,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "nsIDOMWindowUtils: sendWheelEvent, jugglerSendMouseEvent (new), jugglerSendDragEvent (new)",
+   "evidence": [
+    "+                      [optional] in double aLatency);",
+    "+  unsigned long jugglerSendMouseEvent(in AString aType,",
+    "+  void jugglerSendDragEvent(in AString aType,"
+   ],
+   "notes": "Declarations only; parameter lines only, so inline logic is 0. Adds an optional aLatency to sendWheelEvent, a new jugglerSendMouseEvent (14 inputs, returns the event id) and a new jugglerSendDragEvent. The jugglerSendMouseEvent doc comment names 'Playwright' and an issue number; the repo rule forbids third-party or test names in comments, so reword it before commit. The comment also says 'restored from the FF146 Juggler patch'. One line removed (the old sendWheelEvent callback signature). VERIFIED: the doc comment says 'Playwright:' and 'issue #9' at dom/interfaces/base/nsIDOMWindowUtils.idl:460 (confirmed, conflicts with the no-vendor-names rule).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Vendor-name claim confirmed with line; confusing sentence reworded."
+   }
+  },
+  {
+   "file": "dom/ipc/CoalescedMouseData.cpp",
+   "category": "juggler",
+   "feature": "juggler-event-id",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "CoalescedMouseData::Coalesce",
+   "evidence": [
+    "+    mCoalescedInputEvent->mJugglerEventId =",
+    "+        aMouseOrPointerEvent.mJugglerEventId;"
+   ],
+   "notes": "Carries the last folded event's Juggler id onto the coalesced event so a caller waiting for its move sees it land (B217).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "layout/base/PresShell.cpp",
+   "category": "juggler",
+   "feature": "juggler-mouse-event-id",
+   "prefs": [],
+   "added": 51,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 32,
+   "hookable": "movable",
+   "anchor": "PresShell::HandleEvent (scope-exit lambda ackJugglerEvent)",
+   "evidence": [
+    "+  auto ackJugglerEvent = MakeScopeExit([&] {",
+    "+      os->NotifyObservers(nullptr, \"juggler-mouse-event-hit-renderer\",",
+    "+    aGUIEvent->AsMouseEvent()->mJugglerEventId = 0;"
+   ],
+   "notes": "After the event is handled, notifies juggler-mouse-event-hit-renderer with 'type id' (mousemove, mousedown, mouseup, contextmenu) and clears mJugglerEventId so it fires once. The ~32-line lambda is movable behind one line here. Open questions CHECKED: WidgetMouseEvent::mJugglerEventId exists at widget/MouseEvents.h:249 (that file is in the modified list); MakeScopeExit is already available via #include \"mozilla/ScopeExit.h\" at layout/base/PresShell.cpp:65 and nsIObserverService.h at :175, so no include is needed (CONFIRMED). The comment says the ack must run after dispatch, so the scope exit must stay.",
+   "verifier": {
+    "changed": [
+     "feature",
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "Feature renamed to match widget/MouseEvents.h and nsGUIEventIPC.h; recount; resolved the include and field questions."
+   }
+  },
+  {
+   "file": "widget/MouseEvents.h",
+   "category": "juggler",
+   "feature": "juggler-mouse-event-id",
+   "prefs": [],
+   "added": 10,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "class WidgetMouseEventBase: member declaration (hunk 1) and its Assign copy (hunk 2)",
+   "evidence": [
+    "+  uint32_t mJugglerEventId = 0;",
+    "+    mJugglerEventId = aEvent.mJugglerEventId;"
+   ],
+   "notes": "New field in a core event struct that crosses IPC; nsGUIEventIPC.h serializes it (see that entry). The comment refers to a lost ack bug (B217). Both sides are built together, so no version skew handling is needed.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "widget/nsGUIEventIPC.h",
+   "category": "juggler",
+   "feature": "juggler-mouse-event-id",
+   "prefs": [],
+   "added": 3,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 3,
+   "hookable": "already-hook",
+   "anchor": "struct ParamTraits<mozilla::WidgetMouseEventBase>: the field is written after mInputSource (hunk 1) and read in ReadForDerivedClass (hunk 2)",
+   "evidence": [
+    "+    WriteParam(aWriter, aParam.mJugglerEventId);",
+    "+           ReadParam(aReader, &aResult->mInputSource) &&"
+   ],
+   "notes": "IPC serialization of mJugglerEventId, read in the same order it is written. Wire format change, so the reader and writer must stay in step; both sides are built together.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "xpcom/reflect/xptinfo/xptinfo.h",
+   "category": "juggler",
+   "feature": "juggler-param-buffer",
+   "prefs": [],
+   "added": 2,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "PARAM_BUFFER_COUNT macro",
+   "evidence": [
+    "-#  define PARAM_BUFFER_COUNT 14",
+    "+#  define PARAM_BUFFER_COUNT 15"
+   ],
+   "notes": "Not a Firefox version fix: the diff comment says the count moves to 15 for jugglerSendMouseEvent, which takes 15 arguments. It is tied to that Juggler method's signature; if the method's arity changes, this value must follow. Check of the 15-argument claim: nsIDOMWindowUtils.idl:465-478 declares 14 in-parameters plus an unsigned long return value, i.e. 15 XPT params including the retval; the diff comment \"15 args\" is right only in that sense (confirmed, with this wording).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Clarified that the 15 counts 14 in-params plus the retval."
+   }
+  }
+ ]
+}

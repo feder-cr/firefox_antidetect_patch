@@ -1,0 +1,32 @@
+{
+ "modified": [
+  "dom/webidl/Window.webidl"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/webidl/Window.webidl",
+   "category": "spoof",
+   "feature": "synthetic-input-latency",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "dictionary SynthesizeMouseEventData",
+   "evidence": [
+    "+  unsigned long jugglerEventId = 0;",
+    "+  double latency = 0;"
+   ],
+   "notes": "Two new members of a chrome-only dictionary. jugglerEventId is Juggler plumbing (consumed at nsDOMWindowUtils.cpp:762 and nsContentUtils.cpp:10517). latency (ms before dispatch) sets the event birth time: nsDOMWindowUtils.cpp:765 stores it in mLatency and :897-898 uses nsContentUtils::InputEventBirth(aLatency) for the timestamp, which a page reads as event.timeStamp. [verified: the dictionary is reachable only from chrome, synthesizeMouseEvent is [ChromeOnly, Throws], Window.webidl:649.] Comment cites internal bug B299. If the series is split by category, jugglerEventId belongs in the Juggler patch.",
+   "verifier": {
+    "changed": [
+     "category",
+     "notes"
+    ],
+    "why": "Mixed file: latency is consumed by nsDOMWindowUtils.cpp (InputEventBirth, event timestamps a page can read) so the stealth part is a spoof; jugglerEventId is plain automation plumbing."
+   }
+  }
+ ]
+}

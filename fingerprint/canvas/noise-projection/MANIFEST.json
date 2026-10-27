@@ -1,0 +1,362 @@
+{
+ "modified": [
+  "dom/canvas/CanvasUtils.cpp",
+  "dom/canvas/CanvasUtils.h",
+  "dom/canvas/ClientWebGLContext.h",
+  "dom/canvas/OffscreenCanvas.cpp",
+  "dom/canvas/OffscreenCanvasDisplayHelper.cpp",
+  "dom/canvas/OffscreenCanvasDisplayHelper.h",
+  "dom/html/HTMLCanvasElement.cpp",
+  "dom/html/HTMLCanvasElement.h",
+  "dom/webgpu/CanvasContext.cpp",
+  "gfx/2d/DrawTargetRecording.cpp",
+  "gfx/2d/DrawTargetRecording.h",
+  "gfx/2d/RecordedEvent.h",
+  "gfx/2d/RecordedEventImpl.h",
+  "gfx/2d/moz.build",
+  "gfx/tests/gtest/moz.build"
+ ],
+ "added": {
+  "gfx/2d/StealthCanvasProjection.cpp": "100644",
+  "gfx/2d/StealthCanvasProjection.h": "100644",
+  "gfx/tests/gtest/TestStealthCanvasProjection.cpp": "100644"
+ },
+ "inventory": [
+  {
+   "file": "dom/canvas/CanvasUtils.cpp",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 32,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 22,
+   "hookable": "movable",
+   "anchor": "mozilla::CanvasUtils::StealthNoise and StealthProjectSnapshot (new free functions, placed before CheckWriteOnlySecurity)",
+   "evidence": [
+    "+  if (aCanvasPrincipal && (aCanvasPrincipal->IsSystemPrincipal() ||",
+    "+  const gfx::StealthCanvasNoise noise = StealthNoise(aCanvasPrincipal);",
+    "+  if (projected) {"
+   ],
+   "notes": "Both functions are plain logic defined in a Mozilla file; their definitions can move into an own .cpp, keeping only the declarations in CanvasUtils.h. StealthNoise returns no noise for system, chrome and resource principals (automation screenshots); that exemption is decided by the principal of the canvas, so a page cannot opt out. Includes are the only other change. The diff reads no pref itself; StealthCanvasNoiseDeclared() (gfx/thebes/StealthDeclarationGate.h:54) reads zoom.stealth.fpp.hw_seed, zoom.stealth.canvas.substitute_pixels and zoom.stealth.canvas.edge_tolerance.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added the prefs that StealthCanvasNoiseDeclared() reads indirectly; the diff itself reads none."
+   }
+  },
+  {
+   "file": "dom/canvas/CanvasUtils.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 35,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "namespace mozilla::CanvasUtils (StealthNoise decl, inline StealthProjectsContextType, StealthProjectSnapshot decl)",
+   "evidence": [
+    "+inline bool StealthProjectsContextType(dom::CanvasContextType aType) {",
+    "+  return aType == dom::CanvasContextType::WebGL1 ||",
+    "+gfx::StealthCanvasNoise StealthNoise(nsIPrincipal* aCanvasPrincipal);"
+   ],
+   "notes": "The only inline logic is the 4-line body of StealthProjectsContextType; it could move to StealthCanvasProjection.h so this header holds declarations only. Adds two includes (AlreadyAddRefed.h, StealthCanvasProjection.h) to a widely included header, which costs compile time. Also forward-declares gfx::SourceSurface inside mozilla::gfx.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/canvas/ClientWebGLContext.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 13,
+   "removed": 2,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "ClientWebGLContext private section: DoReadPixels, StealthProjectReadPixels, StealthProjectReadPixelsPbo, BufferParameter",
+   "evidence": [
+    "-  [[nodiscard]] bool DoReadPixels(const webgl::ReadPixelsDesc&,",
+    "+  Maybe<double> BufferParameter(GLenum target, GLenum pname) const;",
+    "+  void StealthProjectReadPixelsPbo(const webgl::ReadPixelsDesc& aDesc,"
+   ],
+   "notes": "Declarations only. DoReadPixels changes its return type from bool to Maybe<webgl::ReadPixelsResult>, a signature change every caller must follow. All of it belongs to the readPixels projection (BufferParameter is a refactor the PBO projection needs); the matching .cpp is multi-feature, so these declarations stay with the projection if that .cpp is split.",
+   "verifier": {
+    "changed": [
+     "feature",
+     "notes"
+    ],
+    "why": "The declarations are the readPixels projection and its BufferParameter refactor, not webgl-parameters; same feature as the projection files."
+   }
+  },
+  {
+   "file": "dom/canvas/OffscreenCanvas.cpp",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 16,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 7,
+   "hookable": "movable",
+   "anchor": "OffscreenCanvas::GetSurfaceSnapshot",
+   "evidence": [
+    "-  return mCurrentContext->GetSurfaceSnapshot(aOutAlphaType);",
+    "+  if (!CanvasUtils::StealthProjectsContextType(mCurrentContextType)) {",
+    "+  return CanvasUtils::StealthProjectSnapshot("
+   ],
+   "notes": "This is the page-facing reader of an OffscreenCanvas; the drawn variant is used by the browser's own readers elsewhere. The alpha type is copied into a local because aOutAlphaType may be null. The 7 logic lines can move into one helper in CanvasUtils (context, type, global object), reducing the hook to a single return.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/canvas/OffscreenCanvasDisplayHelper.cpp",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 25,
+   "removed": 1,
+   "hunks": 3,
+   "inline_logic_lines": 10,
+   "hookable": "movable",
+   "anchor": "OffscreenCanvasDisplayHelper::GetSurfaceSnapshot (split), new GetSurfaceSnapshotAsDrawn, GetAsImage",
+   "evidence": [
+    "+  RefPtr<gfx::SourceSurface> drawn = GetSurfaceSnapshotAsDrawn();",
+    "+    if (!CanvasUtils::StealthProjectsContextType(mType)) {",
+    "+  RefPtr<gfx::SourceSurface> surface = GetSurfaceSnapshotAsDrawn();"
+   ],
+   "notes": "The page-facing wrapper reads mType and mCanvasElement under mMutex, so moving its logic to an own file needs an accessor or a friend declaration. GetAsImage (the screen copy) uses the drawn variant by design. The old body is now GetSurfaceSnapshotAsDrawn, so git blame will show a rename.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/canvas/OffscreenCanvasDisplayHelper.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "class OffscreenCanvasDisplayHelper (GetSurfaceSnapshot, GetSurfaceSnapshotAsDrawn)",
+   "evidence": [
+    "+  already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshotAsDrawn();"
+   ],
+   "notes": "Declaration and comments only.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/html/HTMLCanvasElement.cpp",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 36,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 18,
+   "hookable": "movable",
+   "anchor": "HTMLCanvasElement::GetSurfaceSnapshot (page-facing wrapper), new HTMLCanvasElement::GetSurfaceSnapshotAsDrawn",
+   "evidence": [
+    "+  if (!CanvasUtils::StealthProjectsContextType(GetCurrentContextType())) {",
+    "+      drawn->GetType() == SurfaceType::RECORDING) {",
+    "-    return mOffscreenDisplay->GetSurfaceSnapshot();"
+   ],
+   "notes": "BUG (CONFIRMED, dom/html/HTMLCanvasElement.cpp:1554 tests drawn->GetType() == SurfaceType::RECORDING; gfx/layers/ipc/CanvasChild.cpp:139 returns CANVAS_RECORDING from GetType() and its GetUnderlyingType() returns mRecordedSurface->GetType(); the sibling test at gfx/2d/DrawTargetRecording.cpp:883 uses GetUnderlyingType(), and upstream uses GetUnderlyingType() == RECORDING for the same surfaces at :855): the GPU-side branch tests drawn->GetType() == SurfaceType::RECORDING, but a canvas recording wraps its snapshots with GetType() equal to CANVAS_RECORDING (gfx/layers/ipc/CanvasChild.cpp:139 in C:\\ff\\source). Its GetUnderlyingType() is the RECORDING one, which is what DrawTargetRecording::StealthProjectedSurface checks and what its own comment says. So for those surfaces the GPU-side projection is never taken and the code falls back to a readback here. The pixels should match, but the intent (no readback per drawImage) is broken. The static_cast at :1559 is safe because only DrawTargetRecording overrides IsRecording() to true (gfx/2d/DrawTargetRecording.h:46). The over-80-column StealthNoise line is confirmed at :1558. Also an over-80-column line: the StealthNoise call. The page-facing wrapper (about 18 logic lines) can move to an own file behind a one-line hook. The DrawTargetRecording.h include sits before Document.h, out of order.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Checked the LIKELY BUG against the tree and confirmed it."
+   }
+  },
+  {
+   "file": "dom/html/HTMLCanvasElement.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 26,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "class HTMLCanvasElement (GetSurfaceSnapshot, GetSurfaceSnapshotAsDrawn, GetSurfaceSnapshotAsync doc comments)",
+   "evidence": [
+    "+  already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshotAsDrawn(",
+    "+   * The async twin of GetSurfaceSnapshot; captureStream reads the canvas"
+   ],
+   "notes": "Declaration plus doc comments that state a contract: GetSurfaceSnapshot is the page reader, GetSurfaceSnapshotAsDrawn is for browser readers, and the async snapshot is projected inside the context (ClientWebGLContext::DoReadPixelsAsync). The comments must stay aligned with those files.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/webgpu/CanvasContext.cpp",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "CanvasContext::GetImageBuffer, CanvasContext::GetInputStream",
+   "evidence": [
+    "+  snapshot = CanvasUtils::StealthProjectSnapshot(snapshot, true,"
+   ],
+   "notes": "Premultiplied is hard-coded to true in both places. The WebGPU snapshot's real alpha type was not checked here; ClientWebGLContext derives it from the context options. The diff adds no CanvasUtils.h include; this is fine because the file already uses CanvasUtils::ImageExtraction in Mozilla code at dom/webgpu/CanvasContext.cpp:340.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Resolved the include question: the file already uses CanvasUtils:: at line 340 in Mozilla code, so the header is already reachable."
+   }
+  },
+  {
+   "file": "gfx/2d/DrawTargetRecording.cpp",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 32,
+   "removed": 1,
+   "hunks": 4,
+   "inline_logic_lines": 14,
+   "hookable": "movable",
+   "anchor": "SourceSurfaceRecording::GetDataSurface, DrawTargetRecording::StealthProjectedSurface (new)",
+   "evidence": [
+    "+        return StealthProjectedRegion(data, IntRect(IntPoint(), mSize),",
+    "+  if (!aSurface || aSurface->GetUnderlyingType() != SurfaceType::RECORDING ||",
+    "+  RecordEventSelfSkipFlushTransform(RecordedStealthProjectSurface("
+   ],
+   "notes": "StealthProjectedSurface is about 12 logic lines and can move into an own file behind a one-line hook. The GetDataSurface change re-projects on every call, with no cache, so each read of the stand-in recomputes the noise. It tests GetUnderlyingType(), which is the right test; the HTMLCanvasElement.cpp check is not (see that file).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/2d/DrawTargetRecording.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 14,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "class DrawTargetRecording (new public StealthProjectedSurface declaration)",
+   "evidence": [
+    "+  already_AddRefed<SourceSurface> StealthProjectedSurface(",
+    "+ private:",
+    "+#include \"StealthCanvasProjection.h\""
+   ],
+   "notes": "Declarations only. Adds a public section for the new method and a private section again before friend, with an empty line after the private label. The method is public because HTMLCanvasElement calls it.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/2d/RecordedEvent.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "enum of RecordedEvent event types (after OPTIMIZESOURCESURFACE)",
+   "evidence": [
+    "+    STEALTHPROJECTSURFACE,"
+   ],
+   "notes": "Inserting the tag in the middle of the list renumbers LINK, DESTINATION, ACCESSIBLEID and every later tag. Content and GPU processes exchange these numbers, so both must come from the same tree (true for our build, not for a mixed pair). Appending the tag at the end would avoid the renumbering. Must match the X-macro entry in RecordedEventImpl.h.",
+   "verifier": {
+    "changed": [
+     "category"
+    ],
+    "why": "This is the event tag of the canvas noise projection; sibling files RecordedEventImpl.h and DrawTargetRecording.* are spoof."
+   }
+  },
+  {
+   "file": "gfx/2d/RecordedEventImpl.h",
+   "category": "spoof",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 90,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 45,
+   "hookable": "movable",
+   "anchor": "RecordedStealthProjectSurface (class, PlayEvent, Record, stream constructor) and the RECORDED_EVENT X-macro list",
+   "evidence": [
+    "+  RefPtr<DataSourceSurface> data = surface->GetDataSurface();",
+    "+  aTranslator->AddSourceSurface(mProjectedSurface, projected);",
+    "+  f(STEALTHPROJECTSURFACE, RecordedStealthProjectSurface);"
+   ],
+   "notes": "The class and its templated Record and stream constructor must be visible where the X-macro expands. They can move to an own header included just above the macro, leaving the include and the f(...) line here. The seed and edge tolerance travel inside the recording as int32 values. If the source cannot be read on the GPU side the event fails, and the surface is not drawn unprojected.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/2d/moz.build",
+   "category": "build",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS.mozilla.gfx and UNIFIED_SOURCES of gfx/2d",
+   "evidence": [
+    "+    \"StealthCanvasProjection.h\",",
+    "+    \"StealthGlyphCoverage.h\",",
+    "+    \"StealthRefuse.h\","
+   ],
+   "notes": "Registers StealthCanvasProjection.h/.cpp (canvas-noise-projection), StealthGlyphCoverage.h/.cpp (glyph-coverage-quantise) and exports StealthRefuse.h. StealthRefuse.h is header-only (gfx/2d has no StealthRefuse.cpp) and is the startup refusal helper included by gfx/thebes/StealthDeclarationGate.cpp, StealthBundleFontList.cpp and gfxDWriteFonts.cpp, i.e. a different feature than the one named here. Build registration only.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Checked the StealthRefuse.h question: no StealthRefuse.cpp exists, so it is header-only; the three Stealth* entries belong to three features."
+   }
+  },
+  {
+   "file": "gfx/tests/gtest/moz.build",
+   "category": "build",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 7,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "UNIFIED_SOURCES of gfx/tests/gtest and a WINNT-only block",
+   "evidence": [
+    "+    \"TestStealthCanvasProjection.cpp\",",
+    "+if CONFIG[\"OS_TARGET\"] == \"WINNT\":",
+    "+        \"TestStealthTextQuality.cpp\","
+   ],
+   "notes": "The WINNT block registers TestStealthTextQuality.cpp for the DirectWrite text quality and ClearType parameters, which is not canvas noise; its feature is outside this group. Build registration only.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  }
+ ]
+}

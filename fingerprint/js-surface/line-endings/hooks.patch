@@ -1,0 +1,38 @@
+diff --git a/dom/file/BlobSet.cpp b/dom/file/BlobSet.cpp
+index 69e3559310e717fa7e6d5e149f43f102e38dc992..ff05c3d5d16455dde9636f3c890449dbdffe62f1 100644
+--- a/dom/file/BlobSet.cpp
++++ b/dom/file/BlobSet.cpp
+@@ -50,12 +50,14 @@ nsresult BlobSet::AppendUTF8String(const nsACString& aUTF8String,
+         return NS_ERROR_OUT_OF_MEMORY;
+       }
+     }
+-#ifdef XP_WIN
++    // Native line endings are Windows' on every build: the browser this one
++    // stands for is a Windows Firefox, and a page reads the platform from
++    // new Blob(['\n'], {endings: 'native'}).size, 2 there and 1 on Linux
++    // [B294].
+     if (NS_WARN_IF(
+             !utf8Str.ReplaceSubstring("\n", "\r\n", mozilla::fallible))) {
+       return NS_ERROR_OUT_OF_MEMORY;
+     }
+-#endif
+   }
+ 
+   RefPtr<StringBlobImpl> blobImpl = StringBlobImpl::Create(utf8Str, u""_ns);
+diff --git a/dom/serializers/nsPlainTextSerializer.cpp b/dom/serializers/nsPlainTextSerializer.cpp
+index af0c003992ff4cd13547c6d3fa70c55a4b6f54cb..d8ed808cb44a4a031c18d1a60103ec006d96c12d 100644
+--- a/dom/serializers/nsPlainTextSerializer.cpp
++++ b/dom/serializers/nsPlainTextSerializer.cpp
+@@ -98,8 +98,10 @@ static void DetermineLineBreak(const int32_t aFlags, nsAString& aLineBreak) {
+     // Unix/DOM
+     aLineBreak.AssignLiteral(u"\n");
+   } else {
+-    // Platform/default
+-    aLineBreak.AssignLiteral(NS_ULINEBREAK);
++    // Platform/default, which is Windows' on every build: a page reads it
++    // from getSelection().toString() across two blocks, "\r\n" on a Windows
++    // Firefox and "\n" on Linux [B294].
++    aLineBreak.AssignLiteral(u"\r\n");
+   }
+ }
+ 

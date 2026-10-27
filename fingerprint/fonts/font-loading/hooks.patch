@@ -1,0 +1,127 @@
+diff --git a/layout/style/FontFace.cpp b/layout/style/FontFace.cpp
+index bc4d586b4159dd3420189dddc4e0e0c031e14ca8..84d6c7992c6be688bf33a33c62b4fcf2256d1cb7 100644
+--- a/layout/style/FontFace.cpp
++++ b/layout/style/FontFace.cpp
+@@ -239,7 +239,16 @@ void FontFace::SetSizeAdjust(const nsACString& aValue, ErrorResult& aRv) {
+   mImpl->SetSizeAdjust(aValue, aRv);
+ }
+ 
+-FontFaceLoadStatus FontFace::Status() { return mImpl->Status(); }
++FontFaceLoadStatus FontFace::Status() {
++  // Stealth: a per-profile fontlist makes the Font Loading API verdict match
++  // the enumerated set (listed -> Loaded, else Error). No fontlist -> vanilla.
++  nsAutoCString stealthFamily;
++  GetFamily(stealthFamily);
++  if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {
++    return *allowed ? FontFaceLoadStatus::Loaded : FontFaceLoadStatus::Error;
++  }
++  return mImpl->Status();
++}
+ 
+ Promise* FontFace::Load(ErrorResult& aRv) {
+   EnsurePromise();
+@@ -249,6 +258,20 @@ Promise* FontFace::Load(ErrorResult& aRv) {
+     return nullptr;
+   }
+ 
++  // Stealth: with a per-profile fontlist active, resolve/reject load() to match
++  // the fontlist instead of actually loading. No fontlist -> vanilla load.
++  nsAutoCString stealthFamily;
++  GetFamily(stealthFamily);
++  if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {
++    if (*allowed) {
++      mLoaded->MaybeResolve(this);
++    } else {
++      mLoaded->MaybeReject(NS_ERROR_FAILURE);
++    }
++    mImpl->UpdateOwnerKeepAlive();
++    return mLoaded;
++  }
++
+   mImpl->Load();
+   mImpl->UpdateOwnerKeepAlive();
+   return mLoaded;
+diff --git a/layout/style/FontFaceImpl.cpp b/layout/style/FontFaceImpl.cpp
+index 64192dbffc8eba2029466c4347b1ac063d589969..fd6f4df080a4dbf68f3afa52dd092c51b96cfea1 100644
+--- a/layout/style/FontFaceImpl.cpp
++++ b/layout/style/FontFaceImpl.cpp
+@@ -10,6 +10,8 @@
+ #include "gfxPlatformFontList.h"
+ #include "mozilla/ServoCSSParser.h"
+ #include "mozilla/StaticPrefs_layout.h"
++#include "mozilla/StaticPrefs_zoom.h"
++#include "nsUnicharUtils.h"
+ #include "mozilla/dom/Document.h"
+ #include "mozilla/dom/FontFaceBinding.h"
+ #include "mozilla/dom/FontFaceSetImpl.h"
+@@ -352,9 +354,44 @@ void FontFaceImpl::DoLoad() {
+   mUserFontEntry->Load();
+ }
+ 
++Maybe<bool> StealthFontAllowed(const nsACString& aFamily) {
++  // The patched build is ALWAYS bundle-only: the platform font list already
++  // contains ONLY the bundled Windows families (host fonts are dropped at birth),
++  // so the Font Loading API reflects the allow-list by construction - a
++  // local()/@font-face probe for a host font simply fails to resolve. No separate
++  // gate and no external list are needed. (More realistic than force-erroring, so
++  // legitimate downloadable web fonts report Loaded as on a real Firefox.)
++  (void)aFamily;
++  return Nothing();
++}
++
+ void FontFaceImpl::SetStatus(FontFaceLoadStatus aStatus) {
+   gfxFontUtils::AssertSafeThreadOrServoFontMetricsLocked();
+ 
++  // Stealth: when a per-profile fontlist is active, force the Font Loading API
++  // status to match it (listed -> Loaded, else Error) so document.fonts.* and
++  // @font-face verdicts agree with the enumerated set. No fontlist -> vanilla.
++  {
++    nsAutoCString stealthFamily;
++    GetFamily(stealthFamily);
++    if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {
++      FontFaceLoadStatus forced =
++          *allowed ? FontFaceLoadStatus::Loaded : FontFaceLoadStatus::Error;
++      if (mStatus == forced) {
++        return;
++      }
++      mStatus = forced;
++      if (mInFontFaceSet) {
++        mFontFaceSet->OnFontFaceStatusChanged(this);
++      }
++      for (FontFaceSetImpl* otherSet : mOtherFontFaceSets) {
++        otherSet->OnFontFaceStatusChanged(this);
++      }
++      UpdateOwnerPromise();
++      return;
++    }
++  }
++
+   if (mStatus == aStatus) {
+     return;
+   }
+diff --git a/layout/style/FontFaceImpl.h b/layout/style/FontFaceImpl.h
+index 996c8e04211f74c848c0d1bc00ed30eb379417c8..bb65923f114d06290ef8f1e92fe7420c87cf1997 100644
+--- a/layout/style/FontFaceImpl.h
++++ b/layout/style/FontFaceImpl.h
+@@ -6,6 +6,7 @@
+ #define mozilla_dom_FontFaceImpl_h
+ 
+ #include "gfxUserFontSet.h"
++#include "mozilla/Maybe.h"
+ #include "mozilla/RWLock.h"
+ #include "mozilla/dom/FontFaceBinding.h"
+ #include "nsTHashSet.h"
+@@ -27,6 +28,13 @@ class UTF8StringOrArrayBufferOrArrayBufferView;
+ 
+ namespace mozilla::dom {
+ 
++// Stealth: per-profile fontlist gate for the CSS Font Loading API. Returns
++// Nothing when no fontlist pref is set (vanilla behavior), else Some(true) if
++// the family is in zoom.stealth.font.fontlist and Some(false) otherwise. Lets
++// FontFace.status / .load() / document.fonts.check() agree with the enumerated
++// set. Defined in FontFaceImpl.cpp.
++mozilla::Maybe<bool> StealthFontAllowed(const nsACString& aFamily);
++
+ class FontFaceImpl final {
+   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FontFaceImpl)
+ 

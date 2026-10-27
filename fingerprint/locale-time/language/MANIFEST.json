@@ -1,0 +1,106 @@
+{
+ "modified": [
+  "dom/base/test/browser_language_override.js",
+  "intl/locale/LocaleService.cpp",
+  "intl/locale/moz.build",
+  "intl/locale/nsLanguageAtomService.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/base/test/browser_language_override.js",
+   "category": "other",
+   "feature": "language-declared",
+   "prefs": [],
+   "added": 81,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 62,
+   "hookable": "movable",
+   "anchor": "add_task test_language_override_reaches_workers (new); getWorkerLanguages (new helper)",
+   "evidence": [
+    "+add_task(async function test_language_override_reaches_workers() {",
+    "+async function getWorkerLanguages(browser, kind) {"
+   ],
+   "notes": "New browser test that the language override reaches dedicated, nested and shared workers (Intl locale, navigator.language, navigator.languages). It is test code inside a Mozilla test file. It could live in a test file of ours registered in the test manifest, which would need a manifest entry. Not run here. Category is other because it is a test, not a fingerprint change; it exercises feature language-declared.",
+   "verifier": {
+    "changed": [
+     "category",
+     "notes"
+    ],
+    "why": "A browser test changes nothing a page can observe, so it is not spoof."
+   }
+  },
+  {
+   "file": "intl/locale/LocaleService.cpp",
+   "category": "spoof",
+   "feature": "session-language-declared",
+   "prefs": [],
+   "added": 24,
+   "removed": 4,
+   "hunks": 4,
+   "inline_logic_lines": 10,
+   "hookable": "movable",
+   "anchor": "LocaleService::GetRegionalPrefsLocales; new static helper MachineRegionalPrefsLocales",
+   "evidence": [
+    "+  if (!declared.IsEmpty()) {",
+    "+    if (NS_SUCCEEDED(MachineRegionalPrefsLocales(aRetVal))) {"
+   ],
+   "notes": "Regional locales (which feed web-exposed locales and date/time formatting) now take the declared session language first, then the OS. The ~10-line helper body (new static MachineRegionalPrefsLocales plus the two call-site edits) can move into StealthSessionPrefs.cpp, leaving two call sites here. Input-only change per the comment; upstream's en-US rule is kept. The language comes from intl::SessionLanguageTag (intl/locale/StealthSessionPrefs.cpp), which reads juggler.locale.override via StaticPrefs::juggler_locale_override (StealthSessionPrefs.cpp:16, CONFIRMED indirect read; the pref is not named in the added lines).",
+   "verifier": {
+    "changed": [
+     "prefs",
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "prefs lists only reads in added lines (pref is read indirectly); recount of logic lines."
+   }
+  },
+  {
+   "file": "intl/locale/moz.build",
+   "category": "build",
+   "feature": "session-language-declared",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "(moz.build EXPORTS and UNIFIED_SOURCES lists)",
+   "evidence": [
+    "+    \"StealthSessionPrefs.h\",",
+    "+    \"StealthSessionPrefs.cpp\","
+   ],
+   "notes": "Registers our own StealthSessionPrefs files; the .cpp is added to UNIFIED_SOURCES.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "intl/locale/nsLanguageAtomService.cpp",
+   "category": "spoof",
+   "feature": "session-language-declared",
+   "prefs": [],
+   "added": 15,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 6,
+   "hookable": "movable",
+   "anchor": "nsLanguageAtomService::GetLocaleLanguage (inside the write lock, before the regional-prefs lookup)",
+   "evidence": [
+    "+    intl::SessionLanguageTag(declared);",
+    "+      mLocaleLanguage = NS_Atomize(declared);"
+   ],
+   "notes": "The fallback language atom (used for text without lang, hence font language group) now comes from the declared session language before the OS lookup. The ~6-line early-return branch can become one call into StealthSessionPrefs. Comment says per process. Reached from workers too (OffscreenCanvas per the StaticPrefList comment); thread-safety concern REFUTED: the pref is read through intl/locale/StealthSessionPrefs.cpp:16 as a DataMutexString static pref (locked, mirror: always, per the juggler.locale.override entry in StaticPrefList.yaml). juggler.locale.override is read indirectly, not in the added lines.",
+   "verifier": {
+    "changed": [
+     "prefs",
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "prefs lists only reads in added lines; recount; thread-safety doubt checked."
+   }
+  }
+ ]
+}

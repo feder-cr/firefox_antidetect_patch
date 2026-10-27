@@ -1,0 +1,219 @@
+diff --git a/toolkit/components/url-classifier/SafeBrowsing.sys.mjs b/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
+index fd8285620dd9e56deab8f3a80a10cd7f09188a4a..dd515c6889361e0803ab918198920f7cc36fbe17 100644
+--- a/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
++++ b/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
+@@ -360,6 +360,20 @@ export var SafeBrowsing = {
+     Services.prefs.addObserver("browser.safebrowsing", this);
+     Services.prefs.addObserver("privacy.trackingprotection", this);
+     Services.prefs.addObserver("urlclassifier", this);
++    // ⛔ STEALTHFOX: la chiave di Safe Browsing non e' piu' incisa nel binario,
++    // la DICHIARA invisible_core come pref (URLFormatter.sys.mjs,
++    // stealthDeclaredApiKey). Senza questa riga la dichiarazione che arriva DOPO
++    // l'avvio non verrebbe mai riletta, e questo e' il caso normale invece che
++    // l'eccezione: sul percorso Playwright le prefs del core viaggiano sul
++    // protocollo e `Browser.enable` le applica dopo il lancio, mentre `init()`
++    // qui gira all'avvio. Il provider resterebbe spento per sempre con la chiave
++    // presente, che e' il modo peggiore di sbagliare - silenzioso e permanente.
++    //
++    // `observe` cade su `readPrefs()`, che in coda rifa' `controlUpdateChecking()`
++    // e quindi `updateProviderURLs()` -> `checkGoogleSafeBrowsingKey()`: la
++    // chiave viene riletta e il provider si accende quando la dichiarazione
++    // arriva, da qualunque canale arrivi.
++    Services.prefs.addObserver("zoom.stealth.apikey", this);
+ 
+     this.readPrefs();
+ 
+diff --git a/toolkit/components/urlformatter/URLFormatter.sys.mjs b/toolkit/components/urlformatter/URLFormatter.sys.mjs
+index 0485032ec57bee64f638c89f9314e75696563581..3a60ad62c89f21ac075b5cf72b3a4f8da80a3c40 100644
+--- a/toolkit/components/urlformatter/URLFormatter.sys.mjs
++++ b/toolkit/components/urlformatter/URLFormatter.sys.mjs
+@@ -25,6 +25,65 @@ ChromeUtils.defineESModuleGetters(lazy, {
+   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
+ });
+ 
++/**
++ * ⛔ STEALTHFOX: le tre chiavi API le DICHIARA invisible_core, non la build.
++ *
++ * Upstream le incideva a tempo di compilazione: configure leggeva tre keyfile e
++ * sostituiva @MOZ_..._API_KEY@ dentro AppConstants.sys.mjs, che a runtime e' una
++ * costante congelata. Quel percorso e' stato RIMOSSO per intero - le tre voci di
++ * AppConstants.sys.mjs, i tre DEFINES di toolkit/modules/moz.build e le tre
++ * --with-*-api-keyfile del .mozconfig non esistono piu' - perche' una copia
++ * compilata nel motore e' una seconda fonte di verita': due numeri per la stessa
++ * cosa, che divergono in silenzio il giorno in cui uno dei due cambia.
++ *
++ * Adesso il valore vive in UN SOLO posto, invisible_core, e arriva come pref.
++ * Il dominio e' finito e noto - tre chiavi - quindi la regola 2 e' soddisfatta.
++ *
++ * ⛔ E L'ASSENZA SI RIFIUTA, non si rimpiazza. Senza dichiarazione questa
++ * funzione torna la stringa VUOTA, che e' esattamente cio' che il motore sa gia'
++ * trattare: SafeBrowsing.checkGoogleSafeBrowsingKey la legge come falsy e spegne
++ * il provider, quindi la richiesta non parte affatto. Tornare il SEGNAPOSTO
++ * sarebbe stato peggio del difetto: "%GOOGLE_SAFEBROWSING_API_KEY%" e' una
++ * stringa non vuota e diversa dalla sentinella, quindi quel controllo sarebbe
++ * passato e Firefox avrebbe spedito una URL col segnaposto dentro.
++ *
++ * L'errore in console e' deliberato: una dichiarazione mancante deve essere
++ * rumorosa, perche' il modo di sbagliare di questo meccanismo e' restare zitto.
++ */
++// ⛔ I NOMI SONO LETTERALI INTERI, E NON E' UNO STILE: E' UN GATE.
++// La prima versione costruiva il nome (`"zoom.stealth.apikey." + nome`) e
++// `test_every_stealth_pref_emitted_is_one_the_binary_reads` del core l'ha
++// respinta con la ragione giusta: quel gate cerca ogni pref `zoom.stealth.*`
++// che il core EMETTE dentro il sorgente del motore, perche' un nome che il
++// binario non legge mai e' uno spoof che silenziosamente non fa niente, e da
++// Python i due casi sono indistinguibili. Ne erano gia' stati spediti quattro
++// cosi'. Un nome costruito e' invisibile a quel gate e a chiunque faccia una
++// grep. Ogni letterale compare UNA volta, qui.
++const PREF_APIKEY_MOZILLA = "zoom.stealth.apikey.mozilla";
++const PREF_APIKEY_GOOGLE_LOCATION = "zoom.stealth.apikey.google_location_service";
++const PREF_APIKEY_GOOGLE_SAFEBROWSING = "zoom.stealth.apikey.google_safebrowsing";
++
++function leggiChiaveSilenziosa(pref) {
++  // ⛔ L'UNICO punto del motore che LEGGE una di queste pref. I due chiamanti
++  // (i getter di formatURL e la redazione dei log) passano di qui: se la
++  // lettura fosse scritta due volte, il giorno in cui cambia la redazione
++  // smetterebbe di ripulire senza che niente lo dica, e la chiave finirebbe
++  // nei log in chiaro.
++  return Services.prefs.getStringPref(pref, "");
++}
++
++function stealthDeclaredApiKey(pref) {
++  const valore = leggiChiaveSilenziosa(pref);
++  if (!valore) {
++    console.error(
++      "STEALTHFOX: nessuna chiave dichiarata in " +
++        pref +
++        " - la richiesta che la usa non partira'."
++    );
++  }
++  return valore;
++}
++
+ export function nsURLFormatterService() {
+   ChromeUtils.defineLazyGetter(this, "ABI", function UFS_ABI() {
+     let ABI = "default";
+@@ -121,11 +180,13 @@ nsURLFormatterService.prototype = {
+       return this.OSVersion;
+     },
+     CHANNEL: () => lazy.UpdateUtils.UpdateChannel,
+-    MOZILLA_API_KEY: () => AppConstants.MOZ_MOZILLA_API_KEY,
++    // ⛔ STEALTHFOX: dichiarate da invisible_core, non incise nella build.
++    // Vedi stealthDeclaredApiKey() in cima al file.
++    MOZILLA_API_KEY: () => stealthDeclaredApiKey(PREF_APIKEY_MOZILLA),
+     GOOGLE_LOCATION_SERVICE_API_KEY: () =>
+-      AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY,
++      stealthDeclaredApiKey(PREF_APIKEY_GOOGLE_LOCATION),
+     GOOGLE_SAFEBROWSING_API_KEY: () =>
+-      AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY,
++      stealthDeclaredApiKey(PREF_APIKEY_GOOGLE_SAFEBROWSING),
+     BING_API_CLIENTID: () => AppConstants.MOZ_BING_API_CLIENTID,
+     BING_API_KEY: () => AppConstants.MOZ_BING_API_KEY,
+     DISTRIBUTION() {
+@@ -179,17 +240,21 @@ nsURLFormatterService.prototype = {
+ 
+   trimSensitiveURLs: function uf_trimSensitiveURLs(aMsg) {
+     // Only the google API keys is sensitive for now.
+-    aMsg = AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY
+-      ? aMsg.replace(
+-          RegExp(AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY, "g"),
+-          "[trimmed-google-api-key]"
+-        )
++    //
++    // ⛔ STEALTHFOX: legge le stesse DICHIARAZIONI dei getter qui sopra, non
++    // piu' le costanti di AppConstants. Se leggesse una fonte diversa da quella
++    // che ha costruito la URL, questa redazione mancherebbe il bersaglio: e'
++    // proprio il difetto delle due fonti di verita', qui in forma di chiave che
++    // finisce nei log in chiaro. Passa da _leggiChiave, che NON registra l'errore
++    // in console: questo e' il percorso dei log, e un log che si lamenta mentre
++    // ripulisce un altro log e' rumore, non un segnale.
++    const geoloc = leggiChiaveSilenziosa(PREF_APIKEY_GOOGLE_LOCATION);
++    const sb = leggiChiaveSilenziosa(PREF_APIKEY_GOOGLE_SAFEBROWSING);
++    aMsg = geoloc
++      ? aMsg.replace(RegExp(geoloc, "g"), "[trimmed-google-api-key]")
+       : aMsg;
+-    return AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY
+-      ? aMsg.replace(
+-          RegExp(AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY, "g"),
+-          "[trimmed-google-api-key]"
+-        )
++    return sb
++      ? aMsg.replace(RegExp(sb, "g"), "[trimmed-google-api-key]")
+       : aMsg;
+   },
+ };
+diff --git a/toolkit/modules/AppConstants.sys.mjs b/toolkit/modules/AppConstants.sys.mjs
+index df764857c89cf0fa70b40abbbc661bd8347e94af..dcaa7018b802e720c792d5162e4e84a514820ba2 100644
+--- a/toolkit/modules/AppConstants.sys.mjs
++++ b/toolkit/modules/AppConstants.sys.mjs
+@@ -179,11 +179,32 @@ export var AppConstants = Object.freeze({
+ 
+   MOZ_BING_API_CLIENTID: "@MOZ_BING_API_CLIENTID@",
+   MOZ_BING_API_KEY: "@MOZ_BING_API_KEY@",
+-#if !defined(MOZ_WIDGET_ANDROID) && !defined(XP_WIN)
+-  MOZ_GOOGLE_LOCATION_SERVICE_API_KEY: "@MOZ_GOOGLE_LOCATION_SERVICE_API_KEY@",
+-#endif
+-  MOZ_GOOGLE_SAFEBROWSING_API_KEY: "@MOZ_GOOGLE_SAFEBROWSING_API_KEY@",
+-  MOZ_MOZILLA_API_KEY: "@MOZ_MOZILLA_API_KEY@",
++
++  // ⛔ STEALTHFOX: QUI STAVANO LE TRE CHIAVI API, E SONO STATE TOLTE.
++  //
++  //   MOZ_GOOGLE_LOCATION_SERVICE_API_KEY   (dentro un #ifndef MOZ_WIDGET_ANDROID)
++  //   MOZ_GOOGLE_SAFEBROWSING_API_KEY
++  //   MOZ_MOZILLA_API_KEY
++  //
++  // I nomi sono scritti NUDI apposta: nella forma con le chiocciole sarebbero
++  // segnaposto veri per il preprocessore, che non trovando piu' i DEFINES
++  // corrispondenti li lascerebbe li' o si fermerebbe. Un commento non deve
++  // poter rompere la build che descrive.
++  //
++  // Erano incise da configure a tempo di compilazione leggendo tre keyfile.
++  // Adesso le dichiara invisible_core e arrivano come pref: il solo lettore e'
++  // stealthDeclaredApiKey() in URLFormatter.sys.mjs, che e' anche l'unico punto
++  // che sapeva leggerle da qui. Lasciarle come costanti avrebbe significato
++  // tenere DUE fonti per lo stesso valore, che e' cio' che la regola 7 vieta:
++  // non una fuga, ma due numeri per la stessa cosa che possono divergere.
++  //
++  // I DEFINES corrispondenti sono stati tolti da toolkit/modules/moz.build nello
++  // stesso cambiamento: se restassero li' senza queste righe non farebbero
++  // niente, e se restassero queste righe senza quei DEFINES la preelaborazione
++  // fallirebbe. Si muovono insieme.
++  //
++  // MOZ_BING_API_* restano perche' hanno un consumatore diverso e non sono state
++  // spostate: il dominio dichiarato e' quello delle tre chiavi, non di tutte.
+ 
+   BROWSER_CHROME_URL: "@BROWSER_CHROME_URL@",
+ 
+diff --git a/toolkit/modules/moz.build b/toolkit/modules/moz.build
+index 784fcfecb6d8e542c8e9f9f89d41517e4075ea52..96bc86d877d3b226a65b4f95b365bcbb21501941 100644
+--- a/toolkit/modules/moz.build
++++ b/toolkit/modules/moz.build
+@@ -277,10 +277,10 @@ if "Android" != CONFIG["OS_TARGET"]:
+         "subprocess",
+     ]
+ 
+-if CONFIG["OS_TARGET"] not in ("Android", "WINNT"):
+-    DEFINES["MOZ_GOOGLE_LOCATION_SERVICE_API_KEY"] = (
+-        CONFIG["MOZ_GOOGLE_LOCATION_SERVICE_API_KEY"] or ""
+-    )
++# ⛔ STEALTHFOX: qui stava il DEFINES di MOZ_GOOGLE_LOCATION_SERVICE_API_KEY,
++# tolto insieme agli altri due nel blocco `for var` qui sotto. Le tre chiavi
++# non sono piu' incise nella build: le dichiara invisible_core e arrivano
++# come pref (URLFormatter.sys.mjs, stealthDeclaredApiKey).
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+     EXTRA_JS_MODULES += [
+@@ -296,10 +296,11 @@ for var in (
+     "MOZ_BACKGROUNDTASK_ACTIVATABLE_CLASS_ID",
+     "MOZ_BING_API_CLIENTID",
+     "MOZ_BING_API_KEY",
+-    "MOZ_GOOGLE_SAFEBROWSING_API_KEY",
++    # ⛔ STEALTHFOX: MOZ_GOOGLE_SAFEBROWSING_API_KEY e MOZ_MOZILLA_API_KEY
++    # stavano qui, in ordine alfabetico fra le due righe accanto. Tolte: le tre
++    # chiavi le dichiara invisible_core, non le incide piu' la compilazione.
+     "MOZ_MACBUNDLE_ID",
+     "MOZ_MACBUNDLE_NAME",
+-    "MOZ_MOZILLA_API_KEY",
+     "MOZ_WIDGET_TOOLKIT",
+     "DLL_PREFIX",
+     "DLL_SUFFIX",

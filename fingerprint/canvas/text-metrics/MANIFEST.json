@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "dom/canvas/CanvasRenderingContext2D.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/canvas/CanvasRenderingContext2D.cpp",
+   "category": "spoof",
+   "feature": "canvas-2d-text-metrics",
+   "prefs": [],
+   "added": 217,
+   "removed": 3,
+   "hunks": 7,
+   "inline_logic_lines": 45,
+   "hookable": "movable",
+   "anchor": "CanvasRenderingContext2D::DrawOrMeasureText (TextMetrics return); also CreatePattern (2 hunks) and a comment-only block near GetImageBuffer",
+   "evidence": [
+    "+    if (mozilla::gfx::StealthEngineActive() &&",
+    "+        fontOrientation == nsFontMetrics::eHorizontal &&",
+    "+        font->GetStealthHostIndepVMetrics(emA, emD, maxA, maxD)) {"
+   ],
+   "notes": "The DrawOrMeasureText hunk is about 45 logic lines (vertical metrics rounding, baseline switch, MakeUnique call). It can move into an own file taking a small input struct, leaving a one-line hook that returns a Maybe<TextMetrics>. The CreatePattern hunks (source snapshot read through the element) belong to canvas-noise-projection, not to text metrics. The 30-line comment block 'a 2D canvas reads back exactly as drawn' is documentation of a decision with no code; it and the removed coverage-ladder history should live in our files. Includes StealthDeclarationGate.h, StealthBundleFontList.h and StaticPrefs_zoom.h, but no pref is read in this diff; StealthEngineActive() (gfx/thebes/StealthDeclarationGate.h:42) reads zoom.stealth.fpp.hw_seed (> 0 means active); verified, not read in this diff itself.",
+   "verifier": {
+    "changed": [
+     "evidence",
+     "notes"
+    ],
+    "why": "Two evidence quotes had the wrong indentation (8 spaces, not 6); notes now say which pref StealthEngineActive() reads."
+   }
+  }
+ ]
+}

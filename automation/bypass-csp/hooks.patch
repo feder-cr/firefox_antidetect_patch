@@ -1,0 +1,58 @@
+diff --git a/dom/security/nsCSPUtils.cpp b/dom/security/nsCSPUtils.cpp
+index 11de03cf6eaf8fa6fff602cc12a78acc08f2e25f..0e7814d208d56867f89ff89520ea40c92289410e 100644
+--- a/dom/security/nsCSPUtils.cpp
++++ b/dom/security/nsCSPUtils.cpp
+@@ -22,6 +22,7 @@
+ #include "nsIChannel.h"
+ #include "nsIConsoleService.h"
+ #include "nsIContentSecurityPolicy.h"
++#include "nsIDocShell.h"
+ #include "nsICryptoHash.h"
+ #include "nsIScriptError.h"
+ #include "nsIStringBundle.h"
+@@ -128,12 +129,28 @@ bool CSP_ShouldURIInheritCSP(nsIURI* aURI) {
+          aURI->SchemeIs("filesystem") || aURI->SchemeIs("javascript");
+ }
+ 
++bool CSP_IsBypassedFor(const mozilla::dom::Document& aDoc) {
++  // ⛔ Until this existed the docshell attribute was stored and never read:
++  // the 2026-05 port added it as storage only, so `bypass_csp=True` changed
++  // nothing a page enforced (issue #295 of invisible_playwright).
++  nsIDocShell* docShell = aDoc.GetDocShell();
++  if (!docShell) {
++    return false;
++  }
++  bool bypass = false;
++  return NS_SUCCEEDED(docShell->GetBypassCSPEnabled(&bypass)) && bypass;
++}
++
+ void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
+                            const nsAString& aPolicyStr) {
+   if (aDoc.IsLoadedAsData()) {
+     return;
+   }
+ 
++  if (CSP_IsBypassedFor(aDoc)) {
++    return;
++  }
++
+   nsAutoString policyStr(
+       nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
+           aPolicyStr));
+diff --git a/dom/security/nsCSPUtils.h b/dom/security/nsCSPUtils.h
+index ddc5b3eec628412c063e58c11edf6039fdc225bc..14c69607b8d0221eb6c2808e2cd761a90ecb28f5 100644
+--- a/dom/security/nsCSPUtils.h
++++ b/dom/security/nsCSPUtils.h
+@@ -216,6 +216,12 @@ bool CSP_ShouldURIInheritCSP(nsIURI* aURI);
+ void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
+                            const nsAString& aPolicyStr);
+ 
++// Whether the automation asked this document's docshell to ignore the page's
++// own policies (Juggler's `bypassCSP` context setting, Playwright's
++// `bypass_csp`). The one place the question is answered: InitCSP for the
++// header policies, CSP_ApplyMetaCSPToDoc for a <meta> one.
++bool CSP_IsBypassedFor(const mozilla::dom::Document& aDoc);
++
+ // Checks if the URI is "chrome://browser/content/browser.xhtml"
+ bool CSP_IsBrowserXHTML(nsIURI* aURI);
+ 

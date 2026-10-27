@@ -1,0 +1,55 @@
+{
+ "modified": [
+  "netwerk/protocol/http/nsHttpHandler.cpp",
+  "netwerk/test/browser/browser_accept_language_override.js"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "netwerk/protocol/http/nsHttpHandler.cpp",
+   "category": "spoof",
+   "feature": "accept-language-override-list",
+   "prefs": [],
+   "added": 20,
+   "removed": 3,
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "nsHttpHandler::AddStandardRequestHeaders",
+   "evidence": [
+    "+    rv = PrepareAcceptLanguages(aLanguageOverride.get(), acceptLanguage);",
+    "+      rv = request->SetHeader(nsHttp::Accept_Language, acceptLanguage, false,",
+    "-    acceptLanguage.Assign(aLanguageOverride.get());"
+   ],
+   "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  },
+  {
+   "file": "netwerk/test/browser/browser_accept_language_override.js",
+   "category": "other",
+   "feature": "accept-language-override-list",
+   "prefs": [
+    "intl.accept_languages"
+   ],
+   "added": 36,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 27,
+   "hookable": "movable",
+   "anchor": "test_language_override_list_is_prepared (new add_task)",
+   "evidence": [
+    "+  const list = \"it-IT, it, en-US, en\";",
+    "+    \"it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7\",",
+    "+  browser.browsingContext.languageOverride = list;"
+   ],
+   "notes": "Test code (no test category in the enum). It is added inside an existing Mozilla test file; move it to our own test file and register that in the test moz.build. The expected header 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7' is hard-coded and must be updated if Firefox changes the q-value preparation.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  }
+ ]
+}

@@ -1,0 +1,148 @@
+{
+ "modified": [
+  "dom/serviceworkers/ServiceWorkerPrivate.cpp",
+  "dom/workers/WorkerLoadInfo.h",
+  "dom/workers/WorkerPrivate.cpp",
+  "dom/worklet/WorkletGlobalScope.cpp",
+  "dom/worklet/WorkletImpl.cpp",
+  "dom/worklet/WorkletImpl.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/serviceworkers/ServiceWorkerPrivate.cpp",
+   "category": "spoof",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 75,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 36,
+   "hookable": "movable",
+   "anchor": "ServiceWorkerPrivate::Initialize (remote worker data), new static ContextDeclaration, ServiceWorkerPrivate::RefreshRemoteWorkerData",
+   "evidence": [
+    "+static void ContextDeclaration(nsIPrincipal* aPrincipal, nsACString& aLanguage,",
+    "+  BrowsingContextGroup::GetAllGroups(groups);",
+    "+  ContextDeclaration(mInfo->Principal(),"
+   ],
+   "notes": "ContextDeclaration (about 35 lines) walks every BrowsingContextGroup on each spawn and compares language and zone across the top-level pages of the user context. Move it to our file. Cost: it runs on every RefreshRemoteWorkerData, so each service-worker spawn scans all groups. [verified: CONFIRMED, callers are ServiceWorkerPrivate.cpp:820 (Initialize) and :1388 (spawn), definition :1983; a main-thread scan of all BrowsingContextGroups per call.] Comments name Playwright and Juggler (Playwright's protocol): vendor/test names in code comments.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Cost claim checked: RefreshRemoteWorkerData is called from Initialize and from the spawn path."
+   }
+  },
+  {
+   "file": "dom/workers/WorkerLoadInfo.h",
+   "category": "other",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "struct WorkerLoadInfoData (comment after mTimezoneOverride)",
+   "evidence": [
+    "+  // STEALTHFOX: these three also reach service workers, from the context of"
+   ],
+   "notes": "Comment only, no code. It belongs in our docs rather than the Mozilla file. It refers to intl/locale/StealthSessionPrefs.h, which is our file.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  },
+  {
+   "file": "dom/workers/WorkerPrivate.cpp",
+   "category": "spoof",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 53,
+   "removed": 1,
+   "hunks": 4,
+   "inline_logic_lines": 11,
+   "hookable": "movable",
+   "anchor": "WorkerPrivate::WorkerPrivate (main-thread branch, hunk @@ -2972), WorkerPrivate::UpdateLanguageOverrideInternal (@@ -6350), WorkerPrivate::UpdateLanguagesInternal (@@ -6396)",
+   "evidence": [
+    "+    intl::OrSessionLanguage(mLoadInfo.mLanguageOverrideLocale);",
+    "+          JS::SetRealmLocaleOverride(realm, primaryLocale.get());",
+    "+  if (!mLoadInfo.mLanguageOverride.IsEmpty()) {"
+   ],
+   "notes": "Each hunk is at most 5 logic lines, so each is already a hook. The constructor still calls Navigator::GetAcceptLanguages inline. Behaviour change: UpdateLanguagesInternal ignores intl.accept_languages for workers that follow an owner's LanguageOverride. The session prefs are read by intl/locale/StealthSessionPrefs.h (not in this group), so prefs is empty here. A comment block of about 30 lines carries bug IDs (B165, B334, B346) and dates: move it out. The constructor hunk holds 6 logic lines (two OrSession* calls, the two-line condition and the two-line GetAcceptLanguages call); one helper in intl/ would make it a hook. The other two hunks are hooks.",
+   "verifier": {
+    "changed": [
+     "hookable",
+     "notes"
+    ],
+    "why": "The WorkerPrivate constructor hunk (@@ -2972) has 6 logic lines, over the 5-line limit for an already-hook."
+   }
+  },
+  {
+   "file": "dom/worklet/WorkletGlobalScope.cpp",
+   "category": "spoof",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 11,
+   "removed": 8,
+   "hunks": 2,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "WorkletGlobalScope::CreateRealmOptions",
+   "evidence": [
+    "-  if (ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC)) {",
+    "+  SetRealmTimeAndLanguage(",
+    "-    options.behaviors().setLocaleOverride(locale.get());"
+   ],
+   "notes": "One call to SetRealmTimeAndLanguage (dom/base/StealthSessionDeclaration.h, our file) replaces the two resistFingerprinting branches. The RFP flags are passed in as arguments. The 4 added lines are one multi-line call, counted as lines. The worklet thread reads LoadInfo().Language() and Timezone(), which are set on the main thread (WorkletImpl). [verified: SetRealmTimeAndLanguage (dom/base/StealthSessionDeclaration.cpp:69-90) keeps the RFP precedence: forced UTC and the en-US spoof win over declared values.]",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added verification that RFP precedence is kept by the helper."
+   }
+  },
+  {
+   "file": "dom/worklet/WorkletImpl.cpp",
+   "category": "spoof",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "WorkletLoadInfo::WorkletLoadInfo(nsPIDOMWindowInner*)",
+   "evidence": [
+    "+  dom::GetDeclaredLanguage(aWindow->GetBrowsingContext(), mLanguage);",
+    "+#include \"nsPIDOMWindowInlines.h\""
+   ],
+   "notes": "The nsPIDOMWindowInlines.h include is a port-fix, needed only on 157 (the comment says 151 linked by accident). The rest of the file is spoof. Split the include into a port-fix patch if the series is cut by category.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  },
+  {
+   "file": "dom/worklet/WorkletImpl.h",
+   "category": "spoof",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 10,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "class WorkletLoadInfo (accessors and members)",
+   "evidence": [
+    "+  const nsCString& Language() const { return mLanguage; }",
+    "+  nsCString mLanguage;"
+   ],
+   "notes": "Two members and their accessors, no logic. Also adds an nsString.h include. The comment says the values are set at construction and never modified, and may be read from any thread.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  }
+ ]
+}

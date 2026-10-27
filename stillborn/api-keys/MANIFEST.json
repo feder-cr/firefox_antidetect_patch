@@ -1,0 +1,103 @@
+{
+ "modified": [
+  "toolkit/components/url-classifier/SafeBrowsing.sys.mjs",
+  "toolkit/components/urlformatter/URLFormatter.sys.mjs",
+  "toolkit/modules/AppConstants.sys.mjs",
+  "toolkit/modules/moz.build"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "toolkit/components/url-classifier/SafeBrowsing.sys.mjs",
+   "category": "other",
+   "feature": "api-keys-declared",
+   "prefs": [
+    "zoom.stealth.apikey"
+   ],
+   "added": 14,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "SafeBrowsing.init() (line 354)",
+   "evidence": [
+    "+    Services.prefs.addObserver(\"zoom.stealth.apikey\", this);"
+   ],
+   "notes": "The observed name is a branch, not one key. observe() calls readPrefs() (checked in the Mozilla base at line 495), which re-reads the key, so a late declaration enables the provider. The added comment block is about 12 lines in Italian and should be trimmed or moved out of the Mozilla file.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "toolkit/components/urlformatter/URLFormatter.sys.mjs",
+   "category": "other",
+   "feature": "api-keys-declared",
+   "prefs": [
+    "zoom.stealth.apikey.mozilla",
+    "zoom.stealth.apikey.google_location_service",
+    "zoom.stealth.apikey.google_safebrowsing"
+   ],
+   "added": 78,
+   "removed": 13,
+   "hunks": 3,
+   "inline_logic_lines": 22,
+   "hookable": "movable",
+   "anchor": "module scope helpers (hunk 1); nsURLFormatterService.prototype getter table (hunk 2, line 121); nsURLFormatterService.prototype.trimSensitiveURLs (hunk 3, line 180)",
+   "evidence": [
+    "+function stealthDeclaredApiKey(pref) {",
+    "-    MOZILLA_API_KEY: () => AppConstants.MOZ_MOZILLA_API_KEY,",
+    "+    MOZILLA_API_KEY: () => stealthDeclaredApiKey(PREF_APIKEY_MOZILLA),"
+   ],
+   "notes": "Keys move from build-time AppConstants to prefs declared by invisible_core, read through one reader. An undeclared key gives an empty string plus a console error, so the request is not sent. The three pref names are literal constants on purpose (a grep gate). trimSensitiveURLs now reads the same prefs for log redaction. The helper functions (hunk 1) belong in our own file. Pref names contain a vendor name (google_*): check against the no-vendor-names rule.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "toolkit/modules/AppConstants.sys.mjs",
+   "category": "other",
+   "feature": "api-keys-declared",
+   "prefs": [],
+   "added": 26,
+   "removed": 5,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "AppConstants object literal (module scope), keys near line 179",
+   "evidence": [
+    "-  MOZ_MOZILLA_API_KEY: \"@MOZ_MOZILLA_API_KEY@\",",
+    "+  // ⛔ STEALTHFOX: QUI STAVANO LE TRE CHIAVI API, E SONO STATE TOLTE."
+   ],
+   "notes": "Removes three build-time constants and the #if around the location-service key. About 20 comment lines are added to a Mozilla file: move the explanation out and keep only the removals. A grep of toolkit/modules, url-classifier, urlformatter and telemetry found no remaining reader (comments only); git grep of the whole tracked tree (excluding third_party) finds no reader or definer of the three keys except python/mozbuild/mozbuild/test/configure/test_checks_configure.py:944,996,1011,1026 (configure test of the keyfile helper, unrelated to this file).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Whole-tree grep completed."
+   }
+  },
+  {
+   "file": "toolkit/modules/moz.build",
+   "category": "build",
+   "feature": "api-keys-declared",
+   "prefs": [],
+   "added": 7,
+   "removed": 6,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "module level, the OS_TARGET block (hunk 1, line 277) and the for var tuple of DEFINES (hunk 2, line 296)",
+   "evidence": [
+    "-    DEFINES[\"MOZ_GOOGLE_LOCATION_SERVICE_API_KEY\"] = (",
+    "-    \"MOZ_MOZILLA_API_KEY\","
+   ],
+   "notes": "Removes the DEFINES that fed the three keys. Must move together with the AppConstants.sys.mjs removal, otherwise the preprocessor fails. Only comments were added in the middle of the tuple.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  }
+ ]
+}

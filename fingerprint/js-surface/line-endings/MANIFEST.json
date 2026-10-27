@@ -1,0 +1,53 @@
+{
+ "modified": [
+  "dom/file/BlobSet.cpp",
+  "dom/serializers/nsPlainTextSerializer.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/file/BlobSet.cpp",
+   "category": "spoof",
+   "feature": "blob-native-endings",
+   "prefs": [],
+   "added": 4,
+   "removed": 2,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "BlobSet::AppendUTF8String",
+   "evidence": [
+    "-#ifdef XP_WIN",
+    "+    // Native line endings are Windows' on every build: the browser this one"
+   ],
+   "notes": "Removes the #ifdef XP_WIN around the CRLF conversion, so endings:'native' gives CRLF on every platform (Linux included). Not behind a pref: every build now behaves like Windows. The added lines are comments only; no logic was added. Decide whether the persona should set a pref instead of changing the upstream #ifdef.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/serializers/nsPlainTextSerializer.cpp",
+   "category": "spoof",
+   "feature": "plaintext-linebreak",
+   "prefs": [],
+   "added": 4,
+   "removed": 2,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "DetermineLineBreak(const int32_t aFlags, nsAString& aLineBreak)",
+   "evidence": [
+    "-    aLineBreak.AssignLiteral(NS_ULINEBREAK);",
+    "+    aLineBreak.AssignLiteral(u\"\\r\\n\");"
+   ],
+   "notes": "The default plain-text line break changes from NS_ULINEBREAK (LF on Linux and macOS) to CRLF on every build. The serializer appears to back other plain-text output such as copy, so the effect may be wider than getSelection().toString(); callers are not verified in this diff. Comment cites internal bug B294. [verified: UNVERIFIED, callers of DetermineLineBreak were not traced.]",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Marked the wider-effect claim as unverified."
+   }
+  }
+ ]
+}

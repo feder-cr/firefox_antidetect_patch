@@ -1,0 +1,117 @@
+diff --git a/dom/media/MediaManager.cpp b/dom/media/MediaManager.cpp
+index beb1d3b8c628075786afa674669cf2c2e69ad402..d114b402eebd3a929c33e0bd3ebcbfc966930b14 100644
+--- a/dom/media/MediaManager.cpp
++++ b/dom/media/MediaManager.cpp
+@@ -24,6 +24,7 @@
+ #include "mozilla/PermissionDelegateHandler.h"
+ #include "mozilla/Sprintf.h"
+ #include "mozilla/StaticPrefs_media.h"
++#include "mozilla/StaticPrefs_zoom.h"
+ #include "mozilla/dom/BindingDeclarations.h"
+ #include "mozilla/dom/Document.h"
+ #include "mozilla/dom/Element.h"
+@@ -2114,8 +2115,22 @@ bool MediaManager::EnumerationParams::HasFakeMics() const {
+ bool MediaManager::EnumerationParams::RealDeviceRequested() const {
+   auto isReal = [](const auto& aDev) { return aDev.mType == DeviceType::Real; };
+   return mVideo.map(isReal).valueOr(false) ||
+-         mAudio.map(isReal).valueOr(false) ||
+-         mFlags.contains(EnumerationFlag::EnumerateAudioOutputs);
++         mAudio.map(isReal).valueOr(false) || HostSpeakersRequested();
++}
++
++// Stealthfox [B300]: with the enumeration declared, the speakers are not
++// asked of the host, for the list or for correlating a camera's groupId. They
++// were the only part of an enumeration with fake cameras and microphones that
++// went to the machine, through its audio stack, and its time was the host's:
++// measured on Windows 250-350 ms on the first enumeration, on a host without
++// audio 15-40.
++static bool HostSpeakersMayBeAsked() {
++  return StaticPrefs::zoom_stealth_media_enumeration_ms() == 0;
++}
++
++bool MediaManager::EnumerationParams::HostSpeakersRequested() const {
++  return mFlags.contains(EnumerationFlag::EnumerateAudioOutputs) &&
++         HostSpeakersMayBeAsked();
+ }
+ 
+ MediaSourceEnum MediaManager::EnumerationParams::VideoInputType() const {
+@@ -2225,8 +2240,7 @@ MediaManager::MaybeRequestPermissionAndEnumerateRawDevices(
+ 
+   const bool hasVideo = aParams.mVideo.isSome();
+   const bool hasAudio = aParams.mAudio.isSome();
+-  const bool hasAudioOutput =
+-      aParams.mFlags.contains(EnumerationFlag::EnumerateAudioOutputs);
++  const bool hasAudioOutput = aParams.HostSpeakersRequested();
+   const bool hasFakeCams = aParams.HasFakeCams();
+   const bool hasFakeMics = aParams.HasFakeMics();
+   // True if at least one of video input or audio input is a real device
+@@ -2374,7 +2388,7 @@ MediaManager::EnumerateRawDevices(EnumerationParams aParams) {
+                     video->mForcedDeviceName.get());
+     devices->AppendElements(std::move(videos));
+   }
+-  if (aParams.mFlags.contains(EnumerationFlag::EnumerateAudioOutputs)) {
++  if (aParams.HostSpeakersRequested()) {
+     MediaDeviceSet outputs;
+     MOZ_ASSERT(realBackend);
+     realBackend->EnumerateDevices(MediaSourceEnum::Other,
+@@ -2402,7 +2416,7 @@ MediaManager::EnumerateRawDevices(EnumerationParams aParams) {
+       GetMediaDevices(videoBackend, MediaSourceEnum::Microphone, audios,
+                       aParams.mVideo->mForcedMicrophoneName.get());
+     }
+-    if (videoBackend == realBackend) {
++    if (videoBackend == realBackend && HostSpeakersMayBeAsked()) {
+       // When using the real backend for video, there could also be
+       // speakers to correlate with. There are no fake speakers.
+       if (speakers.isSome()) {
+@@ -2438,14 +2452,30 @@ RefPtr<ConstDeviceSetPromise> MediaManager::GetPhysicalDevices() {
+           GetCurrentSerialEventTarget(), __func__,
+           [self = RefPtr(this), this, promises = mPendingDevicesPromises](
+               RefPtr<MediaDeviceSetRefCnt> aDevices) mutable {
+-            for (auto& promiseHolder : *promises) {
+-              promiseHolder.Resolve(aDevices, __func__);
+-            }
+-            // mPendingDevicesPromises may have changed if devices have changed.
+-            if (promises == mPendingDevicesPromises) {
+-              mPendingDevicesPromises = nullptr;
+-              mPhysicalDevices = std::move(aDevices);
++            auto resolve = [self, this, promises,
++                            aDevices = std::move(aDevices)]() mutable {
++              for (auto& promiseHolder : *promises) {
++                promiseHolder.Resolve(aDevices, __func__);
++              }
++              // mPendingDevicesPromises may have changed if devices have
++              // changed.
++              if (promises == mPendingDevicesPromises) {
++                mPendingDevicesPromises = nullptr;
++                mPhysicalDevices = std::move(aDevices);
++              }
++            };
++            // Stealthfox [B300]: a declared enumeration takes the declared
++            // time, on every host, instead of the host's speakers' time. The
++            // list is then kept as Firefox keeps it, so only the first one of
++            // the session waits, as on a real machine.
++            if (uint32_t ms = StaticPrefs::zoom_stealth_media_enumeration_ms()) {
++              NS_DelayedDispatchToCurrentThread(
++                  NS_NewRunnableFunction("MediaManager::DeclaredEnumeration",
++                                         std::move(resolve)),
++                  ms);
++              return;
+             }
++            resolve();
+           },
+           [](RefPtr<MediaMgrError>&& reason) {
+             MOZ_ASSERT_UNREACHABLE(
+diff --git a/dom/media/MediaManager.h b/dom/media/MediaManager.h
+index 3dac2943b391645c942d7cdc3d726d4a9ebe2e34..07a738c47f19c17fd2d29e5ab38bc9ae8bbc63ca 100644
+--- a/dom/media/MediaManager.h
++++ b/dom/media/MediaManager.h
+@@ -370,6 +370,9 @@ class MediaManager final : public nsIMediaManagerService,
+     bool HasFakeCams() const;
+     bool HasFakeMics() const;
+     bool RealDeviceRequested() const;
++    // Stealthfox [B300]: whether the host's speakers are enumerated. The one
++    // place that decides it, for the three that asked the flag directly.
++    bool HostSpeakersRequested() const;
+     dom::MediaSourceEnum VideoInputType() const;
+     dom::MediaSourceEnum AudioInputType() const;
+     EnumerationFlags mFlags;

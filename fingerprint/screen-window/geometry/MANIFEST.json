@@ -1,0 +1,75 @@
+{
+ "modified": [
+  "dom/base/nsGlobalWindowOuter.cpp",
+  "dom/base/nsGlobalWindowOuter.h",
+  "dom/events/Event.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/base/nsGlobalWindowOuter.cpp",
+   "category": "spoof",
+   "feature": "window-geometry",
+   "prefs": [],
+   "added": 148,
+   "removed": 2,
+   "hunks": 9,
+   "inline_logic_lines": 66,
+   "hookable": "movable",
+   "anchor": "CreateNativeGlobalForInner; nsGlobalWindowOuter::GetOuterSize; nsGlobalWindowOuter::GetScreenXY; nsGlobalWindowOuter::StealthContentOriginShift (new); nsGlobalWindowOuter::IsInStealthPopup (new); nsGlobalWindowOuter::GetMozInnerScreenXOuter; nsGlobalWindowOuter::GetMozInnerScreenYOuter",
+   "evidence": [
+    "+  GetDeclaredLanguage(aDocument->GetBrowsingContext(), declaredLanguage);",
+    "+  if (mozilla::gfx::StealthEngineActive()) {",
+    "+  if (mozilla::gfx::StealthEngineActive() && !IsInStealthPopup()) {"
+   ],
+   "notes": "Mixed file. (1) language-declared and timezone-declared: CreateNativeGlobalForInner takes language and zone from the declared session (GetDeclaredLanguage/GetDeclaredTimezone in StealthSessionDeclaration) instead of Top()->GetLanguageOverride()/GetTimezoneOverride(). (2) window-geometry: GetOuterSize and GetScreenXY answer declared maximized-window or popup geometry. (3) window-geometry: StealthContentOriginShift (new, about 45 lines) and IsInStealthPopup (new), used by mozInnerScreenX/Y here and by Event.cpp. Most of the 66 logic lines are in these functions; they can move wholesale to our own file. Comments are largely in Italian. The 'return {}' after the gate is kept, per its own comment. The shift function calls BrowserChild::GetDimensions in content processes.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/base/nsGlobalWindowOuter.h",
+   "category": "spoof",
+   "feature": "window-geometry",
+   "prefs": [],
+   "added": 13,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 3,
+   "hookable": "already-hook",
+   "anchor": "nsGlobalWindowOuter (declarations next to GetInnerScreenRect)",
+   "evidence": [
+    "+  static mozilla::Maybe<nsPoint> StealthContentOriginShift(",
+    "+  bool IsInStealthPopup() const;"
+   ],
+   "notes": "Two declarations with Italian comments. Event.cpp includes this header only to call StealthContentOriginShift; if the function moves to our own file, this header change and that include can go.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/events/Event.cpp",
+   "category": "spoof",
+   "feature": "window-geometry",
+   "prefs": [],
+   "added": 74,
+   "removed": 4,
+   "hunks": 3,
+   "inline_logic_lines": 9,
+   "hookable": "movable",
+   "anchor": "Event::GetScreenCoords",
+   "evidence": [
+    "+  nsPoint originShift;",
+    "+          nsGlobalWindowOuter::StealthContentOriginShift(aPresContext)) {",
+    "+      originShift);"
+   ],
+   "notes": "Adds the declared content origin to the screen coordinates computed in Event::GetScreenCoords, so event.screenX - event.clientX equals mozInnerScreenX. Hot path: the comment records that an earlier version with an extra layout query per event made the browser too slow, so keep it arithmetic-only. Includes nsGlobalWindowOuter.h only for one static call, which pulls a large header into Event.cpp. About 50 lines of comment in the hunk; some may belong in docs.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  }
+ ]
+}

@@ -1,0 +1,89 @@
+{
+ "modified": [
+  "dom/media/webaudio/AnalyserNode.cpp",
+  "dom/media/webaudio/AudioDestinationNode.cpp",
+  "dom/media/webaudio/DynamicsCompressorNode.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/media/webaudio/AnalyserNode.cpp",
+   "category": "spoof",
+   "feature": "audio-fingerprint-noise",
+   "prefs": [
+    "zoom.stealth.fpp.hw_seed",
+    "zoom.stealth.audio.fp_noise"
+   ],
+   "added": 44,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 16,
+   "hookable": "movable",
+   "anchor": "AnalyserNode::GetFloatFrequencyData and AnalyserNode::GetFloatTimeDomainData",
+   "evidence": [
+    "+    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();",
+    "+      float noiseScale = float((uint32_t(seed) % 2001u) + 500u) * 1.0e-4f;",
+    "+      float noiseScale = float((uint32_t(seed) % 2001u) + 500u) * 1.0e-7f;"
+   ],
+   "notes": "Two noise loops of about 8 logic lines each, using the same hash as AudioDestinationNode.cpp and DynamicsCompressorNode.h. Move to one helper in our file. Frequency-domain noise is 0.05 to 0.25 dB depending on seed; time-domain noise is 5e-5 to 2.5e-4 on [-1,1] samples. The time-domain path has no silence or length guard (the comment says so), unlike AudioDestinationNode.cpp. Both gates were changed on 2026-08-09 to also check zoom.stealth.audio.fp_noise, which the wrapper ships as FALSE. Comments name an external fingerprinting service and internal bug T3: remove from source. [verified: engine default of zoom.stealth.audio.fp_noise is true (StaticPrefList.yaml:21486-21489) and hw_seed default is -1 (:21451-21454); the statement that the wrapper ships FALSE comes from the comment and cannot be checked here.]",
+   "verifier": {
+    "changed": [
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "Recounted logic lines: 8 per loop block = 16; added the engine default of the fp_noise pref."
+   }
+  },
+  {
+   "file": "dom/media/webaudio/AudioDestinationNode.cpp",
+   "category": "spoof",
+   "feature": "audio-fingerprint-noise",
+   "prefs": [
+    "zoom.stealth.fpp.hw_seed",
+    "zoom.stealth.audio.fp_noise"
+   ],
+   "added": 37,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 16,
+   "hookable": "movable",
+   "anchor": "OfflineDestinationNodeEngine render loop (class OfflineDestinationNodeEngine, hunk @@ -131)",
+   "evidence": [
+    "+        if (seed > 0 && mozilla::StaticPrefs::zoom_stealth_audio_fp_noise() &&",
+    "+            mLength > 200 && !aInput.IsNull() && i < inputChannelCount) {",
+    "+            if (mWriteIndex + s < 100) continue;"
+   ],
+   "notes": "Only OfflineAudioContext gets this noise; the realtime path is not in this diff. The gates (silent channel, length > 200, skip first 100 samples) are business logic and should move to our file with the loop. The comment at AudioDestinationNode.cpp:152 says scale ~5e-7; the code gives 5e-7 to 2.5e-6, so the comment states only the lower bound. [verified: REFUTED as a bug, minor comment imprecision only.]",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The scale-comment risk claim is only a minor imprecision: ~5e-7 is the minimum of the range, not a bug."
+   }
+  },
+  {
+   "file": "dom/media/webaudio/DynamicsCompressorNode.h",
+   "category": "spoof",
+   "feature": "audio-fingerprint-noise",
+   "prefs": [
+    "zoom.stealth.fpp.hw_seed",
+    "zoom.stealth.audio.fp_noise"
+   ],
+   "added": 14,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 6,
+   "hookable": "movable",
+   "anchor": "DynamicsCompressorNode::SetReduction (inline, in header)",
+   "evidence": [
+    "+    int32_t seed = mozilla::StaticPrefs::zoom_stealth_fpp_hw_seed();",
+    "+      aReduction += (float(int32_t(h & 0xFFFFu) - 0x8000) / float(0x8000))"
+   ],
+   "notes": "Adds a StaticPrefs include to a public header, so every includer rebuilds when the pref header changes. Move the perturbation to a .cpp and keep one declared call in the header with no StaticPrefs include. Noise amplitude is about 1e-5 on each SetReduction call.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  }
+ ]
+}

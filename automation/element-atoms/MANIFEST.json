@@ -1,0 +1,31 @@
+{
+ "modified": [
+  "remote/marionette/atom.sys.mjs"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "remote/marionette/atom.sys.mjs",
+   "category": "juggler",
+   "feature": "juggler-element-atoms",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "module level, after const ATOMS = {",
+   "evidence": [
+    "+// The sources themselves, for a caller that runs them in a sandbox of its",
+    "+export const ATOM_SOURCES = ATOMS;"
+   ],
+   "notes": "Adds an export so Juggler's Page.elementAtom can run the atom sources itself. Breaks silently if upstream renames ATOMS. Comment text is part of the diff and should move to our own file if the series allows. Verified: the consumer is juggler/content/PageAgent.js:445 (ATOM_SOURCES[atom] run via Cu.evalInSandbox at line 449).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Confirmed the consumer exists: juggler/content/PageAgent.js:445 imports ATOM_SOURCES (elementAtom)."
+   }
+  }
+ ]
+}

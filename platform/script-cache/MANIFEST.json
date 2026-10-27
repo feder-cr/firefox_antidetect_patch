@@ -1,0 +1,53 @@
+{
+ "modified": [
+  "js/xpconnect/loader/ScriptPreloader.cpp",
+  "js/xpconnect/loader/ScriptPreloader.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "js/xpconnect/loader/ScriptPreloader.cpp",
+   "category": "other",
+   "feature": "script-cache-adopt-written",
+   "prefs": [],
+   "added": 143,
+   "removed": 44,
+   "hunks": 6,
+   "inline_logic_lines": 90,
+   "hookable": "hard",
+   "anchor": "ScriptPreloader::CollectReports; ScriptPreloader::WalkCacheHeader (new template); ScriptPreloader::InitCacheInternal; ScriptPreloader::AdoptWrittenCache (new); ScriptPreloader::WriteCache",
+   "evidence": [
+    "+  MOZ_TRY(WalkCacheHeader(",
+    "+  if (auto risultato = AdoptWrittenCache(cacheFile); risultato.isErr()) {",
+    "-Result<Ok, nsresult> ScriptPreloader::InitCacheInternal("
+   ],
+   "notes": "Not a fingerprint change: a memory optimisation. After writing the cache file it maps that file and points the entries into the mapping, instead of keeping heap copies (the comment reports about 16.5 MB kept on fresh profiles). Hard for two reasons. First, InitCacheInternal's own body is rewritten into a template (WalkCacheHeader) shared by two callers, so any upstream change to that function will conflict. Second, the new logic reads and writes ScriptPreloader's private state (mScripts, mMonitor, CachedStencil internals) and must be a template or member in the Mozilla file. Also: a new memory-report path explicit/script-preloader/non-heap/memmapped-written-cache is added. Comments in this file are in Italian; a maintainer porting it should know that. The adoption is one-shot (MOZ_ASSERT on double init).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  },
+  {
+   "file": "js/xpconnect/loader/ScriptPreloader.h",
+   "category": "other",
+   "feature": "script-cache-adopt-written",
+   "prefs": [],
+   "added": 52,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 11,
+   "hookable": "hard",
+   "anchor": "ScriptPreloader::CachedStencil (AdoptMappedRange, inline); class ScriptPreloader (WalkCacheHeader and AdoptWrittenCache declarations; mWrittenCacheData member)",
+   "evidence": [
+    "+    void AdoptMappedRange(const JS::TranscodeRange& aRange) {",
+    "+  AutoMemMap mWrittenCacheData;",
+    "+  Result<Ok, nsresult> AdoptWrittenCache(nsIFile* aCacheFile);"
+   ],
+   "notes": "Hard because the new data member changes ScriptPreloader's layout and the template declaration must sit in the class. Only the body of AdoptMappedRange (about 6 lines, inline) could move to a .cpp of ours. Most of the 52 added lines are Italian comments explaining the design; the comments are the rationale for the change and should travel with it.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  }
+ ]
+}

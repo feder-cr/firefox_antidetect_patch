@@ -1,0 +1,32 @@
+{
+ "modified": [
+  "dom/quota/ActorsParent.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/quota/ActorsParent.cpp",
+   "category": "spoof",
+   "feature": "storage-quota-estimate",
+   "prefs": [
+    "zoom.stealth.storage.quota_mb"
+   ],
+   "added": 36,
+   "removed": 2,
+   "hunks": 4,
+   "inline_logic_lines": 12,
+   "hookable": "already-hook",
+   "anchor": "QuotaManager::GetUsageAndLimitForEstimate",
+   "evidence": [
+    "+  const int32_t stealthQuotaMb =",
+    "+                      ? (uint64_t(stealthQuotaMb) * 1024 * 1024)",
+    "-                               mTemporaryStorageLimit);"
+   ],
+   "notes": "The same limit expression (stealthOverride ? quota*MiB : fallback) is written twice. A helper in our file would make both sites one line each. A block of about 20 comment lines holds a 2026-08-09 correction and should move out. The pinned value replaces both the locked-origin limit and the group limit.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  }
+ ]
+}

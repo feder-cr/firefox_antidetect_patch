@@ -1,0 +1,231 @@
+diff --git a/dom/canvas/WebGLContext.cpp b/dom/canvas/WebGLContext.cpp
+index 31ee303f13770019357ef400f4f29a9890753beb..54899c665758cf5a50405a1b2f050453ed72c2af 100644
+--- a/dom/canvas/WebGLContext.cpp
++++ b/dom/canvas/WebGLContext.cpp
+@@ -2771,7 +2771,15 @@ webgl::CompileResult WebGLContext::GetCompileResult(
+       return;
+     }
+     // TODO: These could be large and should be made fallible.
+-    ret.translatedSource = ToCString(info->mObjectCode);
++    //
++    // Quello che la PAGINA legge, quando la lingua e' dichiarata e non coincide
++    // con quella del contesto GL. Il driver ha gia' ricevuto `mObjectCode` in
++    // `WebGLShader::CompileShader` e non lo si tocca: i pixel non cambiano.
++    // Vuoto vuol dire "niente da dichiarare", che e' il caso di ogni build
++    // Windows, dove il contesto passa da ANGLE ed e' gia' nella lingua giusta.
++    const auto& perLaPagina = shader.ObjectCodePerLaPagina();
++    ret.translatedSource = ToCString(
++        perLaPagina.empty() ? info->mObjectCode : perLaPagina);
+     ret.log = ToCString(shader.CompileLog());
+     if (!shader.IsCompiled()) return;
+     ret.success = true;
+diff --git a/dom/canvas/WebGLContext.h b/dom/canvas/WebGLContext.h
+index fdb14e0157f225ecdac45ab0b8736bec28258fb6..f7f61485949d1bc2df2ab920c2729b701637438a 100644
+--- a/dom/canvas/WebGLContext.h
++++ b/dom/canvas/WebGLContext.h
+@@ -953,8 +953,13 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
+ 
+   mutable GLenum mWebGLError = 0;
+ 
++  // `aPerLaPagina` chiede il validatore che produce la resa DESTINATA ALLA
++  // PAGINA, nella lingua dichiarata, invece di quella destinata al driver.
++  // Tutto il resto - risorse, opzioni, spec - e' identico per costruzione,
++  // perche' e' lo stesso corpo di funzione: se fossero due funzioni
++  // divergerebbero al primo limite che qualcuno aggiunge a una sola delle due.
+   std::unique_ptr<webgl::ShaderValidator> CreateShaderValidator(
+-      GLenum shaderType) const;
++      GLenum shaderType, bool aPerLaPagina = false) const;
+ 
+   // some GL constants
+   uint32_t mGLMaxFragmentUniformVectors = 0;
+diff --git a/dom/canvas/WebGLShader.cpp b/dom/canvas/WebGLShader.cpp
+index 2969307257181915e675a4d1b23a40282b619e48..484d38ca5f3c9062065dab67e7aca8204441e420 100644
+--- a/dom/canvas/WebGLShader.cpp
++++ b/dom/canvas/WebGLShader.cpp
+@@ -106,8 +106,48 @@ void WebGLShader::CompileShader() {
+     printf_stderr("\n==== end ====\n");
+   }
+ 
++  mObjectCodePerLaPagina.clear();
++
+   if (!success) return;
+ 
++  // La resa per la PAGINA, quando la lingua dichiarata non e' quella che il
++  // contesto GL impone.
++  //
++  // Si compila per il driver la traduzione di sopra, cosi' il rendering non
++  // cambia di un pixel, e si produce una seconda resa nella lingua dichiarata
++  // per chi legge `getTranslatedShaderSource`. Le due escono dallo stesso
++  // traduttore ANGLE imbarcato con le stesse risorse dichiarate, quindi la
++  // seconda e' identica a quella di una build Windows per COSTRUZIONE, non per
++  // coincidenza misurata.
++  //
++  // Su Windows il contesto passa da ANGLE, che si presenta come GLES, quindi la
++  // lingua dichiarata coincide con quella del contesto, il confronto qui sotto
++  // e' falso e non si traduce due volte. Il costo lo paga solo la piattaforma
++  // che ha il difetto, e solo per gli shader che vengono davvero compilati.
++  //
++  // ⛔ La stringa esposta non e' quella compilata. Nessuna pagina puo'
++  // accorgersene - il driver non e' osservabile da li' - ma va scritto, perche'
++  // e' vero.
++  {
++    const auto dichiarata = webgl::StealthDeclaredShaderOutput();
++    if (dichiarata && *dichiarata != webgl::ShaderOutputPerIlDriver(gl)) {
++      const auto perLaPagina = mContext->CreateShaderValidator(mType, true);
++      if (perLaPagina) {
++        const auto resa = perLaPagina->ValidateAndTranslate(mSource.c_str());
++        // Se la seconda traduzione fallisce si tiene quella del driver: una
++        // risposta nella lingua sbagliata e' un difetto di realness, una
++        // risposta vuota e' una pagina rotta.
++        if (resa && resa->mValid) {
++          mObjectCodePerLaPagina = resa->mObjectCode;
++        } else {
++          NS_WARNING(
++              "la resa nella lingua dichiarata non ha validato; "
++              "getTranslatedShaderSource restituira' quella del driver");
++        }
++      }
++    }
++  }
++
+   const std::array<const char*, 1> parts = {
+       mCompileResults->mObjectCode.c_str()};
+   gl->fShaderSource(mGLName, parts.size(), parts.data(), nullptr);
+diff --git a/dom/canvas/WebGLShader.h b/dom/canvas/WebGLShader.h
+index 2fbffc4442274b679c8849643341b445b6060d08..9258ede11783247433d24fd0c721a0d444e08961 100644
+--- a/dom/canvas/WebGLShader.h
++++ b/dom/canvas/WebGLShader.h
+@@ -44,6 +44,20 @@ class WebGLShader final : public WebGLContextBoundObject {
+   const auto& CompileLog() const { return mCompilationLog; }
+   bool IsCompiled() const { return mCompilationSuccessful; }
+ 
++  // La resa destinata alla PAGINA, nella lingua dichiarata. Vuota quando non
++  // c'e' niente da dichiarare o quando la lingua dichiarata e' gia' quella che
++  // il contesto usa - cioe' su Windows, dove il contesto passa da ANGLE ed e'
++  // gia' GLES: li' questo campo resta vuoto e non si paga niente.
++  //
++  // Non e' una seconda fonte di verita' per la stessa cosa: sono due
++  // consumatori diversi dello stesso albero validato, il driver e la pagina.
++  // Cio' che si dichiara e' la LINGUA, che ha dominio finito con un elemento
++  // solo; la stringa resta calcolata dal traduttore, perche' il suo dominio e'
++  // infinito e una tabella sarebbe vietata.
++  const std::string& ObjectCodePerLaPagina() const {
++    return mObjectCodePerLaPagina;
++  }
++
+  private:
+   void BindAttribLocation(GLuint prog, const std::string& userName,
+                           GLuint index) const;
+@@ -66,6 +80,7 @@ class WebGLShader final : public WebGLContextBoundObject {
+       mCompileResults;  // Never null.
+   bool mCompilationSuccessful = false;
+   std::string mCompilationLog;
++  std::string mObjectCodePerLaPagina;
+ };
+ 
+ }  // namespace mozilla
+diff --git a/dom/canvas/WebGLShaderValidator.cpp b/dom/canvas/WebGLShaderValidator.cpp
+index dca28d797ca1dd44b0eec5b7747739051e62c5b0..d9f0eb84066485a7a6ff20fbcc3e49850acf851d 100644
+--- a/dom/canvas/WebGLShaderValidator.cpp
++++ b/dom/canvas/WebGLShaderValidator.cpp
+@@ -13,6 +13,8 @@
+ #include "WebGLContext.h"
+ #include "mozilla/Preferences.h"
+ #include "mozilla/StaticPrefs_webgl.h"
++#include "mozilla/StaticPrefs_zoom.h"
++#include "mozilla/Maybe.h"
+ #include "mozilla/gfx/Logging.h"
+ #include "nsPrintfCString.h"
+ 
+@@ -80,11 +82,12 @@ static ShCompileOptions ChooseValidatorCompileOptions(
+   return options;
+ }
+ 
+-}  // namespace webgl
+-
+-////////////////////////////////////////
+-
+-static ShShaderOutput ShaderOutput(gl::GLContext* gl) {
++// La lingua che il CONTESTO GL impone, cioe' quella con cui si compila per il
++// driver. Era `static ShaderOutput`: e' diventata visibile perche' ha un secondo
++// lettore, `WebGLShader::CompileShader`, che deve sapere se la lingua dichiarata
++// coincide con questa. Esposta invece che ricopiata: due copie di questa
++// tabella divergerebbero al primo caso che qualcuno aggiunge a una sola.
++ShShaderOutput ShaderOutputPerIlDriver(gl::GLContext* gl) {
+   if (gl->IsGLES()) {
+     return SH_ESSL_OUTPUT;
+   }
+@@ -116,10 +119,41 @@ static ShShaderOutput ShaderOutput(gl::GLContext* gl) {
+   return SH_GLSL_150_CORE_OUTPUT;
+ }
+ 
++// L'UNICO posto che legge la lingua dichiarata, e l'unico che sa tradurre il
++// nome in una costante di ANGLE. Se questa conoscenza stesse in due punti, i
++// due potrebbero rispondere diverso e nessuno se ne accorgerebbe: e' la stessa
++// forma del difetto della geometria del mouse, dove la stessa aritmetica era
++// ricopiata in tre posti.
++//
++// `Nothing()` vuol dire "nessuna dichiarazione", e allora la lingua resta
++// quella che il contesto GL impone. Un nome dichiarato che non conosciamo e'
++// anch'esso `Nothing()` E un avviso: inventare un default sarebbe il ripiego
++// che la regola 7 vieta, e crashare qui spegnerebbe WebGL a un utente per un
++// errore di battitura in una pref.
++Maybe<ShShaderOutput> StealthDeclaredShaderOutput() {
++  auto lock = StaticPrefs::zoom_stealth_webgl_shader_output_language();
++  const nsCString declared(*lock);
++  if (declared.IsEmpty()) {
++    return Nothing();
++  }
++  if (declared.EqualsLiteral("essl")) {
++    return Some(SH_ESSL_OUTPUT);
++  }
++  NS_WARNING(
++      "zoom.stealth.webgl.shader_output_language dichiara una lingua che questa "
++      "build non conosce; la traduzione resta quella del contesto GL");
++  return Nothing();
++}
++
++}  // namespace webgl
++
+ std::unique_ptr<webgl::ShaderValidator> WebGLContext::CreateShaderValidator(
+-    GLenum shaderType) const {
++    GLenum shaderType, bool aPerLaPagina) const {
+   const auto spec = (IsWebGL2() ? SH_WEBGL2_SPEC : SH_WEBGL_SPEC);
+-  const auto outputLanguage = ShaderOutput(gl);
++  const auto dichiarata = webgl::StealthDeclaredShaderOutput();
++  const auto outputLanguage =
++      (aPerLaPagina && dichiarata) ? *dichiarata
++                                   : webgl::ShaderOutputPerIlDriver(gl);
+ 
+   ShBuiltInResources resources;
+   sh::InitBuiltInResources(&resources);
+diff --git a/dom/canvas/WebGLShaderValidator.h b/dom/canvas/WebGLShaderValidator.h
+index 1f16b1042ebf1759056be5cecc1aae85faca9546..b51ee288f127eb621f5c32e6b3f46a2db25833d5 100644
+--- a/dom/canvas/WebGLShaderValidator.h
++++ b/dom/canvas/WebGLShaderValidator.h
+@@ -11,10 +11,25 @@
+ 
+ #include "GLDefs.h"
+ #include "GLSLANG/ShaderLang.h"
++#include "mozilla/Maybe.h"
+ #include "nsString.h"
+ 
++namespace mozilla::gl {
++class GLContext;
++}
++
+ namespace mozilla::webgl {
+ 
++// La lingua che il contesto GL impone: e' quella con cui si compila per il
++// driver, e non e' una nostra scelta.
++ShShaderOutput ShaderOutputPerIlDriver(gl::GLContext* gl);
++
++// La lingua che la PAGINA deve vedere, dichiarata da invisible_core con
++// `zoom.stealth.webgl.shader_output_language`. `Nothing()` = nessuna
++// dichiarazione, e allora vale quella del driver. Dominio finito con un
++// elemento solo: si dichiara la LINGUA, mai la stringa.
++Maybe<ShShaderOutput> StealthDeclaredShaderOutput();
++
+ class ShaderValidatorResults final {
+  public:
+   std::string mInfoLog;

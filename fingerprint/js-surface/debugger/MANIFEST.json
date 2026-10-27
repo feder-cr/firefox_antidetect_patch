@@ -1,0 +1,80 @@
+{
+ "modified": [
+  "devtools/server/actors/thread.js",
+  "js/src/debugger/Debugger.cpp",
+  "js/src/debugger/Debugger.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "devtools/server/actors/thread.js",
+   "category": "other",
+   "feature": "devtools-attach-suppressed",
+   "prefs": [
+    "zoom.stealth.debugger.force_detach"
+   ],
+   "added": 2,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "ThreadActor.attach(options)",
+   "evidence": [
+    "+    let forceDetach = Services.prefs.getBoolPref(\"zoom.stealth.debugger.force_detach\", false);",
+    "+    if (this.alreadyAttached || forceDetach) {"
+   ],
+   "notes": "With the pref true, attach() returns early and the thread actor never attaches through this path. The pref name says force_detach but the code blocks attach: name and behaviour disagree (CONFIRMED from the diff: it is the same early return as alreadyAttached). The pref has no entry in StaticPrefList.yaml (CONFIRMED against that file's diff) and is read in JS with default false; no other reader found under devtools/server, devtools/shared or devtools/client/shared (devtools/server/actors/thread.js:393 only). The rest of attach() is outside the diff. Not a value a page reads directly. Related but different mechanism: the js/src/debugger invisible-attach change.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added verification of the no-other-reader and no-StaticPrefList claims."
+   }
+  },
+  {
+   "file": "js/src/debugger/Debugger.cpp",
+   "category": "spoof",
+   "feature": "debugger-invisible-attach",
+   "prefs": [],
+   "added": 56,
+   "removed": 17,
+   "hunks": 3,
+   "inline_logic_lines": 35,
+   "hookable": "hard",
+   "anchor": "Debugger::addDebuggeeGlobal; Debugger::removeDebuggeeGlobal",
+   "evidence": [
+    "+    if (JS_GetProperty(cx, dbgObj, \"stealthMode\", &stealthVal) &&",
+    "+  if (!isStealth) {",
+    "+  if (!invisibleDebuggee_) {"
+   ],
+   "notes": "Observable by page code: with stealthMode the realm reports no debuggers (hasDebuggers() false) and does not enter debug mode, so Ion and the slow native-call path stay as on a non-debugged realm. stealthMode is a JS property of the Debugger object that Juggler sets, not a pref. The read of that property must happen before the no-GC region (it can run JS). The removal path runs during GC sweep, so it uses the cached invisibleDebuggee_ flag instead of reading the property. The guard that pops the debuggers_ entry on failure now checks appendedGlobalDebugger. The read of stealthMode can move to a helper in our file (one call); the step-1, step-4 and step-5 conditionals must stay in place because they guard the existing exit paths. Hunks: 1 addDebuggeeGlobal (stealthMode read, step 1, guard), 2 addDebuggeeGlobal (steps 4 and 5), 3 removeDebuggeeGlobal. Hookable changed to hard: only the stealthMode read (about 9 lines) can move; the step 1, guard, step 4, step 5 and erase conditionals (about 20 lines over 3 hunks) sit inside the no-GC section and the rollback guards, so they cannot move behind one call. Verified: Juggler sets stealthMode at juggler/content/Runtime.js:131 right after new Debugger() and before the addDebuggee calls (:413, :481), so the per-Debugger invisibleDebuggee_ flag is consistent (confirmed); invisibleDebuggee_ is written only at Debugger.cpp:5091 and read at :5245. removeDebuggeeGlobal is called from GC sweep at Debugger.cpp:4211 (FromSweep::Yes) and also from non-sweep paths at :4808 and :4830, so \"runs during GC sweep\" is true for one of three callers (confirmed, partial).",
+   "verifier": {
+    "changed": [
+     "hookable",
+     "notes"
+    ],
+    "why": "Scattered guards in the middle of a no-GC function cannot move behind one hook, so hookable is hard; added hunk map and verified the stealthMode and sweep claims."
+   }
+  },
+  {
+   "file": "js/src/debugger/Debugger.h",
+   "category": "spoof",
+   "feature": "debugger-invisible-attach",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "class Debugger (members, next to allocationsLog)",
+   "evidence": [
+    "+  bool invisibleDebuggee_ = false;"
+   ],
+   "notes": "Plain member read by removeDebuggeeGlobal during GC sweep, so it must stay a plain bool with no JS calls behind it. Default is false, which keeps the normal path unchanged.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  }
+ ]
+}

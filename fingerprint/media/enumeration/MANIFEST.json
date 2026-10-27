@@ -1,0 +1,56 @@
+{
+ "modified": [
+  "dom/media/MediaManager.cpp",
+  "dom/media/MediaManager.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/media/MediaManager.cpp",
+   "category": "spoof",
+   "feature": "media-enumeration",
+   "prefs": [
+    "zoom.stealth.media.enumeration_ms"
+   ],
+   "added": 43,
+   "removed": 13,
+   "hunks": 6,
+   "inline_logic_lines": 23,
+   "hookable": "movable",
+   "anchor": "MediaManager::EnumerationParams::RealDeviceRequested; HostSpeakersMayBeAsked (new); EnumerationParams::HostSpeakersRequested (new); MediaManager::MaybeRequestPermissionAndEnumerateRawDevices; MediaManager::EnumerateRawDevices; MediaManager::GetPhysicalDevices",
+   "evidence": [
+    "+  return mFlags.contains(EnumerationFlag::EnumerateAudioOutputs) &&",
+    "+  return StaticPrefs::zoom_stealth_media_enumeration_ms() == 0;",
+    "+            if (uint32_t ms = StaticPrefs::zoom_stealth_media_enumeration_ms()) {"
+   ],
+   "notes": "B300: with zoom.stealth.media_enumeration_ms set, speakers are not enumerated from the host, and GetPhysicalDevices resolves after the declared delay (the resolve step is wrapped in a lambda, hunk 6, the largest block). Risk: the nsresult from NS_DelayedDispatchToCurrentThread is ignored; if the dispatch fails, the enumeration promise never resolves. RealDeviceRequested no longer counts EnumerateAudioOutputs when the enumeration is declared (intended, not stated in the diff). The declared-delay logic can move to our file behind one hook. VERIFIED: the nsresult of NS_DelayedDispatchToCurrentThread is ignored at dom/media/MediaManager.cpp:2472 (confirmed); that the promise then never resolves is a consequence of the code but was not reproduced (unverified).",
+   "verifier": {
+    "changed": [
+     "prefs",
+     "notes"
+    ],
+    "why": "Pref name is zoom.stealth.media.enumeration_ms (StaticPrefList.yaml:21478); risk claim checked."
+   }
+  },
+  {
+   "file": "dom/media/MediaManager.h",
+   "category": "spoof",
+   "feature": "media-enumeration",
+   "prefs": [],
+   "added": 3,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "MediaManager::EnumerationParams (declarations)",
+   "evidence": [
+    "+    bool HostSpeakersRequested() const;"
+   ],
+   "notes": "Declares the one decision point shared by RealDeviceRequested, the permission path and EnumerateRawDevices.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  }
+ ]
+}

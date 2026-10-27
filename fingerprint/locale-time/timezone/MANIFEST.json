@@ -1,0 +1,129 @@
+{
+ "modified": [
+  "docshell/base/BrowsingContext.cpp",
+  "dom/base/Document.cpp",
+  "dom/ipc/ContentChild.cpp",
+  "dom/xslt/xslt/txEXSLTFunctions.cpp",
+  "js/xpconnect/src/nsXPConnect.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "docshell/base/BrowsingContext.cpp",
+   "category": "spoof",
+   "feature": "timezone-locale-override",
+   "prefs": [
+    "juggler.timezone.override",
+    "juggler.locale.override"
+   ],
+   "added": 55,
+   "removed": 8,
+   "hunks": 7,
+   "inline_logic_lines": 25,
+   "hookable": "movable",
+   "anchor": "BrowsingContext::Attach; BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>); BrowsingContext::DidSet(FieldIndex<IDX_TimezoneOverride>)",
+   "evidence": [
+    "+    intl::OrSessionTimezone(stealthTz);",
+    "-  const nsString& timezoneOverride = GetTimezoneOverride();",
+    "+          intl::PrimaryLanguageTag(languageOverride, primaryLocale);"
+   ],
+   "notes": "Attach seeds the timezone and language fields from the session (parent process, top-level only); about 14 logic lines in one hunk, so a one-call hook into our own file is the target. DidSet now reads the declared value (field, else session) instead of the field alone, so a cleared field falls back to the session value in every process. The pref names come from the comments; the reads happen in intl/locale/StealthSessionPrefs.cpp, not in this file. The primary-tag step (intl::PrimaryLanguageTag) is duplicated inline in js/xpconnect/src/Sandbox.cpp. Hunks: 1-2 includes, 3 Attach (timezone and language seeding), 4-5 DidSet(LanguageOverride), 6-7 DidSet(TimezoneOverride). Verified: the two pref reads are StaticPrefs::juggler_locale_override / juggler_timezone_override at intl/locale/StealthSessionPrefs.cpp:15 and :22 (listed prefs are read through OrSessionLanguage/OrSessionTimezone, not by the added lines themselves); GetDeclaredLanguage/GetDeclaredTimezone behave as described (dom/base/StealthSessionDeclaration.cpp:23-37); the duplicated primary-tag logic in Sandbox.cpp is confirmed (intl::PrimaryLanguageTag at StealthSessionPrefs.cpp:41-48 does the same FindChar/Truncate/Trim).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added hunk map and confirmed the helper/pref locations and the Sandbox.cpp duplication."
+   }
+  },
+  {
+   "file": "dom/base/Document.cpp",
+   "category": "spoof",
+   "feature": "timezone-declared",
+   "prefs": [],
+   "added": 19,
+   "removed": 9,
+   "hunks": 6,
+   "inline_logic_lines": 6,
+   "hookable": "already-hook",
+   "anchor": "Document::InitCSP; static GetFormattedTimeString (called from Document::GetLastModified and Document::RetrieveRelevantHeaders); Document::ComputeVisibilityState",
+   "evidence": [
+    "-  PR_ExplodeTime(aTime, aUniversal ? PR_GMTParameters : PR_LocalTimeParameters,",
+    "+  ExplodeLocalTime(aTime, &aDocument, &prtime);",
+    "+  if (CSP_IsBypassedFor(*this)) {"
+   ],
+   "notes": "Four unrelated changes in one file. (1) spoof, feature timezone-declared: document.lastModified formatting now uses the declared zone via ExplodeLocalTime (defined in dom/base/StealthSessionDeclaration.h, ours); the UTC branch for RFP is gone. (2) juggler, feature csp-bypass: InitCSP returns early when CSP_IsBypassedFor(*this) (defined in dom/security/nsCSPUtils.cpp, another group). Give it its own object if the patch is split per feature. (3) include of StealthSessionDeclaration.h. (4) ComputeVisibilityState: comment-only (5 lines) for a removed document.hidden hack; no code. Behaviour gap: nothing forces document.hidden to report visible any more, and the TODO is not implemented. VERIFIED: CSP_IsBypassedFor is defined at dom/security/nsCSPUtils.cpp:132 (confirmed); the document.hidden gap is confirmed, only a comment sits at dom/base/Document.cpp:17587 and no code forces Visible.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Bug/risk claims checked in source."
+   }
+  },
+  {
+   "file": "dom/ipc/ContentChild.cpp",
+   "category": "other",
+   "feature": "timezone-declared",
+   "prefs": [],
+   "added": 11,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "ContentChild::RecvSetXPCOMProcessAttributes; ContentChild::RecvSystemTimezoneChanged",
+   "evidence": [
+    "+  // STEALTHFOX (firefox-50): the block that applied `juggler.timezone.override`",
+    "+  // Stealth: SetTimeZoneOverride was removed in 150. Just reset like vanilla."
+   ],
+   "notes": "Comment-only: no code added or removed. The first comment records removal of a juggler.timezone.override block (it never ran); the second is a note on RecvSystemTimezoneChanged. The patch should drop these comments; the zone now comes from StealthSessionDeclaration (dom/base, not in this group).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/xslt/xslt/txEXSLTFunctions.cpp",
+   "category": "spoof",
+   "feature": "xslt-date-timezone",
+   "prefs": [],
+   "added": 4,
+   "removed": 6,
+   "hunks": 3,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "txEXSLTFunctionCall::evaluate (date:date-time branch)",
+   "evidence": [
+    "-      PRTimeParamFn timezone =",
+    "+      ExplodeLocalTime(time, sourceDoc, &prtime);"
+   ],
+   "notes": "Replaces PR_ExplodeTime with ExplodeLocalTime (our dom/base/StealthSessionDeclaration.h). The removed code chose PR_GMTParameters when JSDateTimeUTC was resisted; the new call does not reference that flag. [verified: REFUTED, ExplodeLocalTime (dom/base/StealthSessionDeclaration.cpp:95-98) checks ShouldResistFingerprinting(JSDateTimeUTC) and uses PR_GMTParameters, then falls back to PR_LocalTimeParameters when no zone is declared (:101-103).] Comment cites internal bug B339.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Regression claim refuted: ExplodeLocalTime keeps the resistFingerprinting UTC behaviour."
+   }
+  },
+  {
+   "file": "js/xpconnect/src/nsXPConnect.cpp",
+   "category": "spoof",
+   "feature": "timezone-locale-override",
+   "prefs": [],
+   "added": 5,
+   "removed": 15,
+   "hunks": 3,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "InitGlobalObjectOptions",
+   "evidence": [
+    "-    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();",
+    "-    aOptions.behaviors().setLocaleOverride(locale.get());",
+    "+  mozilla::dom::SetRealmTimeAndLanguage(aOptions, aForceUTC, aLocaleEnUS,"
+   ],
+   "notes": "Page-observable: the realm's timezone and default locale. The Mozilla RFP calls (nsRFPService::GetSpoofedJSTimeZone and GetSpoofedJSLocale) are removed from this function and the nsRFPService.h include is gone; the zone/locale rule now lives in dom/base/StealthSessionDeclaration (ours, not in this group). aForceUTC and aLocaleEnUS still come from Mozilla callers and keep their meaning as flags. The helper's own pref reads were not checked here.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  }
+ ]
+}

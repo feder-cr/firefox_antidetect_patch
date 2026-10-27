@@ -1,0 +1,445 @@
+diff --git a/dom/base/nsDOMWindowUtils.cpp b/dom/base/nsDOMWindowUtils.cpp
+index 5d3805f04534a82ba8b68eb26ffdceb68f8832bc..cd04181db3982a99f6e3f5f2aa3a49f9a903b87d 100644
+--- a/dom/base/nsDOMWindowUtils.cpp
++++ b/dom/base/nsDOMWindowUtils.cpp
+@@ -61,6 +61,10 @@
+ #include "nsFrameManager.h"
+ #include "nsGlobalWindowOuter.h"
+ #include "nsIDocShell.h"
++// Stealthfox [B212]: jugglerSendDragEvent sets the session's drag action from
++// the modifier state, the way nsNativeDragTarget::ProcessDrag does.
++#include "nsIDragService.h"
++#include "nsIDragSession.h"
+ #include "nsIFrame.h"
+ #include "nsIObjectLoadingContent.h"
+ #include "nsIWidget.h"
+@@ -716,13 +720,147 @@ nsDOMWindowUtils::IsCORSSafelistedRequestHeader(const nsACString& aName,
+   return NS_OK;
+ }
+ 
++static uint32_t sJugglerEventId = 0;
++
++NS_IMETHODIMP
++nsDOMWindowUtils::JugglerSendMouseEvent(
++    const nsAString& aType, float aX, float aY, int32_t aButton,
++    int32_t aClickCount, int32_t aModifiers, bool aIgnoreRootScrollFrame,
++    float aPressure, unsigned short aInputSourceArg,
++    bool aIsDOMEventSynthesized, bool aIsWidgetEventSynthesized,
++    int32_t aButtons, uint32_t aIdentifier, double aLatency,
++    uint32_t* aJugglerEventId) {
++  *aJugglerEventId = ++sJugglerEventId;
++
++  // Stealthfox [B299]: aLatency took the place of aDisablePointerEvent, which
++  // this method accepted for FF146's signature and ignored (FF150's
++  // SynthesizeMouseEvent gates pointer dispatch on the event type). XPConnect
++  // takes 15 arguments at most, and a 16th failed the build.
++
++  RefPtr<PresShell> presShell = GetPresShell();
++  if (!presShell) {
++    return NS_ERROR_FAILURE;
++  }
++
++  nsPoint offset;
++  nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
++  if (!widget) {
++    return NS_ERROR_FAILURE;
++  }
++
++  LayoutDeviceIntPoint refPoint = nsContentUtils::ToWidgetPoint(
++      CSSPoint(aX, aY), offset, presShell->GetPresContext());
++
++  dom::SynthesizeMouseEventData mouseEventData;
++  mouseEventData.mIdentifier = aIdentifier;
++  mouseEventData.mButton = aButton;
++  mouseEventData.mButtons.Construct(aButtons);
++  mouseEventData.mClickCount.Construct(aClickCount);
++  mouseEventData.mPressure.Construct(aPressure);
++  mouseEventData.mInputSource = aInputSourceArg;
++  mouseEventData.mModifiers = aModifiers;
++  mouseEventData.mJugglerEventId = *aJugglerEventId;
++  // Stealthfox [B299]: born that many milliseconds before its dispatch; see
++  // nsContentUtils::SynthesizeMouseEvent.
++  mouseEventData.mLatency = aLatency;
++
++  dom::SynthesizeMouseEventOptions options;
++  options.mIgnoreRootScrollFrame = aIgnoreRootScrollFrame;
++  options.mIsDOMEventSynthesized = aIsDOMEventSynthesized;
++  options.mIsWidgetEventSynthesized = aIsWidgetEventSynthesized;
++  options.mIsAsyncEnabled = false;
++
++  auto result = nsContentUtils::SynthesizeMouseEvent(
++      presShell, widget, aType, refPoint, mouseEventData, options,
++      dom::Optional<OwningNonNull<dom::VoidFunction>>{});
++  return result.isOk() ? NS_OK : result.unwrapErr();
++}
++
++// Stealthfox [B212]: a drag event needs its own door.
++//
++// It used to go through jugglerSendMouseEvent, and that could never work:
++// nsContentUtils::SynthesizeMouseEvent maps ten mouse type strings and ends
++// with `return Err(NS_ERROR_FAILURE)`, so "dragover" failed on EVERY call, on
++// every page. The drop never reached the target and the whole gesture raised.
++//
++// This mirrors nsNativeDragTarget::DispatchDragDropEvent - the path a real OS
++// drag takes on Windows - and NOT the mIsSynthesizedForTests path that
++// EventStateManager also accepts. Both would deliver the event; only one puts
++// the engine on the code path a retail Firefox runs, and that is the same
++// reason inputSource moved from 0 to MOZ_SOURCE_MOUSE.
++NS_IMETHODIMP
++nsDOMWindowUtils::JugglerSendDragEvent(const nsAString& aType, float aX,
++                                       float aY, int32_t aModifiers) {
++  EventMessage msg;
++  if (aType.EqualsLiteral("dragover")) {
++    msg = eDragOver;
++  } else if (aType.EqualsLiteral("drop")) {
++    msg = eDrop;
++  } else if (aType.EqualsLiteral("dragenter")) {
++    msg = eDragEnter;
++  } else if (aType.EqualsLiteral("dragexit")) {
++    msg = eDragExit;
++  } else {
++    // Named refusal: the caller asked for something this door does not open.
++    // Returning NS_ERROR_FAILURE here would reproduce the very defect above,
++    // where a wrong type was indistinguishable from a broken engine.
++    return NS_ERROR_INVALID_ARG;
++  }
++
++  RefPtr<PresShell> presShell = GetPresShell();
++  if (!presShell) {
++    return NS_ERROR_FAILURE;
++  }
++
++  nsPoint offset;
++  nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
++  if (!widget) {
++    return NS_ERROR_FAILURE;
++  }
++
++  WidgetDragEvent event(true, msg, widget);
++  event.mRefPoint = nsContentUtils::ToWidgetPoint(CSSPoint(aX, aY), offset,
++                                                  presShell->GetPresContext());
++  event.mModifiers = nsContentUtils::GetWidgetModifiers(aModifiers);
++  // A real drag carries the input source of the session that started it; ours
++  // is always a mouse. Leaving this at the default would reintroduce the tell
++  // that P2.4b removed from the mouse path.
++  event.mInputSource = dom::MouseEvent_Binding::MOZ_SOURCE_MOUSE;
++
++  // The real drop target sets the session's action from the modifier state
++  // before dispatching (nsNativeDragTarget::ProcessDrag ->
++  // GetGeckoDragAction): Ctrl+Shift LINK, Shift MOVE, Ctrl COPY. Without this
++  // the session keeps whatever action it was left with, and the dropEffect the
++  // page reads stops following the keys the user is holding.
++  if (nsCOMPtr<nsIDragService> dragService =
++          do_GetService("@mozilla.org/widget/dragservice;1")) {
++    if (nsCOMPtr<nsIDragSession> session =
++            dragService->GetCurrentSession(widget)) {
++      uint32_t action = nsIDragService::DRAGDROP_ACTION_MOVE;
++      if (event.IsControl()) {
++        action = event.IsShift() ? nsIDragService::DRAGDROP_ACTION_LINK
++                                 : nsIDragService::DRAGDROP_ACTION_COPY;
++      }
++      session->SetDragAction(action);
++    }
++  }
++
++  // Whether the page called preventDefault is NOT reported back: the drop
++  // decision is the page's, and the caller learns it by watching for the
++  // event, which is what PageHandler already does. Returning it here would be
++  // a second source for the same fact.
++  widget->DispatchEvent(&event);
++  return NS_OK;
++}
++
+ NS_IMETHODIMP
+ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
+                                  double aDeltaY, double aDeltaZ,
+                                  uint32_t aDeltaMode, int32_t aModifiers,
+                                  int32_t aLineOrPageDeltaX,
+                                  int32_t aLineOrPageDeltaY, uint32_t aOptions,
+-                                 nsISynthesizedEventCallback* aCallback) {
++                                 nsISynthesizedEventCallback* aCallback,
++                                 double aLatency) {
+   if (XRE_IsContentProcess() && aCallback &&
+       ((aOptions & WHEEL_EVENT_ASYNC_ENABLED) ||
+        StaticPrefs::test_events_async_enabled())) {
+@@ -755,6 +893,10 @@ nsDOMWindowUtils::SendWheelEvent(float aX, float aY, double aDeltaX,
+   wheelEvent.mLineOrPageDeltaX = aLineOrPageDeltaX;
+   wheelEvent.mLineOrPageDeltaY = aLineOrPageDeltaY;
+   wheelEvent.mCallbackId = notifier.SaveCallback();
++  // Stealthfox [B301]: born before the page sees it, as the mouse ([B299]).
++  if (aLatency > 0) {
++    wheelEvent.mTimeStamp = nsContentUtils::InputEventBirth(aLatency);
++  }
+ 
+   nsPresContext* presContext = GetPresContext();
+   NS_ENSURE_TRUE(presContext, NS_ERROR_FAILURE);
+@@ -1392,7 +1534,9 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY, float aTopSize,
+ static already_AddRefed<DataSourceSurface> CanvasToDataSourceSurface(
+     HTMLCanvasElement* aCanvas) {
+   MOZ_ASSERT(aCanvas);
+-  SurfaceFromElementResult result = nsLayoutUtils::SurfaceFromElement(aCanvas);
++  // Chrome-only test hook (compareCanvases): the canvases as drawn.
++  SurfaceFromElementResult result =
++      nsLayoutUtils::SurfaceFromElement(aCanvas, nsLayoutUtils::SFE_AS_DRAWN);
+   const RefPtr<SourceSurface> surf = result.GetSourceSurface();
+   if (!surf) {
+     return nullptr;
+diff --git a/dom/events/EventStateManager.cpp b/dom/events/EventStateManager.cpp
+index 185901651805f626c553470ef22ee4dfebf5e8bb..a173a723423cad904d5862a0daaf7e92d1c963b2 100644
+--- a/dom/events/EventStateManager.cpp
++++ b/dom/events/EventStateManager.cpp
+@@ -2644,6 +2644,7 @@ void EventStateManager::BeginTrackingDragGesture(
+   mGestureModifiers = aMouseDownOrTouchDragEvent.mModifiers;
+   mGestureDownButtons = aMouseDownOrTouchDragEvent.mButtons;
+   mGestureDownButton = aMouseDownOrTouchDragEvent.mButton;
++  mGestureDownFromJuggler = aMouseDownOrTouchDragEvent.mJugglerEventId != 0;
+ 
+   if (aMouseDownOrTouchDragEvent.mMessage != eMouseTouchDrag &&
+       StaticPrefs::ui_click_hold_context_menus()) {
+@@ -2798,6 +2799,24 @@ void EventStateManager::GenerateDragGesture(
+     return;
+   }
+ 
++  // Stealthfox [B288]: a gesture continues only with moves from where its
++  // press came from. In a visible session the system's real pointer sits over
++  // the window, and its native moves reach this process during a press that
++  // Juggler sent: one from far away crossed the threshold and started a NATIVE
++  // drag out of a click on a link. That drag then ended on its own, the
++  // driver's release went to a drag session that no longer existed, and the
++  // click failed (measured on X11 with XTest moves during the press; seen on
++  // Windows as "session is null" in dispatchDragEvent). The id is set on every
++  // event from jugglerSendMouseEvent, carried across processes and coalescing,
++  // and is 0 for native input. The move is still dispatched; it only does not
++  // count for this gesture, and tracking goes on.
++  if (const WidgetMouseEvent* mouseEvent =
++          aMouseOrTouchOrPointerEvent.AsMouseEvent()) {
++    if ((mouseEvent->mJugglerEventId != 0) != mGestureDownFromJuggler) {
++      return;
++    }
++  }
++
+   AutoWeakFrame targetFrameBefore = mCurrentTarget;
+   auto autoRestore = MakeScopeExit([&] { mCurrentTarget = targetFrameBefore; });
+ 
+diff --git a/dom/events/EventStateManager.h b/dom/events/EventStateManager.h
+index 3aab86bc71534dc20753d02801e1bad5a6b8af11..47e4688fb5d5887af7fefdfaaf4c91455b3b70ef 100644
+--- a/dom/events/EventStateManager.h
++++ b/dom/events/EventStateManager.h
+@@ -1458,6 +1458,10 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
+   Modifiers mGestureModifiers;
+   uint16_t mGestureDownButtons;
+   int16_t mGestureDownButton;
++  // Stealthfox [B288]: whether the press that started the gesture came from
++  // Juggler (nsIDOMWindowUtils.jugglerSendMouseEvent). Only moves of the same
++  // origin continue it; see GenerateDragGesture.
++  bool mGestureDownFromJuggler = false;
+ 
+   LastMouseButtonPressInfo mLastPrimaryButtonPressInfo;
+   LastMouseButtonPressInfo mLastMiddleButtonPressInfo;
+diff --git a/dom/interfaces/base/nsIDOMWindowUtils.idl b/dom/interfaces/base/nsIDOMWindowUtils.idl
+index 83313786eba285ecd6895869f9991c722c99f799..a95962dc2a4f464a277cb6d9ace97d510f042740 100644
+--- a/dom/interfaces/base/nsIDOMWindowUtils.idl
++++ b/dom/interfaces/base/nsIDOMWindowUtils.idl
+@@ -381,7 +381,8 @@ interface nsIDOMWindowUtils : nsISupports {
+                       in long aLineOrPageDeltaX,
+                       in long aLineOrPageDeltaY,
+                       in unsigned long aOptions,
+-                      [optional] in nsISynthesizedEventCallback aCallback);
++                      [optional] in nsISynthesizedEventCallback aCallback,
++                      [optional] in double aLatency);
+ 
+   /**
+    * Native modifiers for sendNativeKeyEvent and sendNativeMouseEvent.
+@@ -455,6 +456,51 @@ interface nsIDOMWindowUtils : nsISupports {
+                             in Element aElementOnWidget,
+                             [optional] in nsISynthesizedEventCallback aCallback);
+ 
++  /**
++   * Playwright: dispatch a synthetic mouse event and return a monotonically
++   * incrementing event identifier. Restored from the FF146 Juggler patch;
++   * dropped during the FF150 port and now re-added for issue #9.
++   */
++  [can_run_script]
++  unsigned long jugglerSendMouseEvent(in AString aType,
++                         in float aX,
++                         in float aY,
++                         in long aButton,
++                         in long aClickCount,
++                         in long aModifiers,
++                         in boolean aIgnoreRootScrollFrame,
++                         in float aPressure,
++                         in unsigned short aInputSourceArg,
++                         in boolean aIsDOMEventSynthesized,
++                         in boolean aIsWidgetEventSynthesized,
++                         in long aButtons,
++                         in unsigned long aIdentifier,
++                         in double aLatency);
++
++  /**
++   * Stealthfox: dispatch a synthetic DRAG event the way the platform's own
++   * drop target does.
++   *
++   * This is deliberately NOT a mode of jugglerSendMouseEvent. A drag event is
++   * a WidgetDragEvent, not a WidgetMouseEvent, and routing it through the
++   * mouse synthesizer is what made it impossible: nsContentUtils::
++   * SynthesizeMouseEvent maps ten mouse type strings and returns
++   * NS_ERROR_FAILURE for everything else, so "dragover" could never be
++   * dispatched at all - that is [B212], where the drop never reached the
++   * target and drag_and_drop raised instead.
++   *
++   * The implementation mirrors nsNativeDragTarget::DispatchDragDropEvent,
++   * which is the path a real OS drag takes, rather than the
++   * mIsSynthesizedForTests path EventStateManager also offers: we want the
++   * engine on the same code path a retail Firefox runs, for the same reason
++   * inputSource moved from 0 to MOZ_SOURCE_MOUSE.
++   */
++  [can_run_script]
++  void jugglerSendDragEvent(in AString aType,
++                            in float aX,
++                            in float aY,
++                            in long aModifiers);
++
+   /**
+    * Suppress animations that are applied to a window by OS when
+    * resizing, moving, changing size mode, ...
+diff --git a/dom/ipc/CoalescedMouseData.cpp b/dom/ipc/CoalescedMouseData.cpp
+index a1a902e6db3fa40298410eb45c31f36ffef539c4..319ff46d1806657138f91e26f715c56105f01bc5 100644
+--- a/dom/ipc/CoalescedMouseData.cpp
++++ b/dom/ipc/CoalescedMouseData.cpp
+@@ -47,6 +47,10 @@ void CoalescedMouseData::Coalesce(const WidgetMouseEvent& aMouseOrPointerEvent,
+     mCoalescedInputEvent->mTimeStamp = aMouseOrPointerEvent.mTimeStamp;
+     mCoalescedInputEvent->mRefPoint = aMouseOrPointerEvent.mRefPoint;
+     mCoalescedInputEvent->mPressure = aMouseOrPointerEvent.mPressure;
++    // Stealthfox [B217]: the coalesced event acks the LAST id folded into it,
++    // which is the one a caller waiting on "has my move landed" holds.
++    mCoalescedInputEvent->mJugglerEventId =
++        aMouseOrPointerEvent.mJugglerEventId;
+     mCoalescedInputEvent->AssignPointerHelperData(aMouseOrPointerEvent);
+     // Accumulate motion across coalesced events. Without this,
+     // the dispatched event would report only the first motion,
+diff --git a/layout/base/PresShell.cpp b/layout/base/PresShell.cpp
+index 431379c241b6cfd4d971dc6e0b7b54dfe8d574ae..067678970b8ee3d77c9f354ec5c2fe3716cf3f5a 100644
+--- a/layout/base/PresShell.cpp
++++ b/layout/base/PresShell.cpp
+@@ -7364,6 +7364,57 @@ nsresult PresShell::HandleEvent(nsIFrame* aFrameForPresShell,
+ 
+   RecordModifiers(aGUIEvent);
+ 
++  // Stealthfox [B217]: the renderer acks a juggler mouse event AFTER handling
++  // it, once. The id is what `jugglerSendMouseEvent` handed back in the parent;
++  // it rode the event here (and through coalescing, which keeps the last id
++  // folded in). Content-side Juggler observes this to answer "has my input
++  // reached the page" - the question a driver cannot answer any other way, and
++  // the one whose answer was lost in the FF150 port. Zeroing the id after
++  // notifying is what makes it once: a nested HandleEvent on a child shell
++  // sees 0 and stays quiet. Not before the dispatch: the observer runs
++  // JavaScript synchronously, and a promise resumed from it would read the
++  // landing before the listeners below had recorded it.
++  const uint32_t jugglerEventId =
++      aGUIEvent->AsMouseEvent() ? aGUIEvent->AsMouseEvent()->mJugglerEventId
++                                : 0;
++  auto ackJugglerEvent = MakeScopeExit([&] {
++    if (!jugglerEventId || !aGUIEvent->AsMouseEvent() ||
++        aGUIEvent->AsMouseEvent()->mJugglerEventId != jugglerEventId) {
++      return;
++    }
++    const char* type = nullptr;
++    switch (aGUIEvent->mMessage) {
++      case eMouseMove:
++        type = "mousemove";
++        break;
++      case eMouseDown:
++        type = "mousedown";
++        break;
++      case eMouseUp:
++        type = "mouseup";
++        break;
++      // [B230]: a right press sends `mousedown` and then `contextmenu`, and
++      // `Page.dispatchMouseEvent` answers once the LAST event it sent is
++      // handled. Without this case that last event was never acked, and every
++      // right click waited out its bound.
++      case eContextMenu:
++        type = "contextmenu";
++        break;
++      default:
++        return;
++    }
++    aGUIEvent->AsMouseEvent()->mJugglerEventId = 0;
++    if (nsCOMPtr<nsIObserverService> os =
++            mozilla::services::GetObserverService()) {
++      nsAutoString info;
++      info.AppendASCII(type);
++      info.Append(' ');
++      info.AppendInt(jugglerEventId);
++      os->NotifyObservers(nullptr, "juggler-mouse-event-hit-renderer",
++                          info.get());
++    }
++  });
++
+   AutoWeakFrame weakFrameForPresShell(aFrameForPresShell);
+ 
+   // Running tests must not expect that some mouse boundary events are fired
+diff --git a/widget/MouseEvents.h b/widget/MouseEvents.h
+index e0e3b70f718140d313bb5d54fdc9679a42804df6..bbbb15a8aaf040a3909196eb42278c7a4a2500c4 100644
+--- a/widget/MouseEvents.h
++++ b/widget/MouseEvents.h
+@@ -239,6 +239,15 @@ class WidgetMouseEventBase : public WidgetInputEvent {
+   // Possible values a in MouseEvent
+   uint16_t mInputSource;
+ 
++  // Stealthfox: the id `nsIDOMWindowUtils.jugglerSendMouseEvent` handed back
++  // for this event, 0 for every event that did not come from it. It rides the
++  // event across processes and coalescing so that the process which finally
++  // dispatches it can say so (`juggler-mouse-event-hit-renderer`); that ack is
++  // the only way the driver can know its input has reached the page, and it
++  // was lost in the FF150 port - the id was generated and written into a
++  // dictionary nobody read. [B217]
++  uint32_t mJugglerEventId = 0;
++
+   bool IsLeftButtonPressed() const {
+     return !!(mButtons & MouseButtonsFlag::ePrimaryFlag);
+   }
+@@ -263,6 +272,7 @@ class WidgetMouseEventBase : public WidgetInputEvent {
+     mButtons = aEvent.mButtons;
+     mPressure = aEvent.mPressure;
+     mInputSource = aEvent.mInputSource;
++    mJugglerEventId = aEvent.mJugglerEventId;
+   }
+ 
+   /**
+diff --git a/widget/nsGUIEventIPC.h b/widget/nsGUIEventIPC.h
+index a2a73f583d28e6d3677796caca51273de7718ceb..d1b312d4640778002ffcc114a88cd836d6c5c747 100644
+--- a/widget/nsGUIEventIPC.h
++++ b/widget/nsGUIEventIPC.h
+@@ -165,6 +165,7 @@ struct ParamTraits<mozilla::WidgetMouseEventBase> {
+     WriteParam(aWriter, aParam.mButtons);
+     WriteParam(aWriter, aParam.mPressure);
+     WriteParam(aWriter, aParam.mInputSource);
++    WriteParam(aWriter, aParam.mJugglerEventId);
+   }
+ 
+   static bool ReadForDerivedClass(MessageReader* aReader,
+@@ -175,7 +176,8 @@ struct ParamTraits<mozilla::WidgetMouseEventBase> {
+            ReadParam(aReader, &aResult->mButton) &&
+            ReadParam(aReader, &aResult->mButtons) &&
+            ReadParam(aReader, &aResult->mPressure) &&
+-           ReadParam(aReader, &aResult->mInputSource);
++           ReadParam(aReader, &aResult->mInputSource) &&
++           ReadParam(aReader, &aResult->mJugglerEventId);
+   }
+ };
+ 
+diff --git a/xpcom/reflect/xptinfo/xptinfo.h b/xpcom/reflect/xptinfo/xptinfo.h
+index 7b1d918e86af55b5f961d839ca5009335b56d88b..b99db2437222030c8a6f26ae0a560a36ce8c7af8 100644
+--- a/xpcom/reflect/xptinfo/xptinfo.h
++++ b/xpcom/reflect/xptinfo/xptinfo.h
+@@ -504,7 +504,8 @@ static_assert(sizeof(nsXPTMethodInfo) == 8, "wrong size");
+ #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+ #  define PARAM_BUFFER_COUNT 18
+ #else
+-#  define PARAM_BUFFER_COUNT 14
++// Stealthfox: bumped 14 -> 15 for jugglerSendMouseEvent (15 args).
++#  define PARAM_BUFFER_COUNT 15
+ #endif
+ 
+ /**

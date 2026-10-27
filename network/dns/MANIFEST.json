@@ -1,0 +1,32 @@
+{
+ "modified": [
+  "netwerk/dns/DNSServiceBase.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "netwerk/dns/DNSServiceBase.cpp",
+   "category": "spoof",
+   "feature": "dns-no-local-resolution",
+   "prefs": [
+    "zoom.stealth.dns.no_local_resolution"
+   ],
+   "added": 27,
+   "removed": 6,
+   "hunks": 2,
+   "inline_logic_lines": 9,
+   "hookable": "movable",
+   "anchor": "DNSServiceBase::DNSForbiddenByActiveProxy",
+   "evidence": [
+    "+  const bool proxyDeclaredByLauncher =",
+    "+      StaticPrefs::zoom_stealth_dns_no_local_resolution();",
+    "+  if (proxyDeclaredByLauncher ||"
+   ],
+   "notes": "Adds an OR to the existing proxy guard: when the launcher declares a proxy, DNS for non-IP hostnames is refused. Pref name confirmed at StaticPrefList.yaml:21529 as zoom.stealth.dns.no_local_resolution (accessor zoom_stealth_dns_no_local_resolution). Of the 9 added logic lines, 7 are the old condition re-indented. The comment names the ICE resolver as a caller that bypasses channels; unverified. Can become one call into our own function.",
+   "verifier": {
+    "changed": [],
+    "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  }
+ ]
+}

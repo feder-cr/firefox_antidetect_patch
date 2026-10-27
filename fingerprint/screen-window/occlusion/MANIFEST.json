@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "widget/gtk/nsWindow.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "widget/gtk/nsWindow.cpp",
+   "category": "spoof",
+   "feature": "occlusion-tracking",
+   "prefs": [
+    "zoom.stealth.widget.occlusion_tracking.enabled"
+   ],
+   "added": 8,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "nsWindow::OnVisibilityNotifyEvent (hunk 2; hunk 1 adds the StaticPrefs include)",
+   "evidence": [
+    "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&",
+    "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()"
+   ],
+   "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Verified pref declaration."
+   }
+  }
+ ]
+}

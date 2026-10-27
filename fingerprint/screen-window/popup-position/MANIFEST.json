@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "toolkit/components/windowwatcher/nsWindowWatcher.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "toolkit/components/windowwatcher/nsWindowWatcher.cpp",
+   "category": "spoof",
+   "feature": "popup-default-position",
+   "prefs": [],
+   "added": 46,
+   "removed": 3,
+   "hunks": 4,
+   "inline_logic_lines": 19,
+   "hookable": "movable",
+   "anchor": "nsWindowWatcher::CalculateChromeFlagsForContent (hunk 2); static SizeOpenedWindow (hunks 3 and 4); include at top (hunk 1)",
+   "evidence": [
+    "+  const Maybe<mozilla::gfx::StealthWindowFrame> stealthFrame =",
+    "+  if (HaveSpecifiedSize(aFeatures)) {",
+    "-  bool positionSpecified = aSizeSpec.PositionSpecified();",
+    "+  bool positionSpecified = aSizeSpec.PositionSpecified() || stealthFrame;"
+   ],
+   "notes": "File mixes two features: this spoof part (popup default position, which a page reads as screenX/screenY, and the chrome flags) and the Juggler flag JUGGLER_WINDOW_EXPLICIT_SIZE (feature juggler-popup-explicit-size, see nsIWebBrowserChrome.idl). Split them in the series. Verified: StealthDeclarationGate.h is gfx/thebes/StealthDeclarationGate.h (struct StealthWindowFrame line 124, StealthDeclaredWindowFrame line 135). Chrome callers keep stock behaviour. The B258 reference is the author's.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Verified StealthDeclarationGate.h exists."
+   }
+  }
+ ]
+}

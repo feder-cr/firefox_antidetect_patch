@@ -1,0 +1,43 @@
+{
+ "modified": [
+  "dom/canvas/ClientWebGLContext.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/canvas/ClientWebGLContext.cpp",
+   "category": "spoof",
+   "feature": "webgl-parameters",
+   "prefs": [
+    "zoom.stealth.webgl.int_params",
+    "zoom.stealth.webgl.float_params",
+    "zoom.stealth.webgl.int2_params",
+    "zoom.stealth.webgl.renderer",
+    "zoom.stealth.webgl.vendor",
+    "zoom.stealth.webgl.shader_precisions",
+    "zoom.stealth.webgl.extensions",
+    "zoom.stealth.webgl2.extensions",
+    "webgl.sanitize-unmasked-renderer"
+   ],
+   "added": 445,
+   "removed": 42,
+   "hunks": 24,
+   "inline_logic_lines": 300,
+   "hookable": "movable",
+   "anchor": "ClientWebGLContext::GetParameter, GetShaderPrecisionFormat, ReadPixels (both forms), DoReadPixels, DoReadPixelsAsync, IsSupported, GetSupportedExtensions, BufferParameter; static LookupStealthParamEntry and GetStealthExtensionWhitelist; GetImageBuffer and GetInputStream (toDataURL/toBlob projection); comment-only hunk in GetSurfaceSnapshot",
+   "evidence": [
+    "+    if (LookupStealthParamEntry(intPref, pname, body)) {",
+    "+  if (!noise || aWritten.subrect.IsEmpty() || !aWritten.byteStride) {",
+    "+  auto whitelist = GetStealthExtensionWhitelist(mIsWebGL2);"
+   ],
+   "notes": "This one file carries at least five features, and the feature field above only names the main one: webgl-parameters (int, float and int2 overrides in GetParameter), webgl-renderer-vendor (renderer and vendor overrides; when the pref is set the ShouldResistFingerprinting branch is skipped), webgl-shader-precision (override in GetShaderPrecisionFormat), webgl-extension-whitelist (IsSupported and GetSupportedExtensions), and canvas-noise-projection (readPixels, PBO readPixels, toDataURL/toBlob via GetImageBuffer and GetInputStream, and the async snapshot). Split per feature before hooking. The BufferParameter extraction and the DoReadPixels Maybe return are refactors that the projection needs. The extension whitelist pref is re-read and re-parsed on every IsSupported call. The array readPixels projection does one extra read (a rectangle 1px larger); the PBO path does two extra reads (a tight read, then the 1px-larger one inside StealthProjectReadPixels) and then rewrites the buffer with BufferSubData, unbinding the pack buffer during the read and re-binding it afterwards. The async projection lives here, and HTMLCanvasElement must not project it again (cross-file contract stated in HTMLCanvasElement.h). The removed comment about Mozilla plus Base64 vendor randomisation is gone. Code comments include a dated measurement note (2026-08-24).",
+   "verifier": {
+    "changed": [
+     "anchor",
+     "notes"
+    ],
+    "why": "Anchor missed the GetImageBuffer/GetInputStream/GetSurfaceSnapshot hunks; notes corrected on the number of extra reads and on the toDataURL/toBlob hooks."
+   }
+  }
+ ]
+}

@@ -1,0 +1,81 @@
+{
+ "modified": [
+  "netwerk/base/nsINetworkInterceptController.idl",
+  "netwerk/protocol/http/InterceptedHttpChannel.cpp",
+  "netwerk/protocol/http/InterceptedHttpChannel.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "netwerk/base/nsINetworkInterceptController.idl",
+   "category": "juggler",
+   "feature": "juggler-interception",
+   "prefs": [],
+   "added": 10,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "interface nsIInterceptedChannel (after resetInterception)",
+   "evidence": [
+    "+    void resetInterceptionWithURI(in nsIURI aURI);",
+    "+    void interceptAfterServiceWorkerResets();"
+   ],
+   "notes": "Two Playwright methods added between the Playwright begin/end markers. Declarations only. The earlier claim that nothing implements them is REFUTED: netwerk/protocol/http/InterceptedHttpChannel.cpp:733 defines InterceptedHttpChannel::InterceptAfterServiceWorkerResets and :739 defines ResetInterceptionWithURI (member mInterceptAfterServiceWorkerResets at InterceptedHttpChannel.h:94; declarations come from NS_DECL_NSIINTERCEPTEDCHANNEL at InterceptedHttpChannel.h:59). Those edits are in the InterceptedHttpChannel diffs, not this file.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The no-implementation claim is refuted: InterceptedHttpChannel.cpp implements both methods."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/InterceptedHttpChannel.cpp",
+   "category": "juggler",
+   "feature": "juggler-service-worker-intercept",
+   "prefs": [],
+   "added": 38,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 18,
+   "hookable": "movable",
+   "anchor": "InterceptedHttpChannel::ResetInterception (new InterceptAfterServiceWorkerResets and ResetInterceptionWithURI); InterceptedHttpChannel::OnStartRequest",
+   "evidence": [
+    "+InterceptedHttpChannel::ResetInterceptionWithURI(nsIURI* aURI) {",
+    "+  if (mInterceptAfterServiceWorkerResets) {",
+    "+  return ResetInterception(mServiceWorkerResetBypass);",
+    "+  /*"
+   ],
+   "notes": "Hunk 1 adds an 18-line state machine (two new NS_IMETHODIMPs plus a branch in ResetInterception). Move the bodies to our own file and keep a 2-line hook in ResetInterception. Hunk 2 wraps the active MOZ_ASSERT_IF and MOZ_DIAGNOSTIC_ASSERT (loading principal / service-worker tainting; two assert macros) in a block comment (0 added logic lines): keep as a documented Juggler-only deviation or move behind a hook. COMPILE CHECK (first-pass claim 'no declaration found'): REFUTED. Both methods are declared in netwerk/base/nsINetworkInterceptController.idl:65 (resetInterceptionWithURI) and :68 (interceptAfterServiceWorkerResets), inside nsIInterceptedChannel, between '// ----- Playwright begin -----' markers (that .idl is also modified by us, +10 lines vs Mozilla; it is in another group). InterceptedHttpChannel derives from nsIInterceptedChannel (InterceptedHttpChannel.h:53) and juggler/NetworkObserver.js:199 and :378 call them. Move together with the .idl change. The comments name a third-party project (and a GitHub URL); the repo rule forbids vendor names in code, so rewrite them when moving the code.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "compile claim refuted (declared in nsINetworkInterceptController.idl:65,68); assert count corrected"
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/InterceptedHttpChannel.h",
+   "category": "juggler",
+   "feature": "juggler-service-worker-intercept",
+   "prefs": [],
+   "added": 11,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "InterceptedHttpChannel class members (after mInterceptionReset)",
+   "evidence": [
+    "+  bool mInterceptAfterServiceWorkerResets{false};",
+    "+  bool mServiceWorkerResetBypass{true};"
+   ],
+   "notes": "Member declarations only (0 logic lines). A Mozilla class must hold this state, but one pointer to our own state struct would replace both lines with one. The comment block names a third-party project; rewrite it when moving the code. The members back the methods declared in netwerk/base/nsINetworkInterceptController.idl:65,68 (not a missing declaration).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "cross-reference to the idl declaration"
+   }
+  }
+ ]
+}

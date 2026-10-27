@@ -1,0 +1,20 @@
+# Where the retail Firefox of this version says it was built from.
+#
+# A MOZILLA_OFFICIAL build writes its source repository and changeset into
+# application.ini and platform.ini (SourceRepository, SourceStamp) and into
+# source-repo.h, and from 157 `mach package` refuses an official build that has
+# none (make_sourcestamp_file.py). Ours is built from a git checkout of this
+# fork, which the build cannot name, so it states the retail's values: the
+# binary then carries what the retail of the same version carries.
+#
+# Taken from Mozilla's own build record of the release,
+#   https://archive.mozilla.org/pub/firefox/candidates/<version>-candidates/build<N>/<platform>/en-US/firefox-<version>.json
+# (moz_source_repo, moz_source_stamp; the same on every platform). It is an hg
+# changeset, not the git commit of FIREFOX_<version>_RELEASE.
+#
+# Every port to a new Firefox updates the three lines below.
+# scripts/check_upstream_source.py refuses a version that is not the one this
+# tree builds, and with --online compares the values with that record.
+version=157.0.1
+repo=https://hg.mozilla.org/releases/mozilla-release
+changeset=737ec77d798755890b062aab541a90d6c75afd19

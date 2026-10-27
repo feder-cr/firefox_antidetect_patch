@@ -1,0 +1,36 @@
+{
+ "modified": [
+  "dom/base/moz.build"
+ ],
+ "added": {
+  "dom/base/StealthSessionDeclaration.cpp": "100644",
+  "dom/base/StealthSessionDeclaration.h": "100644",
+  "intl/locale/StealthSessionPrefs.cpp": "100644",
+  "intl/locale/StealthSessionPrefs.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "dom/base/moz.build",
+   "category": "build",
+   "feature": "session-declaration",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS.mozilla.dom and UNIFIED_SOURCES lists",
+   "evidence": [
+    "+    \"StealthSessionDeclaration.h\",",
+    "+    \"StealthSessionDeclaration.cpp\","
+   ],
+   "notes": "Registers two list entries (not logic, so inline count is 0). StealthSessionDeclaration.h and .cpp are new files that are not in the inventory list. StealthDeclarationGate.h is included by several changed files but is not registered in this hunk; its registration was not checked. VERIFIED: StealthDeclarationGate.h/.cpp are registered in gfx/thebes/moz.build:68 and :245, so nothing is missing here.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Unchecked registration of StealthDeclarationGate resolved."
+   }
+  }
+ ]
+}

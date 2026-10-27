@@ -1,0 +1,537 @@
+{
+ "modified": [
+  "browser/fonts/moz.build",
+  "browser/installer/package-manifest.in",
+  "gfx/2d/2D.h",
+  "gfx/2d/Factory.cpp",
+  "gfx/2d/ScaledFontDWrite.cpp",
+  "gfx/2d/UnscaledFontDWrite.h",
+  "gfx/thebes/gfxDWriteCommon.cpp",
+  "gfx/thebes/gfxDWriteCommon.h",
+  "gfx/thebes/gfxDWriteFontList.h",
+  "gfx/thebes/gfxFT2FontList.cpp",
+  "gfx/thebes/gfxFcPlatformFontList.h",
+  "gfx/thebes/gfxFontEntry.cpp",
+  "gfx/thebes/gfxFontEntry.h",
+  "gfx/thebes/gfxFontUtils.cpp",
+  "gfx/thebes/gfxFontUtils.h",
+  "gfx/thebes/gfxPlatformGtk.cpp",
+  "gfx/thebes/gfxTextRun.cpp",
+  "gfx/thebes/moz.build"
+ ],
+ "added": {
+  "browser/fonts/LEELAWUI.TTF": "100644",
+  "browser/fonts/LUCON.TTF": "100644",
+  "browser/fonts/L_10646.TTF": "100644",
+  "browser/fonts/Nirmala.ttf": "100644",
+  "browser/fonts/SitkaSmall.ttf": "100644",
+  "browser/fonts/arial7_04.ttf": "100644",
+  "browser/fonts/arialbd7_04.ttf": "100644",
+  "browser/fonts/arialbi7_04.ttf": "100644",
+  "browser/fonts/ariali7_04.ttf": "100644",
+  "browser/fonts/ariblk.ttf": "100644",
+  "browser/fonts/bahnschrift2_07.ttf": "100644",
+  "browser/fonts/bundle-fonts.list": "100644",
+  "browser/fonts/calibri6_26.ttf": "100644",
+  "browser/fonts/calibrib6_26.ttf": "100644",
+  "browser/fonts/calibrii6_26.ttf": "100644",
+  "browser/fonts/calibriz6_26.ttf": "100644",
+  "browser/fonts/cambria6_99.ttc": "100644",
+  "browser/fonts/cambriab6_98.ttf": "100644",
+  "browser/fonts/cambriai6_98.ttf": "100644",
+  "browser/fonts/cambriaz6_98.ttf": "100644",
+  "browser/fonts/candara5_64.ttf": "100644",
+  "browser/fonts/candarab5_64.ttf": "100644",
+  "browser/fonts/candarai5_64.ttf": "100644",
+  "browser/fonts/candaraz5_64.ttf": "100644",
+  "browser/fonts/comic5_15.ttf": "100644",
+  "browser/fonts/comicbd5_15.ttf": "100644",
+  "browser/fonts/comici5_15.ttf": "100644",
+  "browser/fonts/comicz5_15.ttf": "100644",
+  "browser/fonts/consola7_00.ttf": "100644",
+  "browser/fonts/consolab7_00.ttf": "100644",
+  "browser/fonts/consolai7_00.ttf": "100644",
+  "browser/fonts/consolaz7_00.ttf": "100644",
+  "browser/fonts/constan5_93.ttf": "100644",
+  "browser/fonts/constanb5_93.ttf": "100644",
+  "browser/fonts/constani5_93.ttf": "100644",
+  "browser/fonts/constanz5_93.ttf": "100644",
+  "browser/fonts/corbel6_01.ttf": "100644",
+  "browser/fonts/corbelb6_01.ttf": "100644",
+  "browser/fonts/corbeli6_01.ttf": "100644",
+  "browser/fonts/corbelz6_01.ttf": "100644",
+  "browser/fonts/cour6_94.ttf": "100644",
+  "browser/fonts/courbd6_94.ttf": "100644",
+  "browser/fonts/courbi6_94.ttf": "100644",
+  "browser/fonts/couri6_94.ttf": "100644",
+  "browser/fonts/ebrima5_19.ttf": "100644",
+  "browser/fonts/ebrimabd5_19.ttf": "100644",
+  "browser/fonts/framd5_02.ttf": "100644",
+  "browser/fonts/framdit5_01.ttf": "100644",
+  "browser/fonts/gabriola5_93.ttf": "100644",
+  "browser/fonts/gadugi1_13.ttf": "100644",
+  "browser/fonts/gadugib1_13.ttf": "100644",
+  "browser/fonts/georgia5_59.ttf": "100644",
+  "browser/fonts/georgiab5_59.ttf": "100644",
+  "browser/fonts/georgiai5_59.ttf": "100644",
+  "browser/fonts/georgiaz5_59.ttf": "100644",
+  "browser/fonts/himalaya5_23.ttf": "100644",
+  "browser/fonts/impact5_11.ttf": "100644",
+  "browser/fonts/inkfree2_00.ttf": "100644",
+  "browser/fonts/javatext1_10.ttf": "100644",
+  "browser/fonts/leelauib5_06.ttf": "100644",
+  "browser/fonts/leelawui5_06.ttf": "100644",
+  "browser/fonts/malgun.ttf": "100644",
+  "browser/fonts/marlett5_01.ttf": "100644",
+  "browser/fonts/micross7_03.ttf": "100644",
+  "browser/fonts/mingliub.ttc": "100644",
+  "browser/fonts/mmrtext1_21.ttf": "100644",
+  "browser/fonts/mmrtextb1_21.ttf": "100644",
+  "browser/fonts/monbaiti5_54.ttf": "100644",
+  "browser/fonts/msgothic5_32.ttc": "100644",
+  "browser/fonts/msjh6_15.ttc": "100644",
+  "browser/fonts/msyh6_31.ttc": "100644",
+  "browser/fonts/msyi6_00.ttf": "100644",
+  "browser/fonts/mvboli6_85.ttf": "100644",
+  "browser/fonts/ntailu5_99.ttf": "100644",
+  "browser/fonts/ntailub5_99.ttf": "100644",
+  "browser/fonts/pala5_03.ttf": "100644",
+  "browser/fonts/palab5_03.ttf": "100644",
+  "browser/fonts/palabi5_03.ttf": "100644",
+  "browser/fonts/palai5_03.ttf": "100644",
+  "browser/fonts/phagspa6_00.ttf": "100644",
+  "browser/fonts/phagspab6_00.ttf": "100644",
+  "browser/fonts/segmdl21_86.ttf": "100644",
+  "browser/fonts/segoeicons1_44.ttf": "100644",
+  "browser/fonts/segoepr5_04.ttf": "100644",
+  "browser/fonts/segoeprb5_04.ttf": "100644",
+  "browser/fonts/segoesc5_03.ttf": "100644",
+  "browser/fonts/segoescb5_03.ttf": "100644",
+  "browser/fonts/segoeui5_67.ttf": "100644",
+  "browser/fonts/segoeuib5_67.ttf": "100644",
+  "browser/fonts/segoeuii5_66.ttf": "100644",
+  "browser/fonts/segoeuil.ttf": "100644",
+  "browser/fonts/segoeuisl.ttf": "100644",
+  "browser/fonts/segoeuiz5_66.ttf": "100644",
+  "browser/fonts/seguiemj1_60.ttf": "100644",
+  "browser/fonts/seguihis1_09.ttf": "100644",
+  "browser/fonts/seguisym6_24.ttf": "100644",
+  "browser/fonts/seguivar2_03.ttf": "100644",
+  "browser/fonts/simsun.ttc": "100644",
+  "browser/fonts/simsunb5_08.ttf": "100644",
+  "browser/fonts/sylfaen5_08.ttf": "100644",
+  "browser/fonts/symbol5_01.ttf": "100644",
+  "browser/fonts/tahoma7_04.ttf": "100644",
+  "browser/fonts/tahomabd7_04.ttf": "100644",
+  "browser/fonts/taile6_00.ttf": "100644",
+  "browser/fonts/taileb6_00.ttf": "100644",
+  "browser/fonts/times7_11.ttf": "100644",
+  "browser/fonts/timesbd7_11.ttf": "100644",
+  "browser/fonts/timesbi7_11.ttf": "100644",
+  "browser/fonts/timesi7_11.ttf": "100644",
+  "browser/fonts/trebuc5_15.ttf": "100644",
+  "browser/fonts/trebucbd5_15.ttf": "100644",
+  "browser/fonts/trebucbi5_15.ttf": "100644",
+  "browser/fonts/trebucit5_15.ttf": "100644",
+  "browser/fonts/verdana5_33.ttf": "100644",
+  "browser/fonts/verdanab5_33.ttf": "100644",
+  "browser/fonts/verdanai5_33.ttf": "100644",
+  "browser/fonts/verdanaz5_33.ttf": "100644",
+  "browser/fonts/webdings5_01.ttf": "100644",
+  "browser/fonts/wingding5_01.ttf": "100644",
+  "browser/fonts/yugothm1_95.ttc": "100644",
+  "gfx/thebes/StealthBundleFontList.cpp": "100644",
+  "gfx/thebes/StealthBundleFontList.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "browser/fonts/moz.build",
+   "category": "build",
+   "feature": "font-bundle-files",
+   "prefs": [],
+   "added": 130,
+   "removed": 2,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "(top level of browser/fonts/moz.build)",
+   "evidence": [
+    "-if CONFIG[\"MOZ_WIDGET_TOOLKIT\"] in (\"windows\", \"gtk\"):",
+    "+if CONFIG[\"MOZ_WIDGET_TOOLKIT\"] in (\"windows\", \"gtk\", \"cocoa\"):"
+   ],
+   "notes": "Replaces the single TwemojiMozilla.ttf install with a FINAL_TARGET_FILES list of 121 quoted entries (bundled Windows core fonts plus bundle-fonts.list and TwemojiMozilla.ttf, which stays in the list). Adds cocoa to the platform condition. The list is hand-maintained here and must stay in sync with the bundle manifest. The comment says macOS also needs --enable-bundled-fonts in its mozconfig. The font binaries themselves are not in this diff.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "browser/installer/package-manifest.in",
+   "category": "build",
+   "feature": "bundled-fonts-macos",
+   "prefs": [],
+   "added": 1,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "(packaging manifest, fonts entry)",
+   "evidence": [
+    "+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK) || defined(XP_MACOSX)"
+   ],
+   "notes": "Packages @RESPATH@/fonts/* on macOS as well (upstream: Windows and GTK only). Packaging condition only; supports the bundled font set on every host.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/2d/2D.h",
+   "category": "other",
+   "feature": "font-bundle-borrow",
+   "prefs": [],
+   "added": 27,
+   "removed": 2,
+   "hunks": 2,
+   "inline_logic_lines": 3,
+   "hookable": "already-hook",
+   "anchor": "class FTUserFontData (new borrowing constructor, GetData, Length, members mBorrowedData and mBorrowedLength)",
+   "evidence": [
+    "+    return mFontData ? mFontData->Data() : mBorrowedData;",
+    "+  FTUserFontData(const uint8_t* aData, uint32_t aLength, Prestito)",
+    "-  uint32_t Length() const { return mFontData ? mFontData->Length() : 0; }"
+   ],
+   "notes": "Category is other rather than spoof: it lends the bundled font bytes (owned by StealthBundleFontList) to each face instead of copying the file per face, and no page-observable value changes. The lifetime rule is an invariant, not enforced here: the lent bytes must outlive every face, which holds only because the bundle cache is immortal (confirmed: gfx/thebes/StealthBundleFontList.cpp:532-534 leaks the list on purpose). The header is widely included but FTUserFontData is inside #ifdef MOZ_ENABLE_FREETYPE (gfx/2d/2D.h:1169-1303), so the change only compiles in on FreeType builds. The 17 comment lines of the block are in Italian, and the enum is named Prestito.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "FTUserFontData is inside #ifdef MOZ_ENABLE_FREETYPE, so it is not shared by all platforms; the Italian comment count was wrong (17 lines)."
+   }
+  },
+  {
+   "file": "gfx/2d/Factory.cpp",
+   "category": "other",
+   "feature": "font-bundle-borrow",
+   "prefs": [],
+   "added": 10,
+   "removed": 3,
+   "hunks": 1,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "FTUserFontData::CloneFace",
+   "evidence": [
+    "-  if (mFontData) {",
+    "+    } else if (FT_Face ft = Factory::NewFTFaceFromData(",
+    "+      face = MakeAndAddRef<SharedFTFace>(ft, this);"
+   ],
+   "notes": "The borrowed branch creates the FT_Face from the lent bytes, which FreeType keeps a pointer to, so the bytes must outlive the face (guaranteed only by the immortal bundle cache, see 2D.h). The branch (about 5 lines) can move to an own helper. Verified that Factory::NewFTFaceFromData exists at gfx/2d/Factory.cpp:575 in C:\\ff\\source. The function sits inside #ifdef MOZ_ENABLE_FREETYPE (Factory.cpp:117), so it is Linux/Android only.",
+   "verifier": {
+    "changed": [
+     "hookable",
+     "notes"
+    ],
+    "why": "Logic lines are 5 in a single hunk, which meets the already-hook definition (<=5 per hunk); the block is also FreeType-only."
+   }
+  },
+  {
+   "file": "gfx/2d/ScaledFontDWrite.cpp",
+   "category": "other",
+   "feature": "font-bundle-file-path",
+   "prefs": [],
+   "added": 22,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "UnscaledFontDWrite::GetFontDescriptor",
+   "evidence": [
+    "+  if (!mPercorsoDichiarato.empty()) {",
+    "+    aCb(reinterpret_cast<const uint8_t*>(mPercorsoDichiarato.c_str()),"
+   ],
+   "notes": "Returns the declared file path (UTF-16 with NUL terminator, same convention as the Mozilla file-name path) when one was passed to the constructor. Otherwise it falls through to Mozilla's own `if (!mFont) return false;` guard, which is left unchanged. The comment reports 65.9 MB sent to WebRender as bytes instead of a path ([B154]). Category is other, not spoof: the change alters what gfx passes to WebRender, not a value a page can read.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/2d/UnscaledFontDWrite.h",
+   "category": "other",
+   "feature": "font-bundle-file-path",
+   "prefs": [],
+   "added": 18,
+   "removed": 2,
+   "hunks": 3,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "UnscaledFontDWrite constructor and member list (class UnscaledFontDWrite final : public UnscaledFont)",
+   "evidence": [
+    "-      : mFontFace(aFontFace), mFont(aFont) {}",
+    "+                     const std::wstring& aFilePath = std::wstring())"
+   ],
+   "notes": "Adds an optional aFilePath argument with an empty default, so existing callers keep the upstream behaviour. Adds member mPercorsoDichiarato (std::wstring, ours) and the <string> include. Comment cross-references [B154].",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxDWriteCommon.cpp",
+   "category": "other",
+   "feature": "font-bundle-borrowed-bytes",
+   "prefs": [],
+   "added": 55,
+   "removed": 10,
+   "hunks": 5,
+   "inline_logic_lines": 33,
+   "hookable": "hard",
+   "anchor": "gfxDWriteFontFileStream::GetFileSize; gfxDWriteFontFileStream::ReadFileFragment; gfxDWriteFontFileStream::Bytes and BytesLength (new); gfxDWriteFontFileLoader::CreateCustomFontFile (refactored into static CreateFontFileImpl); gfxDWriteFontFileLoader::CreateBorrowedFontFile (new)",
+   "evidence": [
+    "-  *fileSize = mData->Length();",
+    "+  return mBorrowed ? mBorrowed : mData->Data();"
+   ],
+   "notes": "Adds a non-owning DirectWrite stream that lends bytes to the immortal bundle cache instead of copying them into a FontData (comment: 106 MB where 35.4 MB is enough for one 35.4 MB .ttc). Hard to hook: the borrowed state lives in private members of Mozilla's gfxDWriteFontFileStream, and the two IDWriteFontFileStream methods that read them are Mozilla code. The CreateCustomFontFile body was also moved into a shared static function, which changes upstream code; Instance() is now called qualified. The owning path behaves as before. The lifetime rule (cache never freed) is only in comments. Verifier: the immortal-cache premise holds in the tree: StealthBundleFontList::Get() leaks the list on purpose (gfx/thebes/StealthBundleFontList.cpp:530-534) and the cache is never cleared (:460). The 106 MB / 35.4 MB comment is in gfxDWriteCommon.h, not in this .cpp. Nothing else in the two files dereferences mData without the borrowed check (gfxDWriteCommon.cpp:56,60 are the only uses).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Confirmed lifetime premise and mData usage; corrected where the comment lives."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxDWriteCommon.h",
+   "category": "other",
+   "feature": "font-bundle-borrowed-bytes",
+   "prefs": [],
+   "added": 38,
+   "removed": 1,
+   "hunks": 4,
+   "inline_logic_lines": 10,
+   "hookable": "already-hook",
+   "anchor": "gfxDWriteFontFileStream (class: new Borrowed constructor, Bytes/BytesLength declarations, mBorrowed/mBorrowedLength members, SizeOfExcludingThis); gfxDWriteFontFileLoader::CreateBorrowedFontFile declaration",
+   "evidence": [
+    "+  gfxDWriteFontFileStream(const uint8_t* aData, uint32_t aLength,",
+    "+  const uint8_t* mBorrowed = nullptr;"
+   ],
+   "notes": "Declarations for the borrowed stream. SizeOfExcludingThis still reports 0 for a borrowed stream, because the bundle cache reports those bytes. The header comment states the immortal-cache lifetime rule that the code depends on.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxDWriteFontList.h",
+   "category": "other",
+   "feature": "font-bundle-file-path",
+   "prefs": [],
+   "added": 14,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "gfxDWriteFontEntry (class members mBundleFaceIndex and mBundleFilePath)",
+   "evidence": [
+    "+  uint16_t mBundleFaceIndex = 0;",
+    "+  std::wstring mBundleFilePath;"
+   ],
+   "notes": "Two members: mBundleFaceIndex (feature font-ttc-face-index, index inside a .ttc) and mBundleFilePath (feature font-bundle-file-path, the path given to WebRender). Only the path member is in this file's primary feature. Adds the <string> include.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFT2FontList.cpp",
+   "category": "other",
+   "feature": "font-cmap-publish",
+   "prefs": [],
+   "added": 6,
+   "removed": 2,
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "FT2FontEntry::ReadCMAP; FT2FontEntry::GetFontTableInternal",
+   "evidence": [
+    "-    if (!IsUserFont() && mShmemFace) {",
+    "+    if (ShouldPublishCharacterMap()) {",
+    "+      if (SharedFTFace* face = mFTFace) {"
+   ],
+   "notes": "ReadCMAP now uses gfxFontEntry::ShouldPublishCharacterMap (see gfxFontEntry.cpp). Second hunk, feature font-ttc-face-index: the face index (face_index & 0x7FFF) is passed to GetTableFromFontData so tables are read from the right face of a .ttc.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFcPlatformFontList.h",
+   "category": "other",
+   "feature": "font-bundle-file-path",
+   "prefs": [],
+   "added": 8,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "gfxFontconfigFontEntry::gfxFontconfigFontEntry (explicit constructor for data fonts)",
+   "evidence": [
+    "+                                  const char* aFile = nullptr, int aIndex = 0);",
+    "-                                  RefPtr<mozilla::gfx::SharedFTFace>&& aFace);"
+   ],
+   "notes": "Adds defaulted aFile and aIndex arguments, so upstream data-font callers compile unchanged. The bundle path passes both. Comment cross-references [B154].",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFontEntry.cpp",
+   "category": "other",
+   "feature": "font-cmap-publish",
+   "prefs": [],
+   "added": 26,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 8,
+   "hookable": "movable",
+   "anchor": "gfxFontEntry::ShouldPublishCharacterMap (new, placed before gfxFontEntry::TrySetShmemCharacterMap)",
+   "evidence": [
+    "+bool gfxFontEntry::ShouldPublishCharacterMap() const {",
+    "+  return gfxPlatformFontList::PlatformFontList()->StealthBundleOnly();"
+   ],
+   "notes": "One predicate replaces the four copies of '!IsUserFont() && mShmemFace' in the ReadCMAP paths (CoreText, DirectWrite, FreeType, fontconfig). It returns false for a non-shared-list face and for local() borrows, true for installed system faces, and for data faces only under bundle-only. Movable: the 8 logic lines can move into a free function in our own file.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFontEntry.h",
+   "category": "other",
+   "feature": "hb-face-lifetime",
+   "prefs": [],
+   "added": 29,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 3,
+   "hookable": "already-hook",
+   "anchor": "gfxFontEntry::AutoHBFace (conversion operator); gfxFontEntry (class, new ShouldPublishCharacterMap declaration)",
+   "evidence": [
+    "-    operator hb_face_t*() const { return mFace; }",
+    "+    operator hb_face_t*() const&& = delete;"
+   ],
+   "notes": "Primary feature hb-face-lifetime: the conversion operator is ref-qualified (const&, and const&& deleted), so binding the result of GetHBFace() to a raw pointer becomes a compile error. This fixes a dangling pointer in the stealth GetDesignFont (gfxHarfBuzzShaper.cpp), not a Firefox upstream problem; the comment reports crashes before the fix. Also adds the ShouldPublishCharacterMap declaration (feature font-cmap-publish). The change alters the type of a Mozilla class, so it is not a hook; keep it inline or upstream the fix. Verifier: the dangling-pointer fix is confirmed in the tree (gfxHarfBuzzShaper.cpp:791 uses const auto face(...)); every other GetHBFace() caller found in gfx/ binds an lvalue (gfxFont.cpp:1394,2810,2849,5197; gfxFontEntry.cpp:257,795,852,927; gfxHarfBuzzShaper.cpp:1373; FontPaletteCache.cpp:25), so the deleted const&& conversion does not break them.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Checked callers of GetHBFace in gfx/ against the new ref-qualified conversion."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFontUtils.cpp",
+   "category": "other",
+   "feature": "font-ttc-face-index",
+   "prefs": [],
+   "added": 31,
+   "removed": 4,
+   "hunks": 2,
+   "inline_logic_lines": 22,
+   "hookable": "movable",
+   "anchor": "gfxFontUtils::FindSfntOffset (new static); gfxFontUtils::FindTableDirEntry; gfxFontUtils::GetTableFromFontData",
+   "evidence": [
+    "+  if (sfnt->sfntVersion == 0x74746366u) {  // 'ttcf'",
+    "-  const SFNTHeader* header = reinterpret_cast<const SFNTHeader*>(aFontData);",
+    "+  const TableDirEntry* dir = FindTableDirEntry(aFontData, aTableTag, aFaceIndex);"
+   ],
+   "notes": "Generic .ttc support: table lookup and table blob now resolve through the requested face's offset inside the collection. Before this change the lookup read the file header only, so only the first face could be read. The default aFaceIndex = 0 keeps old callers unchanged. Not stealth-specific in principle; it is needed for the bundle's .ttc files. Movable: FindSfntOffset can move to our own file.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxFontUtils.h",
+   "category": "other",
+   "feature": "font-ttc-face-index",
+   "prefs": [],
+   "added": 19,
+   "removed": 5,
+   "hunks": 1,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "gfxFontUtils (static declarations FindSfntOffset, FindTableDirEntry, GetTableFromFontData)",
+   "evidence": [
+    "+  static const void* FindSfntOffset(const void* aFontData, uint32_t aFaceIndex);"
+   ],
+   "notes": "Declarations match gfxFontUtils.cpp. aFaceIndex defaults to 0 on the two existing functions.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxPlatformGtk.cpp",
+   "category": "spoof",
+   "feature": "font-fallback-bundle",
+   "prefs": [],
+   "added": 27,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 6,
+   "hookable": "movable",
+   "anchor": "gfxPlatformGtk::GetCommonFallbackFonts",
+   "evidence": [
+    "+  aFontList.AppendElement(\"Segoe UI Symbol\");",
+    "+  aFontList.AppendElement(\"Arial\");"
+   ],
+   "notes": "Puts the Windows persona fallback names first (Segoe UI Emoji when colour is preferred, then Arial, Segoe UI, Segoe UI Symbol, Cambria Math), before the upstream Linux names, which are not in the bundle. The order is stated in the comment as a measured requirement. Since CommonFontFallback now takes names from the manifest first, this list is only reached when the manifest returns nothing. Movable: the names can move to StealthBundleFontList.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/gfxTextRun.cpp",
+   "category": "spoof",
+   "feature": "font-fallback-bundle",
+   "prefs": [],
+   "added": 7,
+   "removed": 3,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "gfxFontGroup::FindFallbackFaceForChar",
+   "evidence": [
+    "-  if (!aFamily->IsFullyInitialized() &&",
+    "+  if (!aFamily->IsFullyInitialized() && pfl->MayDeferCmapLoading()) {"
+   ],
+   "notes": "The async-fallback condition is replaced by pfl->MayDeferCmapLoading(), the same predicate GlobalFontFallback uses. Comment: this site was missing the bundle-only condition before. Feature gfx.font_rendering.fallback.async is read through that predicate.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/thebes/moz.build",
+   "category": "build",
+   "feature": "font-bundle-files",
+   "prefs": [],
+   "added": 11,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "(top level of gfx/thebes/moz.build: EXPORTS += [ ... ] and a new SOURCES += [ ... ] block after UNIFIED_SOURCES)",
+   "evidence": [
+    "+    \"StealthBundleFontList.h\",",
+    "+    \"StealthBundleFontList.cpp\","
+   ],
+   "notes": "Exports StealthBundleFontList.h and StealthDeclarationGate.h, and compiles StealthBundleFontList.cpp and StealthDeclarationGate.cpp as non-unified SOURCES (the comment says short file-static helpers could collide in a unified build). The comment says dom/canvas reads the coverage ladder through the exported header. Those two .cpp/.h files are our own and are not in this diff.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  }
+ ]
+}

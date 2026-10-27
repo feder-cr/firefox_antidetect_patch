@@ -1,0 +1,100 @@
+{
+ "modified": [
+  "python/mozbuild/mozbuild/backend/recursivemake.py",
+  "python/mozbuild/mozbuild/frontend/data.py",
+  "python/mozbuild/mozbuild/jar.py",
+  "third_party/python/vsdownload/vsdownload.py"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "python/mozbuild/mozbuild/backend/recursivemake.py",
+   "category": "build",
+   "feature": "win-long-build-paths",
+   "prefs": [],
+   "added": 4,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "class RecursiveMakeBackend, the objs_ref assignment near line 1607 (enclosing def name not extracted)",
+   "evidence": [
+    "-        objs_ref = \" \\\\\\n    \".join(os.path.relpath(o, obj.objdir) for o in objs)",
+    "+        objs_ref = \" \\\\\\n    \".join(o for o in objs)"
+   ],
+   "notes": "Applies to every platform and every build, not only Win32: relative object paths are replaced by absolute ones unconditionally. The comment blames mozmake 4.4.1 on Win32 for paths over about 150 chars; that claim is the author's and was not checked here. Could be a helper call in our own file, but a one-line change is already small.",
+   "verifier": {
+    "changed": [
+     "category"
+    ],
+    "why": "mozmake 4.4.1 path-length workaround is a build-system change not tied to a Firefox version, so build, same as the other win-long-build-paths files."
+   }
+  },
+  {
+   "file": "python/mozbuild/mozbuild/frontend/data.py",
+   "category": "port-fix",
+   "feature": "win-long-build-paths",
+   "prefs": [],
+   "added": 7,
+   "removed": 2,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "UnifiedSources.__init__ (class UnifiedSources, hunk header line 1181)",
+   "evidence": [
+    "-            if len(unified_prefix) > 20:",
+    "+            if len(unified_prefix) > 30:",
+    "+                unified_prefix = unified_prefix[-30:].split(\"/\", 1)[-1]"
+   ],
+   "notes": "Magic number change (20 to 30). It changes unified source file names for all builds, so generated unified file names change even outside Windows. The comment cites collisions in libwebrtc (FF150) as the reason; the collision claim was not verified here.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "python/mozbuild/mozbuild/jar.py",
+   "category": "build",
+   "feature": "win-long-build-paths",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "JarMaker.getOutput (def getOutput(self, name, mode=\"wb\"), line 557)",
+   "evidence": [
+    "+            # Stealthfox fix: webcompat builtin-addons CSS files have",
+    "+            if os.name == \"nt\":",
+    "+                out = \"\\\\\\\\?\\\\\" + os.path.abspath(out).replace(\"/\", \"\\\\\")"
+   ],
+   "notes": "UNSURE between build and port-fix: the comment blames long CSS file names overflowing MAX_PATH, with no version mention. It is packaging code, so build is used. The long-path prefix is applied to every output of getOutput on Windows, not only to the webcompat files.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "third_party/python/vsdownload/vsdownload.py",
+   "category": "build",
+   "feature": "vsdownload-download-watchdog",
+   "prefs": [],
+   "added": 22,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 12,
+   "hookable": "movable",
+   "anchor": "_downloadPayload (def at line 634), plus import signal at the top of the file",
+   "evidence": [
+    "-            urllib.request.urlretrieve(payload[\"url\"], destname)",
+    "+            def _dl_watchdog(signum, frame):",
+    "+                signal.alarm(120)"
+   ],
+   "notes": "Per-file SIGALRM watchdog for slow downloads in the cross-compile build. The comment ties it to a flaky CDN, not to a Firefox version, so it is build and not port-fix. On native Windows, SIGALRM does not exist and the watchdog is skipped; the comment says main() sets a socket default timeout instead. Process-wide signal handler: not safe in threaded use. Move the watchdog into an own helper and keep one call line here.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  }
+ ]
+}

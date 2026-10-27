@@ -1,0 +1,178 @@
+{
+ "modified": [
+  "chrome/nsChromeRegistry.cpp",
+  "chrome/nsChromeRegistryChrome.cpp",
+  "chrome/nsChromeRegistryContent.cpp",
+  "netwerk/protocol/res/SubstitutingProtocolHandler.cpp",
+  "netwerk/protocol/res/moz.build",
+  "security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp",
+  "security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp"
+ ],
+ "added": {
+  "netwerk/protocol/res/StealthBranding.cpp": "100644",
+  "netwerk/protocol/res/StealthBranding.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "chrome/nsChromeRegistry.cpp",
+   "category": "spoof",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 19,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 13,
+   "hookable": "movable",
+   "anchor": "nsChromeRegistry::ConvertChromeURL",
+   "evidence": [
+    "-  return NS_NewURI(aResult, path, nullptr, baseURI);",
+    "+  rv = mozilla::net::StealthBrandingRedirect(declared);"
+   ],
+   "notes": "The resolved chrome:// URI is passed through the declared-branding redirect. zoom.stealth.branding.archive is read indirectly: StealthBrandingRedirect (netwerk/protocol/res/StealthBranding.cpp:99) reads StaticPrefs::zoom_stealth_branding_archive at StealthBranding.cpp:42 (CONFIRMED); no pref appears in the added lines here. The ~13 logic lines (resolve, compare, redirect, rebuild) should move behind one helper call. Page reachability: the StaticPrefList.yaml comment for zoom.stealth.branding.archive says a page reads chrome://branding/content/, which supports category spoof (not independently tested). The rv used here is declared at the top of ConvertChromeURL ('nsresult rv;' in chrome/nsChromeRegistry.cpp), so the first-pass doubt is REFUTED.",
+   "verifier": {
+    "changed": [
+     "feature",
+     "prefs",
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "Feature renamed to match netwerk/protocol/res files of the same feature; prefs only counts reads in added lines; recount; resolved the rv question."
+   }
+  },
+  {
+   "file": "chrome/nsChromeRegistryChrome.cpp",
+   "category": "spoof",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "nsChromeRegistryChrome::ManifestContent",
+   "evidence": [
+    "+  mozilla::net::StealthBrandingRegisterPackage(packageName, entry->baseURI);"
+   ],
+   "notes": "Records each package's base directory for the redirect in nsChromeRegistry.cpp. The callee is in StealthBranding.h (not in this list).",
+   "verifier": {
+    "changed": [
+     "feature"
+    ],
+    "why": "Feature renamed to match the other files of the same feature."
+   }
+  },
+  {
+   "file": "chrome/nsChromeRegistryContent.cpp",
+   "category": "spoof",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 7,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "nsChromeRegistryContent::RegisterPackage",
+   "evidence": [
+    "+    mozilla::net::StealthBrandingRegisterPackage(aPackage.package, content);"
+   ],
+   "notes": "Content-process counterpart of the registration above; skipped when content is null.",
+   "verifier": {
+    "changed": [
+     "feature"
+    ],
+    "why": "Feature renamed to match the other files of the same feature."
+   }
+  },
+  {
+   "file": "netwerk/protocol/res/SubstitutingProtocolHandler.cpp",
+   "category": "spoof",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 12,
+   "removed": 1,
+   "hunks": 3,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "SubstitutingProtocolHandler::ResolveURI",
+   "evidence": [
+    "+    return StealthBrandingRedirect(result);",
+    "+  rv = StealthBrandingRedirect(result);",
+    "-    return NS_OK;"
+   ],
+   "notes": "Two hooks: the special-case branch and the normal resolution path, so resource://usercontext-content/branding/ reads the declared archive too (same redirect as chrome://branding/content/ in chrome/nsChromeRegistry.cpp:281). Category is spoof, not other: netwerk/protocol/res/StealthBranding.h states a page can read branding files through both URL schemes (contentaccessible) and the contents tell a build from retail; the redirect changes what the page reads. The included mozilla/net/StealthBranding.h is ours (exists in netwerk/protocol/res). The pref zoom.stealth.branding.archive is read inside StealthBranding.cpp, not in this diff.",
+   "verifier": {
+    "changed": [
+     "category",
+     "notes"
+    ],
+    "why": "branding files are page-readable per StealthBranding.h, so this is a fingerprint surface"
+   }
+  },
+  {
+   "file": "netwerk/protocol/res/moz.build",
+   "category": "build",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS.mozilla.net and UNIFIED_SOURCES lists",
+   "evidence": [
+    "+    \"StealthBranding.h\",",
+    "+    \"StealthBranding.cpp\","
+   ],
+   "notes": "Registers our own files, both present in C:\\ff\\source\\netwerk\\protocol\\res. No logic.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  },
+  {
+   "file": "security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp",
+   "category": "other",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 14,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "SandboxBrokerPolicyFactory::InitContentPolicy",
+   "evidence": [
+    "+  if (nsCOMPtr<nsIFile> branding =",
+    "+      policy->AddPath(rdonly, brandingPath.get());"
+   ],
+   "notes": "Gives content processes READ access to the declared branding archive (StealthBrandingDeclaredArchive). The grant is silently skipped when that call returns null or GetNativePath fails. The 5 logic lines are at the already-hook limit.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  },
+  {
+   "file": "security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp",
+   "category": "other",
+   "feature": "stealth-branding-redirect",
+   "prefs": [],
+   "added": 18,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 8,
+   "hookable": "movable",
+   "anchor": "SandboxBroker::SetSecurityLevelForContentProcess",
+   "evidence": [
+    "+    if (nsCOMPtr<nsIFile> branding =",
+    "+        result = config->AllowFileAccess(",
+    "+          NS_ERROR(\"Failed to add the declared branding read rule.\");"
+   ],
+   "notes": "Windows counterpart of the Linux broker change. Its 8-line block should move into one function in our own file (for example AddDeclaredBrandingReadRule(config)), leaving a one-line call. It reuses the existing 'result' variable of the function, which is already used throughout it.",
+   "verifier": {
+    "changed": [
+     "evidence"
+    ],
+    "why": "evidence line had wrong indentation, now verbatim"
+   }
+  }
+ ]
+}

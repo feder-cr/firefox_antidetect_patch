@@ -1,0 +1,96 @@
+diff --git a/third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc b/third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc
+index 7ea6c8526b351e0e9dff092515a8583bb6d59767..e21e4f9d4b4549eafe50899fe9c6c0c1206b3625 100644
+--- a/third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc
++++ b/third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc
+@@ -220,6 +220,20 @@ bool CroppingWindowCapturerWin::ShouldUseScreenCapturer() {
+     return false;
+   }
+ 
++  // STEALTHFOX_HIDDEN_DESKTOP: a window created on a Win32 desktop object
++  // other than the input desktop passes the check above - it is visible, not
++  // iconic, not cloaked, and the shell's virtual desktop manager has no
++  // opinion about it - yet the screen shows the input desktop only, so a
++  // crop of the screen can never contain it. Worse, the screen capturers move
++  // this thread onto the input desktop, after which the window capturer
++  // cannot read the window either: the capture ends with no frame at all.
++  // PrintWindow with PW_RENDERFULLCONTENT reads such a window in full from a
++  // thread on its own desktop (measured 2026-09-20), so the window capturer
++  // is the only path that can deliver.
++  if (!window_capture_helper_.IsWindowOnInputDesktop(selected)) {
++    return false;
++  }
++
+   // Check if the window is a translucent layered window.
+   const LONG window_ex_style = GetWindowLong(selected, GWL_EXSTYLE);
+   if (window_ex_style & WS_EX_LAYERED) {
+diff --git a/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.cc b/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.cc
+index d1b5c4bdde7a768a67074502ad2007fc67585253..0c14ba96287c0e1348d0cdffbd7a3afdbb6a8761 100644
+--- a/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.cc
++++ b/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.cc
+@@ -18,10 +18,13 @@
+ #include <cstddef>
+ #include <cstring>
+ #include <cwchar>
++#include <memory>
++#include <string>
+ 
+ #include "modules/desktop_capture/desktop_capture_types.h"
+ #include "modules/desktop_capture/desktop_capturer.h"
+ #include "modules/desktop_capture/desktop_geometry.h"
++#include "modules/desktop_capture/win/desktop.h"
+ #include "modules/desktop_capture/win/scoped_gdi_object.h"
+ #include "rtc_base/checks.h"
+ #include "rtc_base/logging.h"
+@@ -452,6 +455,34 @@ bool WindowCaptureHelperWin::IsWindowVisibleOnCurrentDesktop(HWND hwnd) {
+          !IsWindowCloaked(hwnd);
+ }
+ 
++// STEALTHFOX_HIDDEN_DESKTOP: the desktop of the window's own thread against
++// the input desktop, compared by name the way Desktop::IsSame does. Only a
++// thread of this process can be asked which desktop it was created on, and
++// the handle GetThreadDesktop returns is not ours to close.
++bool WindowCaptureHelperWin::IsWindowOnInputDesktop(HWND hwnd) {
++  DWORD process_id = 0;
++  const DWORD thread_id = GetWindowThreadProcessId(hwnd, &process_id);
++  if (!thread_id || process_id != GetCurrentProcessId()) {
++    return true;
++  }
++  HDESK window_desktop = GetThreadDesktop(thread_id);
++  if (!window_desktop) {
++    return true;
++  }
++  wchar_t window_desktop_name[256];
++  DWORD length = 0;
++  if (!GetUserObjectInformationW(window_desktop, UOI_NAME, window_desktop_name,
++                                 sizeof(window_desktop_name), &length)) {
++    return true;
++  }
++  std::unique_ptr<Desktop> input_desktop(Desktop::GetInputDesktop());
++  std::wstring input_desktop_name;
++  if (!input_desktop || !input_desktop->GetName(&input_desktop_name)) {
++    return true;
++  }
++  return _wcsicmp(window_desktop_name, input_desktop_name.c_str()) == 0;
++}
++
+ // A cloaked window is composited but not visible to the user.
+ // Example: Cortana or the Action Center when collapsed.
+ bool WindowCaptureHelperWin::IsWindowCloaked(HWND hwnd) {
+diff --git a/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.h b/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.h
+index a69bc79874f2bc033fa062b1b499967e00117c4e..dad31c41ba8bc6d4039063fc6ebcc9f837d56628 100644
+--- a/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.h
++++ b/third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.h
+@@ -114,6 +114,13 @@ class WindowCaptureHelperWin {
+   bool IsWindowOnCurrentDesktop(HWND hwnd);
+   bool IsWindowVisibleOnCurrentDesktop(HWND hwnd);
+   bool IsWindowCloaked(HWND hwnd);
++  // Whether the window lives on the desktop the screen shows (the input
++  // desktop). A window of this process created on another Win32 desktop
++  // object passes every visibility check above and is still not on the
++  // screen, so nothing cropped from the screen can contain it. Windows of
++  // other processes cannot be asked, and are reported as on the input
++  // desktop, which is where a picker finds them. STEALTHFOX_HIDDEN_DESKTOP.
++  bool IsWindowOnInputDesktop(HWND hwnd);
+ 
+   // The optional `ex_style_filters` parameter allows callers to provide
+   // extended window styles (e.g. WS_EX_TOOLWINDOW) and prevent windows that

@@ -1,0 +1,54 @@
+{
+ "modified": [
+  "browser/app/winlauncher/LauncherProcessWin.cpp",
+  "toolkit/xre/nsWindowsWMain.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "browser/app/winlauncher/LauncherProcessWin.cpp",
+   "category": "juggler",
+   "feature": "juggler-pipe-handles",
+   "prefs": [],
+   "added": 34,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 14,
+   "hookable": "movable",
+   "anchor": "LauncherMain (after attrs.AddInheritableHandles(stdHandles))",
+   "evidence": [
+    "+  bool hasJugglerPipe =",
+    "+      attrs.AddInheritableHandles(pipeHandles);"
+   ],
+   "notes": "When --juggler-pipe is on the command line, reads PW_PIPE_READ and PW_PIPE_WRITE from the environment, parses them with atoi, and adds them to the child's inheritable handles. Windows only. Movable: the ~14-line block can move into an own helper with a one-line call here (plus the two added includes <io.h> and <stdlib.h>). The comment says the handles are resolved earlier in wmain (nsWindowsWMain.cpp): CONFIRMED and that file is covered in the modified list (toolkit/xre/nsWindowsWMain.cpp:127-135 sets PW_PIPE_READ/PW_PIPE_WRITE when --juggler-pipe is given and PW_PIPE_READ is not already set). The comment documents a first-launch crash (0xC0000409) when the parent names the handles and fd 3 is closed; kept as juggler. Invalid env values reach atoi and become handle 0 with no check (visible in the diff: atoi(pipeRead)); the block only runs if GetEnvironmentVariableA found both variables.",
+   "verifier": {
+    "changed": [
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "Recounted logic lines (14); resolved the open question about nsWindowsWMain.cpp."
+   }
+  },
+  {
+   "file": "toolkit/xre/nsWindowsWMain.cpp",
+   "category": "juggler",
+   "feature": "juggler-pipe-stdio",
+   "prefs": [],
+   "added": 20,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 12,
+   "hookable": "movable",
+   "anchor": "int wmain(int argc, WCHAR** argv) (line 114); includes at line 14",
+   "evidence": [
+    "+  bool hasJugglerPipe =",
+    "+    SetEnvironmentVariableA(\"PW_PIPE_READ\", stdio3str);"
+   ],
+   "notes": "Copies inherited stdio handles 3 and 4 into the PW_PIPE_READ and PW_PIPE_WRITE env variables, so the juggler pipe code (nsRemoteDebuggingPipe.cpp, not in this list) can read them after the launcher handoff. The comment says this is an FF146 patch ported to FF150, but the feature is juggler's. Move the block into a function in our own file and keep one call here. The comment names a product (Playwright): check against the no-vendor-names rule.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree; no correction needed."
+   }
+  }
+ ]
+}

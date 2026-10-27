@@ -1,0 +1,79 @@
+{
+ "modified": [
+  ".gitignore",
+  "CLAUDE.md",
+  "README.md"
+ ],
+ "added": {
+  "STEALTH_BRANCH_README.md": "100644"
+ },
+ "inventory": [
+  {
+   "file": ".gitignore",
+   "category": "build",
+   "feature": "release-output-ignore",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "(top-level ignore rules)",
+   "evidence": [
+    "+release-out/"
+   ],
+   "notes": "Ignores the local release output directory. Repo hygiene only; no Firefox code affected.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "CLAUDE.md",
+   "category": "other",
+   "feature": "agent-instructions-fork",
+   "prefs": [],
+   "added": 76,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "(top-level document)",
+   "evidence": [
+    "+# Questo albero non e' mozilla-central: e' il nostro Firefox patchato",
+    "+Ramo `stealth/157`. Le istruzioni di Mozilla qui sopra valgono; queste vengono"
+   ],
+   "notes": "Developer/agent instructions, not code; Mozilla's AGENTS.md is imported above it (line 1, unchanged). Points at workbench paths outside this repo (c:/src/firefox-stealth) and at a build mirror ~/ff-build/firefox-150 (a WSL path, name kept from 150); whether that mirror is stale is unverified (not checkable from this tree). Says branch stealth/157, which matches the current tree. Text is in Italian. States rules (every spoof through zoom.stealth.*/stealthfox.* prefs; never rename them) that bind the whole patch series.",
+   "verifier": {
+    "changed": [
+     "evidence",
+     "notes"
+    ],
+    "why": "Evidence line was truncated (not verbatim); the ~/ff-build/firefox-150 staleness cannot be checked from the diff."
+   }
+  },
+  {
+   "file": "README.md",
+   "category": "other",
+   "feature": "readme-fork-disclosure",
+   "prefs": [],
+   "added": 102,
+   "removed": 3,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "(top-level document)",
+   "evidence": [
+    "+This build issues a single HTTPS GET to a public asset on",
+    "+Current release: **firefox-18**, built from Firefox 151.0. Branch **`stealth/151`** is"
+   ],
+   "notes": "Public disclosure of the anonymous launch counter (one GET per browser start, see BrowserGlue.sys.mjs and firefox.js). Inconsistency claim CONFIRMED: README.md:63 names the asset under feder-cr/invisible_firefox, browser/app/profile/firefox.js:3869 defaults the pref to feder-cr/firefox_antidetect_patch, browser/components/BrowserGlue.sys.mjs:426 falls back to feder-cr/invisible_playwright (that fallback is dead because firefox.js:3869 always defines the pref). Staleness claim CONFIRMED: README.md:17 says firefox-18 / Firefox 151.0 / branch stealth/151, while the tree is Firefox 157 on stealth/157 (CLAUDE.md). README also says the ping fires at final-ui-startup: consistent with BrowserGlue.sys.mjs:203-204 (case final-ui-startup calls _beforeUIStartup). The disclosure text is about OUR own network request, not about Firefox telemetry.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Added source line numbers and verdicts for the claimed inconsistencies."
+   }
+  }
+ ]
+}

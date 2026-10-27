@@ -1,0 +1,76 @@
+diff --git a/layout/base/nsLayoutUtils.cpp b/layout/base/nsLayoutUtils.cpp
+index 4f8d895b37612679b9255ac52a6037400fdc9d19..e2270d7e614763870963147e6b4612348a8d0f67 100644
+--- a/layout/base/nsLayoutUtils.cpp
++++ b/layout/base/nsLayoutUtils.cpp
+@@ -7448,7 +7448,10 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
+     pAlphaType =
+         nullptr;  // Coersce GetSurfaceSnapshot to give us Opaque/Premult only.
+   }
+-  result.mSourceSurface = aElement->GetSurfaceSnapshot(pAlphaType, aTarget);
++  result.mSourceSurface =
++      (aSurfaceFlags & SFE_AS_DRAWN)
++          ? aElement->GetSurfaceSnapshotAsDrawn(pAlphaType, aTarget)
++          : aElement->GetSurfaceSnapshot(pAlphaType, aTarget);
+   if (!result.mSourceSurface) {
+     // If the element doesn't have a context then we won't get a snapshot. The
+     // canvas spec wants us to not error and just draw nothing, so return an
+diff --git a/layout/base/nsLayoutUtils.h b/layout/base/nsLayoutUtils.h
+index be8109708926064f6da60e7b118f74cfe078f014..a40ebc2b2d8ba3ff74a488590491a5e1280d16ed 100644
+--- a/layout/base/nsLayoutUtils.h
++++ b/layout/base/nsLayoutUtils.h
+@@ -2384,6 +2384,12 @@ class nsLayoutUtils {
+     SFE_ORIENTATION_FROM_IMAGE = 1 << 7,
+     /* Caller handles SFER::mCropRect.isSome() */
+     SFE_ALLOW_UNCROPPED_UNSCALED = 1 << 8,
++    /* A canvas as DRAWN, without the canvas noise: for the browser's own
++       readers that show it and never hand its bytes to a page (-moz-element,
++       nsDOMWindowUtils). Every other caller is a page reading the canvas or
++       drawing with it, and gets what HTMLCanvasElement::GetSurfaceSnapshot
++       and OffscreenCanvas::GetSurfaceSnapshot give a page. */
++    SFE_AS_DRAWN = 1 << 9,
+   };
+ 
+   // This function can be called on any thread.
+diff --git a/layout/painting/nsImageRenderer.cpp b/layout/painting/nsImageRenderer.cpp
+index 9f88fe67a35028f70984b83df013548950bdec34..6b09dfd77aa6e716fa204e6c52210650ecab5181 100644
+--- a/layout/painting/nsImageRenderer.cpp
++++ b/layout/painting/nsImageRenderer.cpp
+@@ -217,7 +217,9 @@ bool nsImageRenderer::PrepareImage() {
+             mForFrame->FirstContinuation(), mImage->AsElement().AsAtom());
+     // If the referenced element is an <img>, <canvas>, or <video> element,
+     // prefer SurfaceFromElement as it's more reliable.
+-    mImageElementSurface = nsLayoutUtils::SurfaceFromElement(paintElement);
++    // -moz-element SHOWS the element, like the screen: a canvas as drawn.
++    mImageElementSurface = nsLayoutUtils::SurfaceFromElement(
++        paintElement, nsLayoutUtils::SFE_AS_DRAWN);
+ 
+     if (!mImageElementSurface.GetSourceSurface()) {
+       nsIFrame* paintServerFrame =
+diff --git a/widget/nsBaseDragService.cpp b/widget/nsBaseDragService.cpp
+index 68cbacea55a39ab2f11e9de8483279c195cf316a..eb7116c81933cc9a85f46a971e33f7445653769d 100644
+--- a/widget/nsBaseDragService.cpp
++++ b/widget/nsBaseDragService.cpp
+@@ -1139,7 +1139,8 @@ nsresult nsBaseDragSession::DrawDragForImage(
+     }
+     *aSurface = dt->Snapshot();
+   } else {
+-    *aSurface = aCanvas->GetSurfaceSnapshot();
++    // The drag image shows the canvas; a page never reads it back.
++    *aSurface = aCanvas->GetSurfaceSnapshotAsDrawn();
+   }
+ 
+   return result;
+diff --git a/widget/windows/TaskbarPreview.cpp b/widget/windows/TaskbarPreview.cpp
+index bf085dd6a1b5c6f1bc9e14f3712479feb8f7a666..0d0e853eb8fe6f3f8c3e5a315f7c7bf3312da486 100644
+--- a/widget/windows/TaskbarPreview.cpp
++++ b/widget/windows/TaskbarPreview.cpp
+@@ -332,7 +332,8 @@ TaskbarPreviewCallback::Done(nsISupports* aCanvas, bool aDrawBorder) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+-  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshot();
++  // The taskbar shows the canvas; a page never reads it back.
++  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshotAsDrawn();
+   if (!source) {
+     return NS_ERROR_FAILURE;
+   }

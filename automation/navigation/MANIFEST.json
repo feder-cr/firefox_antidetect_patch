@@ -1,0 +1,166 @@
+{
+ "modified": [
+  "docshell/base/CanonicalBrowsingContext.cpp",
+  "docshell/base/nsDocShell.cpp",
+  "netwerk/base/LoadInfo.cpp",
+  "netwerk/base/LoadInfo.h",
+  "netwerk/base/TRRLoadInfo.cpp",
+  "netwerk/base/nsILoadInfo.idl",
+  "netwerk/ipc/DocumentLoadListener.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "docshell/base/CanonicalBrowsingContext.cpp",
+   "category": "juggler",
+   "feature": "juggler-navigation-events",
+   "prefs": [],
+   "added": 22,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 20,
+   "hookable": "movable",
+   "anchor": "CanonicalBrowsingContext::LoadURI; CanonicalBrowsingContext::FixupAndLoadURIString",
+   "evidence": [
+    "+      observerService->NotifyObservers(",
+    "+          ToSupports(this), \"juggler-navigation-started-browser\",",
+    "+    if (observerService) {"
+   ],
+   "notes": "The same 11-line observer block is pasted into both functions. Each block is about 10 logic lines, so it moves into one helper in our own file called from both places. The notification fires before LoadURI(loadState, true) and carries the load identifier as its string payload. Nothing in Mozilla listens for it; only Juggler does.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  },
+  {
+   "file": "docshell/base/nsDocShell.cpp",
+   "category": "juggler",
+   "feature": "juggler-link-click-events",
+   "prefs": [],
+   "added": 84,
+   "removed": 0,
+   "hunks": 8,
+   "inline_logic_lines": 45,
+   "hookable": "movable",
+   "anchor": "nsDocShell::nsDocShell (constructor); nsDocShell::Get/SetFileInputInterceptionEnabled; nsDocShell::Get/SetBypassCSPEnabled; nsDocShell::InternalLoad; NotifyJugglerLinkClick (static); OnLinkClickEvent::Run / Cancel / NotifyJugglerDone; nsDocShell::OnLinkClickWithLoadState",
+   "evidence": [
+    "+      mFileInputInterceptionEnabled(false),",
+    "+  if (!isJavaScript && !sameDocument) {",
+    "+    observerService->NotifyObservers(ToSupports(aContent), aTopic, nullptr);"
+   ],
+   "notes": "Three features share this file (the notes said four, but only three are listed); feature field is the largest. (a) juggler-docshell-attrs, hunks 1-2: constructor init of the two bit-fields (must stay, fixes uninitialised bits) and the four accessors (about 16 logic lines, movable to an own docshell source file). (b) juggler-navigation-events, hunk 3: InternalLoad notifies juggler-navigation-started-renderer (about 8 logic lines; same pattern as CanonicalBrowsingContext.cpp). (c) juggler-link-click-events, hunks 4-8: static NotifyJugglerLinkClick (hunk 4), OnLinkClickEvent::Run (5), Cancel plus NotifyJugglerDone (6), fields mRunning/mJugglerNotified (7), OnLinkClickWithLoadState (8). OnLinkClickEvent is a Mozilla class, so its two fields and the Run/Cancel calls stay in this file while the notify helper can move out. The comments promise one \"after\" per \"before\": confirmed for the Run and Cancel paths by the mJugglerNotified guard (hunk 6); a runnable dropped without Run or Cancel is unverified. Page.linkClicked is handled at juggler/content/PageAgent.js:98-99 and :281 (confirmed).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Corrected the feature count in notes (three, not four) and added a hunk-to-feature map."
+   }
+  },
+  {
+   "file": "netwerk/base/LoadInfo.cpp",
+   "category": "juggler",
+   "feature": "juggler-load-identifier",
+   "prefs": [],
+   "added": 14,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
+   "anchor": "LoadInfo::LoadInfo(const LoadInfo& rhs) (copy-constructor init list); LoadInfo::GetJugglerLoadIdentifier / SetJugglerLoadIdentifier appended after LoadInfo::UpdateParentAddressSpaceInfo",
+   "evidence": [
+    "+      mJugglerLoadIdentifier(rhs.mJugglerLoadIdentifier) {",
+    "+  *aResult = mJugglerLoadIdentifier;"
+   ],
+   "notes": "Implements the nsILoadInfo.jugglerLoadIdentifier attribute from nsILoadInfo.idl. The copy constructor carries the value. In this diff only DocumentLoadListener.cpp sets it. The accessors must stay in LoadInfo because it implements the interface.",
+   "verifier": {
+    "changed": [],
+    "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  },
+  {
+   "file": "netwerk/base/LoadInfo.h",
+   "category": "juggler",
+   "feature": "juggler-load-identifier",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "class LoadInfo final (member block after mSkipHTTPSUpgrade)",
+   "evidence": [
+    "+  uint64_t mJugglerLoadIdentifier = 0;"
+   ],
+   "notes": "Member declaration only. Zero is the default, so loads that never receive an id report 0.",
+   "verifier": {
+    "changed": [],
+    "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  },
+  {
+   "file": "netwerk/base/TRRLoadInfo.cpp",
+   "category": "juggler",
+   "feature": "juggler-load-identifier",
+   "prefs": [],
+   "added": 10,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "TRRLoadInfo::GetJugglerLoadIdentifier / TRRLoadInfo::SetJugglerLoadIdentifier (end of file)",
+   "evidence": [
+    "+TRRLoadInfo::GetJugglerLoadIdentifier(uint64_t* aResult) {",
+    "+  return NS_ERROR_NOT_IMPLEMENTED;"
+   ],
+   "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The infallible-stub risk is refuted: upstream TRRLoadInfo already does this for other infallible attributes."
+   }
+  },
+  {
+   "file": "netwerk/base/nsILoadInfo.idl",
+   "category": "juggler",
+   "feature": "juggler-load-identifier",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "interface nsILoadInfo (end of interface, after the %{ C++ block)",
+   "evidence": [
+    "+  [infallible] attribute unsigned long long jugglerLoadIdentifier;"
+   ],
+   "notes": "IDL attribute declaration only. Declared [infallible]; TRRLoadInfo returns NS_ERROR_NOT_IMPLEMENTED for it, which is the existing upstream pattern for other [infallible] attributes (TRRLoadInfo.cpp:132-155), so not a new risk.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The infallible-vs-TRRLoadInfo risk is refuted (same pattern as upstream)."
+   }
+  },
+  {
+   "file": "netwerk/ipc/DocumentLoadListener.cpp",
+   "category": "juggler",
+   "feature": "juggler-load-identifier",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "CreateDocumentLoadInfo (static function)",
+   "evidence": [
+    "+  loadInfo->SetJugglerLoadIdentifier(aLoadState->GetLoadIdentifier());"
+   ],
+   "notes": "Copies the load identifier from the load state to the LoadInfo of each document load. GetLoadIdentifier confirmed at C:/ff/source/docshell/base/nsDocShellLoadState.h:365 (returns mLoadIdentifier). The only place in this diff that sets the identifier.",
+   "verifier": {
+    "changed": [],
+    "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  }
+ ]
+}

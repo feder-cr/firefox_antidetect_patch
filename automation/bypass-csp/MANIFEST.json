@@ -1,0 +1,53 @@
+{
+ "modified": [
+  "dom/security/nsCSPUtils.cpp",
+  "dom/security/nsCSPUtils.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/security/nsCSPUtils.cpp",
+   "category": "juggler",
+   "feature": "bypass-csp",
+   "prefs": [],
+   "added": 17,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 8,
+   "hookable": "movable",
+   "anchor": "CSP_IsBypassedFor (new) and CSP_ApplyMetaCSPToDoc",
+   "evidence": [
+    "+bool CSP_IsBypassedFor(const mozilla::dom::Document& aDoc) {",
+    "+  return NS_SUCCEEDED(docShell->GetBypassCSPEnabled(&bypass)) && bypass;",
+    "+  if (CSP_IsBypassedFor(aDoc)) {"
+   ],
+   "notes": "Reads the Juggler bypassCSP flag through nsIDocShell::GetBypassCSPEnabled. The header comment says InitCSP also uses it for header policies. [verified: CONFIRMED, the call site exists at dom/base/Document.cpp:4010 (not in this group).] The comment says the attribute was stored but never read before. The comment has an emoji marker that must be removed. The comment names Playwright and an internal issue number (vendor/test name in a code comment).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The open question about the InitCSP call site is answered: it exists in Document.cpp."
+   }
+  },
+  {
+   "file": "dom/security/nsCSPUtils.h",
+   "category": "juggler",
+   "feature": "bypass-csp",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "declaration of CSP_IsBypassedFor, before CSP_IsBrowserXHTML",
+   "evidence": [
+    "+bool CSP_IsBypassedFor(const mozilla::dom::Document& aDoc);"
+   ],
+   "notes": "Declaration plus a four-line comment. The comment names Juggler and Playwright; Playwright is a third-party test tool, so this falls under the vendor-name rule.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no change needed."
+   }
+  }
+ ]
+}

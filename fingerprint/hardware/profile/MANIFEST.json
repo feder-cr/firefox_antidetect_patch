@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "dom/base/Navigator.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/base/Navigator.cpp",
+   "category": "spoof",
+   "feature": "hardware-profile",
+   "prefs": [
+    "zoom.stealth.hw_concurrency",
+    "zoom.stealth.max_touch_points"
+   ],
+   "added": 26,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 6,
+   "hookable": "already-hook",
+   "anchor": "Navigator::HardwareConcurrency; Navigator::MaxTouchPoints",
+   "evidence": [
+    "+    int32_t hwc = StaticPrefs::zoom_stealth_hw_concurrency();",
+    "+      mozilla::gfx::StealthEngineActive()) {",
+    "+    return uint32_t(mozilla::StaticPrefs::zoom_stealth_max_touch_points());"
+   ],
+   "notes": "hardwareConcurrency returns the pref when it is > 0, with no engine gate. maxTouchPoints returns the pref only when the engine is active and the caller is not System, after StealthAssertDeclarationsComplete(). Both read StaticPrefs directly from Mozilla code; each could become a one-line call into our file. The two gate differently (one checks the engine, the other does not).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  }
+ ]
+}

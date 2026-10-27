@@ -1,0 +1,56 @@
+{
+ "modified": [
+  "netwerk/base/nsProtocolProxyService.cpp",
+  "netwerk/base/nsProtocolProxyService.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "netwerk/base/nsProtocolProxyService.cpp",
+   "category": "other",
+   "feature": "socks-credentials",
+   "prefs": [
+    "network.proxy.socks_username",
+    "network.proxy.socks_password"
+   ],
+   "added": 13,
+   "removed": 3,
+   "hunks": 2,
+   "inline_logic_lines": 11,
+   "hookable": "movable",
+   "anchor": "nsProtocolProxyService::PrefsChanged; nsProtocolProxyService::Resolve_Internal (SOCKS NewProxyInfo_Internal call)",
+   "evidence": [
+    "+    proxy_GetStringPref(prefBranch, PROXY_PREF(\"socks_username\"),",
+    "+    rv = NewProxyInfo_Internal(type, *host, port, \"\"_ns, mSOCKSProxyUsername,"
+   ],
+   "notes": "Loads SOCKS5 username and password from network.proxy.socks_username and socks_password (PROXY_PREF expands to network.proxy.<x>, nsProtocolProxyService.cpp:62-63) and passes them as the username and password arguments of NewProxyInfo_Internal (nsProtocolProxyService.h:216-219). RISK CONFIRMED (from code): that single call at nsProtocolProxyService.cpp:2329 serves every manual-config branch, including the HTTP and HTTPS proxy branches (:2304, :2316), so the SOCKS credentials are attached to HTTP proxies too; effect on those proxies unverified. Not page-observable. The PrefsChanged block (about 8 lines) can become one hook call.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Found that the credentials also reach the HTTP/HTTPS proxy branches; other cites confirmed."
+   }
+  },
+  {
+   "file": "netwerk/base/nsProtocolProxyService.h",
+   "category": "other",
+   "feature": "socks-credentials",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "nsProtocolProxyService class members (after mSOCKSProxyVersion)",
+   "evidence": [
+    "+  nsCString mSOCKSProxyUsername;",
+    "+  nsCString mSOCKSProxyPassword;"
+   ],
+   "notes": "Two member declarations holding the SOCKS credentials read in nsProtocolProxyService.cpp. Kept in plain nsCString in memory.",
+   "verifier": {
+    "changed": [],
+    "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  }
+ ]
+}

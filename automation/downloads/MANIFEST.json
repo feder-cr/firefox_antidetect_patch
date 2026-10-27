@@ -1,0 +1,79 @@
+{
+ "modified": [
+  "uriloader/exthandler/nsExternalHelperAppService.cpp",
+  "uriloader/exthandler/nsExternalHelperAppService.h",
+  "uriloader/exthandler/nsIExternalHelperAppService.idl"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "uriloader/exthandler/nsExternalHelperAppService.cpp",
+   "category": "juggler",
+   "feature": "juggler-download-interceptor",
+   "prefs": [],
+   "added": 12,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 4,
+   "hookable": "already-hook",
+   "anchor": "new method nsExternalHelperAppService::SetDownloadInterceptor, inserted after GetPreferredDownloadsDirectory (line 387)",
+   "evidence": [
+    "+NS_IMETHODIMP nsExternalHelperAppService::SetDownloadInterceptor(",
+    "+  mInterceptor = interceptor;"
+   ],
+   "notes": "Dead storage: mInterceptor is assigned here and never read in this file or the header; the comment says the intercept dispatch in CreateSaverForTempFile is not implemented. The setter does nothing else. The comment names a product (Playwright) in code: check against the no-vendor-names rule. Verified: git grep of the whole tree finds mInterceptor only at nsExternalHelperAppService.cpp:403 (write) and nsExternalHelperAppService.h:309 (declaration); no C++ calls interceptDownloadRequest or onDownloadComplete. The JS setter call at juggler/TargetRegistry.js:310 is live.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Whole-tree grep confirms mInterceptor is never read."
+   }
+  },
+  {
+   "file": "uriloader/exthandler/nsExternalHelperAppService.h",
+   "category": "juggler",
+   "feature": "juggler-download-interceptor",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "class nsExternalHelperAppService, new member after the last declared member (hunk header line 302)",
+   "evidence": [
+    "+  nsCOMPtr<nsIDownloadInterceptor> mInterceptor;"
+   ],
+   "notes": "Member is never read (see the .cpp entry). Remove together with the setter if the feature is not finished. Verified by whole-tree git grep (only uriloader/exthandler/nsExternalHelperAppService.cpp:403 writes it).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Confirmed the member is never read anywhere in the tree."
+   }
+  },
+  {
+   "file": "uriloader/exthandler/nsIExternalHelperAppService.idl",
+   "category": "juggler",
+   "feature": "juggler-download-interceptor",
+   "prefs": [],
+   "added": 22,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 7,
+   "hookable": "movable",
+   "anchor": "file level: new interface nsIDownloadInterceptor (hunk 1, before the nsIExternalHelperAppService comment); interface nsIExternalHelperAppService, new method setDownloadInterceptor (hunk 2)",
+   "evidence": [
+    "+interface nsIDownloadInterceptor : nsISupports",
+    "+[scriptable, uuid(9a20e9b0-75d0-11ea-bc55-0242ac130003)]",
+    "+  void setDownloadInterceptor(in nsIDownloadInterceptor interceptor);"
+   ],
+   "notes": "The interface body can move to our own .idl registered by our own moz.build, leaving one method line in Mozilla's file. The uuid is hard-coded and was copied from an earlier patch series; uniqueness was not checked. The comment says it was restored from an FF146 series. Nothing in this list calls onDownloadComplete or the interceptor. Verified: the IDL onDownloadComplete(aHandler, aErrorName) has 2 args while juggler/TargetRegistry.js:83 implements onDownloadComplete(externalAppHandler, canceled, errorName) with 3; harmless today because no C++ calls either method (whole-tree git grep), but it would break the day the dispatch is implemented.",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "Found an interface/consumer signature mismatch and confirmed nothing calls the interface methods."
+   }
+  }
+ ]
+}

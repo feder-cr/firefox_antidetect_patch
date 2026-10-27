@@ -1,0 +1,24 @@
+diff --git a/modules/libpref/moz.build b/modules/libpref/moz.build
+index 2c8b218c618f8fa73ab4b21f4155d5f063bc1bb4..b9e8f5a6ef66cefc227cf4fbedaacb9b389ac2e0 100644
+--- a/modules/libpref/moz.build
++++ b/modules/libpref/moz.build
+@@ -54,6 +54,7 @@ pref_groups = [
+     "image",
+     "intl",
+     "javascript",
++    "juggler",
+     "layers",
+     "layout",
+     "logging",
+diff --git a/toolkit/toolkit.mozbuild b/toolkit/toolkit.mozbuild
+index f3c59b08567c9b4ed1b5ccb3eeea845cf7a4808b..94a8c420628fcd61c8045a2d714f00331e798da9 100644
+--- a/toolkit/toolkit.mozbuild
++++ b/toolkit/toolkit.mozbuild
+@@ -152,6 +152,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+ if CONFIG["ENABLE_WEBDRIVER"]:
+     DIRS += [
+         "/remote",
++        "/juggler",
+         "/testing/firefox-ui",
+         "/testing/marionette",
+         "/toolkit/components/telemetry/tests/marionette",

@@ -1,0 +1,575 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# release.yml — build all 3 patched-Firefox targets (Win + Linux x2) at $0 and publish them as
+# DRAFT GitHub Release assets, named per the wrapper contract (constants.ARCHIVE_NAME).
+# DRAFT on purpose: a human runs the realness gate and only THEN un-drafts + bumps
+# BINARY_VERSION. Nothing auto-ships (issue #14 lesson).
+#
+# PACKAGING (issue #14: dangling symlinks broke 265 downloads — never again):
+#   Linux → cp -aL (dereference ALL symlinks into real files) + rm dev tools +
+#           strip + sanitize + tar at ROOT, then validate_release.py as a HARD
+#           in-pipeline gate (the exact battle-tested script from the source repo).
+#   Win   → mach package; zip the CONTENTS of dist/firefox (clean tree, NOT
+#           dist/bin) so firefox.exe sits at the zip ROOT.
+#
+# DRIVE GATE (the firefox-8 catcher): after build, every binary is DRIVEN by
+# Playwright on its native runner (launch via juggler + real page + JS roundtrip,
+# headless, no screenshot → GPU-free, zero proxy). A juggler-less binary renders
+# a screenshot fine but is undrivable — only an actual drive catches that. The
+# proxy realness gate (fppro/webrtc) stays LOCAL — it needs secrets.
+#
+# Trigger: push a tag `firefox-N`, or run manually.  Hybrid runners, all free.
+# A run by hand is a CANDIDATE (build + gate, nothing published, a green run)
+# unless it says kind=release; the `plan` job decides, once, before any build
+# (scripts/release_plan.py), and every job reads its outputs.
+# ─────────────────────────────────────────────────────────────────────────────
+name: release
+
+on:
+  push:
+    tags: ['firefox-*']
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: 'firefox_antidetect_patch ref to build'
+        default: 'stealth/157'
+      kind:
+        description: >
+          candidate: build and gate, publish nothing (no seal, no draft); its
+          archives stay the run's artifacts, and republish.yml publishes them
+          from its run id. release: also the seal and the DRAFT under
+          release_tag.
+        type: choice
+        options: [candidate, release]
+        default: candidate
+      release_tag:
+        description: 'firefox-N to publish the draft under; kind=release only, a candidate refuses one'
+        required: false
+        default: ''
+      compile_cache:
+        description: >
+          candidate only. gha: compile through sccache on the GitHub Actions
+          cache, so a run after a fix recompiles only what changed (the plan's
+          default for a candidate). off: a cold build, the only candidate
+          republish.yml can publish. A release is always cold and refuses gha
+          (scripts/release_plan.py).
+        type: choice
+        options: ['gha', 'off']
+        default: 'gha'
+      wrapper_ref:
+        description: >
+          invisible_playwright ref the gate runs against. Defaults to main,
+          which is what will be published next and therefore the right thing to
+          validate a new binary with. Set it to a published TAG while the
+          wrapper is mid-rewrite: otherwise unfinished work on main blocks a
+          binary release that has nothing to do with it.
+        default: 'main'
+      core_ref:
+        description: >
+          invisible_core ref the gate installs. Defaults to main, for the reason
+          the gate step gives. Set it to the branch that follows a change of the
+          engine's layout (firefox-47 moved the juggler to modules/juggler):
+          main still reads the old one and refuses every launch. The core is
+          installed before the wrapper, so wrapper_ref must pin the version this
+          ref builds. On stealth/157 it is engine/firefox-157 until that branch
+          is merged: main's branding archives are 151's, and the page-surface
+          gate refuses every leg built with them (aboutDialog.css differs from
+          the retail's; run 40403680432, dispatched with the old default).
+        default: 'engine/firefox-157'
+
+env:
+  SOURCE_REPO: feder-cr/firefox_antidetect_patch
+  SOURCE_REF: ${{ github.event.inputs.source_ref || 'stealth/157' }}
+
+jobs:
+  # What this run is, decided once and before the builds: a release with a bad
+  # tag is refused here in seconds, not at the seal two hours later, and a
+  # candidate never reaches the seal at all.
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      kind: ${{ steps.plan.outputs.kind }}
+      tag: ${{ steps.plan.outputs.tag }}
+      num: ${{ steps.plan.outputs.num }}
+      prevtag: ${{ steps.plan.outputs.prevtag }}
+      seal_tag: ${{ steps.plan.outputs.seal_tag }}
+      compile_cache: ${{ steps.plan.outputs.compile_cache }}
+      build_date: ${{ steps.build_date.outputs.build_date }}
+    steps:
+      - name: Checkout (for scripts/release_plan.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { fetch-depth: 1 }
+      - name: The plan refuses what it must
+        run: python3 scripts/test_release_plan.py
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          KIND: ${{ inputs.kind }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REF_NAME: ${{ github.ref_name }}
+          # A pushed tag has no inputs: empty, and the plan makes it a cold release.
+          COMPILE_CACHE: ${{ inputs.compile_cache }}
+        run: |
+          set -e
+          python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
+            --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
+            --compile-cache "$COMPILE_CACHE" > plan.txt
+          cat plan.txt
+          cat plan.txt >> "$GITHUB_OUTPUT"
+      # ONE BuildID for the whole run, as a retail release has one on every
+      # platform: the build graph generates buildid.h more than once per build
+      # from 157, and without MOZ_BUILD_DATE each generation takes the clock
+      # (see the .mozconfig, which takes this value when it is set).
+      - name: One build date for every leg
+        id: build_date
+        run: echo "build_date=$(date -u +%Y%m%d%H%M%S)" | tee -a "$GITHUB_OUTPUT"
+
+  build:
+    name: build-${{ matrix.leg }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    env:
+      MOZ_BUILD_DATE: ${{ needs.plan.outputs.build_date }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # ⛔ `host:` NON e' una proprieta' della gamba, e' una proprieta' del
+        # RUNNER: ogni gamba che gira su `ubuntu-24.04` deve dichiarare il
+        # triplet host, o configure si ferma con
+        #     ERROR: Don't know how to translate x86_64-pc-linux-gnu for rustc
+        # L'immagine ubuntu-24.04 di oggi fa riportare al compilatore C
+        # `x86_64-pc-linux-gnu`, e Firefox non sa mappare quel nome su quello
+        # che rustc usa. E' lo stesso sistema: cambia solo come si chiama.
+        # Vale anche per win-x86_64, che si CROSS-COMPILA da quel runner linux:
+        # il suo --target dice dove va, non da dove parte, e a fermarsi e' la
+        # rilevazione dell'HOST. linux-arm64 gira su `ubuntu-24.04-arm`, host
+        # aarch64, che si traduce da solo - infatti e' l'unica delle tre che ha
+        # superato configure.
+        # A firefox-20 non serviva a nessuna: la matrice qui e' identica campo
+        # per campo, a cambiare e' stata l'immagine sotto.
+        include:
+          - leg: linux-x86_64
+            runner: ubuntu-24.04
+            family: linux
+            host: x86_64-unknown-linux-gnu
+            target: ''
+            rust_target: x86_64-unknown-linux-gnu
+            extra_pkgs: ''
+            asset: firefox-157.0.1-stealth-linux-x86_64.tar.gz
+          - leg: linux-arm64
+            runner: ubuntu-24.04-arm
+            family: linux
+            target: ''
+            rust_target: aarch64-unknown-linux-gnu
+            extra_pkgs: ''
+            asset: firefox-157.0.1-stealth-linux-arm64.tar.gz
+          - leg: win-x86_64
+            runner: ubuntu-24.04
+            family: win
+            host: x86_64-unknown-linux-gnu
+            target: x86_64-pc-windows-msvc
+            rust_target: x86_64-pc-windows-msvc
+            extra_pkgs: 'msitools p7zip-full zip'
+            asset: firefox-157.0.1-stealth-win-x86_64.zip
+    steps:
+      - name: Free disk + 16G swap (Linux runners)
+        run: |
+          # The GH-hosted 14GB-free disk is tight for a full Firefox build: objdir
+          # (.o + libxul) + `mach package` (a second dist copy) + the archive, plus
+          # 16G of swap and, on the win-cross leg, the fetched MSVC toolchain. The
+          # first firefox-18 win leg packaged fine and the second died on
+          # `No space left on device` at packaging time - i.e. marginal, not broken.
+          # Reclaim the big preinstalled caches up front so it stops being marginal.
+          # Everything here is best-effort (|| true) - a missing path must never fail
+          # the build.
+          echo "disk before cleanup:"; df -h / | tail -1
+          sudo rm -rf \
+            /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android \
+            /usr/local/share/boost /usr/share/swift /usr/local/share/powershell \
+            /usr/local/lib/node_modules /opt/microsoft \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" 2>/dev/null || true
+          sudo docker image prune --all --force 2>/dev/null || true
+          echo "disk after cleanup:"; df -h / | tail -1
+          sudo fallocate -l 16G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile || true
+
+      - name: Checkout patched Firefox source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
+          fetch-depth: 1
+
+      # Cheapest gate in the pipeline, guarding the most expensive failure: the asset
+      # basename is hand-written in every matrix entry below and derived independently
+      # on the client side. When the two disagree CI publishes one name while the
+      # wrapper fetches another, so every download 404s while the build is green, the
+      # archives are valid and the release page looks correct (issue #14). Fail here in
+      # seconds instead of after five multi-hour builds.
+      - name: Check asset names match the version this tree builds
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        run: python3 scripts/check_release_naming.py
+
+      # The source the official build states (browser/config/upstream_source.txt,
+      # read by the .mozconfig) must be the retail's of the version this tree
+      # builds; a port that moves the base and leaves the file behind would
+      # write the previous release's changeset into application.ini. Seconds,
+      # here, before the build; --online also asks Mozilla's build record.
+      - name: Check the declared upstream source matches the version this tree builds
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        run: python3 scripts/check_upstream_source.py --online
+
+      # Juggler tested without a browser, seconds here before hours of build.
+      # The channel between its two halves: a request answered from another
+      # channel end's kept answers is never dispatched and nothing says so (a
+      # page's "main world created" was lost that way, B286). And where it loads
+      # from: never a chrome package, which a page probes by name, and every
+      # resource URL a file the build installs (invisible_playwright #336).
+      - name: Juggler's tests without a browser
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        # The files, expanded by the shell: from Node 21 the arguments of
+        # --test are file patterns, and a directory is loaded as a module.
+        run: node --test juggler/tests/*.test.mjs
+
+      # The release scripts' own known-bad inputs: validate_release.py's
+      # no-updater and no-juggler-name checks, and make_seal.py's refusals. A
+      # check that has only ever printed its OK line is not a gate.
+      - name: The release scripts refuse what they must
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        run: |
+          python3 scripts/validate_release.py --selftest
+          python3 scripts/test_make_seal.py
+          python3 scripts/test_check_upstream_source.py
+
+      # Record which firefox_antidetect_patch commit this build came from. The publish
+      # job turns the range previous-release..this commit into the release notes
+      # (scripts/gen_release_notes.py), and re-publishes it as a source-commit.txt
+      # asset so the NEXT release knows where to start the changelog. One leg is
+      # enough — all legs check out the same SOURCE_REF.
+      #
+      # compile-cache.txt rides with it: whether these archives were compiled
+      # through the cache (the plan's compile_cache, the same for every leg).
+      # publish.yml refuses to publish a run whose archives were, so a cached
+      # candidate cannot become a release through republish.yml.
+      - name: Record source commit (for auto release notes) and compile cache
+        if: matrix.leg == 'linux-x86_64'
+        shell: bash
+        run: |
+          git rev-parse HEAD > source-commit.txt && cat source-commit.txt
+          echo "${{ needs.plan.outputs.compile_cache }}" > compile-cache.txt
+          echo "compile cache: $(cat compile-cache.txt)"
+      - name: Upload source-commit artifact
+        if: matrix.leg == 'linux-x86_64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: source-commit
+          path: |
+            source-commit.txt
+            compile-cache.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+
+      # The page-surface gate at the packaging step asks invisible_core which
+      # branding archive it declares (validate_release.declared_branding): an
+      # engine with the branding redirect (P60) serves that archive, not the
+      # brand in its omni.ja, so that archive is what a page reads and what is
+      # judged. The core is the one the drive gate pairs with the binary,
+      # core_ref, so both gates judge the same pairing. An engine without the
+      # redirect never asks, and the install stays unconditional on purpose:
+      # every engine built from a tree with P60 redirects, so a conditional
+      # would only be a second place deciding what serves_declared_branding
+      # already decides from the tree, and a core_ref that cannot install
+      # fails the drive gate of the same run.
+      #
+      # BEFORE the build, and the question asked once here: the core's answer
+      # does not depend on the build. It used to be installed after `mach
+      # build`, so a core whose contract had moved was found at the packaging
+      # step, two hours in: every leg of the first firefox-50 candidate died
+      # there, because core 49.46.0 refuses a profile translated without a
+      # session zone and the gate did not pass one.
+      - name: Install the invisible_core the page-surface gate asks for its branding
+        run: |
+          python3 -m pip install --quiet \
+            "git+https://github.com/feder-cr/invisible_core@${{ github.event.inputs.core_ref || 'main' }}"
+          python3 -c "from importlib.metadata import version; print('core asked for the branding:', version('invisible-core'))"
+          ( cd scripts && python3 -c "import validate_release; print('branding it declares:', validate_release.declared_branding())" )
+
+      - name: Install Linux build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y util-linux binutils ${{ matrix.extra_pkgs }}
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.rust_target }} || true
+
+      # LA CACHE DI COMPILAZIONE DELLE CANDIDATE (compile_cache=gha, deciso da
+      # scripts/release_plan.py). La corsa dopo una correzione deve ricompilare
+      # solo cio' che la correzione tocca: un port a una nuova versione di
+      # Firefox richiede molte corse, e ognuna a freddo costa 1-2 ore a gamba.
+      #
+      # COME: sccache con la cache su DISCO del runner (SCCACHE_DIR), e quella
+      # cartella salvata e ripristinata da actions/cache come UNA voce per gamba.
+      #
+      # ⛔ NON il backend `gha` di sccache (SCCACHE_GHA_ENABLED), che e' come
+      # questa cache e' nata il 2026-10-26 ed e' stato misurato sbagliato: crea
+      # una voce di cache PER OGNI OGGETTO compilato, circa 5.500 a gamba, e
+      # GitHub accetta 200 nuove voci al minuto per repository (1.500 letture);
+      # oltre, l'upload fallisce e sccache prosegue in silenzio. Risultato: il
+      # 33-48% delle scritture perso nella corsa fredda e il 100% in una corsa
+      # calda su Windows (corse 40302089863, 40318828530), e quello che non si
+      # scrive torna miss alla corsa dopo. Una voce per gamba per corsa sta
+      # lontanissima da quel tetto.
+      #
+      # ⛔ E UN SOLO sccache, quello fissato qui, passato a configure col
+      # percorso ASSOLUTO. Con `--with-ccache=sccache` (il nome nudo del
+      # .mozconfig) e --enable-bootstrap, mach scarica un sccache SUO in
+      # ~/.mozbuild/sccache e configure prende quello: nelle stesse corse le
+      # gambe x86_64 e Windows compilavano con lo 0.17.0 di Mozilla, la arm64
+      # (dove il bootstrap non ne fornisce uno) con lo 0.18.0 fissato qui. Il
+      # passo dopo la build fallisce se il compilatore non e' passato da questo.
+      #
+      # La chiave e' per gamba e unica per corsa (le voci della cache sono
+      # immutabili); si riparte dall'ultima della stessa gamba. Le chiavi di
+      # sccache dentro la cartella sono l'hash di sorgente preprocessato,
+      # argomenti e compilatore, quindi un oggetto riusato e' identico a quello
+      # che la compilazione produrrebbe. Il tetto del repository e' 10 GB: tre
+      # gambe sotto SCCACHE_CACHE_SIZE stanno larghe anche con due generazioni,
+      # e GitHub sfratta per primo cio' che non si usa da piu' tempo.
+      #
+      # Versioni fissate, non "latest": una build che cambia strumento da sola
+      # tra una corsa e l'altra non e' riproducibile.
+      - name: Compile cache (candidates only) - install the one sccache this build uses
+        if: needs.plan.outputs.compile_cache == 'gha'
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: 'v0.18.0'
+      - name: Compile cache (candidates only) - sccache keeps it on the runner's disk
+        if: needs.plan.outputs.compile_cache == 'gha'
+        run: |
+          {
+            echo "SCCACHE_DIR=$HOME/.cache/sccache-ci"
+            echo "SCCACHE_CACHE_SIZE=5G"
+            echo "SCCACHE_PINNED_VERSION=0.18.0"
+          } >> "$GITHUB_ENV"
+      - name: Compile cache (candidates only) - restore this leg's last one
+        if: needs.plan.outputs.compile_cache == 'gha'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/sccache-ci
+          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ matrix.leg }}-
+
+      - name: Extend the repo .mozconfig (NO mold; +target/SDK as needed)
+        env:
+          COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
+        run: |
+          test -f .mozconfig || { echo "ERROR: no .mozconfig in source"; exit 1; }
+          rm -f mozconfig
+          # Il .mozconfig e' UNO SOLO per le due macchine di sviluppo e per la
+          # CI, e dichiara --with-ccache=sccache piu' RUSTC_WRAPPER=sccache
+          # senza percorso, apposta: il percorso e' una proprieta' della
+          # macchina, e sulle due macchine sccache sta nel PATH.
+          #
+          # Su questo runner quelle righe si tolgono SEMPRE, e con
+          # compile_cache=gha si rimettono col percorso ASSOLUTO del sccache
+          # installato sopra: col nome nudo configure prenderebbe quello che mach
+          # scarica in ~/.mozbuild (vedi i passi della cache). Con
+          # compile_cache=off (ogni release, e una candidata che si vuole poter
+          # ripubblicare) non si rimettono, e la build e' fredda per davvero.
+          # Case-insensitive, perche' c'e' anche SCCACHE_CACHE_SIZE maiuscolo.
+          # Solo le righe ATTIVE: i commenti che spiegano il perche' restano.
+          sed -i -E '/^[^#]*sccache/Id' .mozconfig
+          if [ "$COMPILE_CACHE" = "gha" ]; then
+            test -x "$SCCACHE_PATH" || { echo "ERROR: no sccache at SCCACHE_PATH=$SCCACHE_PATH"; exit 1; }
+            {
+              echo "ac_add_options --with-ccache=$SCCACHE_PATH"
+              echo "mk_add_options 'export RUSTC_WRAPPER=$SCCACHE_PATH'"
+            } >> .mozconfig
+          fi
+          {
+            echo ""
+            echo "# --- release CI levers for ${{ matrix.leg }} (mold intentionally OFF — it segfaults libxul) ---"
+            echo "ac_add_options --disable-debug-symbols"
+          } >> .mozconfig
+          if [ -n "${{ matrix.target }}" ]; then echo "ac_add_options --target=${{ matrix.target }}" >> .mozconfig; fi
+          if [ -n "${{ matrix.host }}" ]; then echo "ac_add_options --host=${{ matrix.host }}" >> .mozconfig; fi
+          # No --disable-default-browser-agent here: the .mozconfig dropped it on
+          # 2026-08-19 because the retail release builds the agent (only the
+          # installer registers it, and we ship an archive), and this leg kept
+          # adding it back, so the agent's page-readable image was missing from
+          # every Windows build (B157, found by the page-surface gate).
+          if [ "${{ matrix.family }}" = "win" ]; then
+            # The C++ runtime ships beside the binaries, as the retail ships it
+            # (B306): windows.configure packages it only under MOZ_AUTOMATION or
+            # with this option, and this cross leg had neither, so a clean
+            # Windows could not start the browser. A toolchain without
+            # Redist/MSVC fails configure at once, loudly.
+            echo "ac_add_options --with-redist" >> .mozconfig
+          fi
+          NCPU=4
+          { echo "mk_add_options MOZ_PARALLEL_BUILD=$NCPU";
+            echo "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-rel"; } >> .mozconfig
+          echo "----- final .mozconfig -----"; cat .mozconfig
+
+      - name: Build
+        # ⛔ Un tetto sul PASSO, non solo sul job. Il 2026-08-26 la gamba
+        # win-x86_64 si e' piantata sul download del toolchain Microsoft che
+        # `--enable-bootstrap` fa a inizio build: nessuna riga emessa per oltre
+        # tre ore, con il contatore di mach fermo a 0:29. Senza questo tetto la
+        # corsa avrebbe consumato le 6 ore del job prima di arrendersi, e il
+        # guasto si riconosce solo aprendo il log e notando che il contatore non
+        # si muove - cioe' a mano.
+        # 180 minuti sono il 48% sopra la piu' lenta build riuscita mai
+        # osservata su questa gamba (121 min il 2026-08-26; 105 e 106 il
+        # 2026-08-17), quindi non uccide una build lenta ma vera. Quando scatta,
+        # il job risulta FALLITO invece che appeso, e `rerun-failed-jobs`
+        # ricompila la sola gamba caduta riusando gli artefatti delle altre.
+        #
+        # --keep-going: una corsa che fallisce riporta TUTTI gli errori di
+        # compilazione della gamba, non solo i primi. Senza, make si ferma al
+        # primo e ogni corsa da 1-2 ore ne mostra uno o due, che e' il modo piu'
+        # lento di portare la pila su una versione nuova. Su una build che
+        # riesce non cambia niente.
+        timeout-minutes: 180
+        run: ./mach build --keep-going
+
+      # The compile cache's own gate: the build compiled through the sccache
+      # pinned above, nothing else, and every object it compiled was stored.
+      # Statistics first, so a refusal still shows them; then the server stops,
+      # which flushes the cache directory before it is saved.
+      - name: Compile cache (candidates only) - the build used the pinned sccache
+        if: always() && needs.plan.outputs.compile_cache == 'gha'
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          STATS="$("$SCCACHE_PATH" --show-stats 2>/dev/null || true)"
+          "$SCCACHE_PATH" --stop-server >/dev/null 2>&1 || true
+          # configure.py writes the substs as JSON beside config.status.
+          CONFIGURED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["substs"].get("CCACHE", ""))' obj-rel/config.status.json 2>/dev/null || true)"
+          echo "configure took CCACHE=${CONFIGURED:-<none>}"
+          if [ "$CONFIGURED" != "$SCCACHE_PATH" ]; then
+            echo "ERROR: configure did not take SCCACHE_PATH=$SCCACHE_PATH"
+            exit 1
+          fi
+          SERVER="$(echo "$STATS" | sed -n 's/^Version (client) *//p')"
+          if [ -n "$SERVER" ] && [ "$SERVER" != "$SCCACHE_PINNED_VERSION" ]; then
+            echo "ERROR: the sccache server that compiled is $SERVER, pinned is $SCCACHE_PINNED_VERSION"
+            exit 1
+          fi
+          WRITE_ERRORS="$(echo "$STATS" | sed -n 's/^Cache write errors *//p')"
+          if [ "${WRITE_ERRORS:-0}" != "0" ]; then
+            echo "::warning::sccache failed to store $WRITE_ERRORS objects: the next run recompiles them"
+          fi
+      - name: Compile cache (candidates only) - save this leg's
+        # Also when the build failed: the runs that fix a port fail by design,
+        # and they are the ones the cache is for.
+        if: always() && needs.plan.outputs.compile_cache == 'gha'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/sccache-ci
+          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # ── LINUX: dereference symlinks (issue #14) + strip + sanitize + tar@root + GATE
+      - name: Package + validate (Linux)
+        if: matrix.family == 'linux'
+        run: |
+          set -e
+          # The PACKAGED tree, as the Windows leg ships it (B310). This leg used
+          # to tar obj-rel/dist/bin, the development tree: the test binaries and
+          # TLS test servers went out with it, and the 44 locale .properties a
+          # page can read kept the comments the packager strips, so they differed
+          # from the retail's. A failing `mach package` fails the leg.
+          ./mach package
+          DIST=obj-rel/dist/firefox
+          [ -x "$DIST/firefox" ] || { echo "ERROR: mach package did not produce $DIST/firefox"; exit 1; }
+          STAGING=staging
+          rm -rf "$STAGING"; mkdir -p "$STAGING" out
+          cp -aL "$DIST/." "$STAGING/"                      # -L: dereference ALL symlinks into real files
+          N=$(find "$STAGING" -type l | wc -l)
+          [ "$N" -eq 0 ] || { echo "ERROR: $N symlinks remain after cp -aL"; exit 1; }
+          # JUGGLER GATE: present (Playwright cannot drive the binary without it).
+          # PAGE-SURFACE GATE: what a page can read of the build (registered
+          # names and the bytes of every readable file) is the retail's of the
+          # same version, judged against Mozilla's complete MAR (stock_parity.py).
+          # Both live in validate_release.py, which also runs on the archive below.
+          # Every gate runs and reports before the verdict (scripts/release_gates.py).
+          python3 scripts/release_gates.py "$STAGING"
+          find "$STAGING" -type f \
+            \( -name '*.so' -o -name firefox -o -name firefox-bin -o -name plugin-container \
+               -o -name pingsender -o -name glxtest -o -name vaapitest -o -name updater \) \
+            -exec strip --strip-debug {} + 2>/dev/null || true
+          STAGING="$STAGING" python3 scripts/linux_sanitize.py || true   # no-op in CI (no /home/feder), defensive
+          tar --owner=0 --group=0 --numeric-owner --mtime="2026-01-01 00:00:00 UTC" \
+              -czf "out/${{ matrix.asset }}" -C "$STAGING" .              # firefox at ROOT
+          echo "=== HARD GATE: scripts/validate_release.py (the issue-#14 protector) ==="
+          # --no-site-patterns: the site-name token list is deliberately not in this
+          # repository and cannot be on a CI runner, so this leg checks structure and
+          # build-machine paths only. Without the flag the run now exits 3 rather than
+          # printing a warning nobody reads. The full scan is the operator's
+          # pre-publish run, with STEALTH_EXTRA_LEAK_PATTERNS set.
+          python3 scripts/validate_release.py --linux "out/${{ matrix.asset }}" \
+            --linux-only --no-site-patterns
+          ls -la out/
+
+      # ── WINDOWS (cross): zip the CLEAN dist/firefox tree, firefox.exe at root
+      - name: Package (Windows cross)
+        if: matrix.family == 'win'
+        run: |
+          set -e
+          # Do NOT swallow a mach failure: `./mach package || echo` lets set -e pass
+          # and would fall through to a stale tree. A release MUST come from the clean
+          # dist/firefox; dist/bin is the dev tree (cruft + loose juggler that masked
+          # the firefox-7/8 packaging bugs), never acceptable for a release.
+          ./mach package
+          [ -f obj-rel/dist/firefox/firefox.exe ] \
+            || { echo "ERROR: mach package did not produce a clean dist/firefox tree"; exit 1; }
+          WIN_APP=obj-rel/dist/firefox
+          echo "packaging from: $WIN_APP"
+          # JUGGLER GATE: in omni.ja (Playwright cannot drive the binary without
+          # it), and the PAGE-SURFACE GATE against the retail of the same
+          # version: the same two checks as the Linux leg.
+          [ -f "$WIN_APP/omni.ja" ] || { echo "ERROR: no omni.ja in $WIN_APP"; exit 1; }
+          python3 scripts/release_gates.py "$WIN_APP"
+          mkdir -p out
+          ( cd "$WIN_APP" && zip -qr "$GITHUB_WORKSPACE/out/${{ matrix.asset }}" . )   # firefox.exe at zip ROOT
+          ls -la out/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: asset-${{ matrix.leg }}
+          path: out/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The gate and the publish are written once, in gate.yml and publish.yml,
+  # and republish.yml calls the same two.
+  gate:
+    needs: [plan, build]
+    permissions: { actions: read, contents: read }
+    uses: ./.github/workflows/gate.yml
+    with:
+      build_run_id: ${{ github.run_id }}
+      seal_tag: ${{ needs.plan.outputs.seal_tag }}
+      wrapper_ref: ${{ inputs.wrapper_ref || 'main' }}
+      core_ref: ${{ inputs.core_ref || 'main' }}
+
+  publish:
+    needs: [plan, build, gate]
+    # a candidate publishes nothing: skipped, and the run is green
+    if: needs.plan.outputs.kind == 'release'
+    permissions: { actions: read, contents: write }
+    uses: ./.github/workflows/publish.yml
+    with:
+      build_run_id: ${{ github.run_id }}
+      tag: ${{ needs.plan.outputs.tag }}
+      num: ${{ needs.plan.outputs.num }}
+      prevtag: ${{ needs.plan.outputs.prevtag }}
+      wrapper_ref: ${{ inputs.wrapper_ref || 'main' }}

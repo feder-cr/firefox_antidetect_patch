@@ -1,0 +1,38 @@
+{
+ "modified": [
+  "layout/style/nsMediaFeatures.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "layout/style/nsMediaFeatures.cpp",
+   "category": "spoof",
+   "feature": "css-media-features",
+   "prefs": [
+    "zoom.stealth.screen.width",
+    "zoom.stealth.screen.height",
+    "zoom.stealth.pointer.primary",
+    "zoom.stealth.pointer.all"
+   ],
+   "added": 37,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 11,
+   "hookable": "movable",
+   "anchor": "GetDeviceSize (device-size block) and GetPointerCapabilities (stealth branch)",
+   "evidence": [
+    "+    if (w > 0 && h > 0) return CSSPixel::ToAppUnits(CSSIntSize(w, h));",
+    "+  if (mozilla::gfx::StealthEngineActive()) {",
+    "+      mozilla::gfx::StealthAssertDeclarationsComplete();"
+   ],
+   "notes": "Two declared sub-features under one file. Device size: returns the declared width/height when both prefs are above 0, with no StealthEngineActive gate (the pointer branch has one: inconsistent, CONFIRMED from the diff); the same ungated pattern is used in dom/base/nsScreen.cpp:93-96, so it is the house pattern for these two prefs rather than a one-off. Pointer capabilities: declared primary and union bitmasks, checked by StealthAssertDeclarationsComplete (StealthDeclarationGate.h, included here). The pointer block (~8 logic lines) is movable behind one call. The comment documents the old compiled Fine|Hover and why it was replaced.",
+   "verifier": {
+    "changed": [
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "Recount; added the cross-file check of the ungated device-size pattern."
+   }
+  }
+ ]
+}

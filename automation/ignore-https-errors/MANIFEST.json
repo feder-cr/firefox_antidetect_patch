@@ -1,0 +1,30 @@
+{
+ "modified": [
+  "security/manager/ssl/nsCertOverrideService.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "security/manager/ssl/nsCertOverrideService.cpp",
+   "category": "juggler",
+   "feature": "juggler-ignore-https-errors",
+   "prefs": [],
+   "added": 20,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 7,
+   "hookable": "movable",
+   "anchor": "IsDebugger (static, nsCertOverrideService.cpp)",
+   "evidence": [
+    "+  nsCOMPtr<nsIRemoteDebuggingPipe> jugglerPipe =",
+    "+    jugglerPipe->GetConnected(&jugglerConnected);",
+    "+      return true;"
+   ],
+   "notes": "IsDebugger() returns true when a Juggler pipe is connected, so Browser.setIgnoreHTTPSErrors can flip the per-context switch (a page cannot see this). Hunk 2 has 7 logic lines: move the check into one function in our own file and keep a one-line hook. The pipe is looked up by contract id string '@mozilla.org/juggler/remotedebuggingpipe;1'. The include of nsIRemoteDebuggingPipe.h sits under ENABLE_WEBDRIVER. The diff comment calls this a narrower variant of an upstream automation-layer patch; rewrite the comment when moving the code.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  }
+ ]
+}

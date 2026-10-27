@@ -1,0 +1,82 @@
+{
+ "modified": [
+  "dom/base/Element.cpp",
+  "dom/base/Element.h",
+  "dom/webidl/Element.webidl"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/base/Element.cpp",
+   "category": "juggler",
+   "feature": "shadow-root-sandbox-access",
+   "prefs": [],
+   "added": 84,
+   "removed": 5,
+   "hunks": 3,
+   "inline_logic_lines": 10,
+   "hookable": "movable",
+   "anchor": "Element::GetShadowRootForBindings",
+   "evidence": [
+    "-ShadowRoot* Element::GetShadowRootForBindings() const {",
+    "+  if (!BasePrincipal::Cast(aSubject).Is<ExpandedPrincipal>()) {",
+    "+  if (shadowRoot->IsUAWidget()) {"
+   ],
+   "notes": "Closed shadow roots are returned only to the automation sandbox (ExpandedPrincipal subject), never UA widgets; the page keeps the spec answer (null). The decision is about 10 logic lines and can move to one of our files behind a one-line call. The principal test is deliberately before the pref read (the comment says content must not pay for the exception; timing was measured). mozilla::gfx::StealthEngineActive() is defined outside this diff (not checked). Hunk 1 adds #include StaticPrefs_zoom.h, which the changed code does not use; drop it. Signature change is in Element.h. VERIFIED: mozilla::gfx::StealthEngineActive is defined at gfx/thebes/StealthDeclarationGate.h:42 (confirmed). StaticPrefs_zoom.h include (Element.cpp:66) is unused: no StaticPrefs::zoom_ call exists in the file (confirmed). Despite the comments, the added code reads no pref; the only gate is StealthEngineActive().",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "StealthEngineActive was marked unchecked; it is defined, and the unused include is confirmed."
+   }
+  },
+  {
+   "file": "dom/base/Element.h",
+   "category": "juggler",
+   "feature": "shadow-root-sandbox-access",
+   "prefs": [],
+   "added": 3,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "Element::GetShadowRootForBindings (declaration)",
+   "evidence": [
+    "-  ShadowRoot* GetShadowRootForBindings() const;",
+    "+  ShadowRoot* GetShadowRootForBindings(nsIPrincipal& aSubject) const;"
+   ],
+   "notes": "Declaration only. Caller is the generated binding: dom/webidl/Element.webidl:298 declares shadowRoot with [NeedsSubjectPrincipal, BinaryName=\"shadowRootForBindings\"], so the generated code passes the subject principal (earlier doubt refuted, the build does not break).",
+   "verifier": {
+    "changed": [
+     "notes"
+    ],
+    "why": "The note said the binding caller was not found and unverified; the WebIDL shows it passes the subject principal."
+   }
+  },
+  {
+   "file": "dom/webidl/Element.webidl",
+   "category": "juggler",
+   "feature": "closed-shadowroot-automation-access",
+   "prefs": [],
+   "added": 4,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "partial interface Element, readonly attribute shadowRoot",
+   "evidence": [
+    "-  [BinaryName=\"shadowRootForBindings\"]",
+    "+  [NeedsSubjectPrincipal, BinaryName=\"shadowRootForBindings\"]"
+   ],
+   "notes": "Adds NeedsSubjectPrincipal so the native getter receives the caller's principal. [verified: Element.h:1800 and Element.cpp:1410-1480: content callers get null for closed roots (a non-ExpandedPrincipal returns nullptr), UA widgets are refused, and only the sandbox/automation principal gets the closed root, gated by mozilla::gfx::StealthEngineActive().] The page-visible answer is unchanged by design. Changing the annotation regenerates bindings. The native-side logic lives in Element.cpp (not in this group).",
+   "verifier": {
+    "changed": [
+     "category",
+     "feature",
+     "notes"
+    ],
+    "why": "Native getter Element::GetShadowRootForBindings(nsIPrincipal&) returns closed shadow roots only to the automation sandbox (ExpandedPrincipal) when StealthEngineActive, and null to content, so this is automation support, not a page-visible spoof."
+   }
+  }
+ ]
+}

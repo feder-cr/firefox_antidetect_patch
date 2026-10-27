@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "dom/media/CubebUtils.cpp"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/media/CubebUtils.cpp",
+   "category": "spoof",
+   "feature": "audio-sample-rate",
+   "prefs": [
+    "zoom.stealth.audio.sample_rate"
+   ],
+   "added": 6,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "PreferredSampleRate",
+   "evidence": [
+    "+    int32_t rate = mozilla::StaticPrefs::zoom_stealth_audio_sample_rate();",
+    "+    if (rate > 0) return (uint32_t)rate;"
+   ],
+   "notes": "Declared sample rate checked after the sCubebForcedSampleRate test override and before the fingerprint-resistance 44100. Reads StaticPrefs directly; it could be one call into our file.",
+   "verifier": {
+    "changed": [
+     "prefs"
+    ],
+    "why": "Pref name is zoom.stealth.audio.sample_rate in StaticPrefList.yaml:21466, not underscored."
+   }
+  }
+ ]
+}

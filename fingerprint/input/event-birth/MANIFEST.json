@@ -1,0 +1,51 @@
+{
+ "modified": [
+  "dom/base/nsContentUtils.cpp",
+  "dom/base/nsContentUtils.h"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "dom/base/nsContentUtils.cpp",
+   "category": "spoof",
+   "feature": "input-event-birth",
+   "prefs": [],
+   "added": 26,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 11,
+   "hookable": "movable",
+   "anchor": "nsContentUtils::InputEventBirth (new); nsContentUtils::SynthesizeMouseEvent",
+   "evidence": [
+    "+  TimeStamp born = TimeStamp::Now() - TimeDuration::FromMilliseconds(aLatencyMs);",
+    "+        InputEventBirth(aMouseEventData.mLatency);",
+    "+  mouseOrPointerEvent.mJugglerEventId = aMouseEventData.mJugglerEventId;"
+   ],
+   "notes": "Two concerns. (1) spoof, input-event-birth: InputEventBirth moves a synthetic event's timeStamp back by the caller's latency and keeps births monotonic through the function-static sLastBorn (no lock; not verified that SynthesizeMouseEvent always runs on the main thread). The function is about 6 logic lines and can move to our file, leaving only the declaration in nsContentUtils.h. (2) juggler, juggler-event-id: copies mJugglerEventId onto the mouse event (B217); that line belongs to another feature and could be split out.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/base/nsContentUtils.h",
+   "category": "spoof",
+   "feature": "input-event-birth",
+   "prefs": [],
+   "added": 7,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "nsContentUtils (static declarations)",
+   "evidence": [
+    "+  static mozilla::TimeStamp InputEventBirth(double aLatencyMs);"
+   ],
+   "notes": "Declaration plus doc comment. If the function moves to our own file, this declaration goes away and the Mozilla header has no change for this feature.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff and source; no correction needed."
+   }
+  }
+ ]
+}

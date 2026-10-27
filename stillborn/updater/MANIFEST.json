@@ -1,0 +1,32 @@
+{
+ "modified": [
+  "build/moz.configure/update-programs.configure"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "build/moz.configure/update-programs.configure",
+   "category": "stillborn",
+   "feature": "updater-removed",
+   "prefs": [],
+   "added": 24,
+   "removed": 260,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "hard",
+   "anchor": "top-level configure options: updater_default, --enable-updater, --enable-unverified-updates, mac elevated-update requirements, MAR channel IDs, --enable-nss-mar, maintenance service, update agent, zucchini/bspatch block (all deleted)",
+   "evidence": [
+    "-set_config(\"MOZ_UPDATER\", True, when=\"--enable-updater\")",
+    "+# Upstream this file declares the whole application-update machinery. In this"
+   ],
+   "notes": "Deletes the upstream update machinery (updater, MAR signature checks and channel IDs, maintenance service, update agent, bspatch). Hookable=hard: nothing is left to hook, and every upstream edit to these lines will conflict on rebase. The header comment says this was done on owner instruction and deliberately NOT as a --disable-updater switch. --enable-update-channel is kept: CONFIRMED, it lives in build/moz.configure/init.configure:1188 (not in this file, untouched). Default browser agent and notification server are kept (diff context). Open question from the first pass now CHECKED: toolkit/moz.build:45-46 builds toolkit/mozapps/update only when CONFIG['MOZ_UPDATER'] (and :48-50 builds mozapps/update/common when MOZ_MAINTENANCE_SERVICE or MOZ_UPDATER), browser/app/moz.build:79 also gates on it, and a grep of build/moz.configure and toolkit/moz.configure finds no other reference to MOZ_UPDATER or the removed options (only zucchini.configure keeps its own MOZ_ZUCCHINI option), so the comment's claim that the update directory is not built is CONFIRMED. Stillborn: this removes Firefox's own updater and its aus5 traffic.",
+   "verifier": {
+    "changed": [
+     "evidence",
+     "notes"
+    ],
+    "why": "Evidence line was truncated (not verbatim); verified the open question about toolkit/mozapps/update."
+   }
+  }
+ ]
+}

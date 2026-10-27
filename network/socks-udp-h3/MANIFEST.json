@@ -1,0 +1,109 @@
+{
+ "modified": [
+  "netwerk/protocol/http/AlternateServices.cpp",
+  "netwerk/protocol/http/DnsAndConnectSocket.cpp",
+  "netwerk/protocol/http/HttpBaseChannel.cpp",
+  "netwerk/socket/moz.build"
+ ],
+ "added": {
+  "netwerk/socket/nsSOCKSUDPIOLayer.cpp": "100644",
+  "netwerk/socket/nsSOCKSUDPIOLayer.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "netwerk/protocol/http/AlternateServices.cpp",
+   "category": "other",
+   "feature": "socks-udp-h3",
+   "prefs": [
+    "network.proxy.socks_remote_udp"
+   ],
+   "added": 12,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 6,
+   "hookable": "movable",
+   "anchor": "AltSvcCache::UpdateAltServiceMapping",
+   "evidence": [
+    "+    bool socksUdpEnabled = mozilla::Preferences::GetBool(",
+    "+           (socksUdpEnabled && pi->IsSOCKS()))",
+    "-    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;"
+   ],
+   "notes": "Hunk 2 has 6 logic lines. Move the predicate (direct, or h3 proxy, or socks_remote_udp and SOCKS) into one function in our own file and keep a one-line hook. Not a fingerprint change in itself, but the h3 path is visible to pages (nextHopProtocol); reclassify as spoof if the team wants that. The pref is read on every call.",
+   "verifier": {
+    "changed": [
+     "evidence"
+    ],
+    "why": "evidence line had wrong indentation, now verbatim"
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/DnsAndConnectSocket.cpp",
+   "category": "other",
+   "feature": "socks-udp-h3",
+   "prefs": [
+    "network.proxy.socks_remote_udp"
+   ],
+   "added": 31,
+   "removed": 11,
+   "hunks": 4,
+   "inline_logic_lines": 14,
+   "hookable": "movable",
+   "anchor": "DnsAndConnectSocket::DnsAndConnectSocket; DnsAndConnectSocket::CheckProxyConfig",
+   "evidence": [
+    "+    if (socksUdpEnabled && isSocks) {",
+    "+      bool skipDns = !(socksUdpEnabled && isHttp3Path);",
+    "-      mPrimaryTransport.mSkipDnsResolution = true;"
+   ],
+   "notes": "Two logic hunks of 7 lines each (constructor and CheckProxyConfig). Both move to our own file behind one-line hooks. Privacy: with socks_remote_udp on and an h3 request through SOCKS, the hostname is now resolved on the client (skipDns false), so the local resolver sees the name; the old code let the proxy resolve it. Confirm this matches the intended DNS policy. The removed comment block explaining the skip is gone.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/HttpBaseChannel.cpp",
+   "category": "other",
+   "feature": "socks-udp-h3",
+   "prefs": [
+    "network.proxy.socks_remote_udp"
+   ],
+   "added": 12,
+   "removed": 3,
+   "hunks": 2,
+   "inline_logic_lines": 8,
+   "hookable": "movable",
+   "anchor": "HttpBaseChannel::Http3Allowed",
+   "evidence": [
+    "+  bool socksUdpEnabled = mozilla::Preferences::GetBool(",
+    "+             (socksUdpEnabled &&",
+    "+              static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS()))"
+   ],
+   "notes": "Same predicate as AlternateServices.cpp: use one shared function from our file so the two stay identical. Http3Allowed is const; the pref is read on every call.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  },
+  {
+   "file": "netwerk/socket/moz.build",
+   "category": "build",
+   "feature": "socks-udp-h3",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS and UNIFIED_SOURCES lists",
+   "evidence": [
+    "+    \"nsSOCKSUDPIOLayer.h\",",
+    "+    \"nsSOCKSUDPIOLayer.cpp\","
+   ],
+   "notes": "Registers our SOCKS UDP IO layer (both files present in C:\\ff\\source\\netwerk\\socket). Base layer for the socks-udp-h3 feature in AlternateServices, DnsAndConnectSocket and HttpBaseChannel.",
+   "verifier": {
+    "changed": [],
+    "why": "all fields checked against the diff; no change"
+   }
+  }
+ ]
+}

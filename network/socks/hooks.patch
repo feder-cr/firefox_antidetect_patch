@@ -1,0 +1,47 @@
+diff --git a/netwerk/base/nsProtocolProxyService.cpp b/netwerk/base/nsProtocolProxyService.cpp
+index dcf0dca2de86ab0c8defbf9353fab40fb5c29d3b..a556579e7a268e58f59a372338835889091298c1 100644
+--- a/netwerk/base/nsProtocolProxyService.cpp
++++ b/netwerk/base/nsProtocolProxyService.cpp
+@@ -1079,6 +1079,16 @@ void nsProtocolProxyService::PrefsChanged(nsIPrefBranch* prefBranch,
+     }
+   }
+ 
++  if (!pref || !strcmp(pref, PROXY_PREF("socks_username"))) {
++    proxy_GetStringPref(prefBranch, PROXY_PREF("socks_username"),
++                        mSOCKSProxyUsername);
++  }
++
++  if (!pref || !strcmp(pref, PROXY_PREF("socks_password"))) {
++    proxy_GetStringPref(prefBranch, PROXY_PREF("socks_password"),
++                        mSOCKSProxyPassword);
++  }
++
+   if (!pref || !strcmp(pref, PROXY_PREF("socks_remote_dns"))) {
+     proxy_GetBoolPref(prefBranch, PROXY_PREF("socks_remote_dns"),
+                       mSOCKS4ProxyRemoteDNS);
+@@ -2316,9 +2326,9 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
+   }
+ 
+   if (type) {
+-    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, ""_ns, ""_ns, ""_ns,
+-                               ""_ns, proxyFlags, UINT32_MAX, nullptr, flags,
+-                               result);
++    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, mSOCKSProxyUsername,
++                               mSOCKSProxyPassword, ""_ns, ""_ns, proxyFlags,
++                               UINT32_MAX, nullptr, flags, result);
+     if (NS_FAILED(rv)) return rv;
+   }
+ 
+diff --git a/netwerk/base/nsProtocolProxyService.h b/netwerk/base/nsProtocolProxyService.h
+index 104a1a6a88e6b34de77c15866bf715f23658f663..6ad5a9d516e1176aa60e55b5014f7ce3bc803473 100644
+--- a/netwerk/base/nsProtocolProxyService.h
++++ b/netwerk/base/nsProtocolProxyService.h
+@@ -399,6 +399,8 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
+   nsCString mSOCKSProxyTarget;
+   int32_t mSOCKSProxyPort{-1};
+   int32_t mSOCKSProxyVersion{nsIProxyInfo::SOCKS_V4};
++  nsCString mSOCKSProxyUsername;
++  nsCString mSOCKSProxyPassword;
+   bool mSOCKS4ProxyRemoteDNS{false};
+   bool mSOCKS5ProxyRemoteDNS{false};
+   bool mProxyOverTLS{true};

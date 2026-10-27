@@ -1,0 +1,35 @@
+{
+ "modified": [
+  "browser/components/BrowserGlue.sys.mjs"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "browser/components/BrowserGlue.sys.mjs",
+   "category": "other",
+   "feature": "anonymous-launch-counter",
+   "prefs": [
+    "invisible_firefox.usage_ping.enabled",
+    "invisible_firefox.usage_ping.url"
+   ],
+   "added": 38,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 8,
+   "hookable": "movable",
+   "anchor": "BrowserGlue.prototype._beforeUIStartup (before lazy.SessionStartup.init())",
+   "evidence": [
+    "+      if (Services.prefs.getBoolPref(\"invisible_firefox.usage_ping.enabled\", true)) {",
+    "+        fetch(usagePingUrl, { method: \"GET\", credentials: \"omit\", cache: \"no-store\" })"
+   ],
+   "notes": "Adds a network request (GET, no payload) on every browser process start, gated by the pref, errors swallowed. It adds traffic of our own and removes nothing of Firefox's, hence category other rather than stillborn. Movable: move the block into an own module and leave a one-line call here. The compiled fallback URL (invisible_playwright, BrowserGlue.sys.mjs:426) is effectively dead because browser/app/profile/firefox.js:3869 always defines the pref (CONFIRMED); three different repos are named across README.md:63, firefox.js:3869 and this file.",
+   "verifier": {
+    "changed": [
+     "inline_logic_lines",
+     "notes"
+    ],
+    "why": "Recounted logic lines (8); verified fallback-dead claim."
+   }
+  }
+ ]
+}
