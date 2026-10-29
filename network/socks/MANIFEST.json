@@ -1,10 +1,34 @@
 {
  "modified": [
+  "netwerk/base/moz.build",
   "netwerk/base/nsProtocolProxyService.cpp",
-  "netwerk/base/nsProtocolProxyService.h"
+  "netwerk/base/nsProtocolProxyService.h",
+  "netwerk/test/gtest/moz.build"
  ],
- "added": {},
+ "added": {
+  "netwerk/base/StealthSocksCredentials.cpp": "100644",
+  "netwerk/base/StealthSocksCredentials.h": "100644",
+  "netwerk/test/gtest/TestStealthSocksCredentials.cpp": "100644"
+ },
  "inventory": [
+  {
+   "file": "netwerk/base/moz.build",
+   "category": "build",
+   "feature": "socks-credentials",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
   {
    "file": "netwerk/base/nsProtocolProxyService.cpp",
    "category": "other",
@@ -50,6 +74,24 @@
    "verifier": {
     "changed": [],
     "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  },
+  {
+   "file": "netwerk/test/gtest/moz.build",
+   "category": "build",
+   "feature": "socks-credentials",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

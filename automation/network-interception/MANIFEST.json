@@ -4,7 +4,9 @@
   "netwerk/protocol/http/InterceptedHttpChannel.cpp",
   "netwerk/protocol/http/InterceptedHttpChannel.h"
  ],
- "added": {},
+ "added": {
+  "netwerk/protocol/http/StealthInterception.cpp": "100644"
+ },
  "inventory": [
   {
    "file": "netwerk/base/nsINetworkInterceptController.idl",

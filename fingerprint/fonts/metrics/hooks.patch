@@ -1,35 +1,21 @@
 diff --git a/gfx/skia/skia/src/core/SkScalerContext.cpp b/gfx/skia/skia/src/core/SkScalerContext.cpp
-index 85edc26a3f7930ec9ffff752141ffacb881e7e23..3c9e56d77760d867a59cbcae9daeb31ffc92f63e 100644
+index 85edc26a3f7930ec9ffff752141ffacb881e7e23..6eb0b241ba11e834e3306778ada63aaf6f4ecccd 100644
 --- a/gfx/skia/skia/src/core/SkScalerContext.cpp
 +++ b/gfx/skia/skia/src/core/SkScalerContext.cpp
-@@ -42,6 +42,9 @@
+@@ -42,6 +42,8 @@
  #include "src/core/SkWriteBuffer.h"
  #include "src/utils/SkFloatUtils.h"
  #include "src/utils/SkMatrix22.h"
-+// STEALTH: Gecko-owned, and deliberately the only Mozilla header here - it
-+// declares one free function and includes nothing itself. See getImage().
++// STEALTH-HOOK(fingerprint/fonts/metrics)
 +#include "mozilla/gfx/StealthGlyphCoverage.h"
  
  #include <algorithm>
  #include <cstring>
-@@ -653,6 +656,27 @@ void SkScalerContext::getImage(const SkGlyph& origGlyph) {
+@@ -653,6 +655,14 @@ void SkScalerContext::getImage(const SkGlyph& origGlyph) {
          }
      }
  
-+    // STEALTH: quantise the coverage the rasteriser just produced.
-+    //
-+    // This is the one place both scalers meet. Above, generateImage() is
-+    // DirectWrite on Windows and FreeType on Linux, and the third branch
-+    // rasterises from a path; all three land here with the mask filled. And
-+    // kA8_Format IS a greyscale coverage mask by construction - a colour glyph
-+    // is kARGB32_Format and never takes this branch - so nothing here has to
-+    // guess which pixels are text, which is what the readback-time version of
-+    // this got wrong. See mozilla/gfx/StealthGlyphCoverage.h.
-+    //
-+    // BEFORE the mask filter and not after, deliberately: a mask filter is a
-+    // blur, and on a real Windows machine the blur smooths an ALREADY quantised
-+    // mask. Quantising the blurred result would produce a shape no Windows
-+    // machine produces.
++    // STEALTH-HOOK(fingerprint/fonts/metrics)
 +    if (unfilteredGlyph->maskFormat() == SkMask::kA8_Format) {
 +        mozilla::gfx::StealthQuantiseGlyphCoverage(
 +                static_cast<uint8_t*>(unfilteredGlyph->fImage),
@@ -41,494 +27,114 @@ index 85edc26a3f7930ec9ffff752141ffacb881e7e23..3c9e56d77760d867a59cbcae9daeb31f
          // k3D_Format should not be mask filtered.
          SkASSERT(SkMask::k3D_Format != unfilteredGlyph->fMaskFormat);
 diff --git a/gfx/thebes/gfxDWriteFonts.cpp b/gfx/thebes/gfxDWriteFonts.cpp
-index 14a4aee18eea4988ef7df14e620555253310dad0..73661ab7f56509232cfaa974d5dd18ad06096e87 100644
+index 14a4aee18eea4988ef7df14e620555253310dad0..738e5601dd54280ef4f38f5c57c3a5ee664a96aa 100644
 --- a/gfx/thebes/gfxDWriteFonts.cpp
 +++ b/gfx/thebes/gfxDWriteFonts.cpp
 @@ -6,6 +6,7 @@
  
  #include <algorithm>
  
-+#include "StealthDeclarationGate.h"
++#include "StealthTextQuality.h"
  #include "gfxContext.h"
  #include "gfxDWriteFontList.h"
  #include "gfxHarfBuzzShaper.h"
-@@ -13,9 +14,11 @@
- #include "harfbuzz/hb.h"
- #include "mozilla/FontPropertyTypes.h"
- #include "mozilla/Preferences.h"
-+#include "mozilla/StaticPrefs_zoom.h"
- #include "mozilla/gfx/2D.h"
- #include "mozilla/gfx/DWriteSettings.h"
- #include "mozilla/gfx/Logging.h"
-+#include "mozilla/gfx/StealthRefuse.h"
- #include "mozilla/gfx/gfxVars.h"
- 
- using namespace mozilla;
-@@ -33,7 +36,31 @@ using namespace mozilla::gfx;
- 
+@@ -34,6 +35,10 @@ using namespace mozilla::gfx;
  // Cleartype can be dynamically enabled/disabled, so we have to allow for
  // dynamically updating it.
-+//
-+// Stealth: with the engine on, the text quality is DECLARED
-+// (zoom.stealth.text.system_quality) and the host is never asked. It decides
-+// two things a page reads: the antialiasing of canvas text (NONE, GRAY or
-+// SUBPIXEL through GetSystemDefaultAAMode), and whether the declared ClearType
-+// parameters apply at all (UpdateClearTypeVars reads them only under
-+// CLEARTYPE_QUALITY). Asking SystemParametersInfo made the same binary draw
-+// different text on a machine with ClearType off - an RDP session, a VM, a
-+// server - which is engine rule 7-quater (70-known-bugs.md [B362]). The
-+// declaration gate refuses a launch without it.
  static BYTE GetSystemTextQuality() {
-+  if (mozilla::gfx::StealthEngineActive()) {
-+    const int32_t declared = StaticPrefs::zoom_stealth_text_system_quality();
-+    if (declared == DEFAULT_QUALITY || declared == ANTIALIASED_QUALITY ||
-+        declared == CLEARTYPE_QUALITY) {
-+      return BYTE(declared);
-+    }
-+    mozilla::gfx::StealthRefuse(
-+        "stealth: zoom.stealth.text.system_quality is %d, not one of 0 "
-+        "(DEFAULT_QUALITY), 4 (ANTIALIASED_QUALITY), 5 (CLEARTYPE_QUALITY). "
-+        "Engine rule 7: a finite-domain value lives only in invisible_core, "
-+        "and a missing or malformed declaration refuses rather than asking "
-+        "the host.",
-+        int(declared));
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
++  if (const Maybe<BYTE> declared = StealthDeclaredTextQuality()) {
++    return *declared;
 +  }
    BOOL font_smoothing;
    UINT smoothing_type;
  
-@@ -63,6 +90,12 @@ static BYTE GetSystemTextQuality() {
+@@ -199,8 +204,10 @@ void gfxDWriteFont::UpdateClearTypeVars() {
  
- // "Retrieves a contrast value that is used in ClearType smoothing. Valid
- // contrast values are from 1000 to 2200. The default value is 1400."
-+//
-+// Stealth: still read from the host, on purpose (engine rule 7-bis). It only
-+// feeds the GDI-classic rendering settings (DWriteSettings::Get(true)), and
-+// canvas text never takes that road: CanvasRenderingContext2D sets
-+// allowForceGDIClassic = false on every font it uses. No page can read a pixel
-+// this value shapes.
- static FLOAT GetSystemGDIGamma() {
-   UINT value = 0;
-   if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGCONTRAST, 0, &value, 0) ||
-@@ -197,10 +230,38 @@ void gfxDWriteFont::UpdateClearTypeVars() {
-   int pixelGeometry = DWRITE_PIXEL_GEOMETRY_RGB;
-   int renderingMode = DWRITE_RENDERING_MODE_DEFAULT;
- 
-+  // Stealth: DO NOT ASK THE MACHINE. These six values are read once at startup
-+  // and then stay fixed for the whole process, which makes them exactly the
-+  // kind of thing invisible_core declares - and the order here was
-+  // defaults -> SYSTEM -> prefs, so the system value sat in the MIDDLE and
-+  // survived whenever a pref was absent or out of range. That is an override
-+  // with a fallback, not a declaration, and it is the shape that let the codec
-+  // table look finished while leaking: on the development machine the host's
-+  // answer happens to be the one we want.
-+  //
-+  // Skipping the block leaves the hard-coded defaults above (ClearType level
-+  // 1.0, contrast 1.0, gamma 2.2, RGB geometry, DEFAULT rendering mode).
-+  // This comment used to call them "the canonical Windows values". They are
-+  // not: they are stock Firefox's own starting point. An untuned Windows renders text at DWrite's
-+  // default gamma, measured 1.8 against the retail 151 (70-known-bugs.md
-+  // [B361]); 2.2 is no machine's default. With the engine on they are never
-+  // what a page sees: every one of them is declared (the declaration gate
-+  // refuses a launch without them), and the override below always runs,
-+  // because the text quality it is gated on is declared as well
-+  // (GetSystemTextQuality, [B362]). So these six numbers matter only with the
-+  // engine OFF, as stock Firefox. Note gamma 2.2 here
-+  // against Skia's LINEAR default on Linux (DrawTargetSkia.cpp:1850-1856) -
-+  // that asymmetry is the reason the two platforms rasterise glyph coverage
-+  // differently, and it cannot be closed while either side reads its host.
-+  const bool stealthDeclared =
-+      mozilla::gfx::StealthEngineActive();
-+
    // Override these from DWrite function if available.
    RefPtr<IDWriteRenderingParams> defaultRenderingParams;
 -  HRESULT hr = Factory::GetDWriteFactory()->CreateRenderingParams(
 -      getter_AddRefs(defaultRenderingParams));
-+  HRESULT hr = stealthDeclared
-+                   ? E_FAIL
-+                   : Factory::GetDWriteFactory()->CreateRenderingParams(
-+                         getter_AddRefs(defaultRenderingParams));
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
++  const bool stealthDeclared = StealthTextQualityDeclared();
++  HRESULT hr =
++      StealthCreateRenderingParams(stealthDeclared, defaultRenderingParams);
    if (SUCCEEDED(hr) && defaultRenderingParams) {
      clearTypeLevel = defaultRenderingParams->GetClearTypeLevel();
  
-@@ -233,7 +294,14 @@ void gfxDWriteFont::UpdateClearTypeVars() {
+@@ -233,7 +240,8 @@ void gfxDWriteFont::UpdateClearTypeVars() {
    // gfxWindowsPlatform::SetupClearTypeParams, but it seems odd because the
    // default params will still be the ClearType ones although we won't use the
    // anti-alias for ClearType because of GetSystemDefaultAAMode.
 -  if (gfxVars::SystemTextQuality() == CLEARTYPE_QUALITY) {
-+  //
-+  // Stealth: with the engine on the declared parameters apply whatever the
-+  // declared quality. Stock Firefox, ClearType off, still renders with the
-+  // system's DWrite parameters (CreateRenderingParams above), and the declared
-+  // values stand for exactly those; skipping them here would leave the
-+  // hard-coded 2.2 and 1.0 deciding grayscale text, a compiled second value
-+  // next to the declaration (engine rule 7, [B362]).
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
 +  if (stealthDeclared || gfxVars::SystemTextQuality() == CLEARTYPE_QUALITY) {
      int32_t prefInt = Preferences::GetInt(GFX_CLEARTYPE_PARAMS_LEVEL, -1);
      if (prefInt >= 0 && prefInt <= 100) {
        clearTypeLevel = float(prefInt / 100.0);
 diff --git a/gfx/thebes/gfxFT2FontBase.cpp b/gfx/thebes/gfxFT2FontBase.cpp
-index e7e7abfdc1a1a626c2287805236127f224958626..472f6898bd3f407e1ae20968f83b76f1c43f0fad 100644
+index e7e7abfdc1a1a626c2287805236127f224958626..9a422f227bb5e3b67e6ae2daf08a95a777627c1d 100644
 --- a/gfx/thebes/gfxFT2FontBase.cpp
 +++ b/gfx/thebes/gfxFT2FontBase.cpp
-@@ -16,11 +16,13 @@
- #include "harfbuzz/hb.h"
- #include "mozilla/Likely.h"
- #include "mozilla/StaticPrefs_gfx.h"
-+#include "mozilla/StaticPrefs_zoom.h"
- 
- #include FT_TRUETYPE_TAGS_H
+@@ -21,6 +21,7 @@
  #include FT_TRUETYPE_TABLES_H
  #include FT_ADVANCES_H
  #include FT_MULTIPLE_MASTERS_H
-+#include "StealthDeclarationGate.h"
++#include "StealthDesignMetrics.h"  // STEALTH-HOOK(fingerprint/fonts/metrics)
  
  #ifndef FT_LOAD_COLOR
  #  define FT_LOAD_COLOR (1L << 20)
-@@ -727,11 +729,55 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
+@@ -726,7 +727,8 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
+   // Due to freetype bug 52683 we MUST use the linearHoriAdvance field when
    // dealing with a variation font; also use it for scalable fonts when not
    // applying hinting. Otherwise, prefer hinted width from glyph->advance.x.
-   if (aAdvance) {
--    FT_Fixed advance;
--    if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
--      advance = face.get()->glyph->linearHoriAdvance;
--    } else {
--      advance = face.get()->glyph->advance.x << 10;  // convert 26.6 to 16.16
-+    FT_Fixed advance = 0;
-+    // Stealth: FreeType scales the design advance by an INTEGER ppem.
-+    // FT_Request_Metrics computes x_ppem = (scaled + 32) >> 6 and then derives
-+    // x_scale from that already-rounded value, so linearHoriAdvance carries the
-+    // rounding even though the comment at ComputeMetrics prefers x_scale
-+    // precisely because "x_ppem does not have subpixel accuracy". DirectWrite
-+    // scales by the size it was handed. Whole sizes therefore agree by
-+    // construction and fractional ones cannot, which is the entire divergence
-+    // measured on 2026-08-09: 112 of 3120 (family, size, string) combinations,
-+    // every one of them at a fractional size.
-+    //
-+    // Courier New is the worked example. Its glyphs are 1229 units on a 2048
-+    // em, and at a requested 13.383333px Windows reports 8.0313px per glyph
-+    // while this path reports 7.8022 - which is 1229 * 13 / 2048, i.e. the
-+    // right arithmetic on the wrong ppem. Scaling the DESIGN advance by the
-+    // unrounded size is what gfxDWriteFont::MeasureGlyphWidth does on its
-+    // design path, so doing the same here makes the two agree by construction
-+    // rather than by luck.
-+    //
-+    // THERE IS NO FALLBACK on the declared side, and that is deliberate
-+    // (engine rule 7). The first version of this asked FreeType for the design
-+    // advance and fell through to the rasterised one whenever the face was not
-+    // scalable or the call failed - which is the same hole the ink box had, and
-+    // the ink box's version of it was measured leaking on every CFF webfont.
-+    //
-+    // GetDesignAdvance asks HarfBuzz's own OpenType implementation, which reads
-+    // glyf, CFF and CFF2 alike and needs no FreeType face at all, so a CFF or a
-+    // bitmap-strike face is served by the same code as a bundled TrueType one.
-+    bool declaredAdvance = false;
-+    if (mozilla::gfx::StealthEngineActive() &&
-+        GetAdjustedSize() > 0.0) {
-+      gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
-+      const uint16_t upem = GetFontEntry()->UnitsPerEm();
-+      int32_t designAdvance = 0;
-+      if (shaper && upem && shaper->GetDesignAdvance(aGID, designAdvance)) {
-+        // The design advance arrives in FONT UNITS, so this is the only place
-+        // the unrounded size enters, and 65536 puts it in the 16.16 the rest of
-+        // this block speaks.
-+        advance = NS_lround(double(designAdvance) * GetAdjustedSize() *
-+                            65536.0 / double(upem));
-+        declaredAdvance = true;
-+      }
-+    }
-+    if (!declaredAdvance) {
-+      if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
-+        advance = face.get()->glyph->linearHoriAdvance;
-+      } else {
-+        advance = face.get()->glyph->advance.x << 10;  // convert 26.6 to 16.16
-+      }
-     }
-     if (advance) {
-       advance += bold.x << 10;  // convert 26.6 to 16.16
-@@ -740,10 +786,13 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
-     // Round the advance here to approximate hinting as Cairo does. This must
-     // happen BEFORE we apply the glyph extents scale, just like FT hinting
-     // would.
--    if (hintMetrics && roundX && unhintedX) {
-+    if (hintMetrics && roundX && unhintedX && !declaredAdvance) {
-       advance = (advance + 0x8000) & 0xffff0000u;
-     }
--    *aAdvance = NS_lround(advance * extentsScale);
-+    // The declared advance was already computed at the desired size, so it must
-+    // not go through GetAdjustedSize() / mFTSize a second time.
-+    *aAdvance = declaredAdvance ? NS_lround(advance)
-+                                : NS_lround(advance * extentsScale);
-   }
- 
-   if (aBounds) {
-@@ -827,6 +876,63 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
+-  if (aAdvance) {
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
++  if (aAdvance && !StealthDesignAdvance(*this, aGID, bold.x, aAdvance)) {
+     FT_Fixed advance;
+     if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
+       advance = face.get()->glyph->linearHoriAdvance;
+@@ -827,6 +829,10 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
  
  bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
                                      bool aTight) {
-+  // STEALTH: report the ink box DirectWrite reports, not the one FreeType
-+  // computes.
-+  //
-+  // gfxDWriteFont::GetGlyphBounds calls GetDesignGlyphMetrics, which is the
-+  // glyf table's own bounding box scaled by size/upem and nothing else - no
-+  // hinting, no rasteriser. The code below asks FreeType for HINTED bounds
-+  // instead, and the two disagree by up to a pixel. That reaches the page
-+  // directly: measureText's four actualBoundingBox fields are built from this,
-+  // and measured 2026-08-09 against stock Firefox 151 over the whole finite
-+  // domain of textBaseline x textAlign x direction, Windows matched on 12960
-+  // of 12960 fields while Linux differed on 1440.
-+  //
-+  // The arithmetic mirrors gfxDWriteFonts.cpp:781-784 deliberately, including
-+  // the float (not double) conversion factor, so Windows keeps the numbers it
-+  // already had and Linux is brought TO them. DWrite's Inflate(1.0, 0.0) is
-+  // NOT mirrored: it is guarded by !aBounds->IsEmpty() on the uninitialised
-+  // out-parameter, which gfxFont::SetupGlyphExtents default-constructs to an
-+  // empty rect, so on Windows that branch never runs.
-+  //
-+  // THERE IS NO FALLBACK HERE, and that is the point (engine rule 7).
-+  //
-+  // This used to read the glyf table directly and return false for a font that
-+  // has none, letting the caller fall through to FreeType. Every CFF webfont a
-+  // page loads is exactly that case, and it was a live tell rather than a
-+  // corner: measured 2026-08-09 on a purpose-built CFF face, 108 of 150
-+  // measureText fields diverged between Windows and Linux, with Linux handing
-+  // back whole integers because FreeType had grid-fitted them.
-+  //
-+  // GetDesignGlyphExtents asks HarfBuzz's own OpenType implementation, which
-+  // reads glyf, CFF and CFF2 alike, so the declared path is TOTAL and there is
-+  // no case left to fall through with. If it fails, the font has no usable
-+  // unitsPerEm at all and the answer below would be meaningless too.
-+  if (mozilla::gfx::StealthEngineActive()) {
-+    gfxHarfBuzzShaper* shaper = GetHarfBuzzShaper();
-+    const uint16_t upem = mFontEntry->UnitsPerEm();
-+    int32_t xb, yb, w, h;
-+    if (shaper && upem && shaper->GetDesignGlyphExtents(aGID, xb, yb, w, h)) {
-+      // The ORDER of operations is copied from gfxDWriteFont::GetGlyphBounds,
-+      // not just the formula, and it has to be. DWrite builds the rect in font
-+      // UNITS and calls gfxRect::Scale afterwards, so every product is a double
-+      // times a float. Multiplying each component as int-times-float instead
-+      // does the arithmetic in float precision and only then widens, which is
-+      // close but not equal: measured, that alone left 22 of 150 fields
-+      // differing in the eighth significant digit after the grid-fitting leak
-+      // was already closed.
-+      //
-+      // HarfBuzz's y_bearing is the top extremum measured upward and its height
-+      // is negative in a y-up system (hb-common.h says so), which is why both
-+      // are negated here to reach gfxRect's y-down box.
-+      const float conv = float(GetAdjustedSize() / gfxFloat(upem));
-+      gfxRect bounds(double(xb), double(-yb), double(w), double(-h));
-+      bounds.Scale(conv);
-+      *aBounds = bounds;
-+      return true;
-+    }
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
++  if (StealthDesignGlyphBounds(*this, aGID, aBounds)) {
++    return true;
 +  }
-+
    IntRect bounds;
    const GlyphMetrics metrics = GetCachedGlyphMetrics(aGID, &bounds);
    if (!metrics.HasValidBounds()) {
 diff --git a/gfx/thebes/gfxFont.cpp b/gfx/thebes/gfxFont.cpp
-index 92cc7ffbadbec015f5c0e87e02a3d0db7008a062..c20335aeb48b39826ee0ab081085672e3bf5ef0c 100644
+index 92cc7ffbadbec015f5c0e87e02a3d0db7008a062..abff22482ddd9e191c6cd7337aba954cb70014a2 100644
 --- a/gfx/thebes/gfxFont.cpp
 +++ b/gfx/thebes/gfxFont.cpp
 @@ -6,6 +6,7 @@
  
  #include "COLRFonts.h"
  #include "GreekCasing.h"
-+#include "StealthBundleFontList.h"
++#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/metrics)
  #include "TextDrawTarget.h"
  #include "ThebesRLBox.h"
  #include "cairo.h"
-@@ -17,6 +18,7 @@
- #include "gfxHarfBuzzShaper.h"
- #include "gfxMathTable.h"
- #include "gfxPlatform.h"
-+#include "gfxPlatformFontList.h"
- #include "gfxSVGGlyphs.h"
- #include "gfxTextRun.h"
- #include "gfxTypes.h"
-@@ -4223,6 +4225,44 @@ void gfxFont::SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
- // Return FALSE if the gfxFontEntry subclass does not
- // implement GetFontTable(), or for non-sfnt fonts where tables are
- // not available.
-+// STEALTH: host-independent vertical metrics straight from the font's own OS/2
-+// sfnt table (FUnits->px), bypassing the platform backend (DWrite/FreeType/CoreText)
-+// whose computed asc/desc differ per OS. For a given bundled font + size the values
-+// are byte-identical on every host -> canvas TextMetrics vertical fields become
-+// host-independent (see CanvasRenderingContext2D::DrawOrMeasureText). emAscent/Descent
-+// from sTypoAscender/sTypoDescender, maxAscent/Descent from usWinAscent/usWinDescent
-+// (the Windows convention we always claim). Returns false if no usable OS/2 table.
-+bool gfxFont::GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,
-+                                          gfxFloat& aMaxAscent,
-+                                          gfxFloat& aMaxDescent) {
-+  if (mFUnitsConvFactor < 0.0) {
-+    uint16_t unitsPerEm =
-+        GetFontEntry() ? GetFontEntry()->UnitsPerEm() : gfxFontEntry::kInvalidUPEM;
-+    if (unitsPerEm == gfxFontEntry::kInvalidUPEM || unitsPerEm == 0) {
-+      return false;
-+    }
-+    mFUnitsConvFactor = GetAdjustedSize() / unitsPerEm;
-+  }
-+  if (mFUnitsConvFactor <= 0.0) {
-+    return false;
-+  }
-+  gfxFontEntry::AutoTable os2Table(mFontEntry, TRUETYPE_TAG('O', 'S', '/', '2'));
-+  if (!os2Table) {
-+    return false;
-+  }
-+  uint32_t len;
-+  const OS2Table* os2 =
-+      reinterpret_cast<const OS2Table*>(hb_blob_get_data(os2Table, &len));
-+  if (len < offsetof(OS2Table, usWinDescent) + sizeof(uint16_t)) {
-+    return false;
-+  }
-+  aEmAscent = int16_t(os2->sTypoAscender) * mFUnitsConvFactor;
-+  aEmDescent = -int16_t(os2->sTypoDescender) * mFUnitsConvFactor;  // sTypoDescender < 0
-+  aMaxAscent = uint16_t(os2->usWinAscent) * mFUnitsConvFactor;
-+  aMaxDescent = uint16_t(os2->usWinDescent) * mFUnitsConvFactor;
-+  return true;
-+}
-+
- // If this returns TRUE without setting the mIsValid flag, then we -did-
- // apparently find an sfnt, but it was too broken to be used.
- bool gfxFont::InitMetricsFromSfntTables(Metrics& aMetrics) {
-@@ -4447,6 +4487,52 @@ void gfxFont::CalculateDerivedMetrics(Metrics& aMetrics) {
-   }
- }
- 
-+// STEALTH: resolve this font entry's manifest vertical metrics, if it is one
-+// of the bundled faces. False for everything else - a web/user font, a font
-+// outside the shared list, or a v1 manifest with no metrics - and in that case
-+// the backend's own values must stand untouched.
-+static bool GetStealthBundleVMetrics(gfxFontEntry* aFontEntry,
-+                                     StealthBundleVMetrics& aOut) {
-+  // mShmemFace is what identifies a bundled face, so it is also the reason
-+  // this returns false for a web font. Note it is only non-null because
-+  // every backend's CreateFontEntry calls InitializeFrom - the Linux
-+  // bundle-only branch did NOT until 2026-08-07, and while that was true this
-+  // whole function silently no-opped on Linux, which is precisely the platform
-+  // the metrics were meant to correct.
-+  if (!aFontEntry) {
-+    return false;
-+  }
-+  // Deliberately NOT gated on IsUserFont(). On Linux the bundle-only branch of
-+  // gfxFcPlatformFontList::CreateFontEntry loads each face from an in-memory
-+  // buffer through FTUserFontData - the same machinery a web font uses - so
-+  // every bundled face reports IsUserFont() == true. An earlier version of this
-+  // guard rejected all 72 of them for that reason, on the one platform the
-+  // metrics exist to correct.
-+  //
-+  // mShmemFace alone is the right discriminator: it means "this face came from
-+  // the shared font list", and a genuine web font never has one - gfxUserFontSet
-+  // explicitly clears it (gfxUserFontSet.cpp:1117). Even if one slipped through,
-+  // the manifest lookup below is keyed on (bundle file, face index) and would
-+  // simply miss.
-+  if (!aFontEntry->mShmemFace) {
-+    return false;
-+  }
-+  auto* pfl = gfxPlatformFontList::PlatformFontList(false);
-+  if (!pfl) {
-+    return false;
-+  }
-+  mozilla::fontlist::FontList* sharedList = pfl->SharedFontList();
-+  if (!sharedList) {
-+    return false;
-+  }
-+  auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
-+  // A Face's mDescriptor is the bundle file name and mIndex the face within
-+  // it - the same pair every backend's CreateFontEntry uses to load the file.
-+  const nsCString file =
-+      aFontEntry->mShmemFace->mDescriptor.AsString(sharedList);
-+  return bundle->GetVMetrics(file, aFontEntry->mShmemFace->mIndex, aOut);
-+}
-+
- void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
-                               bool aIsBadUnderlineFont) {
-   // Even if this font size is zero, this font is created with non-zero size.
-@@ -4457,6 +4543,72 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
+@@ -4456,6 +4457,8 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
+     memset(aMetrics, 0, sizeof(gfxFont::Metrics));
      return;
    }
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
++  StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), aMetrics);
  
-+  // STEALTH: impose the manifest's vertical metrics, so that no platform
-+  // backend decides them.
-+  //
-+  // This is the single choke point where DWrite, FreeType and CoreText meet:
-+  // all three call SanitizeMetrics as the last step of populating their own
-+  // mMetrics (gfxDWriteFonts.cpp, gfxFT2FontBase.cpp, gfxMacFont.cpp), and it
-+  // runs inside font init, so it is upstream of both gfxFontCache and the lazy
-+  // mVerticalMetrics cache - no per-query cost, no const-ness problem.
-+  //
-+  // Why: each backend derived ascent/descent from the SAME bundled file by its
-+  // own rule, and they disagreed. Measured 2026-08-07 on the shipped
-+  // firefox-18, Windows vs Linux, same seed and same build: ascent/descent
-+  // differed on 58 of 72 families (up to 27px at a 72px size), line-box height
-+  // on 61, capHeight on 10, xHeight on 5 - while every advance width already
-+  // matched, because shaping is HarfBuzz in-tree. That divergence is a tell:
-+  // it is what makes a Linux-hosted session's font metrics disagree with the
-+  // Windows persona this build claims everywhere else.
-+  //
-+  // The values come from bundle-fonts.list v2, resolved offline to what a real
-+  // Windows Firefox produces (DirectWrite's usWin*-vs-sTypo* rule) and
-+  // validated against the shipped Windows build for 72/72 families. The
-+  // arithmetic mirrors gfxDWriteFonts.cpp:396-421 on purpose, so Windows keeps
-+  // the numbers it already had and the other two are brought TO it, instead of
-+  // all three moving somewhere new.
-+  StealthBundleVMetrics vm;
-+  if (GetStealthBundleVMetrics(mFontEntry, vm)) {
-+    const gfxFloat size = GetAdjustedSize();
-+    const gfxFloat conv = size / gfxFloat(vm.mUpem);
-+
-+    aMetrics->maxAscent = NS_round(vm.mAscent * conv);
-+    aMetrics->maxDescent = NS_round(vm.mDescent * conv);
-+    aMetrics->maxHeight = aMetrics->maxAscent + aMetrics->maxDescent;
-+    aMetrics->emHeight = size;
-+    // Keep emAscent + emDescent == emHeight: gfxHarfBuzzShaper reads both to
-+    // place the vertical VOrg and the glyph y_bearing, so breaking that
-+    // invariant would move glyph bounding boxes, not just line boxes.
-+    aMetrics->emAscent =
-+        aMetrics->maxHeight > 0.0
-+            ? aMetrics->emHeight * aMetrics->maxAscent / aMetrics->maxHeight
-+            : aMetrics->emHeight;
-+    aMetrics->emDescent = aMetrics->emHeight - aMetrics->emAscent;
-+    aMetrics->internalLeading =
-+        std::max(aMetrics->maxHeight - aMetrics->emHeight, 0.0);
-+    aMetrics->externalLeading = std::ceil(vm.mLineGap * conv);
-+
-+    // xHeight / capHeight are absent from a pre-v2 OS/2 table; when the
-+    // manifest carries 0 keep whatever the backend derived, rather than
-+    // zeroing a real value.
-+    if (vm.mXHeight) {
-+      aMetrics->xHeight = vm.mXHeight * conv;
-+    }
-+    if (vm.mCapHeight) {
-+      aMetrics->capHeight = vm.mCapHeight * conv;
-+    }
-+    if (vm.mUnderlineSize) {
-+      aMetrics->underlineOffset = vm.mUnderlineOffset * conv;
-+      aMetrics->underlineSize = vm.mUnderlineSize * conv;
-+    }
-+    if (vm.mStrikeoutSize) {
-+      aMetrics->strikeoutOffset = vm.mStrikeoutOffset * conv;
-+      aMetrics->strikeoutSize = vm.mStrikeoutSize * conv;
-+    }
-+    // The clamps below (underlineSize >= 1, underlineOffset <= -1,
-+    // maxAscent >= 1, ...) still run, exactly as they do for backend values.
-+  }
-+
    // If the font entry has ascent/descent/lineGap-override values,
    // replace the metrics from the font with the overrides.
-   gfxFloat adjustedSize = GetAdjustedSize();
 diff --git a/gfx/thebes/gfxFont.h b/gfx/thebes/gfxFont.h
-index af4852ea8960f3e7ad8f0035ca5e3d9237dba5b3..b307a2ad6245546523f01d841739ce0fd8087614 100644
+index af4852ea8960f3e7ad8f0035ca5e3d9237dba5b3..b1852c6741d406dba611f6d9890cc6cbfc2cdac9 100644
 --- a/gfx/thebes/gfxFont.h
 +++ b/gfx/thebes/gfxFont.h
-@@ -1714,6 +1714,14 @@ class gfxFont {
+@@ -1714,6 +1714,10 @@ class gfxFont {
      return *mVerticalMetrics;
    }
  
-+  // STEALTH: host-independent vertical metrics straight from the font's OS/2 sfnt
-+  // table (FUnits->px), bypassing the platform backend (DWrite/FreeType/CoreText)
-+  // whose computed asc/desc differ per OS. Same bundled font + size => byte-identical
-+  // on every host. Used to make canvas TextMetrics vertical fields host-independent.
-+  // Returns false if no usable OS/2 table (caller keeps native metrics). See .cpp.
++  // STEALTH-HOOK(fingerprint/fonts/metrics): defined in StealthBundleFontList.cpp
 +  bool GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,
 +                                   gfxFloat& aMaxAscent, gfxFloat& aMaxDescent);
 +
@@ -536,222 +142,26 @@ index af4852ea8960f3e7ad8f0035ca5e3d9237dba5b3..b307a2ad6245546523f01d841739ce0f
      std::atomic<gfxFloat> mAlphabetic{
          std::numeric_limits<gfxFloat>::quiet_NaN()};
 diff --git a/gfx/thebes/gfxHarfBuzzShaper.cpp b/gfx/thebes/gfxHarfBuzzShaper.cpp
-index a0c4596eb1dca192c89a1404ed45a85adbcc4de1..4a5bf211c39cd6e75d2d754f7a905a6bf362f219 100644
+index a0c4596eb1dca192c89a1404ed45a85adbcc4de1..00a99a76808a671777fec6f0d14ce6fc0ba9628e 100644
 --- a/gfx/thebes/gfxHarfBuzzShaper.cpp
 +++ b/gfx/thebes/gfxHarfBuzzShaper.cpp
-@@ -13,6 +13,7 @@
- #include "harfbuzz/hb-ot.h"
- #include "harfbuzz/hb.h"
- #include "mozilla/Sprintf.h"
-+#include "mozilla/StaticPrefs_zoom.h"
- #include "mozilla/intl/String.h"
- #include "mozilla/intl/UnicodeProperties.h"
- #include "mozilla/intl/UnicodeScriptCodes.h"
-@@ -55,6 +56,7 @@ gfxHarfBuzzShaper::~gfxHarfBuzzShaper() {
+@@ -55,6 +55,7 @@ gfxHarfBuzzShaper::~gfxHarfBuzzShaper() {
    hb_blob_destroy(mLocaTable);
    hb_blob_destroy(mGlyfTable);
    hb_font_destroy(mHBFont);
-+  hb_font_destroy(mDesignFont);  // null is fine, hb_font_destroy takes it
++  hb_font_destroy(mDesignFont);  // STEALTH-HOOK(fingerprint/fonts/metrics)
    hb_buffer_destroy(mBuffer);
  }
  
-@@ -723,6 +725,127 @@ hb_bool_t gfxHarfBuzzShaper::GetGlyphExtents(
-   return true;
- }
- 
-+hb_font_t* gfxHarfBuzzShaper::GetDesignFont() const {
-+  // Sotto mMutex, come OGNI altro stato mutabile di questa classe.
-+  //
-+  // L'intestazione lo dichiara a chiare lettere due membri piu' sotto: lo
-+  // shaper "is shared across threads via the global gfxFontCache", e per questo
-+  // esiste il mutex. mDesignFont era l'unico membro mutabile che quel contratto
-+  // non rispettava - un controlla-e-assegna nudo. Due thread potevano vederlo
-+  // nullo insieme, costruire entrambi un font e prendere entrambi un
-+  // riferimento alla faccia: uno vince l'assegnazione, l'altro resta con un
-+  // puntatore che nessuno distruggera' e che sta gia' usando. Il distruttore
-+  // ne libera uno solo.
-+  //
-+  // E' ricorsivo apposta, quindi prenderlo qui e' sicuro anche quando il
-+  // chiamante lo tiene gia'.
-+  mozilla::RecursiveMutexAutoLock lock(mMutex);
-+
-+  // A second hb_font on the same face, used for nothing but design-space
-+  // metrics, and deliberately NOT the shaping font: that one carries our own
-+  // callbacks, which route back into the platform backend, which is the thing
-+  // being avoided here.
-+  //
-+  // hb_ot_font_set_funcs is called EXPLICITLY rather than relying on whatever
-+  // hb_font_create picks by default. That default comes from
-+  // get_default_funcs_name() in hb-font.cc, which reads the environment
-+  // variable HB_FONT_FUNCS, and "ft", "directwrite" and "coretext" are all
-+  // accepted values. An environment variable that silently redirects our
-+  // metrics to a host rasteriser is exactly the second source of truth engine
-+  // rule 7 forbids, so the implementation is pinned rather than inherited.
-+  //
-+  // The scale is unitsPerEm, so every answer arrives in FONT UNITS and the
-+  // caller multiplies by the unrounded size. That is what makes this path
-+  // TOTAL: hb-ot-font reads glyf, CFF and CFF2 alike, so a PostScript-outline
-+  // webfont is served by the same code as a bundled TrueType face and there is
-+  // nothing left to fall through to. Measured before this existed: a CFF
-+  // webfont diverged on 108 of 150 measureText fields between Windows and
-+  // Linux, because the CFF case fell through to FreeType's grid-fitted bounds
-+  // and came back as whole integers.
-+  if (mDesignFont) {
-+    return mDesignFont;
-+  }
-+  const uint16_t upem = mFont->GetFontEntry()->UnitsPerEm();
-+  if (!upem || upem == gfxFontEntry::kInvalidUPEM) {
-+    return nullptr;
-+  }
-+  // `auto`, non `hb_face_t*`, e NIENTE hb_face_destroy a mano.
-+  //
-+  // GetHBFace() torna un AutoHBFace PER VALORE, che e' un oggetto RAII: se lo
-+  // si assegna a un puntatore grezzo, il temporaneo viene convertito e poi
-+  // DISTRUTTO alla fine di quella stessa istruzione, quindi il puntatore e'
-+  // gia' penzolante alla riga dopo. hb_font_create prende il proprio
-+  // riferimento scrivendo dentro memoria liberata, e il rilascio esplicito
-+  // qui sotto era il terzo decremento sullo stesso oggetto morto: da li' in
-+  // avanti l'allocatore e' corrotto e il segmentation fault arriva altrove,
-+  // di solito molto dopo, dentro HarfBuzz che compone il testo.
-+  //
-+  // Misurato PRIMA di questa correzione: il processo di CONTENUTO moriva in 6
-+  // sessioni di navigazione su 10 su Linux e 4 su 10 su Windows, contro 0 su
-+  // 10 del firefox di Playwright sulla stessa macchina, e i core cadevano su
-+  // hb_face_t::get_num_glyphs con la faccia gia' liberata.
-+  //
-+  // Gli altri TREDICI chiamanti di GetHBFace() nell'albero tengono vivo
-+  // l'oggetto RAII; questo era l'unico che lo buttava via. Il proprietario
-+  // dev'essere UNO, e qui e' l'AutoHBFace. Vedi 70-known-bugs.md, 2026-08-10.
-+  const auto face(mFont->GetFontEntry()->GetHBFace());
-+  if (!face) {
-+    return nullptr;
-+  }
-+  hb_font_t* font = hb_font_create(face);
-+  if (!font) {
-+    return nullptr;
-+  }
-+  hb_ot_font_set_funcs(font);
-+  hb_font_set_scale(font, upem, upem);
-+  hb_font_set_ppem(font, 0, 0);
-+
-+  // Variations travel too, or a variable font would be measured at its default
-+  // instance while it renders at another.
-+  AutoTArray<gfxFontVariation, 8> vars;
-+  mFont->GetFontEntry()->GetVariationsForStyle(vars, *mFont->GetStyle());
-+  if (vars.Length() > 0) {
-+    static_assert(sizeof(gfxFontVariation) == sizeof(hb_variation_t),
-+                  "gfxFontVariation and hb_variation_t must be compatible");
-+    hb_font_set_variations(
-+        font, reinterpret_cast<hb_variation_t*>(vars.Elements()), vars.Length());
-+  }
-+  mDesignFont = font;
-+  return mDesignFont;
-+}
-+
-+bool gfxHarfBuzzShaper::GetDesignGlyphExtents(uint16_t aGID, int32_t& aXBearing,
-+                                              int32_t& aYBearing,
-+                                              int32_t& aWidth,
-+                                              int32_t& aHeight) const {
-+  hb_font_t* font = GetDesignFont();
-+  if (!font) {
-+    return false;
-+  }
-+  hb_glyph_extents_t ext;
-+  if (!hb_font_get_glyph_extents(font, aGID, &ext)) {
-+    // A glyph with no outline at all - a space - has no extents, and an empty
-+    // box is the honest answer rather than a failure.
-+    aXBearing = aYBearing = aWidth = aHeight = 0;
-+    return true;
-+  }
-+  aXBearing = ext.x_bearing;
-+  aYBearing = ext.y_bearing;
-+  aWidth = ext.width;
-+  aHeight = ext.height;
-+  return true;
-+}
-+
-+bool gfxHarfBuzzShaper::GetDesignAdvance(uint16_t aGID,
-+                                         int32_t& aAdvance) const {
-+  hb_font_t* font = GetDesignFont();
-+  if (!font) {
-+    return false;
-+  }
-+  aAdvance = hb_font_get_glyph_h_advance(font, aGID);
-+  return true;
-+}
-+
- /* static */ hb_bool_t gfxHarfBuzzShaper::HBGetContourPoint(
-     hb_font_t* font, void* font_data, unsigned int point_index,
-     hb_codepoint_t glyph, hb_position_t* x, hb_position_t* y, void* user_data) {
-@@ -1486,6 +1609,36 @@ bool gfxHarfBuzzShaper::ShapeText(const char16_t* aText, uint32_t aOffset,
- 
-   hb_shape(mHBFont, mBuffer, features.Elements(), features.Length());
- 
-+  // Stealth: the per-run advance jitter was REMOVED 2026-08-08. It is the one
-+  // thing a public fingerprinting test page ever caught this build doing - the
-+  // single entry in its lie list, `CanvasRenderingContext2D.measureText: metric
-+  // noise detected` - and it was both detectable and unrealistic.
-+  //
-+  // DETECTABLE, by addition and nothing else. The offset was added to the LAST
-+  // glyph of every shaped run, so measuring a string in pieces accumulated one
-+  // offset per piece while measuring it whole accumulated one. Measured at
-+  // 72px in Arial, 50 identical characters summed singly against the same 50 as
-+  // one string:
-+  //
-+  //     this build      +2.449982 px
-+  //     retail FF 152   +0.000069 px
-+  //
-+  // A real Firefox is additive to within seven hundred-thousandths of a pixel;
-+  // we were off by a factor of 35000. The test needs no reference values, no
-+  // second machine and no knowledge of our fonts - just add the parts.
-+  //
-+  // UNREALISTIC, which is the better reason. Two real Windows machines with the
-+  // same fonts measure the same string identically; text width is not a per-
-+  // machine quantity. Making every identity unique in it manufactured a
-+  // variation the population being imitated does not have. Per-identity
-+  // uniqueness still comes from the canvas PIXEL path, from the GPU persona and
-+  // from the screen - none of which had to lie about a font metric to get it.
-+  //
-+  // The v2 this replaces was itself a reduction of a v1 that perturbed every
-+  // glyph and moved a long string by ~2.8px, which spiked a commercial
-+  // fingerprinting service's tampering_ml. Halving a tell twice is not the same
-+  // as removing it.
-+
-   if (isRightToLeft) {
-     hb_buffer_reverse(mBuffer);
-   }
 diff --git a/gfx/thebes/gfxHarfBuzzShaper.h b/gfx/thebes/gfxHarfBuzzShaper.h
-index e6d43b6a3998fc2a1905b9da680f0ac544d413b1..ec7e707115c761c83dc1045ed90a2e54805a0aa7 100644
+index e6d43b6a3998fc2a1905b9da680f0ac544d413b1..6afdfd3e8014fa63a4d82cb4a225161a655269ae 100644
 --- a/gfx/thebes/gfxHarfBuzzShaper.h
 +++ b/gfx/thebes/gfxHarfBuzzShaper.h
-@@ -55,6 +55,35 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
+@@ -55,6 +55,12 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
                                   hb_font_extents_t* extents, void* user_data);
  
   public:
-+  // STEALTH: glyph metrics in DESIGN space, in FONT UNITS, read from the font's
-+  // own outlines by HarfBuzz and never by a platform rasteriser.
-+  //
-+  // They exist so the FreeType backend reports the same ink box and the same
-+  // advance the DirectWrite one does. gfxDWriteFont::GetGlyphBounds calls
-+  // GetDesignGlyphMetrics, which is the outline and nothing else, while
-+  // gfxFT2FontBase asks FreeType for HINTED bounds - so the two disagree, and
-+  // the disagreement reaches the page through measureText's four
-+  // actualBoundingBox fields. Measured 2026-08-09 against stock Firefox 151:
-+  // with the ink box reported honestly, Windows matches on 12960 of 12960
-+  // fields and Linux differs on 1440.
-+  //
-+  // Confirmed by hand before it was written: Arial 'C' has xMin 102 at 2048
-+  // units per em, so at 16px the left edge is -0.796875, and that is exactly
-+  // what stock Firefox reports for actualBoundingBoxLeft.
-+  //
-+  // These replaced a glyf-only reader on 2026-08-09, and the replacement is the
-+  // whole point rather than a tidy-up. The old one returned false for a font
-+  // with no glyf table and the caller fell through to its own backend, which is
-+  // every CFF webfont a page cares to load: measured, 108 of 150 measureText
-+  // fields diverged between Windows and Linux on one, with Linux returning
-+  // whole integers straight out of FreeType's grid fitting. hb-ot-font reads
-+  // glyf, CFF and CFF2 alike, so there is no case left to fall through with -
-+  // engine rule 7, make the declared path total rather than add a fallback.
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
 +  bool GetDesignGlyphExtents(uint16_t aGID, int32_t& aXBearing,
 +                             int32_t& aYBearing, int32_t& aWidth,
 +                             int32_t& aHeight) const;
@@ -760,21 +170,11 @@ index e6d43b6a3998fc2a1905b9da680f0ac544d413b1..ec7e707115c761c83dc1045ed90a2e54
    explicit gfxHarfBuzzShaper(gfxFont* aFont);
    virtual ~gfxHarfBuzzShaper();
  
-@@ -132,6 +161,7 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
-   hb_bool_t GetGlyphExtents(hb_codepoint_t aGlyph,
-                             hb_glyph_extents_t* aExtents) const;
- 
-+
-   bool UseVerticalPresentationForms() const {
-     return mUseVerticalPresentationForms;
-   }
-@@ -167,6 +197,12 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
+@@ -167,6 +173,10 @@ class gfxHarfBuzzShaper : public gfxFontShaper {
    // size-specific font object, owned by the gfxHarfBuzzShaper
    hb_font_t* mHBFont = nullptr;
  
-+  // STEALTH: the design-space metrics font, built on demand by GetDesignFont
-+  // and never used for shaping. Mutable because the two accessors above are
-+  // const and a font that is only read has no business forcing them not to be.
++  // STEALTH-HOOK(fingerprint/fonts/metrics)
 +  mutable hb_font_t* mDesignFont = nullptr;
 +  hb_font_t* GetDesignFont() const;
 +

@@ -1,183 +1,101 @@
 diff --git a/dom/media/webspeech/synth/SpeechSynthesis.cpp b/dom/media/webspeech/synth/SpeechSynthesis.cpp
-index e6ce72941509966e4a0950afc502304231dad48d..4063243f3fc40b3d0d14abd2384d1b21b8aa72b4 100644
+index e6ce72941509966e4a0950afc502304231dad48d..4d2a1a8758798316caae472f12c1123df6b4c3e6 100644
 --- a/dom/media/webspeech/synth/SpeechSynthesis.cpp
 +++ b/dom/media/webspeech/synth/SpeechSynthesis.cpp
-@@ -6,6 +6,7 @@
+@@ -5,6 +5,7 @@
+ #include "SpeechSynthesis.h"
  
  #include "AutoplayPolicy.h"
++#include "StealthSpeechVoices.h"  // STEALTH-HOOK(fingerprint/media/speech-voices)
  #include "mozilla/Logging.h"
-+#include "mozilla/StaticPrefs_zoom.h"
  #include "mozilla/dom/Document.h"
  #include "mozilla/dom/Element.h"
- #include "mozilla/dom/SpeechSynthesisBinding.h"
-@@ -245,6 +246,45 @@ void SpeechSynthesis::GetVoices(
+@@ -244,6 +245,10 @@ void SpeechSynthesis::GetVoices(
+                                                  RFPTarget::SpeechSynthesis)) {
      return;
    }
- 
-+  // Stealth: if zoom.stealth.voices.list pref is set, fabricate voices from
-+  // the pref and bypass the OS voice registry entirely. Each pref entry has
-+  // the form "NAME|LANG|D|L" (D=default 0|1, L=local 0|1), comma-separated.
-+  // The synthetic voice URI encodes all four fields so the accessors in
-+  // SpeechSynthesisVoice.cpp can answer queries without a registry lookup.
-+  {
-+    nsAutoCString voicesPref;
-+    {
-+      auto lock = mozilla::StaticPrefs::zoom_stealth_voices_list();
-+      voicesPref = *lock;
-+    }
-+    if (!voicesPref.IsEmpty()) {
-+      nsISupports* voiceParent = NS_ISUPPORTS_CAST(nsIObserver*, this);
-+      int32_t start = 0;
-+      while (start < static_cast<int32_t>(voicesPref.Length())) {
-+        int32_t comma = voicesPref.FindChar(',', start);
-+        if (comma < 0) comma = voicesPref.Length();
-+        nsAutoCString entry(Substring(voicesPref, start, comma - start));
-+        entry.Trim(" \t\r\n");
-+        start = comma + 1;
-+        if (entry.IsEmpty()) continue;
-+        // Synthetic URI: "stealth-voice:NAME|LANG|D|L" — accessors parse it.
-+        nsAutoString uri;
-+        uri.AssignLiteral("stealth-voice:");
-+        AppendUTF8toUTF16(entry, uri);
-+        RefPtr<SpeechSynthesisVoice> voice = mVoiceCache.Get(uri);
-+        if (!voice) {
-+          voice = new SpeechSynthesisVoice(voiceParent, uri);
-+        }
-+        aResult.AppendElement(voice);
-+      }
-+      mVoiceCache.Clear();
-+      for (uint32_t i = 0; i < aResult.Length(); i++) {
-+        mVoiceCache.InsertOrUpdate(aResult[i]->mUri, RefPtr{aResult[i].get()});
-+      }
-+      return;
-+    }
++  // STEALTH-HOOK(fingerprint/media/speech-voices)
++  if (StealthGetVoices(this, aResult, mVoiceCache)) {
++    return;
 +  }
-+
+ 
    nsresult rv = nsSynthVoiceRegistry::GetInstance()->GetVoiceCount(&voiceCount);
    if (NS_WARN_IF(NS_FAILED(rv))) {
-     return;
 diff --git a/dom/media/webspeech/synth/SpeechSynthesisVoice.cpp b/dom/media/webspeech/synth/SpeechSynthesisVoice.cpp
-index c5aefb69c9a2005d1cbb1ac09bd14bd79bbaaa9f..32d5d1845c5aa9836f3c9c8df8560bfd95e0d988 100644
+index c5aefb69c9a2005d1cbb1ac09bd14bd79bbaaa9f..41cba8a16de1cc79ebd70e447d884b2ba4a61d33 100644
 --- a/dom/media/webspeech/synth/SpeechSynthesisVoice.cpp
 +++ b/dom/media/webspeech/synth/SpeechSynthesisVoice.cpp
-@@ -8,6 +8,39 @@
+@@ -5,6 +5,8 @@
+ #include "SpeechSynthesis.h"
+ #include "mozilla/dom/SpeechSynthesisVoiceBinding.h"
+ #include "nsSynthVoiceRegistry.h"
++// STEALTH-HOOK(fingerprint/media/speech-voices)
++#include "StealthSpeechVoice.h"
  
  namespace mozilla::dom {
  
-+// Stealth: voice URIs of the form "stealth-voice:NAME|LANG|D|L" are fabricated
-+// in SpeechSynthesis::GetVoices when the zoom.stealth.voices.list pref is set.
-+// All accessors short-circuit here and parse fields directly from the URI,
-+// so there's no round-trip through nsSynthVoiceRegistry (which would fail:
-+// these voices never get registered with the OS voice backend).
-+static constexpr auto kStealthVoicePrefix = u"stealth-voice:"_ns;
-+
-+static bool IsStealthVoiceURI(const nsAString& aUri) {
-+  return StringBeginsWith(aUri, kStealthVoicePrefix);
-+}
-+
-+// Extract field `idx` from the URI's trailing "NAME|LANG|D|L" section.
-+// idx 0=name, 1=lang, 2=default("0"/"1"), 3=local("0"/"1"). Missing = "".
-+static void GetStealthVoiceField(const nsAString& aUri, uint32_t idx,
-+                                 nsAString& aOut) {
-+  aOut.Truncate();
-+  const uint32_t prefixLen = kStealthVoicePrefix.Length();
-+  if (aUri.Length() <= prefixLen) return;
-+  nsDependentSubstring body(aUri, prefixLen);
-+  uint32_t cur = 0;
-+  int32_t start = 0;
-+  while (start <= static_cast<int32_t>(body.Length())) {
-+    int32_t bar = body.FindChar(u'|', start);
-+    if (bar < 0) bar = body.Length();
-+    if (cur == idx) {
-+      aOut = Substring(body, start, bar - start);
-+      return;
-+    }
-+    start = bar + 1;
-+    cur++;
-+  }
-+}
-+
- NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(SpeechSynthesisVoice, mParent)
- NS_IMPL_CYCLE_COLLECTING_ADDREF(SpeechSynthesisVoice)
- NS_IMPL_CYCLE_COLLECTING_RELEASE(SpeechSynthesisVoice)
-@@ -30,10 +63,45 @@ JSObject* SpeechSynthesisVoice::WrapObject(JSContext* aCx,
+@@ -30,10 +32,14 @@ JSObject* SpeechSynthesisVoice::WrapObject(JSContext* aCx,
  nsISupports* SpeechSynthesisVoice::GetParentObject() const { return mParent; }
  
  void SpeechSynthesisVoice::GetVoiceURI(nsString& aRetval) const {
-+  // QUI USCIVA IL NOSTRO FORMATO INTERNO, FINO ALLA PAGINA.
-+  //
-+  // `mUri` e' la nostra codifica di servizio, "stealth-voice:NOME|LANG|D|L", e
-+  // ogni altro accessor di questo file la sa interpretare. Questo no: tornava
-+  // `mUri` verbatim, quindi una pagina che chiama
-+  // `speechSynthesis.getVoices()[0].voiceURI` leggeva una stringa che comincia
-+  // con la parola "stealth". Misurato il 2026-08-23 sul prodotto:
-+  //   a mano   -> urn:moz-tts:sapi:Microsoft David - English (United States)?en-US
-+  //   prodotto -> stealth-voice:Microsoft David - English (United States)|en-US|1|1
-+  // Non e' un camuffamento imperfetto: e' una firma che si autodenuncia, ed e'
-+  // l'unica superficie di tutta la sessione di misure che nominava noi.
-+  //
-+  // Il formato retail non e' stato dedotto: e' copiato da
-+  // `dom/media/webspeech/synth/windows/SapiService.cpp`, che costruisce
-+  // `"urn:moz-tts:sapi:" + descrizione + "?" + locale`.
-+  //
-+  // E LO SCHEMA E' SEMPRE `sapi:`, ANCHE SU LINUX. Un Firefox Linux vero direbbe
-+  // `speechd:` (`SpeechDispatcherService.cpp`) e uno macOS `osx:`
-+  // (`OSXSpeechSynthesizerService.mm`), ma noi dichiariamo Windows sempre e
-+  // ovunque: e' la regola 4, e ha l'effetto collaterale di rendere le due build
-+  // identiche anche qui.
-+  if (IsStealthVoiceURI(mUri)) {
-+    nsAutoString name, lang;
-+    GetStealthVoiceField(mUri, 0, name);
-+    GetStealthVoiceField(mUri, 1, lang);
-+    aRetval.AssignLiteral(u"urn:moz-tts:sapi:");
-+    aRetval.Append(name);
-+    aRetval.AppendLiteral(u"?");
-+    aRetval.Append(lang);
-+    return;
-+  }
++  // STEALTH-HOOK(fingerprint/media/speech-voices)
++  if (StealthVoiceRetailURI(mUri, aRetval)) return;
    aRetval = mUri;
  }
  
  void SpeechSynthesisVoice::GetName(nsString& aRetval) const {
-+  if (IsStealthVoiceURI(mUri)) {
-+    GetStealthVoiceField(mUri, 0, aRetval);
-+    return;
-+  }
++  // STEALTH-HOOK(fingerprint/media/speech-voices)
++  if (StealthVoiceName(mUri, aRetval)) return;
    DebugOnly<nsresult> rv =
        nsSynthVoiceRegistry::GetInstance()->GetVoiceName(mUri, aRetval);
    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-@@ -41,6 +109,10 @@ void SpeechSynthesisVoice::GetName(nsString& aRetval) const {
+@@ -41,6 +47,8 @@ void SpeechSynthesisVoice::GetName(nsString& aRetval) const {
  }
  
  void SpeechSynthesisVoice::GetLang(nsString& aRetval) const {
-+  if (IsStealthVoiceURI(mUri)) {
-+    GetStealthVoiceField(mUri, 1, aRetval);
-+    return;
-+  }
++  // STEALTH-HOOK(fingerprint/media/speech-voices)
++  if (StealthVoiceLang(mUri, aRetval)) return;
    DebugOnly<nsresult> rv =
        nsSynthVoiceRegistry::GetInstance()->GetVoiceLang(mUri, aRetval);
    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-@@ -48,6 +120,11 @@ void SpeechSynthesisVoice::GetLang(nsString& aRetval) const {
+@@ -48,6 +56,8 @@ void SpeechSynthesisVoice::GetLang(nsString& aRetval) const {
  }
  
  bool SpeechSynthesisVoice::LocalService() const {
-+  if (IsStealthVoiceURI(mUri)) {
-+    nsAutoString field;
-+    GetStealthVoiceField(mUri, 3, field);
-+    return field.EqualsLiteral("1");
-+  }
++  // STEALTH-HOOK(fingerprint/media/speech-voices)
++  if (Maybe<bool> stealth = StealthVoiceLocal(mUri)) return *stealth;
    bool isLocal;
    DebugOnly<nsresult> rv =
        nsSynthVoiceRegistry::GetInstance()->IsLocalVoice(mUri, &isLocal);
-@@ -58,6 +135,11 @@ bool SpeechSynthesisVoice::LocalService() const {
+@@ -58,6 +68,8 @@ bool SpeechSynthesisVoice::LocalService() const {
  }
  
  bool SpeechSynthesisVoice::Default() const {
-+  if (IsStealthVoiceURI(mUri)) {
-+    nsAutoString field;
-+    GetStealthVoiceField(mUri, 2, field);
-+    return field.EqualsLiteral("1");
-+  }
++  // STEALTH-HOOK(fingerprint/media/speech-voices)
++  if (Maybe<bool> stealth = StealthVoiceDefault(mUri)) return *stealth;
    bool isDefault;
    DebugOnly<nsresult> rv =
        nsSynthVoiceRegistry::GetInstance()->IsDefaultVoice(mUri, &isDefault);
+diff --git a/dom/media/webspeech/synth/moz.build b/dom/media/webspeech/synth/moz.build
+index 3f29c33c797c145c56857fc432976c274410344c..cf4624561d9d1637dac195d48c7fa06bc6d1567c 100644
+--- a/dom/media/webspeech/synth/moz.build
++++ b/dom/media/webspeech/synth/moz.build
+@@ -29,6 +29,8 @@ UNIFIED_SOURCES += [
+     "SpeechSynthesis.cpp",
+     "SpeechSynthesisUtterance.cpp",
+     "SpeechSynthesisVoice.cpp",
++    "StealthSpeechVoice.cpp",
++    "StealthSpeechVoices.cpp",
+ ]
+ 
+ UNIFIED_SOURCES += ["test/nsFakeSynthServices.cpp"]
+diff --git a/dom/media/webspeech/synth/test/mochitest.toml b/dom/media/webspeech/synth/test/mochitest.toml
+index dc41cec561be938ad44b25a999c8546d4b5d74d6..6ebb07ee2bdff0ec9d70b211e55c8a851acf537d 100644
+--- a/dom/media/webspeech/synth/test/mochitest.toml
++++ b/dom/media/webspeech/synth/test/mochitest.toml
+@@ -42,3 +42,5 @@ support-files = [
+ ["test_speech_simple.html"]
+ 
+ ["test_speech_cancel_on_navigation.html"]
++
++["test_stealth_voices.html"]

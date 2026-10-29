@@ -332,5 +332,33 @@ Maybe<nsPoint> StealthDeclaredOriginShift(
               aRealContentOrigin);
 }
 
+int32_t StealthDeclaredPixelDepth() {
+  const int32_t declared = StaticPrefs::zoom_stealth_screen_color_depth();
+  return declared > 0 ? declared : 0;
+}
+
+Maybe<CSSIntRect> StealthDeclaredScreenRect() {
+  const int32_t w = StaticPrefs::zoom_stealth_screen_width();
+  const int32_t h = StaticPrefs::zoom_stealth_screen_height();
+  if (w > 0 && h > 0) {
+    return Some(CSSIntRect(0, 0, w, h));
+  }
+  return Nothing();
+}
+
+Maybe<CSSIntRect> StealthDeclaredAvailRect() {
+  const int32_t w = StaticPrefs::zoom_stealth_screen_width();
+  const int32_t h = StaticPrefs::zoom_stealth_screen_height();
+  if (w > 0 && h > 0) {
+    // First use of a declared value in this process refuses if the set is
+    // incomplete. Cheap after the first call, and it runs BEFORE the value is
+    // handed back, so nothing can be served from a compiled default.
+    StealthAssertDeclarationsComplete();
+    return Some(
+        CSSIntRect(0, 0, w, h - StaticPrefs::zoom_stealth_screen_taskbar_px()));
+  }
+  return Nothing();
+}
+
 }  // namespace gfx
 }  // namespace mozilla

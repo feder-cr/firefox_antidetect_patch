@@ -1,8 +1,12 @@
 {
  "modified": [
-  "netwerk/dns/DNSServiceBase.cpp"
+  "netwerk/dns/DNSServiceBase.cpp",
+  "netwerk/dns/moz.build"
  ],
- "added": {},
+ "added": {
+  "netwerk/dns/StealthDNSDeclaration.cpp": "100644",
+  "netwerk/dns/StealthDNSDeclaration.h": "100644"
+ },
  "inventory": [
   {
    "file": "netwerk/dns/DNSServiceBase.cpp",
@@ -26,6 +30,24 @@
    "verifier": {
     "changed": [],
     "why": "All fields and cited facts checked against the diff and source; no change."
+   }
+  },
+  {
+   "file": "netwerk/dns/moz.build",
+   "category": "build",
+   "feature": "dns-no-local-resolution",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

@@ -13,6 +13,8 @@
 #include "nspr.h"
 #include "private/pprio.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
+#include "nsProxyInfo.h"
 
 namespace mozilla {
 namespace net {
@@ -417,6 +419,51 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
 
   LOG(("SOCKS5 UDP layer pushed onto fd"));
   return NS_OK;
+}
+
+// Stealthfox: also accept SOCKS5 when our SOCKS5-UDP-ASSOCIATE layer
+// is enabled (network.proxy.socks_remote_udp). Without this, Firefox
+// ignores Alt-Svc h3 advertisements whenever a SOCKS proxy is set,
+// never creates a UDP socket, and our nsSOCKSUDPIOLayer hook never
+// fires.
+bool StealthHttp3ProxyAllowed(nsProxyInfo* aProxyInfo) {
+  bool socksUdpEnabled =
+      Preferences::GetBool("network.proxy.socks_remote_udp", false);
+  return aProxyInfo ? (aProxyInfo->IsDirect() || aProxyInfo->IsHttp3Proxy() ||
+                       (socksUdpEnabled && aProxyInfo->IsSOCKS()))
+                    : true;
+}
+
+bool StealthSocksUdpEnabled() {
+  return Preferences::GetBool("network.proxy.socks_remote_udp", false);
+}
+
+// Stealthfox: when our SOCKS5 UDP-ASSOCIATE layer is enabled, treat
+// SOCKS5 as transparent to h3 — the proxy tunnels QUIC datagrams via
+// UDP_ASSOCIATE, so the connection should still be created as
+// HttpConnectionUDP (not TCP nsHttpConnection with ALPN h3).
+bool StealthSocksUdpH3ViaProxy(nsProxyInfo* aProxyInfo, bool aIsHttp3,
+                               bool aIsHttp3ProxyConnection) {
+  bool socksUdpEnabled = StealthSocksUdpEnabled();
+  bool isSocks = aProxyInfo && aProxyInfo->IsSOCKS();
+  if (socksUdpEnabled && isSocks) {
+    return aIsHttp3;
+  }
+  return aIsHttp3ProxyConnection;
+}
+
+// Stealthfox: when our SOCKS5-UDP layer is enabled AND this
+// connection is for HTTP/3 (UDP), we MUST resolve the host name
+// client-side. Reason: h3 packets are UDP and bypass the SOCKS5
+// CONNECT path; the proxy never sees a CONNECT containing the
+// hostname. Our nsSOCKSUDPIOLayer needs a real numeric IP target
+// to wrap into the SOCKS5 UDP datagram header (ATYP=IPv4 + ADDR).
+// Without client-side DNS, h3+SOCKS goes through DnsAndConnectSocket
+// but never fires OnLookupComplete, so SetupConn is never reached
+// and HttpConnectionUDP::Init never runs.
+bool StealthSocksUdpSkipDns(bool aIsHttp3) {
+  bool socksUdpEnabled = StealthSocksUdpEnabled();
+  return !(socksUdpEnabled && aIsHttp3);
 }
 
 }  // namespace net

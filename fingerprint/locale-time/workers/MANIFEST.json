@@ -1,14 +1,38 @@
 {
  "modified": [
+  "dom/base/test/browser.toml",
   "dom/serviceworkers/ServiceWorkerPrivate.cpp",
-  "dom/workers/WorkerLoadInfo.h",
+  "dom/serviceworkers/moz.build",
   "dom/workers/WorkerPrivate.cpp",
   "dom/worklet/WorkletGlobalScope.cpp",
   "dom/worklet/WorkletImpl.cpp",
   "dom/worklet/WorkletImpl.h"
  ],
- "added": {},
+ "added": {
+  "dom/base/test/browser_stealth_language_workers.js": "100644",
+  "dom/serviceworkers/StealthWorkerDeclaration.cpp": "100644",
+  "dom/serviceworkers/StealthWorkerDeclaration.h": "100644",
+  "dom/workers/StealthWorkerDeclaration.h": "100644"
+ },
  "inventory": [
+  {
+   "file": "dom/base/test/browser.toml",
+   "category": "build",
+   "feature": "worker-locale-timezone",
+   "prefs": [],
+   "added": 3,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
   {
    "file": "dom/serviceworkers/ServiceWorkerPrivate.cpp",
    "category": "spoof",
@@ -34,23 +58,21 @@
    }
   },
   {
-   "file": "dom/workers/WorkerLoadInfo.h",
-   "category": "other",
+   "file": "dom/serviceworkers/moz.build",
+   "category": "build",
    "feature": "worker-locale-timezone",
    "prefs": [],
-   "added": 6,
+   "added": 1,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "struct WorkerLoadInfoData (comment after mTimezoneOverride)",
-   "evidence": [
-    "+  // STEALTHFOX: these three also reach service workers, from the context of"
-   ],
-   "notes": "Comment only, no code. It belongs in our docs rather than the Mozilla file. It refers to intl/locale/StealthSessionPrefs.h, which is our file.",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
    "verifier": {
     "changed": [],
-    "why": "Checked against the diff; no change needed."
+    "why": "Added with the 2026-10-29 hook move."
    }
   },
   {

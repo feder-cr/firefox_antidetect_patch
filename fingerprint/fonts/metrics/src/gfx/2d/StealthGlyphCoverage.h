@@ -14,6 +14,10 @@
 // build alongside files that know nothing about Gecko; a header that dragged in
 // nsString or StaticPrefs would put that whole world into Skia's translation
 // units. All of that lives in the .cpp.
+//
+// STEALTH: Gecko-owned, and deliberately the only Mozilla header in
+// SkScalerContext.cpp - it declares one free function and includes nothing
+// itself. See SkScalerContext::getImage() and WHERE IT IS CALLED below.
 
 namespace mozilla {
 namespace gfx {
@@ -52,6 +56,29 @@ namespace gfx {
  * text drawn is still the text read back, with the coarser edge Windows
  * produces. 0 and 255 are the ladder's endpoints, so fully transparent and
  * fully opaque bytes never move.
+ *
+ * NOT KEPT AS A SECOND PASS. The ladder moved from the composited RGBA buffer
+ * to this A8 mask on 2026-08-08. Quantising composited pixels after the mask
+ * is already quantised is a heuristic guessing which results to adjust, which
+ * is the pattern this codebase rejects, and it also reached path antialiasing,
+ * where retail Windows produces the full 256 levels and we were producing 17.
+ *
+ * WHERE IT IS CALLED: quantise the coverage the rasteriser just produced, in
+ * SkScalerContext::getImage in vendored Skia
+ * (gfx/skia/skia/src/core/SkScalerContext.cpp), right after the mask has been
+ * filled and only when the mask is kA8_Format. That is the one place both
+ * scalers meet: in getImage, generateImage() is DirectWrite on Windows and
+ * FreeType on Linux, and the third branch rasterises from a path; all three
+ * land at the call with the mask filled. And kA8_Format IS a greyscale coverage
+ * mask by construction - a colour glyph is kARGB32_Format and never takes this
+ * branch - so nothing at the call site has to guess which pixels are text,
+ * which is what the readback-time version of this got wrong. See
+ * mozilla/gfx/StealthGlyphCoverage.h (this header).
+ *
+ * BEFORE THE MASK FILTER AND NOT AFTER, deliberately: a mask filter is a blur,
+ * and on a real Windows machine the blur smooths an ALREADY quantised mask.
+ * Quantising the blurred result would produce a shape no Windows machine
+ * produces.
  *
  * An empty or malformed ladder leaves the mask exactly as the rasteriser
  * produced it - an override, never a replacement.

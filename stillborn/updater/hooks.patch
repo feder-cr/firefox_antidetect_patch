@@ -1,39 +1,16 @@
 diff --git a/build/moz.configure/update-programs.configure b/build/moz.configure/update-programs.configure
-index 3b9d6553f37b754b52dbb7f83855c7fe1cd77169..f49be1cd46c2b30e28c5ca8d230840b4300cf6ec 100644
+index 3b9d6553f37b754b52dbb7f83855c7fe1cd77169..8e9cd0b7d40a6b1df88da6071333c49e02d37846 100644
 --- a/build/moz.configure/update-programs.configure
 +++ b/build/moz.configure/update-programs.configure
-@@ -2,6 +2,30 @@
+@@ -2,6 +2,7 @@
  # License, v. 2.0. If a copy of the MPL was not distributed with this
  # file, You can obtain one at http://mozilla.org/MPL/2.0/.
  
-+# Upstream this file declares the whole application-update machinery. In this
-+# tree it declares none of it: the updater, the MAR signature checks, the MAR
-+# channel identifiers, the maintenance service, the update agent and the binary
-+# patch formats were removed on 2026-08-31 on the owner's instruction - "tutto
-+# quello che riguarda aggiornamenti", and explicitly NOT as a --disable-updater
-+# lever, so that nothing is left to switch back on.
-+#
-+# The consequence is deliberate and is recorded in the workbench docs
-+# (27-retail-network-parity.md): MOZ_UPDATER is never set, so
-+# toolkit/mozapps/update is not built, AppConstants.MOZ_UPDATER is false, every
-+# #ifdef MOZ_UPDATER compiles out, no updater binary is packaged, and the
-+# browser never contacts aus5.mozilla.org. The "Update available" badge that
-+# UpdateListener shows unconditionally therefore has no code left to show it.
-+#
-+# What did NOT go, because it is not update machinery: --enable-update-channel
-+# (MOZ_UPDATE_CHANNEL). That option names the CHANNEL, and RemotingName is
-+# derived from it - `firefox` on release, `firefox-default` without it - so
-+# removing it would rename the application on disk and on the wire.
-+#
-+# Two options that upstream keeps in this file are unrelated to updates and are
-+# kept: the default browser agent and the notification server.
-+#
-+# Since 157 a third one is kept for the same reason: the macOS dmgInstallHelper
-+# debug option (also unrelated to updates).
++# STEALTH-HOOK(stillborn/updater): the update machinery is deleted from this file on purpose; the why is in stillborn/updater/FEATURE.md
  
  # dmgInstallHelper
  # ==============================================================
-@@ -22,239 +46,6 @@ def debug_dmg_install_helper(enabled):
+@@ -22,239 +23,6 @@ def debug_dmg_install_helper(enabled):
  set_config("DMG_INSTALL_HELPER_DEBUG", debug_dmg_install_helper)
  
  
@@ -273,7 +250,7 @@ index 3b9d6553f37b754b52dbb7f83855c7fe1cd77169..f49be1cd46c2b30e28c5ca8d230840b4
  # Enable or disable the default browser agent, which monitors the user's default
  # browser setting on Windows.
  # ==============================================================================
-@@ -307,30 +98,3 @@ def notification_server_flag(enabled):
+@@ -307,30 +75,3 @@ def notification_server_flag(enabled):
  
  
  set_config("MOZ_NOTIFICATION_SERVER", notification_server_flag)

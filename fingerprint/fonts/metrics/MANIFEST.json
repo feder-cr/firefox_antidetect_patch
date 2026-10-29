@@ -11,7 +11,10 @@
  "added": {
   "gfx/2d/StealthGlyphCoverage.cpp": "100644",
   "gfx/2d/StealthGlyphCoverage.h": "100644",
-  "gfx/tests/gtest/TestStealthTextQuality.cpp": "100644"
+  "gfx/tests/gtest/TestStealthTextQuality.cpp": "100644",
+  "gfx/thebes/StealthDesignMetrics.cpp": "100644",
+  "gfx/thebes/StealthDesignMetrics.h": "100644",
+  "gfx/thebes/StealthTextQuality.h": "100644"
  },
  "inventory": [
   {
@@ -94,15 +97,15 @@
    "added": 152,
    "removed": 0,
    "hunks": 5,
-   "inline_logic_lines": 66,
-   "hookable": "movable",
-   "anchor": "gfxFont::GetStealthHostIndepVMetrics (new, placed before InitMetricsFromSfntTables); GetStealthBundleVMetrics (new static); gfxFont::SanitizeMetrics",
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "gfxFont::SanitizeMetrics, after the zero-size early return",
    "evidence": [
     "+bool gfxFont::GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,",
     "+  if (GetStealthBundleVMetrics(mFontEntry, vm)) {",
     "+  aMaxAscent = uint16_t(os2->usWinAscent) * mFUnitsConvFactor;"
    ],
-   "notes": "SanitizeMetrics is the shared point where DirectWrite, FreeType and CoreText finish their metrics. For a bundled face, the manifest's vertical metrics overwrite maxAscent/maxDescent/emHeight/emAscent/emDescent/internalLeading/externalLeading and xHeight/capHeight/underline/strikeout when the manifest has them, then the existing clamps run. GetStealthHostIndepVMetrics reads OS/2 directly for canvas TextMetrics; its caller is outside this list. GetStealthBundleVMetrics is keyed on mShmemFace and the manifest lookup. The manifest type StealthBundleVMetrics is defined in StealthBundleFontList.h, which is not in this list. Movable: the whole override block can move into a helper in our own file behind one call. Verifier: the caller exists, dom/canvas/CanvasRenderingContext2D.cpp:5454 (font->GetStealthHostIndepVMetrics). Placement caveat: the new function sits in the middle of an upstream comment block (the upstream lines \"Return FALSE if the gfxFontEntry subclass does not implement GetFontTable()...\" now precede our function and \"If this returns TRUE without setting the mIsValid flag...\" follows it), so upstream comments are split; move it elsewhere when relocating.",
+   "notes": "Hook (3 lines): include + StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), aMetrics) in SanitizeMetrics. The manifest vertical metrics, GetStealthBundleVMetrics and gfxFont::GetStealthHostIndepVMetrics live in gfx/thebes/StealthBundleFontList.cpp.",
    "verifier": {
     "changed": [
      "notes"

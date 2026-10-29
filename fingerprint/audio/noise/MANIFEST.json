@@ -1,11 +1,35 @@
 {
  "modified": [
+  "dom/media/gtest/moz.build",
   "dom/media/webaudio/AnalyserNode.cpp",
   "dom/media/webaudio/AudioDestinationNode.cpp",
-  "dom/media/webaudio/DynamicsCompressorNode.h"
+  "dom/media/webaudio/DynamicsCompressorNode.h",
+  "dom/media/webaudio/moz.build"
  ],
- "added": {},
+ "added": {
+  "dom/media/gtest/TestStealthAudioNoise.cpp": "100644",
+  "dom/media/webaudio/StealthAudioNoise.cpp": "100644",
+  "dom/media/webaudio/StealthAudioNoise.h": "100644"
+ },
  "inventory": [
+  {
+   "file": "dom/media/gtest/moz.build",
+   "category": "build",
+   "feature": "audio-fingerprint-noise",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "UNIFIED_SOURCES (TestStealthAudioNoise.cpp, alphabetical)",
+   "evidence": [],
+   "notes": "One line registering our own file in the build.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move of fingerprint/audio/noise."
+   }
+  },
   {
    "file": "dom/media/webaudio/AnalyserNode.cpp",
    "category": "spoof",
@@ -83,6 +107,24 @@
    "verifier": {
     "changed": [],
     "why": "Checked against the diff; no change needed."
+   }
+  },
+  {
+   "file": "dom/media/webaudio/moz.build",
+   "category": "build",
+   "feature": "audio-fingerprint-noise",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "UNIFIED_SOURCES (StealthAudioNoise.cpp, alphabetical)",
+   "evidence": [],
+   "notes": "One line registering our own file in the build.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move of fingerprint/audio/noise."
    }
   }
  ]

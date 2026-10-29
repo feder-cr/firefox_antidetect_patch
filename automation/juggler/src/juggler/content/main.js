@@ -75,9 +75,9 @@ export function initialize(browsingContext, docShell) {
     if (value !== undefined)
       applySetting[name](value);
   }
-  for (const { worldName, name, script } of [...contextCrossProcessCookie.bindings, ...pageCrossProcessCookie.bindings])
-    data.frameTree.addBinding(worldName, name, script);
-  data.frameTree.setInitScripts([...contextCrossProcessCookie.initScripts, ...pageCrossProcessCookie.initScripts]);
+  data.frameTree.applyCrossProcessState(
+      [...contextCrossProcessCookie.initScripts, ...pageCrossProcessCookie.initScripts],
+      [...contextCrossProcessCookie.bindings, ...pageCrossProcessCookie.bindings]);
   data.channel = new SimpleChannel('', 'process-' + Services.appinfo.processID);
   data.pageAgent = new PageAgent(data.channel, data.frameTree);
   // A document restored from the back-forward cache announces itself when

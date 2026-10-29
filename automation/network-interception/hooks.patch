@@ -1,108 +1,45 @@
 diff --git a/netwerk/base/nsINetworkInterceptController.idl b/netwerk/base/nsINetworkInterceptController.idl
-index 3654f3ed20f6b22d36c4238be40417e77e8f6867..f685e7668ad3310cac8bc8425124a6fe6ed0405d 100644
+index 3654f3ed20f6b22d36c4238be40417e77e8f6867..4afd7f40c5d32f86c4f0330fca47e6374b3c4bcc 100644
 --- a/netwerk/base/nsINetworkInterceptController.idl
 +++ b/netwerk/base/nsINetworkInterceptController.idl
-@@ -59,6 +59,16 @@ interface nsIInterceptedChannel : nsISupports
+@@ -59,6 +59,10 @@ interface nsIInterceptedChannel : nsISupports
       */
      void resetInterception(in boolean bypass);
  
-+    // ----- Playwright begin -----
-+
-+    // Same as resetInterception, but updates the URI.
++    // STEALTH-HOOK(automation/network-interception): see FEATURE.md
 +    void resetInterceptionWithURI(in nsIURI aURI);
-+
-+    // After resetInterception is called, this request will be intercepted again.
 +    void interceptAfterServiceWorkerResets();
-+
-+    // ----- Playwright end -------
 +
      /**
       * Set the status and reason for the forthcoming synthesized response.
       * Multiple calls overwrite existing values.
 diff --git a/netwerk/protocol/http/InterceptedHttpChannel.cpp b/netwerk/protocol/http/InterceptedHttpChannel.cpp
-index d8c47fb9a4dc7cd529895e64d9b2137cacaedc75..73b45616420d1e99d31c09587b143944c8e4fa7f 100644
+index d8c47fb9a4dc7cd529895e64d9b2137cacaedc75..afec165bf42e0fd761c6c7f1852eeb3d42adc147 100644
 --- a/netwerk/protocol/http/InterceptedHttpChannel.cpp
 +++ b/netwerk/protocol/http/InterceptedHttpChannel.cpp
-@@ -729,10 +729,41 @@ NS_IMPL_ISUPPORTS(ResetInterceptionHeaderVisitor, nsIHttpHeaderVisitor)
- 
- }  // anonymous namespace
- 
-+NS_IMETHODIMP
-+InterceptedHttpChannel::InterceptAfterServiceWorkerResets() {
-+  mInterceptAfterServiceWorkerResets = true;
-+  return NS_OK;
-+}
-+
-+NS_IMETHODIMP
-+InterceptedHttpChannel::ResetInterceptionWithURI(nsIURI* aURI) {
-+  if (aURI) {
-+    mURI = aURI;
-+    // A controller chosen for the original URL does not follow the request
-+    // somewhere else.
-+    return ResetInterception(true);
-+  }
-+  // Unchanged: do what the service worker that let it through asked for.
-+  // Forcing true here cleared the controller of every navigation a worker
-+  // did not answer, so with Juggler attached no page was ever controlled by
-+  // its service worker, route or not.
-+  return ResetInterception(mServiceWorkerResetBypass);
-+}
-+
- NS_IMETHODIMP
+@@ -733,6 +733,10 @@ NS_IMETHODIMP
  InterceptedHttpChannel::ResetInterception(bool aBypass) {
    INTERCEPTED_LOG(("InterceptedHttpChannel::ResetInterception [%p] bypass: %s",
                     this, aBypass ? "true" : "false"));
++  // STEALTH-HOOK(automation/network-interception)
 +  if (mInterceptAfterServiceWorkerResets) {
-+    mInterceptAfterServiceWorkerResets = false;
-+    mServiceWorkerResetBypass = aBypass;
-+    nsCOMPtr<nsINetworkInterceptController> controller;
-+    GetCallback(controller);
-+    if (!controller)
-+      return NS_ERROR_DOM_INVALID_STATE_ERR;
-+    return controller->ChannelIntercepted(this);
++    return StealthInterceptAgain(aBypass);
 +  }
-+
    if (mCanceled) {
      return mStatus;
    }
-@@ -1151,11 +1182,18 @@ InterceptedHttpChannel::OnStartRequest(nsIRequest* aRequest) {
-     GetCallback(mProgressSink);
-   }
- 
-+  // Playwright: main requests in firefox do not have loading principal.
-+  // As they are intercepted by Playwright, they don't have
-+  // serviceWorkerTainting as well.
-+  // Thus these asserts are wrong for Playwright world.
-+  // Note: these checks were added in https://github.com/mozilla-firefox/firefox/commit/bb16ca6496682c3b0ddd452d0dd4c1dd46ff71f8
-+  /*
-   MOZ_ASSERT_IF(!mLoadInfo->GetServiceWorkerTaintingSynthesized(),
-                 mLoadInfo->GetLoadingPrincipal());
-   // No need to do ORB checks if these conditions hold.
-   MOZ_DIAGNOSTIC_ASSERT(mLoadInfo->GetServiceWorkerTaintingSynthesized() ||
-                         mLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal());
-+  */
- 
-   if (mPump && mLoadFlags & LOAD_CALL_CONTENT_SNIFFERS) {
-     RefPtr<nsInputStreamPump> pump(mPump);
 diff --git a/netwerk/protocol/http/InterceptedHttpChannel.h b/netwerk/protocol/http/InterceptedHttpChannel.h
-index ab440756a6745ce3c4785f211db32173c6bd27c5..f80bba29bf992cb7e02266317846b9eca6fca84f 100644
+index ab440756a6745ce3c4785f211db32173c6bd27c5..9192a83d12236bb18262b062b0298dacf5b359dc 100644
 --- a/netwerk/protocol/http/InterceptedHttpChannel.h
 +++ b/netwerk/protocol/http/InterceptedHttpChannel.h
-@@ -89,6 +89,17 @@ class InterceptedHttpChannel final
+@@ -88,6 +88,10 @@ class InterceptedHttpChannel final
+   nsString mStatusHost;
    Atomic<bool> mCallingStatusAndProgress;
    bool mInterceptionReset{false};
- 
-+  // ----- Playwright begin -----
-+  // After resetInterception is called, this request will call into interceptors again.
++  // STEALTH-HOOK(automation/network-interception)
 +  bool mInterceptAfterServiceWorkerResets{false};
-+  // The bypass a service worker asked for when it let this request through
-+  // and the reset was handed to the interceptors instead. A resume that does
-+  // not change the URL carries it out: false when the worker simply did not
-+  // respond, which keeps the navigation's client controlled. True when no
-+  // worker was involved (there is no controller to clear then).
 +  bool mServiceWorkerResetBypass{true};
-+  // ----- Playwright end -------
-+
++  nsresult StealthInterceptAgain(bool aBypass);
+ 
    /**
     *  InterceptionTimeStamps is used to record the time stamps of the
-    *  interception.

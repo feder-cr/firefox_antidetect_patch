@@ -24,3 +24,7 @@ TODO: one paragraph, from the notes below.
 - `dom/media/webrtc/transport/nr_stealth_bridge.cpp`
 - `dom/media/webrtc/transport/nr_stealth_bridge.h`
 - `third_party/libwebrtc/api/location.h`
+
+## dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.h: nr_ice_component_inject_fallback_srflx (declaration)
+
+The documentation of the function is at its declaration in nr_stealth_bridge.h. The comment that used to sit on the declaration in ice_component.h said: "sintetizza UN srflx con l'IP di uscita dichiarato, quando nessun srflx reale arrivera'. Torna 0 se l'ha iniettato, esce da sola se l'IP non e' dichiarato (nessun proxy). Ha DUE chiamanti, e sono i due soli momenti in cui si SA che il reale non arrivera': il gathering quando non e' stato creato nessun candidato srflx, e il ramo di fallimento dello STUN in ice_candidate.cpp. Chiamarla altrove rimette il doppio srflx." The claim of two callers is false: the only caller is nr_ice_component_initialize_udp (ice_component.cpp), the failure branch of the STUN in ice_candidate.cpp does not call it (it only sets error_code and does ABORT); nr_stealth_bridge.h says so.

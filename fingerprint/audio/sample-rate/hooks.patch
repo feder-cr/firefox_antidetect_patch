@@ -1,5 +1,5 @@
 diff --git a/dom/media/CubebUtils.cpp b/dom/media/CubebUtils.cpp
-index 72551b795af37c5a0a89fff1a579efe2a519e1e6..58332ff51d15d38a4d5d5175e055e4f700a86c74 100644
+index 72551b795af37c5a0a89fff1a579efe2a519e1e6..526903617b178653002763c017a14a30efb147ed 100644
 --- a/dom/media/CubebUtils.cpp
 +++ b/dom/media/CubebUtils.cpp
 @@ -46,6 +46,7 @@
@@ -14,7 +14,7 @@ index 72551b795af37c5a0a89fff1a579efe2a519e1e6..58332ff51d15d38a4d5d5175e055e4f7
    if (sCubebForcedSampleRate) {
      return sCubebForcedSampleRate;
    }
-+  // Stealth: sampleRate from pref set by Python at launch
++  // STEALTH-HOOK(fingerprint/audio/sample-rate)
 +  {
 +    int32_t rate = mozilla::StaticPrefs::zoom_stealth_audio_sample_rate();
 +    if (rate > 0) return (uint32_t)rate;

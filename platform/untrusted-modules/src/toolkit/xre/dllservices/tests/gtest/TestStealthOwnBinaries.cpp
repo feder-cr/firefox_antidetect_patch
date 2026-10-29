@@ -11,9 +11,12 @@
 #include "gtest/gtest.h"
 
 #include "mozilla/UntrustedModulesData.h"
+#include "mozilla/ModuleVersionInfo.h"
+#include "../../StealthOwnBinaries.h"
 #include "nsString.h"
 
 using mozilla::ModuleRecord;
+using mozilla::StealthSkipsSignatureLookup;
 
 TEST(StealthOwnBinaries, BesideTheExeAndBelowIt)
 {
@@ -37,4 +40,14 @@ TEST(StealthOwnBinaries, ElsewhereKeepsTheLookup)
   EXPECT_FALSE(ModuleRecord::IsInDirectoryOf(u"C:\\Program Files\\App2\\evil.dll"_ns, exe));
   // No directory in the exe path: never treated as ours.
   EXPECT_FALSE(ModuleRecord::IsInDirectoryOf(u"xul.dll"_ns, u"firefox.exe"_ns));
+}
+
+TEST(StealthOwnBinaries, StealthSkipsSignatureLookup)
+{
+  // Outside the directory of the running exe: the lookup is kept.
+  EXPECT_FALSE(StealthSkipsSignatureLookup(u"C:\\Windows\\System32\\ntdll.dll"_ns,
+                                           mozilla::ModuleVersionInfo(), true));
+  // No version resource: the lookup is kept.
+  EXPECT_FALSE(StealthSkipsSignatureLookup(u"C:\\Windows\\System32\\ntdll.dll"_ns,
+                                           mozilla::ModuleVersionInfo(), false));
 }

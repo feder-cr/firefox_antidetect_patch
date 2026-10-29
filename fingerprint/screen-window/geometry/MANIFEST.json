@@ -4,7 +4,10 @@
   "dom/base/nsGlobalWindowOuter.h",
   "dom/events/Event.cpp"
  ],
- "added": {},
+ "added": {
+  "dom/base/StealthWindowGeometry.h": "100644",
+  "dom/events/StealthScreenCoords.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/base/nsGlobalWindowOuter.cpp",

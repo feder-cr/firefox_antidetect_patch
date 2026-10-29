@@ -1,6 +1,5 @@
 {
  "modified": [
-  "modules/libpref/moz.build",
   "toolkit/toolkit.mozbuild"
  ],
  "added": {
@@ -25,6 +24,8 @@
   "juggler/content/hidden-scrollbars.css": "100644",
   "juggler/content/main.js": "100644",
   "juggler/moz.build": "100644",
+  "juggler/pipe/StealthJugglerGate.cpp": "100644",
+  "juggler/pipe/StealthJugglerGate.h": "100644",
   "juggler/pipe/components.conf": "100644",
   "juggler/pipe/moz.build": "100644",
   "juggler/pipe/nsIRemoteDebuggingPipe.idl": "100644",
@@ -55,26 +56,6 @@
   "juggler/tests/worker_debugger_manager_is_a_service.test.mjs": "100644"
  },
  "inventory": [
-  {
-   "file": "modules/libpref/moz.build",
-   "category": "build",
-   "feature": "juggler-prefs",
-   "prefs": [],
-   "added": 1,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "pref_groups list",
-   "evidence": [
-    "+    \"juggler\","
-   ],
-   "notes": "Registers the 'juggler' pref group, so the juggler.* entries in StaticPrefList.yaml are built into the generated StaticPrefs headers. Pure registration.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff; no correction needed."
-   }
-  },
   {
    "file": "toolkit/toolkit.mozbuild",
    "category": "build",

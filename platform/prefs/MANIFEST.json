@@ -2,391 +2,18 @@
  "modified": [
   "browser/app/profile/firefox.js",
   "modules/libpref/Preferences.cpp",
-  "modules/libpref/init/StaticPrefList.yaml",
-  "modules/libpref/init/all.js"
+  "modules/libpref/greprefs.js",
+  "modules/libpref/init/all.js",
+  "modules/libpref/moz.build"
  ],
- "added": {},
+ "added": {
+  "modules/libpref/init/StealthPrefList.yaml": "100644",
+  "modules/libpref/init/StealthPrefs.js": "100644",
+  "modules/libpref/test/test_stealth_prefs_declared_once.py": "100644"
+ },
  "inventory": [
   {
    "file": "browser/app/profile/firefox.js",
-   "category": "prefs",
-   "feature": "firefox-js-stealth-defaults",
-   "prefs": [
-    "termsofuse.acceptedVersion",
-    "termsofuse.acceptedDate",
-    "browser.translations.select.enable",
-    "invisible_firefox.usage_ping.enabled",
-    "invisible_firefox.usage_ping.url"
-   ],
-   "added": 87,
-   "removed": 9,
-   "hunks": 3,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "(top-level pref() defaults)",
-   "evidence": [
-    "-pref(\"termsofuse.acceptedVersion\", 0);",
-    "+pref(\"termsofuse.acceptedDate\", \"1785573000000\");",
-    "-pref(\"browser.translations.enable\", true);"
-   ],
-   "notes": "Pure pref defaults, but three sub-changes with different meanings (see pref_groups). (a) stillborn: termsofuse.acceptedVersion 0 -> 999 and acceptedDate set to a fixed timestamp string; suppresses the first-run Terms of Use modal that intercepts mouse input on official Windows/macOS builds (per the comment). (b) stillborn: the browser.translations.enable override line is deleted (it is not in the added lines; effective value falls back to false at modules/libpref/init/all.js:3670, CONFIRMED) and browser.translations.select.enable is set false (all.js:3674 already false). (c) other: invisible_firefox.usage_ping.enabled/url at the end are the launch counter; the url default (firefox_antidetect_patch) differs from the BrowserGlue fallback and the README (CONFIRMED, see README note); because the pref always exists the BrowserGlue fallback literal is never used. COMMENT CLAIMS IN THE DIFF: (1) 'upstream declares acceptedVersion at 999 fifteen lines above, so only the date is touched' is REFUTED: upstream had pref(\"termsofuse.acceptedVersion\", 0) (tag FIREFOX_157_0_1_RELEASE firefox.js:1944) and this patch changes it to 999 (current firefox.js:1944), so two TOU prefs are changed, not one. (2) The comment cites TelemetryReportingPolicy.sys.mjs:536 for hasUserAcceptedCurrentTOU; the getter is at toolkit/components/telemetry/app/TelemetryReportingPolicy.sys.mjs:562 (line cite stale, logic as described: non-zero date and acceptedVersion >= minimumVersion, CONFIRMED). (3) 'Linux has preonboarding off via #ifdef XP_LINUX' not checked (unverified).",
-   "pref_groups": [
-    {
-     "feature": "tou-preonboarding-suppressed",
-     "category": "stillborn",
-     "prefs": [
-      "termsofuse.acceptedVersion",
-      "termsofuse.acceptedDate"
-     ]
-    },
-    {
-     "feature": "translations-disabled",
-     "category": "stillborn",
-     "prefs": [
-      "browser.translations.enable",
-      "browser.translations.select.enable"
-     ]
-    },
-    {
-     "feature": "anonymous-launch-counter",
-     "category": "other",
-     "prefs": [
-      "invisible_firefox.usage_ping.enabled",
-      "invisible_firefox.usage_ping.url"
-     ]
-    }
-   ],
-   "verifier": {
-    "changed": [
-     "prefs",
-     "pref_groups",
-     "notes"
-    ],
-    "why": "Removed browser.translations.enable from prefs (only in comments of added lines, the pref line was deleted); corrected comment-claim verdicts; added pref_groups."
-   }
-  },
-  {
-   "file": "modules/libpref/Preferences.cpp",
-   "category": "other",
-   "feature": "stealth-prefs-content-sync",
-   "prefs": [
-    "zoom.stealth."
-   ],
-   "added": 1,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 1,
-   "hookable": "already-hook",
-   "anchor": "sDynamicPrefOverrideList (static array)",
-   "evidence": [
-    "+    PREF_LIST_ENTRY(\"zoom.stealth.\"),  // Stealth: allow string prefs in content processes"
-   ],
-   "notes": "Adds a zoom.stealth. entry to the override list so string prefs of that family reach content processes. Any future zoom.stealth.* string pref becomes visible in content processes automatically. Not a pref default, hence not category prefs.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff; no correction needed."
-   }
-  },
-  {
-   "file": "modules/libpref/init/StaticPrefList.yaml",
-   "category": "prefs",
-   "feature": "stealth-pref-declarations",
-   "prefs": [
-    "juggler.locale.override",
-    "juggler.timezone.override",
-    "zoom.stealth.fpp.hw_seed",
-    "zoom.stealth.screen.width",
-    "zoom.stealth.screen.height",
-    "zoom.stealth.audio.sample_rate",
-    "zoom.stealth.media.enumeration_ms",
-    "zoom.stealth.audio.fp_noise",
-    "zoom.stealth.audio.output_latency_ms",
-    "zoom.stealth.audio.max_channel_count",
-    "zoom.stealth.hw_concurrency",
-    "zoom.stealth.dns.no_local_resolution",
-    "zoom.stealth.webrtc.no_direct_udp",
-    "zoom.stealth.max_touch_points",
-    "zoom.stealth.widget.occlusion_tracking.enabled",
-    "zoom.stealth.focus.ignore_os_deactivation",
-    "zoom.stealth.screen.taskbar_px",
-    "zoom.stealth.screen.color_depth",
-    "zoom.stealth.pointer.primary",
-    "zoom.stealth.pointer.all",
-    "zoom.stealth.screen.frame_border",
-    "zoom.stealth.screen.maximized_ui",
-    "zoom.stealth.screen.popup_ui",
-    "zoom.stealth.screen.popup_position",
-    "zoom.stealth.screen.avail_device_width",
-    "zoom.stealth.screen.avail_device_height",
-    "zoom.stealth.webgl.renderer",
-    "zoom.stealth.webgl.vendor",
-    "zoom.stealth.webgl.shader_output_language",
-    "zoom.stealth.text.freetype_hintstyle",
-    "zoom.stealth.text.freetype_antialias",
-    "zoom.stealth.webgl.extensions",
-    "zoom.stealth.webgl2.extensions",
-    "zoom.stealth.webgl.int_params",
-    "zoom.stealth.webgl.float_params",
-    "zoom.stealth.webgl.int2_params",
-    "zoom.stealth.webgl.shader_precisions",
-    "zoom.stealth.font.fontlist",
-    "zoom.stealth.font.system_ui",
-    "zoom.stealth.canvas.substitute_pixels",
-    "zoom.stealth.canvas.edge_tolerance",
-    "zoom.stealth.voices.list",
-    "zoom.stealth.branding.archive",
-    "zoom.stealth.text.coverage_ladder",
-    "zoom.stealth.text.system_quality",
-    "zoom.stealth.fonts.generics",
-    "zoom.stealth.fonts.manifest",
-    "zoom.stealth.media.decode_support",
-    "zoom.stealth.media.decoding_info",
-    "zoom.stealth.storage.quota_mb",
-    "zoom.stealth.webrtc.host_ip"
-   ],
-   "added": 563,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "(YAML pref list: new 'juggler.' group before 'layers.'; zoom.stealth.* block before 'End of prefs')",
-   "evidence": [
-    "+- name: juggler.locale.override",
-    "+- name: zoom.stealth.fpp.hw_seed",
-    "+- name: zoom.stealth.webgl.renderer"
-   ],
-   "notes": "Pure definitions (51 entries, list matches the added '- name:' lines exactly), but they declare the whole spoof surface: screen and window geometry, pointer, WebGL, fonts, canvas, text rendering, media capabilities, voices, branding, storage quota, WebRTC host IP, and the juggler session locale and timezone (mirror always, so any thread reads them). Many are read by C++ elsewhere. Misplaced-comment claims, all CONFIRMED in modules/libpref/init/StaticPrefList.yaml: (1) the 'The declared navigator.maxTouchPoints...' comment (line 21534) sits above zoom.stealth.webrtc.no_direct_udp (21539) while the entry it describes, zoom.stealth.max_touch_points (21544), has no comment; (2) the 'The declared screen colour depth' comment (21572) sits above zoom.stealth.screen.taskbar_px (21587), whose own comment follows it, and color_depth (21592) has none; (3) the 'Where the window sits' comment (21597) describes window_x/window_y/chrome_w/chrome_h, which the file says were replaced by frame_border and related prefs, and it sits above the pointer comment and zoom.stealth.pointer.primary (21628); (4) NEW: 'The whole font manifest...' (21890) sits directly above the 'CSS generic families' comment (21896) and zoom.stealth.fonts.generics (21906), so zoom.stealth.fonts.manifest (21911) has no comment of its own. Removed prefs (zoom.stealth.timezone, webrtc.public_ip, webrtc.disable_ipv6, and the older canvas noise tuning prefs) are only mentioned in comments, not as entries. zoom.stealth.webrtc.no_direct_udp is read by dom/media/webrtc/transport/nr_socket_prsock.cpp (feature proxy-udp-egress).",
-   "pref_groups": [
-    {
-     "feature": "session-language-declared",
-     "category": "spoof",
-     "prefs": [
-      "juggler.locale.override"
-     ]
-    },
-    {
-     "feature": "timezone-declared",
-     "category": "spoof",
-     "prefs": [
-      "juggler.timezone.override"
-     ]
-    },
-    {
-     "feature": "session-seed",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.fpp.hw_seed"
-     ]
-    },
-    {
-     "feature": "screen-metrics",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.screen.width",
-      "zoom.stealth.screen.height",
-      "zoom.stealth.screen.color_depth",
-      "zoom.stealth.screen.taskbar_px",
-      "zoom.stealth.screen.avail_device_width",
-      "zoom.stealth.screen.avail_device_height"
-     ]
-    },
-    {
-     "feature": "window-geometry",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.screen.frame_border",
-      "zoom.stealth.screen.maximized_ui",
-      "zoom.stealth.screen.popup_ui",
-      "zoom.stealth.screen.popup_position"
-     ]
-    },
-    {
-     "feature": "css-media-features",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.pointer.primary",
-      "zoom.stealth.pointer.all"
-     ]
-    },
-    {
-     "feature": "navigator-max-touch-points",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.max_touch_points"
-     ]
-    },
-    {
-     "feature": "navigator-hardware-concurrency",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.hw_concurrency"
-     ]
-    },
-    {
-     "feature": "audio-context-values",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.audio.sample_rate",
-      "zoom.stealth.audio.output_latency_ms",
-      "zoom.stealth.audio.max_channel_count"
-     ]
-    },
-    {
-     "feature": "audio-fingerprint-noise",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.audio.fp_noise"
-     ]
-    },
-    {
-     "feature": "media-enumeration",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.media.enumeration_ms"
-     ]
-    },
-    {
-     "feature": "media-decode-declaration",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.media.decode_support",
-      "zoom.stealth.media.decoding_info"
-     ]
-    },
-    {
-     "feature": "dns-no-local-resolution",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.dns.no_local_resolution"
-     ]
-    },
-    {
-     "feature": "proxy-udp-egress",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.webrtc.no_direct_udp"
-     ]
-    },
-    {
-     "feature": "webrtc-ice-candidates",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.webrtc.host_ip"
-     ]
-    },
-    {
-     "feature": "occlusion-tracking",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.widget.occlusion_tracking.enabled"
-     ]
-    },
-    {
-     "feature": "focus-ignore-os-deactivation",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.focus.ignore_os_deactivation"
-     ]
-    },
-    {
-     "feature": "webgl-parameters",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.webgl.renderer",
-      "zoom.stealth.webgl.vendor",
-      "zoom.stealth.webgl.extensions",
-      "zoom.stealth.webgl2.extensions",
-      "zoom.stealth.webgl.int_params",
-      "zoom.stealth.webgl.float_params",
-      "zoom.stealth.webgl.int2_params",
-      "zoom.stealth.webgl.shader_precisions"
-     ]
-    },
-    {
-     "feature": "webgl-shader-output-language",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.webgl.shader_output_language"
-     ]
-    },
-    {
-     "feature": "freetype-rendering-declared",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.text.freetype_hintstyle",
-      "zoom.stealth.text.freetype_antialias"
-     ]
-    },
-    {
-     "feature": "cleartype-declared",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.text.system_quality"
-     ]
-    },
-    {
-     "feature": "glyph-coverage-quantise",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.text.coverage_ladder"
-     ]
-    },
-    {
-     "feature": "font-list-bundle-only",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.font.fontlist",
-      "zoom.stealth.fonts.manifest"
-     ]
-    },
-    {
-     "feature": "font-generics-declared",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.fonts.generics",
-      "zoom.stealth.font.system_ui"
-     ]
-    },
-    {
-     "feature": "canvas-noise-projection",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.canvas.substitute_pixels",
-      "zoom.stealth.canvas.edge_tolerance"
-     ]
-    },
-    {
-     "feature": "speech-voices-declared",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.voices.list"
-     ]
-    },
-    {
-     "feature": "stealth-branding-redirect",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.branding.archive"
-     ]
-    },
-    {
-     "feature": "storage-quota-estimate",
-     "category": "spoof",
-     "prefs": [
-      "zoom.stealth.storage.quota_mb"
-     ]
-    }
-   ],
-   "verifier": {
-    "changed": [
-     "pref_groups",
-     "notes"
-    ],
-    "why": "Added pref_groups; added a fourth misplaced comment; added source line numbers for the misplaced-comment claims."
-   }
-  },
-  {
-   "file": "modules/libpref/init/all.js",
    "category": "prefs",
    "feature": "stealth-pref-defaults",
    "prefs": [
@@ -420,18 +47,14 @@
     "font.size.monospace.x-western",
     "datareporting.policy.dataSubmissionPolicyBypassNotification"
    ],
-   "added": 70,
-   "removed": 7,
-   "hunks": 7,
+   "added": 4,
+   "removed": 4,
+   "hunks": 4,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "(top-level pref defaults: ui.font block near ui.scrollToClick; proxy block; font.size.monospace block; datareporting block inside an #if)",
-   "evidence": [
-    "+pref(\"ui.font.caption\", \"Segoe UI\");",
-    "-  pref(\"font.size.monospace.ar\", 12);",
-    "-  pref(\"datareporting.policy.dataSubmissionPolicyBypassNotification\", false);"
-   ],
-   "notes": "Pure defaults with mixed sub-categories (see pref_groups). spoof: ui.font.* system font keywords pinned to Segoe UI 12 on every host (unconditional, placed after the #endif at all.js:446), so Linux no longer reveals 'Sans 13.33px' (values quoted on purpose: float read); font.size.monospace.ar/el/he/x-cyrillic/x-unicode/x-western changed 12 -> 13; they sit inside the Unix-only block '#if !defined(ANDROID) && !defined(XP_MACOSX) && defined(XP_UNIX)' (all.js:2728-2913), CONFIRMED, so Windows/macOS were already unaffected. stillborn: datareporting.policy.dataSubmissionPolicyBypassNotification false -> true, inside '#ifdef MOZ_DATA_REPORTING' (all.js:3809-3818); the pref is read by toolkit/components/telemetry/app/TelemetryUtils.sys.mjs:84 and suppresses Firefox's data-submission notification (the earlier note that the #if condition was unknown is wrong, it is visible in the file). other: network.proxy.socks_username and socks_password added as empty defaults; they ARE read, by netwerk/base/nsProtocolProxyService.cpp and netwerk/base/nsUDPSocket.cpp (both in the network groups), so credentials live in prefs (CONFIRMED from those diffs). The juggler block is a comment only (no pref added). One comment block has odd 3-space indentation (cosmetic, confirmed in the diff).",
+   "anchor": "values changed in place on 2026-10-29",
+   "evidence": [],
+   "notes": "Terms-of-use values changed on their lines; the two translations enable lines become a marker.",
    "pref_groups": [
     {
      "feature": "system-fonts-pinned-windows",
@@ -488,11 +111,256 @@
     }
    ],
    "verifier": {
-    "changed": [
-     "pref_groups",
-     "notes"
-    ],
-    "why": "Corrected the #if remark (it is visible: MOZ_DATA_REPORTING), added the readers of the socks prefs and the pref_groups."
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
+   "file": "modules/libpref/Preferences.cpp",
+   "category": "other",
+   "feature": "stealth-prefs-content-sync",
+   "prefs": [
+    "zoom.stealth."
+   ],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "sDynamicPrefOverrideList (static array)",
+   "evidence": [
+    "+    PREF_LIST_ENTRY(\"zoom.stealth.\"),  // Stealth: allow string prefs in content processes"
+   ],
+   "notes": "Adds a zoom.stealth. entry to the override list so string prefs of that family reach content processes. Any future zoom.stealth.* string pref becomes visible in content processes automatically. Not a pref default, hence not category prefs.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "modules/libpref/greprefs.js",
+   "category": "prefs",
+   "feature": "stealth-pref-defaults",
+   "prefs": [
+    "ui.font.caption",
+    "ui.font.caption.size",
+    "ui.font.icon",
+    "ui.font.icon.size",
+    "ui.font.menu",
+    "ui.font.menu.size",
+    "ui.font.message-box",
+    "ui.font.message-box.size",
+    "ui.font.small-caption",
+    "ui.font.small-caption.size",
+    "ui.font.status-bar",
+    "ui.font.status-bar.size",
+    "ui.font.-moz-pull-down-menu",
+    "ui.font.-moz-pull-down-menu.size",
+    "ui.font.-moz-button",
+    "ui.font.-moz-button.size",
+    "ui.font.-moz-list",
+    "ui.font.-moz-list.size",
+    "ui.font.-moz-field",
+    "ui.font.-moz-field.size",
+    "network.proxy.socks_username",
+    "network.proxy.socks_password",
+    "font.size.monospace.ar",
+    "font.size.monospace.el",
+    "font.size.monospace.he",
+    "font.size.monospace.x-cyrillic",
+    "font.size.monospace.x-unicode",
+    "font.size.monospace.x-western",
+    "datareporting.policy.dataSubmissionPolicyBypassNotification"
+   ],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook moved off the end of the pref files on 2026-10-29",
+   "evidence": [],
+   "notes": "Includes our StealthPrefs.js right after all.js, so our defaults win.",
+   "pref_groups": [
+    {
+     "feature": "system-fonts-pinned-windows",
+     "category": "spoof",
+     "prefs": [
+      "ui.font.caption",
+      "ui.font.caption.size",
+      "ui.font.icon",
+      "ui.font.icon.size",
+      "ui.font.menu",
+      "ui.font.menu.size",
+      "ui.font.message-box",
+      "ui.font.message-box.size",
+      "ui.font.small-caption",
+      "ui.font.small-caption.size",
+      "ui.font.status-bar",
+      "ui.font.status-bar.size",
+      "ui.font.-moz-pull-down-menu",
+      "ui.font.-moz-pull-down-menu.size",
+      "ui.font.-moz-button",
+      "ui.font.-moz-button.size",
+      "ui.font.-moz-list",
+      "ui.font.-moz-list.size",
+      "ui.font.-moz-field",
+      "ui.font.-moz-field.size"
+     ]
+    },
+    {
+     "feature": "monospace-size-windows",
+     "category": "spoof",
+     "prefs": [
+      "font.size.monospace.ar",
+      "font.size.monospace.el",
+      "font.size.monospace.he",
+      "font.size.monospace.x-cyrillic",
+      "font.size.monospace.x-unicode",
+      "font.size.monospace.x-western"
+     ]
+    },
+    {
+     "feature": "socks-credentials",
+     "category": "other",
+     "prefs": [
+      "network.proxy.socks_username",
+      "network.proxy.socks_password"
+     ]
+    },
+    {
+     "feature": "data-submission-notification-bypassed",
+     "category": "stillborn",
+     "prefs": [
+      "datareporting.policy.dataSubmissionPolicyBypassNotification"
+     ]
+    }
+   ],
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
+   "file": "modules/libpref/init/all.js",
+   "category": "prefs",
+   "feature": "stealth-pref-defaults",
+   "prefs": [
+    "ui.font.caption",
+    "ui.font.caption.size",
+    "ui.font.icon",
+    "ui.font.icon.size",
+    "ui.font.menu",
+    "ui.font.menu.size",
+    "ui.font.message-box",
+    "ui.font.message-box.size",
+    "ui.font.small-caption",
+    "ui.font.small-caption.size",
+    "ui.font.status-bar",
+    "ui.font.status-bar.size",
+    "ui.font.-moz-pull-down-menu",
+    "ui.font.-moz-pull-down-menu.size",
+    "ui.font.-moz-button",
+    "ui.font.-moz-button.size",
+    "ui.font.-moz-list",
+    "ui.font.-moz-list.size",
+    "ui.font.-moz-field",
+    "ui.font.-moz-field.size",
+    "network.proxy.socks_username",
+    "network.proxy.socks_password",
+    "font.size.monospace.ar",
+    "font.size.monospace.el",
+    "font.size.monospace.he",
+    "font.size.monospace.x-cyrillic",
+    "font.size.monospace.x-unicode",
+    "font.size.monospace.x-western",
+    "datareporting.policy.dataSubmissionPolicyBypassNotification"
+   ],
+   "added": 7,
+   "removed": 7,
+   "hunks": 7,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "values changed in place on 2026-10-29",
+   "evidence": [],
+   "notes": "Six monospace sizes and the data-submission notification changed on their own lines, marked.",
+   "pref_groups": [
+    {
+     "feature": "system-fonts-pinned-windows",
+     "category": "spoof",
+     "prefs": [
+      "ui.font.caption",
+      "ui.font.caption.size",
+      "ui.font.icon",
+      "ui.font.icon.size",
+      "ui.font.menu",
+      "ui.font.menu.size",
+      "ui.font.message-box",
+      "ui.font.message-box.size",
+      "ui.font.small-caption",
+      "ui.font.small-caption.size",
+      "ui.font.status-bar",
+      "ui.font.status-bar.size",
+      "ui.font.-moz-pull-down-menu",
+      "ui.font.-moz-pull-down-menu.size",
+      "ui.font.-moz-button",
+      "ui.font.-moz-button.size",
+      "ui.font.-moz-list",
+      "ui.font.-moz-list.size",
+      "ui.font.-moz-field",
+      "ui.font.-moz-field.size"
+     ]
+    },
+    {
+     "feature": "monospace-size-windows",
+     "category": "spoof",
+     "prefs": [
+      "font.size.monospace.ar",
+      "font.size.monospace.el",
+      "font.size.monospace.he",
+      "font.size.monospace.x-cyrillic",
+      "font.size.monospace.x-unicode",
+      "font.size.monospace.x-western"
+     ]
+    },
+    {
+     "feature": "socks-credentials",
+     "category": "other",
+     "prefs": [
+      "network.proxy.socks_username",
+      "network.proxy.socks_password"
+     ]
+    },
+    {
+     "feature": "data-submission-notification-bypassed",
+     "category": "stillborn",
+     "prefs": [
+      "datareporting.policy.dataSubmissionPolicyBypassNotification"
+     ]
+    }
+   ],
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
+   "file": "modules/libpref/moz.build",
+   "category": "build",
+   "feature": "stealth-pref-declarations",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "pref_groups list",
+   "evidence": [
+    "+    \"juggler\","
+   ],
+   "notes": "Registers the juggler pref group and adds our StealthPrefList.yaml as a second input of the static pref generator.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
    }
   }
  ]

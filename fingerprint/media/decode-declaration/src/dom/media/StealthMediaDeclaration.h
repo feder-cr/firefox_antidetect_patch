@@ -6,6 +6,8 @@
 #ifndef DOM_MEDIA_STEALTHMEDIADECLARATION_H_
 #define DOM_MEDIA_STEALTHMEDIADECLARATION_H_
 
+#include "MediaCodecsSupport.h"
+#include "mozilla/Maybe.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
@@ -53,9 +55,25 @@ namespace mozilla {
  * host-independent logic. That is the difference between declaring a result and
  * declaring the alphabet the results are made of.
  *
- * PDMFactory::Supports is a QUERY path only: MP4Decoder::IsSupportedType,
- * MatroskaDecoder, WebMDecoder, MediaCapabilities and MFMediaEngineDecoderModule
- * call it, decoder creation does not. Verified by reading the callers.
+ * PDMFactory::Supports is a QUERY path only; decoder creation does not go
+ * through it. CreateDecoder and GetDecoderModule ask each platform module's own
+ * Supports, so creating a decoder is untouched. Verified by reading the callers
+ * against the 157.0.1 tree:
+ *
+ *   - Through PDMFactorySupport::IsSupported -> PDMFactorySupport::Supports ->
+ *     PDMFactory::Supports: MP4Decoder::IsSupportedType, MatroskaDecoder,
+ *     WebMDecoder, and MediaCapabilities when the codec-support cache pref is
+ *     off (the synchronous branch).
+ *   - Through the instance PDMFactory::SupportsMimeType, which builds a track
+ *     info and calls Supports: KeySystemConfig, MediaKeySystemAccess, GMPParent.
+ *   - NOT through MFMediaEngineDecoderModule::SupportsConfig: it asks a
+ *     RemoteDecoderModule, not a PDMFactory.
+ *   - NOT through PDMFactory::SupportsAsync, which asks each platform module
+ *     directly. So the cache-backed MediaCapabilities path (cache pref on)
+ *     does not see this declaration; the synchronous path does.
+ *
+ * The declaration is consulted BEFORE the EME module, so on a build where EME is
+ * present the declared answer wins over the EME answer.
  *
  * THE COST, stated because it is a trade and not a win: a declared "yes" for a
  * codec this build cannot decode means a site picks H.264 and the video does not
@@ -79,6 +97,25 @@ bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
                                   bool& aSoftware, bool& aHardware);
 
 /**
+ * The declaration as a DecodeSupportSet, ready for PDMFactory::Supports to
+ * return: Nothing() when StealthDeclaredDecodeSupport has not declared this
+ * type (the caller then falls through to the real platform answer), otherwise
+ * Some(set) with SoftwareDecode and/or HardwareDecode added as declared. Some
+ * with an empty set is the declaration "this build cannot decode it" and must
+ * be returned as it is, not treated as a fall-through.
+ *
+ * Called first in PDMFactory::Supports: what this build reports it can decode is
+ * DECLARED, not derived from what the machine happens to have installed. That
+ * is the layer where the host-dependence lives and the key space is finite -
+ * see the measurement above for why it sits here rather than in DecoderTraits,
+ * where it was a list of type strings that could never be complete. Everything
+ * above (container rules, the codec-list AND, the H.264 profile and level
+ * windows) is Gecko's own logic and already identical on every platform.
+ */
+Maybe<media::DecodeSupportSet> StealthDeclaredDecodeSupportSet(
+    const nsACString& aTrackMimeType);
+
+/**
  * Declared mediaCapabilities.decodingInfo answer, keyed by container mime type
  * plus the codec token's family prefix (the part before the first '.', so
  * "avc1", "hev1", "av01", "vp09", "vp8").
@@ -99,8 +136,8 @@ bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
  * in exactly one place: avc1.424028 and avc1.6E4028 share the family "avc1" and
  * retail answers for the first and not the second. Splitting the key finer would
  * mean declaring the H.264 profile space, which the paragraph above establishes
- * is Gecko's compiled constant and not ours. So MediaCapabilities asks
- * CanHandleContainerType first and only consults this table for a type Gecko
+ * is Gecko's compiled constant and not ours. So StealthDeclaredDecodingInfoFor
+ * asks CanHandleContainerType first and only consults this table for a type Gecko
  * already considers playable - a precondition on host-independent logic, not a
  * fallback to host-dependent logic.
  *
@@ -114,6 +151,54 @@ bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
 bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
                                  const nsACString& aCodec, bool& aSupported,
                                  bool& aSmooth, bool& aPowerEfficient);
+
+namespace dom {
+
+struct MediaCapabilitiesDecodingInfo;
+struct MediaDecodingConfiguration;
+
+/**
+ * The declared mediaCapabilities.decodingInfo answer for a whole video
+ * configuration, or Nothing() when it is not declared (the caller then keeps
+ * the engine's own answer). Called from
+ * MediaCapabilities::CreateNonWebRTCDecodingInfo on both resolve branches.
+ *
+ * Every codec named in the video configuration has to be declared, and the
+ * three answers are ANDed across them - the same shape the engine uses in
+ * MediaCapabilities::CreateNonWebRTCDecodingInfo, and the same shape canPlayType
+ * uses for a codec list. One undeclared codec means the whole configuration is
+ * undeclared and falls through to the real answer: an override, never a
+ * replacement.
+ *
+ * Audio is deliberately not consulted. Gecko answers true/true/true for every
+ * audio track it can decode (the kAudioTrack check in
+ * MediaCapabilities::CreateNonWebRTCDecodingInfo, which is upstream code), and
+ * audio decoding is bundled, so it carries no host dependence to declare away.
+ *
+ * THE HOOK APPLIES ON BOTH BRANCHES, the reject and the resolve one.
+ * decodingInfo asks two questions - "is this type supported" and "can the
+ * decoder actually handle this stream" - and the second one queries a real
+ * decoder, so it is host-dependent twice over. It REJECTS on a build with no
+ * H.264, and its powerEfficient comes from whether a hardware decoder answered.
+ *
+ * The previous version of this hook ran ONLY on the reject branch and answered
+ * true/true/true, and it was wrong in both directions. It never reached Windows
+ * at all, where the engine resolves and computes the three fields itself. And
+ * on Linux it did nothing for av01 and vp09, which have real decoders there, so
+ * the promise resolved, powerEfficient came back false, and retail Windows says
+ * true. Measured 2026-08-08 against retail run HEADED - the mode a user's
+ * machine is in, and the mode that answers differently: 4 of 8 rows still
+ * differed with that hook in place. A declaration that only applies when the
+ * engine fails is not a declaration, it is a fallback.
+ *
+ * Declared here rather than at PDMFactory::Supports because powerEfficient is
+ * not a property of the track mime type: vp09 in mp4 reports true and a bare
+ * vp9 in webm reports false, and both are video/vp9.
+ */
+Maybe<MediaCapabilitiesDecodingInfo> StealthDeclaredDecodingInfoFor(
+    const MediaDecodingConfiguration& aConfiguration);
+
+}  // namespace dom
 
 }  // namespace mozilla
 

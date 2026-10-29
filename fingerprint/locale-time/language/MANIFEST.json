@@ -1,36 +1,11 @@
 {
  "modified": [
-  "dom/base/test/browser_language_override.js",
   "intl/locale/LocaleService.cpp",
   "intl/locale/moz.build",
   "intl/locale/nsLanguageAtomService.cpp"
  ],
  "added": {},
  "inventory": [
-  {
-   "file": "dom/base/test/browser_language_override.js",
-   "category": "other",
-   "feature": "language-declared",
-   "prefs": [],
-   "added": 81,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 62,
-   "hookable": "movable",
-   "anchor": "add_task test_language_override_reaches_workers (new); getWorkerLanguages (new helper)",
-   "evidence": [
-    "+add_task(async function test_language_override_reaches_workers() {",
-    "+async function getWorkerLanguages(browser, kind) {"
-   ],
-   "notes": "New browser test that the language override reaches dedicated, nested and shared workers (Intl locale, navigator.language, navigator.languages). It is test code inside a Mozilla test file. It could live in a test file of ours registered in the test manifest, which would need a manifest entry. Not run here. Category is other because it is a test, not a fingerprint change; it exercises feature language-declared.",
-   "verifier": {
-    "changed": [
-     "category",
-     "notes"
-    ],
-    "why": "A browser test changes nothing a page can observe, so it is not spoof."
-   }
-  },
   {
    "file": "intl/locale/LocaleService.cpp",
    "category": "spoof",

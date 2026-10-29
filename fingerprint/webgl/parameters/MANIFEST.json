@@ -2,7 +2,10 @@
  "modified": [
   "dom/canvas/ClientWebGLContext.cpp"
  ],
- "added": {},
+ "added": {
+  "dom/canvas/StealthWebGLParams.cpp": "100644",
+  "dom/canvas/StealthWebGLParams.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/canvas/ClientWebGLContext.cpp",

@@ -1,5 +1,5 @@
 diff --git a/widget/gtk/nsWindow.cpp b/widget/gtk/nsWindow.cpp
-index 71d1dd168c5f70ca404334e89d4eec44e44da415..e050606d4fd65116732e8a25c1386201d9799797 100644
+index 71d1dd168c5f70ca404334e89d4eec44e44da415..314467d3888002023454f1d241f8604a95878570 100644
 --- a/widget/gtk/nsWindow.cpp
 +++ b/widget/gtk/nsWindow.cpp
 @@ -49,6 +49,7 @@
@@ -10,16 +10,12 @@ index 71d1dd168c5f70ca404334e89d4eec44e44da415..e050606d4fd65116732e8a25c1386201
  #include "mozilla/SwipeTracker.h"
  #include "mozilla/TextEventDispatcher.h"
  #include "mozilla/TextEvents.h"
-@@ -3547,7 +3548,13 @@ void nsWindow::DispatchPanGesture(PanGestureInput& aPanInput) {
+@@ -3547,7 +3548,9 @@ void nsWindow::DispatchPanGesture(PanGestureInput& aPanInput) {
  
  void nsWindow::OnVisibilityNotifyEvent(GdkVisibilityState aState) {
    LOG("nsWindow::OnVisibilityNotifyEvent [%p] state 0x%x\n", this, aState);
 -  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED
-+  // Stealthfox (B149): with zoom.stealth.widget.occlusion_tracking.enabled
-+  // false, as invisible_core declares it, a window that is fully covered stays
-+  // visible, as it does on Windows where the same declaration turns occlusion
-+  // tracking off. Measured on Xvfb: a second session's window made the first
-+  // one's page `hidden` 4 times in 4.
++  // STEALTH-HOOK(fingerprint/screen-window/occlusion): B149, see FEATURE.md
 +  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&
 +                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()
                     ? OcclusionState::OCCLUDED

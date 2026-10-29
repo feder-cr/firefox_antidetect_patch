@@ -4,7 +4,9 @@
   "third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.cc",
   "third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.h"
  ],
- "added": {},
+ "added": {
+  "third_party/libwebrtc/modules/desktop_capture/win/StealthWindowInputDesktop.h": "100644"
+ },
  "inventory": [
   {
    "file": "third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc",

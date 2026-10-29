@@ -6,6 +6,8 @@
 #ifndef mozilla_dom_StealthSessionDeclaration_h
 #define mozilla_dom_StealthSessionDeclaration_h
 
+#include "js/TypeDecls.h"
+#include "nsString.h"
 #include "nsStringFwd.h"
 #include "prtime.h"
 
@@ -46,6 +48,18 @@ class Document;
  * engine not having been told anything, not a fallback from a declaration.
  *
  * Main thread only: a BrowsingContext's fields are read there.
+ *
+ * BrowsingContext::DidSet(LanguageOverride) reads it too: the field, or the
+ * session's declaration when the field is empty, so a context whose override
+ * is cleared speaks the session's language, never the build's.
+ *
+ * BrowsingContext::DidSet(TimezoneOverride) reads it as well: the field, or
+ * the session's declaration when the field is empty. It replaces a "lock" that
+ * read the pref and preferred it to the field: in a content process the pref
+ * arrived empty, so the lock held only in the parent, where no page realm
+ * lives, and a context's own zone was overridden by the session's there only.
+ * Now the field wins everywhere, as it does for the language, and a cleared
+ * field falls to the session's zone in every process, never to the host's.
  */
 void GetDeclaredTimezone(BrowsingContext* aContext, nsAString& aZone);
 void GetDeclaredLanguage(BrowsingContext* aContext, nsACString& aLanguage);
@@ -58,6 +72,19 @@ void GetDeclaredTimezone(const Document* aDocument, nsAString& aZone);
 void GetDeclaredLanguage(const Document* aDocument, nsACString& aLanguage);
 
 /**
+ * STEALTHFOX (firefox-50): the declaration of this document's context, or the
+ * session's when the context carries none, for the realm that is created for
+ * the global of `aDocument`. Same values that GetDeclaredLanguage /
+ * GetDeclaredTimezone give for `aDocument->GetBrowsingContext()` - NOT the
+ * Document overloads above, which fall back to the scope window's context for
+ * a document without one; a document that gets a global of its own has a
+ * context of its own, and when it has none the session's values are what the
+ * realm has always received. `aDocument` must not be null. Main thread only.
+ */
+nsCString GetDeclaredRealmLanguage(Document* aDocument);
+nsString GetDeclaredRealmTimezone(Document* aDocument);
+
+/**
  * The time zone and the default Intl locale of a realm the engine creates for
  * web content: resistFingerprinting's spoofed values when it asks for them,
  * else the declared ones, else nothing (Firefox's own). The window, worker and
@@ -68,6 +95,35 @@ void GetDeclaredLanguage(const Document* aDocument, nsACString& aLanguage);
 void SetRealmTimeAndLanguage(JS::RealmOptions& aOptions, bool aForceUTC,
                              bool aLocaleEnUS, const nsACString& aLanguage,
                              const nsAString& aZone);
+
+/**
+ * BrowsingContext::Attach: if our `juggler.timezone.override` pref is set and
+ * this is a top-level BC with no override yet, seed it from the pref. This
+ * guarantees the pref is the single source of truth, even when no caller
+ * (Playwright, WebDriver, ...) ever invokes Browser.setTimezoneOverride. The
+ * setter triggers DidSet which propagates the value per-realm.
+ *
+ * Same single-source-of-truth pattern for the locale. The
+ * juggler.locale.override pref seeds the LanguageOverride FIELD, whose DidSet
+ * applies JS::SetRealmLocaleOverride per-realm - making Intl.DateTimeFormat /
+ * NumberFormat / toLocaleString follow the locale. languageOverride (docShell)
+ * only covers navigator.language + the Accept-Language header; without this the
+ * realm's default Intl locale stays at the build app locale (en-US), a
+ * navigator-vs-Intl mismatch flagged for non-US locales.
+ *
+ * The zone is seeded first, then the language. Main thread only.
+ */
+void SeedDeclaredTimezoneAndLanguage(BrowsingContext* aContext);
+
+/**
+ * Sets the default Intl locale of a window realm from the declared language.
+ * The override may be an Accept-Language list ("fr-FR, fr") so that
+ * navigator.languages reports the full desktop-default list; the realm's Intl
+ * default locale is a single BCP-47 tag, so it takes the list's primary tag.
+ * `aLanguage` must not be empty: the caller clears the override with nullptr
+ * itself. Main thread only.
+ */
+void SetRealmDeclaredLocale(JS::Realm* aRealm, const nsACString& aLanguage);
 
 /**
  * `aTime` exploded as the local time of a page in `aDocument`, with

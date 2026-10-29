@@ -3,9 +3,12 @@
   "netwerk/protocol/http/AlternateServices.cpp",
   "netwerk/protocol/http/DnsAndConnectSocket.cpp",
   "netwerk/protocol/http/HttpBaseChannel.cpp",
+  "netwerk/protocol/http/moz.build",
   "netwerk/socket/moz.build"
  ],
  "added": {
+  "netwerk/protocol/http/StealthH3Proxy.cpp": "100644",
+  "netwerk/protocol/http/StealthH3Proxy.h": "100644",
   "netwerk/socket/nsSOCKSUDPIOLayer.cpp": "100644",
   "netwerk/socket/nsSOCKSUDPIOLayer.h": "100644"
  },
@@ -82,6 +85,24 @@
    "verifier": {
     "changed": [],
     "why": "all fields checked against the diff; no change"
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/moz.build",
+   "category": "build",
+   "feature": "socks-udp-h3",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   },
   {

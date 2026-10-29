@@ -1,22 +1,20 @@
 diff --git a/dom/media/webaudio/AudioContext.cpp b/dom/media/webaudio/AudioContext.cpp
-index 7921349caff9477619b4e5044fb3f3a2c9b8554b..18f87de0f8157d1e3668f3ebdafc90affe1fe0c7 100644
+index 7921349caff9477619b4e5044fb3f3a2c9b8554b..85678b1a93cf3c47e12ca3ba5d98a894e270078d 100644
 --- a/dom/media/webaudio/AudioContext.cpp
 +++ b/dom/media/webaudio/AudioContext.cpp
-@@ -41,6 +41,9 @@
+@@ -41,6 +41,7 @@
  #include "mozilla/Preferences.h"
  #include "mozilla/RefPtr.h"
  #include "mozilla/StaticPrefs_media.h"
 +#include "mozilla/StaticPrefs_zoom.h"
-+
-+
  #include "mozilla/dom/AnalyserNode.h"
  #include "mozilla/dom/AnalyserNodeBinding.h"
  #include "mozilla/dom/AudioBufferSourceNodeBinding.h"
-@@ -559,6 +562,11 @@ double AudioContext::OutputLatency() {
+@@ -559,6 +560,11 @@ double AudioContext::OutputLatency() {
    if (mIsShutDown) {
      return 0.0;
    }
-+  // Stealth: outputLatency from pref set by Python at launch
++  // STEALTH-HOOK(fingerprint/audio/context-values)
 +  {
 +    int32_t latency_ms = mozilla::StaticPrefs::zoom_stealth_audio_output_latency_ms();
 +    if (latency_ms > 0) return latency_ms / 1000.0;
@@ -24,11 +22,11 @@ index 7921349caff9477619b4e5044fb3f3a2c9b8554b..18f87de0f8157d1e3668f3ebdafc90af
    // When reduceFingerprinting is enabled, return a latency figure that is
    // fixed, but plausible for the platform.
    double latency_s = 0.0;
-@@ -714,6 +722,11 @@ void AudioContext::UnregisterActiveNode(AudioNode* aNode) {
+@@ -714,6 +720,11 @@ void AudioContext::UnregisterActiveNode(AudioNode* aNode) {
  }
  
  uint32_t AudioContext::MaxChannelCount() const {
-+  // Stealth: maxChannelCount from pref set by Python at launch
++  // STEALTH-HOOK(fingerprint/audio/context-values)
 +  {
 +    int32_t ch = mozilla::StaticPrefs::zoom_stealth_audio_max_channel_count();
 +    if (ch > 0) return (uint32_t)ch;

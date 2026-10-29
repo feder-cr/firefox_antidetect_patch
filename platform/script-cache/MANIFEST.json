@@ -3,7 +3,9 @@
   "js/xpconnect/loader/ScriptPreloader.cpp",
   "js/xpconnect/loader/ScriptPreloader.h"
  ],
- "added": {},
+ "added": {
+  "js/xpconnect/loader/StealthScriptCache-inl.h": "100644"
+ },
  "inventory": [
   {
    "file": "js/xpconnect/loader/ScriptPreloader.cpp",

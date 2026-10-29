@@ -1,10 +1,31 @@
 {
  "modified": [
+  "docshell/base/moz.build",
   "docshell/base/nsDocShell.h",
   "docshell/base/nsIDocShell.idl"
  ],
- "added": {},
+ "added": {
+  "docshell/base/StealthDocShellAttrs.cpp": "100644"
+ },
  "inventory": [
+  {
+   "file": "docshell/base/moz.build",
+   "category": "build",
+   "feature": "juggler-docshell-attrs",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
   {
    "file": "docshell/base/nsDocShell.h",
    "category": "juggler",

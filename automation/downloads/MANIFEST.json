@@ -1,11 +1,32 @@
 {
  "modified": [
+  "uriloader/exthandler/moz.build",
   "uriloader/exthandler/nsExternalHelperAppService.cpp",
   "uriloader/exthandler/nsExternalHelperAppService.h",
   "uriloader/exthandler/nsIExternalHelperAppService.idl"
  ],
- "added": {},
+ "added": {
+  "uriloader/exthandler/StealthDownloadInterceptor.idl": "100644"
+ },
  "inventory": [
+  {
+   "file": "uriloader/exthandler/moz.build",
+   "category": "build",
+   "feature": "juggler-download-interceptor",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
   {
    "file": "uriloader/exthandler/nsExternalHelperAppService.cpp",
    "category": "juggler",

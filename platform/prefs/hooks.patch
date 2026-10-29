@@ -1,122 +1,33 @@
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
-index 1391383448bce8b7fa795738bf199cd127a12f5c..996ab0e697fd91bc042e3a102b870a918b879305 100644
+index 1391383448bce8b7fa795738bf199cd127a12f5c..4048992df84832c9c79e89526e9411d050728ac4 100644
 --- a/browser/app/profile/firefox.js
 +++ b/browser/app/profile/firefox.js
-@@ -1941,9 +1941,53 @@ pref("browser.newtab.preload", true);
+@@ -1941,9 +1941,9 @@ pref("browser.newtab.preload", true);
  // For further detail on the TOU prefs below, see the `preonboarding` feature in
  // FeatureManifest.yaml
  // Version of the TOU that the user last accepted
 -pref("termsofuse.acceptedVersion", 0);
-+pref("termsofuse.acceptedVersion", 999);
++pref("termsofuse.acceptedVersion", 999);  // STEALTH-HOOK(platform/prefs)
  // Stringified timestamp of when the user last accepted the TOU
 -pref("termsofuse.acceptedDate", "0");
-+// STEALTHFOX: qui upstream mette "0", cioe' "mai accettato", e la
-+// conseguenza su una build ufficiale e' un MODALE A TUTTO SCHERMO che
-+// intercetta ogni evento di mouse.
-+//
-+// ⛔ COSA SUCCEDE SENZA QUESTA RIGA, misurato il 2026-08-19 sulla stessa
-+// pagina servita da 127.0.0.1, unica differenza queste prefs:
-+//   build NON ufficiale     fuoco=input  eventi=[mousedown,click]  114 mousemove
-+//   build ufficiale         fuoco=BODY   eventi=[]                   0 mousemove
-+//   ufficiale + accettato   fuoco=input  eventi=[click]
-+// La TASTIERA continua a funzionare, ed e' cio' che rende il difetto
-+// incomprensibile finche' non si separano i due percorsi: il mouse va alla
-+// finestra chrome per coordinate e finisce sul modale, i tasti seguono il
-+// fuoco e arrivano al contenuto.
-+//
-+// ⛔ PERCHE' NON SI BYPASSA. `termsofuse.bypassNotification` sarebbe una riga
-+// sola, ma e' il percorso delle build NON UFFICIALI: spegnerebbe una macchina
-+// che nel retail e' accesa, e ci farebbe somigliare a una build locale invece
-+// che a un Firefox di una persona. Un utente vero ha bypass=false e ha
-+// ACCETTATO. Questa e' la seconda cosa, non la prima.
-+//
-+// La condizione la detta `hasUserAcceptedCurrentTOU` in
-+// toolkit/components/telemetry/app/TelemetryReportingPolicy.sys.mjs:536 e
-+// vuole DUE cose: una data non nulla E acceptedVersion >= minimumVersion.
-+// La seconda upstream la soddisfa gia' da sola - dichiara acceptedVersion
-+// a 999 quindici righe piu' su - quindi mancava SOLO la data, ed e' l'unico
-+// valore che questa patch tocca.
-+//
-+// Vale per Windows e macOS: due righe sopra, `#ifdef XP_LINUX` spegne il
-+// preonboarding, quindi su Linux il modale non esiste e il mouse non si
-+// rompe. Chi misura solo su Linux non vede niente di tutto questo.
-+// Il valore e' una STRINGA con un timestamp in millisecondi - il tipo fa
-+// parte del valore, e questo progetto ha gia' pagato una pref emessa con il
-+// tipo sbagliato.
-+//
-+// ⛔ E NON SI PUO' FARE DA invisible_core. Le sue prefs viaggiano sul
-+// protocollo e Browser.enable le applica DOPO l'avvio, mentre il modale nasce
-+// con la finestra. Misurato: le stesse due prefs passate come
-+// firefox_user_prefs NON riparano, scritte in un user.js prima del lancio
-+// riparano. Per questo il valore vive qui e non nel core, in deroga
-+// dichiarata alla regola "il core dichiara": non esiste un canale del core
-+// che arrivi in tempo.
-+//
-+// La data e' fissa e sta nel passato: nessuna pagina puo' leggerla, e il
-+// codice controlla solo che l'anno non sia troppo vecchio.
-+pref("termsofuse.acceptedDate", "1785573000000");
++pref("termsofuse.acceptedDate", "1785573000000");  // STEALTH-HOOK(platform/prefs)
  // Stringified timestamp of when the user first accepted the TOU, only set if
  // they have accepted more than one version.
  pref("termsofuse.firstAcceptedDate", "0");
-@@ -2563,13 +2607,34 @@ pref("media.videocontrols.picture-in-picture.auto-close.timeoutMs", 1000);
+@@ -2565,11 +2565,11 @@ pref("media.contextmenu.video-overlay-detection", true);
  
- pref("media.contextmenu.video-overlay-detection", true);
- 
--// Enable Firefox translations powered by the Bergamot translations
--// engine https://browser.mt/.
+ // Enable Firefox translations powered by the Bergamot translations
+ // engine https://browser.mt/.
 -pref("browser.translations.enable", true);
--
--// Enable Firefox Select translations powered by Bergamot translations
--// engine https://browser.mt/.
++// STEALTH-HOOK(platform/prefs): browser.translations.enable stays all.js's false
+ 
+ // Enable Firefox Select translations powered by Bergamot translations
+ // engine https://browser.mt/.
 -pref("browser.translations.select.enable", true);
-+// STEALTHFOX: le traduzioni restano al default di Gecko, che e' SPENTO
-+// (`modules/libpref/init/all.js` le dichiara false; era questa riga di Firefox ad
-+// accenderle). Un browser che pilota una pagina non traduce niente.
-+//
-+// Cosa costavano, misurato il 2026-08-14 su Linux con about:memory dumpato via
-+// SIGRTMIN. TranslationsParent rileva la lingua di OGNI pagina caricata, e per
-+// farlo istanzia il worker del rilevatore CLD2: `cld-worker.js` tiene **17,75 MB**
-+// di ArrayBuffer nel processo padre, ed e' 17,3 dei 19,4 MB di tutti i worker
-+// chrome messi insieme. Tre coppie di misure interlacciate sull'heap del padre -
-+// 255,0/232,3, 276,0/276,0->229,0, 307,3/291,8 - danno tre differenze tutte
-+// negative, media **-28,4 MB**, e la piu' piccola (-15,5) e' della dimensione del
-+// worker stesso.
-+//
-+// ⛔ E qui la forma della correzione e' una PREF e non un taglio nel codice, al
-+// contrario di about:newtab, per una ragione misurata e non per comodita': la
-+// bandiera funziona. Con la pref al default il worker non nasce - 0,00 MB in tre
-+// giri su tre - mentre browser.newtabpage.enabled lasciava about:home caricare
-+// l'add-on lo stesso. Dove il flag di Firefox copre davvero la feature, tagliare
-+// piu' a fondo aggiungerebbe divergenza dall'upstream per zero MB in piu'.
-+//
-+// Non osservabile da una pagina: la traduzione e' interfaccia chrome, nessuna API
-+// web la espone, e non rilevare la lingua non cambia niente di cio' che la pagina
-+// puo' leggere.
-+//
-+// Le due righe originali erano:
-+//   pref("browser.translations.enable", true);
-+//   pref("browser.translations.select.enable", true);
-+pref("browser.translations.select.enable", false);
++// STEALTH-HOOK(platform/prefs): browser.translations.select.enable stays all.js's false
  
  // Enable the Translations QuickAction in the URL bar.
  pref("browser.translations.quickAction.enabled", true);
-@@ -3789,3 +3854,16 @@ pref("distribution.mozillaonline.ignore", true);
- #ifdef XP_MACOSX
-   pref("browser.macAppMenu.setAsDefaultShown", false);
- #endif
-+
-+// STEALTHFOX: anonymous launch counter pref. Default true. The actual ping
-+// fires from browser/components/BrowserGlue.sys.mjs::_beforeUIStartup. To
-+// disable per-session: set false via about:config or extra_prefs. To disable
-+// permanently: remove the corresponding block in BrowserGlue and rebuild.
-+// Full disclosure: README of feder-cr/invisible_playwright.
-+pref("invisible_firefox.usage_ping.enabled", true);
-+// The counter's address is a PREF, not a constant: it died twice as a
-+// repository name compiled into every binary with no way to move it. Now
-+// invisible_core repoints it without a rebuild, and this default is the
-+// engine's own repository, so the thing that pings and the thing that is
-+// counted are the same release series.
-+pref("invisible_firefox.usage_ping.url", "https://github.com/feder-cr/firefox_antidetect_patch/releases/download/usage-counter/launch.txt");
 diff --git a/modules/libpref/Preferences.cpp b/modules/libpref/Preferences.cpp
 index aeb7e7bc9ceb56afcdb9962af0a0f1bfafc38c68..04162fcb0bd98c96ba35f3809cbe1c3156582e27 100644
 --- a/modules/libpref/Preferences.cpp
@@ -129,729 +40,94 @@ index aeb7e7bc9ceb56afcdb9962af0a0f1bfafc38c68..04162fcb0bd98c96ba35f3809cbe1c31
      PREF_LIST_ENTRY("accessibility.tabfocus"),
      PREF_LIST_ENTRY("app.update.channel"),
      PREF_LIST_ENTRY("apz.subtest"),
-diff --git a/modules/libpref/init/StaticPrefList.yaml b/modules/libpref/init/StaticPrefList.yaml
-index b4ea2261c2c9d13f21bbbc0b229acda433321ec2..f55b9e02789c6f7d2edf40fbdb34bf56099e909d 100644
---- a/modules/libpref/init/StaticPrefList.yaml
-+++ b/modules/libpref/init/StaticPrefList.yaml
-@@ -10338,6 +10338,33 @@
- #endif
-   mirror: always
+diff --git a/modules/libpref/greprefs.js b/modules/libpref/greprefs.js
+index c18e30b24e407fe97518150b004b7291de392c2a..d964a823ed12cc9ff84158354f3954aa6c20cb11 100644
+--- a/modules/libpref/greprefs.js
++++ b/modules/libpref/greprefs.js
+@@ -3,3 +3,5 @@
+ // Do not add anything else to this file. Additions should go in all.js.
  
-+#---------------------------------------------------------------------------
-+# Prefs starting with "juggler."
-+#---------------------------------------------------------------------------
-+
-+# STEALTHFOX (firefox-50): the time zone and the language the SESSION
-+# declares, written by invisible_core: an IANA zone, and an Accept-Language
-+# list ("it-IT, it, en-US, en"). The only C++ reader is
-+# intl/locale/StealthSessionPrefs.h.
-+#
-+# Static, with a default, so that they reach content processes: a string pref
-+# with no default is kept in the parent (ShouldSanitizePreference), and the
-+# language once reached no worker for that reason (71-bug-archive.md [B165]).
-+# DataMutexString with a mirror, so that any thread reads them: a worker's
-+# realm options are built on the main thread, but the fallback language of
-+# text without `lang` may first be asked by an OffscreenCanvas on a worker
-+# (nsLanguageAtomService::GetLocaleLanguage). They lived in all.js until
-+# firefox-50, readable on the main thread only.
-+- name: juggler.locale.override
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+- name: juggler.timezone.override
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
- #---------------------------------------------------------------------------
- # Prefs starting with "layers."
- #---------------------------------------------------------------------------
-@@ -21416,6 +21443,542 @@
-   value: 20
-   mirror: always
- 
-+# The session seed. Atomic because it is read off the main thread: the canvas
-+# noise runs on worker threads (an OffscreenCanvas in a worker) and in the GPU
-+# process on the CanvasTranslator's task queue, and a plain int32_t mirror is
-+# only safe to read from the main thread. Same name and same values as before:
-+# it is the contract with invisible_core.
-+- name: zoom.stealth.fpp.hw_seed
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.width
-+  type: int32_t
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.height
-+  type: int32_t
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.audio.sample_rate
-+  type: int32_t
-+  value: -1
-+  mirror: always
-+
-+# Stealthfox [B300]: when above 0, the device enumeration is DECLARED, not
-+# asked of the host. The speakers are not enumerated (with fake cameras and
-+# microphones they were the only thing asked of the machine, through its audio
-+# stack: retail Windows takes ~250 ms on its first enumeration, 251-255 ms
-+# with fake devices too, and a host without audio a few ms), and the first
-+# enumeration answers after this many milliseconds, which the client draws
-+# from the session seed. 0 is stock Firefox.
-+- name: zoom.stealth.media.enumeration_ms
-+  type: uint32_t
-+  value: 0
-+  mirror: always
-+
-+# Diagnostic gate (2026-06-22): when false, disable the per-session OfflineAudioContext
-+# noise even if hw_seed > 0. Lets us isolate whether the audio noise (vs the font jitter)
-+# is what drives a commercial fingerprinting service's tampering_ml on Windows. Default true = noise on (legacy behaviour).
-+- name: zoom.stealth.audio.fp_noise
-+  type: RelaxedAtomicBool
-+  value: true
-+  mirror: always
-+
-+- name: zoom.stealth.audio.output_latency_ms
-+  type: int32_t
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.audio.max_channel_count
-+  type: int32_t
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.hw_concurrency
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# "C'e' un proxy: non risolvere niente in locale." Il core lo sa e lo dichiara;
-+# il motore da solo non puo' saperlo, ed e' esattamente questo il punto.
-+#
-+# `DNSForbiddenByActiveProxy` blocca la risoluzione lato client solo se
-+# `network.proxy.type` e' MANUAL E c'e' una versione SOCKS con la sua
-+# `remote_dns`. Con un endpoint HTTP il wrapper non scrive nessuna
-+# `network.proxy.*` - instrada Playwright, per canale, perche' e' l'unico che
-+# sappia rispondere al 407 - quindi `type` resta 5 e il cancello non e' armato
-+# affatto. Upstream lo sa: il TODO del bug 1890542 accanto a quel controllo dice
-+# di usare `nsIProxyInfo` invece delle prefs.
-+#
-+# I canali stanno bene comunque (il filtro di Juggler mette
-+# TRANSPARENT_PROXY_RESOLVES_HOST), ma tre superfici NON sono canali e chiamano
-+# `AsyncResolveNative` diretto: `NetworkConnectivityService`, le sonde
-+# dell'euristica DoH, e il resolver ICE. Misurato il 2026-08-25 dietro un proxy
-+# HTTP, due giri identici: `example.org` 28, `ipv4only.arpa` 12,
-+# il nome di un resolver DoH pubblico 6 e - la peggiore - `stunprobe.invalid` 6, che e' un nome
-+# scelto DALLA PAGINA via `iceServers`, quindi il server autoritativo del sito
-+# vede il resolver di casa mentre l'HTTP esce dal proxy. Dietro SOCKS gli stessi
-+# nomi fanno 0 e ne restano 3 in tutto.
-+#
-+# `false` di default: una build lanciata senza invisible_core si comporta
-+# esattamente come prima.
-+- name: zoom.stealth.dns.no_local_resolution
-+  type: RelaxedAtomicBool
-+  value: false
-+  mirror: always
-+
-+# The declared navigator.maxTouchPoints. Was a literal 0 in Navigator.cpp: the
-+# right value for the desktop personas we ship, but a constant buried in C++ is
-+# not pinnable, not inspectable and not overridable from extra_prefs, and a
-+# touchscreen persona would have needed a browser rebuild. -1 keeps the
-+# compiled behaviour so a build launched without invisible_core is unchanged.
-+- name: zoom.stealth.webrtc.no_direct_udp
-+  type: RelaxedAtomicBool
-+  value: false
-+  mirror: always
-+
-+- name: zoom.stealth.max_touch_points
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# B149, rule 7-ter. Whether a toplevel X11 window that another window FULLY
-+# covers is treated as occluded, which makes its pages `hidden` and inactive
-+# (rAF and timers throttled, enumerateDevices waiting). Windows has the same
-+# behaviour behind widget.windows.window_occlusion_tracking.enabled, which
-+# invisible_core turns off; this is the Linux side of the same declaration,
-+# emitted by the core from the same value. `true` keeps upstream behaviour for
-+# a build launched without invisible_core.
-+- name: zoom.stealth.widget.occlusion_tracking.enabled
-+  type: RelaxedAtomicBool
-+  value: true
-+  mirror: always
-+
-+# B149. When true, a window does not give up its activation because the SYSTEM
-+# took it (AppWindow::WindowDeactivated): another application or another
-+# session's window on the same display. It still gives it up to this session's
-+# own windows, whose activation lowers it first (AppWindow::WindowActivated).
-+# Declared by invisible_core; `false` keeps upstream behaviour for a build
-+# launched without it.
-+- name: zoom.stealth.focus.ignore_os_deactivation
-+  type: RelaxedAtomicBool
-+  value: false
-+  mirror: always
-+
-+# The declared screen colour depth. Without it nsScreen::PixelDepth returns
-+# nsDeviceContext::GetDepth(), i.e. the REAL panel. The field-by-field audit
-+# (19-field-declaration-audit.md) caught it only because it asks for proof
-+# rather than for agreement: it reads 24 on both development machines because
-+# both happen to be 24-bit, so it matched cross-OS by coincidence and not by
-+# declaration. A user on a 30-bit display would report 30 under a Windows
-+# persona that says nothing of the sort.
-+# Height in CSS pixels of the strip screen.availHeight is short of
-+# screen.height - the Windows taskbar. The engine subtracted a hardcoded 48 and
-+# the generator computed avail_height with its own hardcoded 48, in two
-+# languages with nothing tying them together, so a persona that ever needed a
-+# different one (auto-hide, a second monitor, a scaled display) had to be
-+# changed in both. -1 is UNDECLARED and refuses in StealthDeclarationGate; it
-+# used to mean "keep the compiled 48", which was the fallback engine rule 7
-+# forbids since 2026-08-09.
-+- name: zoom.stealth.screen.taskbar_px
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.color_depth
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# Where the window sits on the screen, and how much of it is not the page.
-+#
-+# outerWidth/outerHeight are already spoofed to the full screen (see
-+# GetOuterSize), i.e. we claim a MAXIMIZED window. The position was not
-+# declared at all, so it stayed whatever the OS gave the headless widget, and
-+# on Windows that is (4,4). A maximized window 1920 wide starting at x=4 has
-+# its right edge at 1924 on a 1920 screen, which is impossible on any real
-+# machine and needs no fingerprint database to notice - one addition does it.
-+#
-+# Measured against stock Firefox 151 on 2026-08-09, which is coherent to the
-+# pixel: screenX = screenY = 0, outerWidth - innerWidth = 0, and
-+# mozInnerScreenY - screenY = 85 = outerHeight - innerHeight. Our build
-+# reported screenX = 4, mozInnerScreenX = 15 (so 11px of left border) while
-+# claiming 0 horizontal chrome - three numbers that cannot all be true.
-+#
-+# chrome_w is the TOTAL horizontal chrome. Stock reports 0, so both borders are
-+# 0 and mozInnerScreenX is simply window_x; if a persona ever pins a non-zero
-+# one, splitting it evenly between the two sides is the only assumption
-+# available, and it is written in the code rather than left implicit.
-+# The CSS interaction media features: `pointer`, `hover`, `any-pointer`,
-+# `any-hover`. Bitmask of PointerCapabilities (ServoTypes.h): Coarse 1, Fine 2,
-+# Hover 4. A desktop with a mouse is 6; a touch laptop is 7 for the union and
-+# still 6 for the primary pointer.
-+#
-+# nsMediaFeatures.cpp compiled `Fine | Hover` for both, which was right about
-+# the leak it was stopping - GetAllPointerCapabilities adds Coarse whenever the
-+# HOST has touch - and wrong about being a second source: the core already says
-+# how many touch points the persona has, and a touch-laptop persona could not
-+# be expressed at all. Both are derived from hardware.max_touch_points now, so
-+# any-pointer, dom.w3c_touch_events.enabled and navigator.maxTouchPoints move
-+# together instead of contradicting each other, which on 2026-08-09 they did.
-+- name: zoom.stealth.pointer.primary
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.pointer.all
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# The window frame, in DEVICE pixels, measured on retail Firefox 151 on
-+# Windows 11 at the four persona scales (70-known-bugs.md B258, B261). Device
-+# pixels because that is where the rule is one rule: an invisible resize border
-+# on three sides (8, 9, 11, 13 at 100/125/150/200%), the browser UI above the
-+# content of a maximized window, the popup UI above its content, and the
-+# default position of a popup opened without one. The engine converts with the
-+# window's own scale and Gecko's rounding, as it does for the real values, so
-+# 107 device pixels at 1.25 read 85.6 CSS like retail does.
-+#
-+# They replace screen.window_x/window_y/chrome_w/chrome_h (CSS integers), whose
-+# model was a window at (0, 0) with no border: a maximized Windows window sits
-+# at (-8, -8) and is 16 wider than the work area, and every popup answered the
-+# maximized window's numbers.
-+- name: zoom.stealth.screen.frame_border
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.maximized_ui
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.popup_ui
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.popup_position
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# The work area in device pixels (panel minus the taskbar at the persona's
-+# scale): the maximized window is this plus a border on each side. The CSS
-+# screen and taskbar above stay what nsScreen answers; the core derives both
-+# from the same panel, so they agree.
-+- name: zoom.stealth.screen.avail_device_width
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.screen.avail_device_height
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.webgl.renderer
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+- name: zoom.stealth.webgl.vendor
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# La LINGUA in cui `getTranslatedShaderSource` risponde alla pagina. Dominio
-+# finito e con un elemento solo: "essl". Vuota = nessuna dichiarazione, e la
-+# lingua resta quella che il contesto GL impone.
-+#
-+# Non e' la STRINGA a essere dichiarata - quella ha dominio infinito, perche' lo
-+# shader in ingresso e' arbitrario. E' la LINGUA, che ne ha uno. La stringa la
-+# calcola il traduttore ANGLE imbarcato con le stesse risorse dichiarate, quindi
-+# la risposta e' identica a quella di una build Windows per costruzione e non
-+# per coincidenza misurata.
-+#
-+# Il motivo: su un contesto NON GLES (il GLX di Linux) il traduttore emette GLSL
-+# desktop, e la pagina legge `#version 450` mentre `RENDERER` dichiara ANGLE.
-+# ANGLE non emette mai GLSL desktop, quindi la risposta contraddice la persona
-+# che dichiariamo NOI, e il confronto e' interno alla stessa pagina: non serve
-+# sapere su che sistema operativo giriamo per vederlo.
-+- name: zoom.stealth.webgl.shader_output_language
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Lo STILE DI HINTING con cui FreeType carica un glifo, e se l'antialias e'
-+# acceso. Sono i due soli parametri, dei sei che `PrepareFontOptions` chiedeva
-+# al pattern fontconfig, che spostano i pixel: misurato il 2026-08-16, un
-+# parametro per volta, `rgba` `lcdfilter` e `embeddedbitmap` non ne muovono
-+# nessuno.
-+#
-+# -1 = non dichiarato. Il gate delle dichiarazioni rifiuta l'avvio in quel caso,
-+# perche' cadere sul pattern sarebbe chiedere alla macchina: stesso binario e
-+# stessa pagina davano hash diversi al variare di `/etc/fonts`.
-+#
-+# hintstyle: 0 = none, 1 = slight, 2 = medium, 3 = full. Sono i valori di
-+# `FC_HINT_*`, non una nostra numerazione, cosi' non c'e' una traduzione in
-+# mezzo che possa divergere.
-+#
-+# Su Windows non esiste fontconfig e questi due non vengono letti: la
-+# dichiarazione e' la stessa per le due piattaforme, ed e' il motore a leggere
-+# quella che lo riguarda.
-+- name: zoom.stealth.text.freetype_hintstyle
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+- name: zoom.stealth.text.freetype_antialias
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# WebGL1 / WebGL2 supported-extensions whitelist (comma-separated).
-+# Read by ClientWebGLContext::GetSupportedExtensions and IsSupported.
-+# Empty = use native list (real driver extensions). Non-empty = return this
-+# list verbatim and reject any extension NOT in it. Used to hide Linux/Mesa
-+# extensions and mirror a canonical Windows ANGLE extension set.
-+- name: zoom.stealth.webgl.extensions
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+- name: zoom.stealth.webgl2.extensions
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# WebGL getParameter() int32 override table. Comma-separated "ENUM|int"
-+# entries (ENUM in decimal, e.g. 3379 = GL_MAX_TEXTURE_SIZE). Used to
-+# return Windows ANGLE canonical values from GetParameter(pname) when
-+# the host's real driver (Mesa on Linux) would give different numbers —
-+# A commercial fingerprinting service's parameter hash matches Windows only when this is populated.
-+- name: zoom.stealth.webgl.int_params
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Same but for float/float[2] params. "ENUM|a" or "ENUM|a:b" for vec2.
-+- name: zoom.stealth.webgl.float_params
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Same but for int[2] (like MAX_VIEWPORT_DIMS). "ENUM|a:b"
-+- name: zoom.stealth.webgl.int2_params
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Windows ANGLE canonical getShaderPrecisionFormat() triples. Closes a commercial fingerprinting service's
-+# webgl_extensions.shader_precisions hash signal — Linux Mesa returns
-+# different range/precision than Win D3D11. Format:
-+# "SHADERTYPE*PRECISIONTYPE|rangeMin:rangeMax:precision,..." where
-+# SHADERTYPE=35632 (FRAGMENT) or 35633 (VERTEX), PRECISIONTYPE=36336..36341
-+# (LOW_FLOAT..HIGH_INT). E.g. "35633*36338|-127:127:23". Empty = native.
-+- name: zoom.stealth.webgl.shader_precisions
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Per-profile font allow-list (comma-separated lowercase family names) = the set
-+# the page may enumerate. Sampled by the Python _fpforge (core always +
-+# conditioned optional subset) and applied to the native system font list AT
-+# CONSTRUCTION (gfxPlatformFontList ctor) so it is set once at init with no
-+# runtime font-list rebuild. Glyphs for these names come from the bundled fonts
-+# in <GRE>/fonts. Empty = no filtering (vanilla).
-+- name: zoom.stealth.font.fontlist
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# CSS system-ui generic family (e.g. "Segoe UI"). When set, the system-ui
-+# generic resolves to exactly this family on every host. Empty = vanilla.
-+- name: zoom.stealth.font.system_ui
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# The canvas noise is on: the WebGL and WebGPU pixels a page reads, and the
-+# pixels such a canvas hands over as the source of another drawing, go through
-+# gfx::StealthProjectPixels (gfx/2d/StealthCanvasProjection.h). A 2D canvas is
-+# never projected (from firefox-52): it reads back as drawn, as on retail.
-+# Declared by invisible_core. The name is the one the core has always written;
-+# it used to choose between two older algorithms, and
-+# zoom.stealth.webgl.substitute_pixels and zoom.stealth.canvas.noise_skip_mask,
-+# which tuned them, are gone with them.
-+- name: zoom.stealth.canvas.substitute_pixels
-+  type: RelaxedAtomicBool
-+  value: false
-+  mirror: always
-+
-+# How far, in RGBA channel units with the low bit of R, G and B cleared, a
-+# colour of a pixel's 3x3 neighbourhood may sit from the segment between the two
-+# farthest colours there and still count as a BLEND OF TWO. Such a pixel (text
-+# at any contrast, the antialiased edge between two fills, a two-stop gradient)
-+# is left exactly as drawn by the canvas noise; only a neighbourhood with a third
-+# independent colour is touched. Declared by invisible_core (0-255); -1 is NOT
-+# DECLARED, and the declaration gate refuses it.
-+- name: zoom.stealth.canvas.edge_tolerance
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# Synthetic speech voices (comma-separated entries, each "NAME|LANG|D|L").
-+# Read by SpeechSynthesis::GetVoices — when set, bypass the OS voice
-+# registry entirely and return fabricated voices with these fields. Accessors
-+# on SpeechSynthesisVoice parse the URI (stealth-voice:NAME|LANG|D|L) to
-+# answer GetName/GetLang/LocalService/Default queries. Empty = native list.
-+- name: zoom.stealth.voices.list
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# The branding a page reads under chrome://branding/content/ and
-+# resource://usercontext-content/branding/: a file: URI of the zip archive whose
-+# root entries are the files. invisible_core ships the sets (the retail brand,
-+# ours) and accepts a caller's own archive; the engine keeps no stealth copy and
-+# serves what is declared here as jar:, the channel class the retail uses. With
-+# the engine on, empty, malformed, not a zip or holding anything but root files
-+# refuses the launch (StealthDeclarationGate) and fails the load
-+# (netwerk/protocol/res/StealthBranding.h) instead of serving the build's own
-+# brand.
-+- name: zoom.stealth.branding.archive
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Glyph-edge coverage ladder: the distinct alpha levels a Windows rasteriser
-+# produces on an antialiased glyph edge, ascending, comma separated. Measured
-+# 2026-08-07 over 48 family/size/weight combinations: Windows yields 9-19
-+# levels per render and FreeType 193-256, and a detector does not need to
-+# compare a hash to separate those - it can COUNT. Empty disables the snap.
-+# Delivered by invisible_core rather than the font manifest: it is not a
-+# property of any font FILE, it is what the rasteriser does to an edge.
-+#
-+# Applied to the A8 GLYPH MASK, in SkScalerContext::getImage, where both the
-+# DirectWrite and the FreeType scaler land and the mask is greyscale coverage by
-+# construction. It was applied to the composited RGBA buffer at canvas readback
-+# until 2026-08-08, where it had to guess which pixels were text by testing that
-+# the three colour channels agreed - and coloured text has r != g != b, so on
-+# a commercial fingerprinting service's own canvas (#006699) it was a total no-op. The name still
-+# says "canvas" in the docs of that era; the pref is spelled for what it does.
-+- name: zoom.stealth.text.coverage_ladder
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# The Windows text quality, declared instead of asked of the host
-+# (SystemParametersInfo SPI_GETFONTSMOOTHING / SPI_GETFONTSMOOTHINGTYPE):
-+# 0 = no smoothing (DEFAULT_QUALITY), 4 = standard antialiasing
-+# (ANTIALIASED_QUALITY), 5 = ClearType (CLEARTYPE_QUALITY). It sets the
-+# antialiasing of canvas text and gates whether the declared
-+# gfx.font_rendering.cleartype_params.* apply at all; asked of the host, an RDP
-+# session or a server with ClearType off drew different text from the same
-+# binary ([B362]). -1 is NOT DECLARED, and the declaration gate refuses it.
-+- name: zoom.stealth.text.system_quality
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# The whole font manifest, carried by invisible_core and preferred over the
-+# copy in NS_GRE_DIR/fonts/. Families, per-face vertical metrics, the alias
-+# table, the coverage ladder and the per-script fallback lists - one pref
-+# rather than one per table, because the binary already parses this text.
-+# Empty means "use the file", which is what keeps a browser launched without
-+# that package rendering with fonts instead of none.
-+# The CSS generic families, as "generic|lang|family" records separated by
-+# NEWLINES: generic is one of serif/sans-serif/monospace/cursive, lang is a
-+# Gecko langgroup ("x-math", "ja", "ko", "zh-CN", "zh-TW") or empty for the
-+# default, and family is the Windows face that answers.
-+#
-+# It was a table compiled into gfxPlatformFontList.cpp - about ten rows, a
-+# finite and perfectly known domain, and therefore exactly the kind of value
-+# that belongs where every other declared surface lives rather than in C++
-+# where changing it costs a browser rebuild. Empty keeps the compiled table,
-+# which stays as the floor for a browser launched without invisible_core.
-+- name: zoom.stealth.fonts.generics
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+- name: zoom.stealth.fonts.manifest
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# What this build reports it can DECODE, as "trackmime|no|sw|hw|swhw" entries
-+# separated by NEWLINES, consulted in PDMFactory::Supports before any platform
-+# module is asked. The track mime types are Gecko's own small set - video/avc,
-+# video/hevc, video/av1, video/vp9, audio/opus and a dozen more - so declaring
-+# them covers every codec string that can be built out of them.
-+#
-+# This replaced a table of whole type STRINGS in DecoderTraits on 2026-08-08.
-+# That table could only ever hold the strings somebody had seen: measured that
-+# day it carried 3 of the 12 rows where our Linux build and retail Windows
-+# actually disagreed, and the space it was trying to cover - profile x
-+# constraint x level x container x the audio codec travelling along - is not
-+# enumerable. Empty leaves the media stack alone; a type not named falls through.
-+- name: zoom.stealth.media.decode_support
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# Declared mediaCapabilities.decodingInfo answers, as
-+# "containermime|codecfamily|SSP" entries separated by NEWLINES, where the three
-+# digits are supported, smooth and powerEfficient. Keyed by BOTH the container
-+# and the codec family because powerEfficient is not a property of the track
-+# mime alone: measured on retail Windows, vp09.00.10.08 in video/mp4 reports
-+# powerEfficient true and a bare vp9 in video/webm reports false, and both build
-+# a video/vp9 track. Empty leaves decodingInfo alone.
-+- name: zoom.stealth.media.decoding_info
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
-+# zoom.stealth.timezone WAS HERE and is gone. Nothing read it - not one C++,
-+# JS or JSM file in the tree - while its own comment said "Single source of
-+# truth for StealthFox timezone spoofing. Takes priority over
-+# juggler.timezone.override". The comment was describing an intention; the code
-+# never implemented it, and the real channel is juggler.timezone.override plus
-+# the TZ environment variable. Removed 2026-08-09 after grepping for a reader
-+# and finding none. A declared pref nobody reads is worse than no pref: the next
-+# reader trusts the comment.
-+
-+# Storage quota override (megabytes). When > 0, navigator.storage.estimate()
-+# returns exactly this value (in MB) to the page, overriding the disk-based
-+# group/origin limit. -1 (default) = vanilla Firefox behavior. Python Forge
-+# samples this conditional on gpu_class to fake realistic SSD sizes without
-+# exposing the real host disk size as a fingerprint signal.
-+- name: zoom.stealth.storage.quota_mb
-+  type: RelaxedAtomicInt32
-+  value: -1
-+  mirror: always
-+
-+# zoom.stealth.webrtc.public_ip e zoom.stealth.webrtc.disable_ipv6 sono state
-+# TOLTE il 2026-08-25. Non erano inutilizzate: erano la SECONDA fonte. Il ponte
-+# nativo (nr_stealth_bridge.cpp) leggeva pref E variabile d'ambiente, con
-+# precedenze diverse da funzione a funzione, e quale delle due decidesse
-+# dipendeva dalla presenza del proxy - con proxy vinceva l'ambiente, senza
-+# proxy la pref. Adesso la fonte e' una sola, l'ambiente, scritta sempre da
-+# entrambi i percorsi di lancio di invisible_core. Non vanno reintrodotte: un
-+# valore che il motore puo' leggere da due posti puo' divergere fra i due.
-+
-+# Optional fake LAN host IP for the synthetic host candidate base.
-+# Empty = leave host gathering to native code (mDNS *.local obfuscation).
-+# QUESTA RESTA: la legge PeerConnectionImpl.cpp, che non passa dal ponte, e
-+# invisible_core la dichiara (derivata dal seed). Una fonte, un lettore.
-+- name: zoom.stealth.webrtc.host_ip
-+  type: DataMutexString
-+  value: ""
-+  mirror: always
-+
- #---------------------------------------------------------------------------
- # End of prefs
- #---------------------------------------------------------------------------
+ #include init/all.js
++// STEALTH-HOOK(platform/prefs): our defaults, after all.js so they win.
++#include init/StealthPrefs.js
 diff --git a/modules/libpref/init/all.js b/modules/libpref/init/all.js
-index d740a8988b276b21b0c2a1782f620042e0542112..d0db44f0e7bcfc2b286724708931221809f72ac0 100644
+index d740a8988b276b21b0c2a1782f620042e0542112..fbce4a93c93bbc497003cfc376aa0f1e9801b725 100644
 --- a/modules/libpref/init/all.js
 +++ b/modules/libpref/init/all.js
-@@ -445,6 +445,58 @@ pref("accessibility.browsewithcaret_shortcut.enabled", true);
-   pref("ui.scrollToClick", 0);
- #endif
- 
-+// STEALTH: pin the CSS system fonts to the Windows shell font, on EVERY host.
-+//
-+// The system-font keywords a page can read - caption, icon, menu, message-box,
-+// small-caption, status-bar - are filled from the PLATFORM's UI settings, which
-+// is a different subsystem from the font list: GTK settings on Linux, the shell
-+// font on Windows, and neither is touched by the bundled-font work. So they
-+// named the operating system outright. Measured 2026-08-07 on the shipped
-+// firefox-18, same build and seed:
-+//
-+//     Windows : family "Segoe UI", size 12px
-+//     Linux   : family "Sans",     size 13.3333px
-+//
-+// A public fingerprinting test page reads exactly this and reported `system_fonts: Segoe UI:Windows`
-+// against `Sans:Linux` - a direct platform disclosure, and one that survived
-+// sealing the font-family list, because "Sans" here never came from the font
-+// list at all.
-+//
-+// nsXPLookAndFeel::GetFontValue tries these prefs BEFORE calling
-+// NativeGetFont, so setting them means the host is never consulted. Values are
-+// the measured Windows ones: 9pt Segoe UI = 12px at 96dpi, weight 400.
-+//
-+// The sizes are QUOTED on purpose: GetFontValue reads them with
-+// Preferences::GetFloat, and a float pref in Gecko is declared as a string
-+// (cf. media.volume_scale "1.0"). Declared as a bare int the read fails and
-+// the fallback StyleFONT_MEDIUM_PX (16px) is used instead - measured, that is
-+// exactly what the first attempt produced.
-+//
-+// The four -moz-* entries are pinned too. They are not readable as CSS
-+// keywords, but they drive form-control rendering, and a real Windows Firefox
-+// draws buttons and fields with the same shell font - leaving them host-derived
-+// would put the difference back into button metrics, which a page CAN measure.
-+pref("ui.font.caption", "Segoe UI");
-+pref("ui.font.caption.size", "12");
-+pref("ui.font.icon", "Segoe UI");
-+pref("ui.font.icon.size", "12");
-+pref("ui.font.menu", "Segoe UI");
-+pref("ui.font.menu.size", "12");
-+pref("ui.font.message-box", "Segoe UI");
-+pref("ui.font.message-box.size", "12");
-+pref("ui.font.small-caption", "Segoe UI");
-+pref("ui.font.small-caption.size", "12");
-+pref("ui.font.status-bar", "Segoe UI");
-+pref("ui.font.status-bar.size", "12");
-+pref("ui.font.-moz-pull-down-menu", "Segoe UI");
-+pref("ui.font.-moz-pull-down-menu.size", "12");
-+pref("ui.font.-moz-button", "Segoe UI");
-+pref("ui.font.-moz-button.size", "12");
-+pref("ui.font.-moz-list", "Segoe UI");
-+pref("ui.font.-moz-list.size", "12");
-+pref("ui.font.-moz-field", "Segoe UI");
-+pref("ui.font.-moz-field.size", "12");
-+
- // These are some selection-related colors which have no per platform
- // implementation.
- #if !defined(XP_MACOSX)
-@@ -1435,6 +1487,8 @@ pref("network.proxy.ssl_port",              0);
- pref("network.proxy.socks",                 "");
- pref("network.proxy.socks_port",            0);
- pref("network.proxy.socks_version",         5);
-+pref("network.proxy.socks_username",        "");
-+pref("network.proxy.socks_password",        "");
- pref("network.proxy.proxy_over_tls",        true);
- pref("network.proxy.no_proxies_on",         "");
- pref("network.proxy.failover_timeout",      1800); // 30 minutes
-@@ -1480,6 +1534,11 @@ pref("intl.accept_languages",               "und");
- // OS locale set instead of the app locale set.
- pref("intl.regional_prefs.use_os_locales",  false);
- 
-+// `juggler.locale.override` and `juggler.timezone.override`, the session's
-+// language and zone, are static prefs since firefox-50 (StaticPrefList.yaml,
-+// "juggler."): they need a default to reach content processes at all, and a
-+// reader on every thread.
-+
- pref("font.cjk_pref_fallback_order",        "zh-cn,zh-hk,zh-tw,ja,ko");
- 
- // This pref controls pseudolocales for testing localization.
-@@ -2695,19 +2754,23 @@ pref("font.size.monospace.x-math", 13);
+@@ -2695,19 +2695,19 @@ pref("font.size.monospace.x-math", 13);
    pref("font.name-list.sans-serif.ar", "sans-serif");
    pref("font.name-list.monospace.ar", "monospace");
    pref("font.name-list.cursive.ar", "cursive");
 -  pref("font.size.monospace.ar", 12);
-+   // STEALTH: upstream sets these to 12 on Unix while Windows keeps the
-+   // global 13. This build claims Windows, and the difference is directly
-+   // observable - a font-size-less monospace span measured 121.583px on
-+   // Windows vs 112.233 on Linux (ratio 13/12). Kept at the Windows value.
-+  pref("font.size.monospace.ar", 13);
++  pref("font.size.monospace.ar", 13);  // STEALTH-HOOK(platform/prefs)
  
    pref("font.name-list.serif.el", "serif");
    pref("font.name-list.sans-serif.el", "sans-serif");
    pref("font.name-list.monospace.el", "monospace");
    pref("font.name-list.cursive.el", "cursive");
 -  pref("font.size.monospace.el", 12);
-+  pref("font.size.monospace.el", 13);
++  pref("font.size.monospace.el", 13);  // STEALTH-HOOK(platform/prefs)
  
    pref("font.name-list.serif.he", "serif");
    pref("font.name-list.sans-serif.he", "sans-serif");
    pref("font.name-list.monospace.he", "monospace");
    pref("font.name-list.cursive.he", "cursive");
 -  pref("font.size.monospace.he", 12);
-+  pref("font.size.monospace.he", 13);
++  pref("font.size.monospace.he", 13);  // STEALTH-HOOK(platform/prefs)
  
    pref("font.name-list.serif.ja", "serif");
    pref("font.name-list.sans-serif.ja", "sans-serif");
-@@ -2744,7 +2807,7 @@ pref("font.size.monospace.x-math", 13);
+@@ -2744,7 +2744,7 @@ pref("font.size.monospace.x-math", 13);
    pref("font.name-list.sans-serif.x-cyrillic", "sans-serif");
    pref("font.name-list.monospace.x-cyrillic", "monospace");
    pref("font.name-list.cursive.x-cyrillic", "cursive");
 -  pref("font.size.monospace.x-cyrillic", 12);
-+  pref("font.size.monospace.x-cyrillic", 13);
++  pref("font.size.monospace.x-cyrillic", 13);  // STEALTH-HOOK(platform/prefs)
  
    pref("font.name-list.serif.x-devanagari", "serif");
    pref("font.name-list.sans-serif.x-devanagari", "sans-serif");
-@@ -2815,13 +2878,13 @@ pref("font.size.monospace.x-math", 13);
+@@ -2815,13 +2815,13 @@ pref("font.size.monospace.x-math", 13);
    pref("font.name-list.sans-serif.x-unicode", "sans-serif");
    pref("font.name-list.monospace.x-unicode", "monospace");
    pref("font.name-list.cursive.x-unicode", "cursive");
 -  pref("font.size.monospace.x-unicode", 12);
-+  pref("font.size.monospace.x-unicode", 13);
++  pref("font.size.monospace.x-unicode", 13);  // STEALTH-HOOK(platform/prefs)
  
    pref("font.name-list.serif.x-western", "serif");
    pref("font.name-list.sans-serif.x-western", "sans-serif");
    pref("font.name-list.monospace.x-western", "monospace");
    pref("font.name-list.cursive.x-western", "cursive");
 -  pref("font.size.monospace.x-western", 12);
-+  pref("font.size.monospace.x-western", 13);
++  pref("font.size.monospace.x-western", 13);  // STEALTH-HOOK(platform/prefs)
  
    pref("font.name-list.serif.zh-CN", "serif");
    pref("font.name-list.sans-serif.zh-CN", "sans-serif");
-@@ -3751,7 +3814,7 @@ pref("toolkit.legacyUserProfileCustomizations.stylesheets", false);
+@@ -3751,7 +3751,7 @@ pref("toolkit.legacyUserProfileCustomizations.stylesheets", false);
    pref("datareporting.policy.minimumPolicyVersion", 1);
    pref("datareporting.policy.minimumPolicyVersion.channel-beta", 2);
    pref("datareporting.policy.firstRunURL", "https://www.mozilla.org/privacy/firefox/");
 -  pref("datareporting.policy.dataSubmissionPolicyBypassNotification", false);
-+  pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
++  pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);  // STEALTH-HOOK(platform/prefs)
  #endif
  
  #ifdef MOZ_SERVICES_HEALTHREPORT
+diff --git a/modules/libpref/moz.build b/modules/libpref/moz.build
+index 2c8b218c618f8fa73ab4b21f4155d5f063bc1bb4..4d265ca09a7d9ab5fb429b13007993d3c89b0406 100644
+--- a/modules/libpref/moz.build
++++ b/modules/libpref/moz.build
+@@ -54,6 +54,7 @@ pref_groups = [
+     "image",
+     "intl",
+     "javascript",
++    "juggler",
+     "layers",
+     "layout",
+     "logging",
+@@ -133,6 +134,7 @@ UNIFIED_SOURCES += [
+ gen_all_tuple = tuple(gen_h + gen_cpp + gen_rs)
+ 
+ gen_inputs = ["init/StaticPrefList.yaml"]
++gen_inputs += ["init/StealthPrefList.yaml"]  # STEALTH-HOOK(platform/prefs)
+ if CONFIG["MOZ_THUNDERBIRD"]:
+     gen_inputs += ["/comm/mail/app/StaticPrefList.yaml"]
+ GeneratedFile(

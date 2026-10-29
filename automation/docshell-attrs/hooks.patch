@@ -1,15 +1,25 @@
+diff --git a/docshell/base/moz.build b/docshell/base/moz.build
+index ed7ab01a1db3777e5e703fea52e80b01c9bc273d..80d9d6a99df7be46211a2392887bc4d5b5920e8e 100644
+--- a/docshell/base/moz.build
++++ b/docshell/base/moz.build
+@@ -97,6 +97,8 @@ UNIFIED_SOURCES += [
+     "nsRefreshTimer.cpp",
+     "nsWebNavigationInfo.cpp",
+     "SerializedLoadContext.cpp",
++    "StealthDocShellAttrs.cpp",
++    "StealthNavigation.cpp",
+     "WindowContext.cpp",
+ ]
+ 
 diff --git a/docshell/base/nsDocShell.h b/docshell/base/nsDocShell.h
-index 0568cbf7f78bc3711275773037fd5ba254f083e7..5234633f62352bcb22a1ec30a922596cf4faede6 100644
+index 0568cbf7f78bc3711275773037fd5ba254f083e7..71654a6ba6187c5ecb47f643d49410c7917b3722 100644
 --- a/docshell/base/nsDocShell.h
 +++ b/docshell/base/nsDocShell.h
-@@ -1355,6 +1355,13 @@ class nsDocShell final : public nsDocLoader,
+@@ -1355,6 +1355,10 @@ class nsDocShell final : public nsDocLoader,
  
    bool mIsExecutingOnLoadHandler : 1;
  
-+  // Stealthfox: the flags behind the two nsIDocShell attributes Juggler
-+  // sets. Initialized in the constructor: they were not, and a bit-field the
-+  // constructor leaves alone holds whatever the allocation held, so a docshell
-+  // Juggler never wrote to could intercept file pickers, or bypass CSP.
++  // STEALTH-HOOK(automation/docshell-attrs)
 +  bool mFileInputInterceptionEnabled : 1;
 +  bool mBypassCSPEnabled : 1;
 +
@@ -17,27 +27,16 @@ index 0568cbf7f78bc3711275773037fd5ba254f083e7..5234633f62352bcb22a1ec30a922596c
  
    // There has been an OnStartRequest for a non-about:blank URI
 diff --git a/docshell/base/nsIDocShell.idl b/docshell/base/nsIDocShell.idl
-index 7cbed1af77c94e97f9f5bda8f6c63c54517300bc..048a16e33cf8223d997ad165896f36d1c74fb653 100644
+index 7cbed1af77c94e97f9f5bda8f6c63c54517300bc..c0701a76eb70819dce1c234a18c4f0828a8cc6bc 100644
 --- a/docshell/base/nsIDocShell.idl
 +++ b/docshell/base/nsIDocShell.idl
-@@ -684,6 +684,21 @@ interface nsIDocShell : nsIDocShellTreeItem
+@@ -684,6 +684,10 @@ interface nsIDocShell : nsIDocShellTreeItem
     */
    void synchronizeLayoutHistoryState();
  
-+  // Stealthfox: the two attributes Juggler sets on a docshell, each READ
-+  // where it acts: fileInputInterceptionEnabled by HTMLInputElement (the
-+  // file picker), bypassCSPEnabled by CSP_IsBypassedFor (nsCSPUtils). The
-+  // port that added them also added overrideHasFocus, forceActiveState and
-+  // disallowBFCache as storage only; nothing read them, and they are gone.
++  // STEALTH-HOOK(automation/docshell-attrs): see FEATURE.md
 +  attribute boolean fileInputInterceptionEnabled;
 +  attribute boolean bypassCSPEnabled;
-+
-+  // Stealthfox: languageOverride, overrideTimezone and overrideLocale, the
-+  // docshell's side channels for the language and the zone, are gone since
-+  // firefox-50: each acted on the realm current when Juggler called it, and
-+  // nothing else. Both now travel only in the BrowsingContext's
-+  // LanguageOverride and TimezoneOverride fields
-+  // (dom/base/StealthSessionDeclaration.h).
 +
    /**
     * This attempts to save any applicable layout history state (like

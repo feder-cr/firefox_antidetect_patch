@@ -1,102 +1,58 @@
 diff --git a/netwerk/protocol/http/AlternateServices.cpp b/netwerk/protocol/http/AlternateServices.cpp
-index 0e4f9086788f8ec408923322e3933cc27d5a2690..1c2380fd66f63110a946d51c470da72333b19ee8 100644
+index 0e4f9086788f8ec408923322e3933cc27d5a2690..3e0f2f2bb3bd480c7810a0ae9f2a162a84f06860 100644
 --- a/netwerk/protocol/http/AlternateServices.cpp
 +++ b/netwerk/protocol/http/AlternateServices.cpp
-@@ -8,6 +8,7 @@
+@@ -21,6 +21,7 @@
+ #include "nsHttpTransaction.h"
+ #include "nsIOService.h"
+ #include "nsITLSSocketControl.h"
++#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/socks-udp-h3)
+ #include "nsThreadUtils.h"
+ #include "xpcpublic.h"
  
- #include "HttpLog.h"
- #include "mozilla/Atomics.h"
-+#include "mozilla/Preferences.h"
- #include "mozilla/StaticPrefs_network.h"
- #include "mozilla/SyncRunnable.h"
- #include "mozilla/TimeStamp.h"
-@@ -906,7 +907,17 @@ void AltSvcCache::UpdateAltServiceMapping(
+@@ -906,7 +907,8 @@ void AltSvcCache::UpdateAltServiceMapping(
    }
  
    if (map->IsHttp3()) {
 -    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;
-+    // Stealthfox: also accept SOCKS5 when our SOCKS5-UDP-ASSOCIATE layer
-+    // is enabled (network.proxy.socks_remote_udp). Without this, Firefox
-+    // ignores Alt-Svc h3 advertisements whenever a SOCKS proxy is set,
-+    // never creates a UDP socket, and our nsSOCKSUDPIOLayer hook never
-+    // fires.
-+    bool socksUdpEnabled = mozilla::Preferences::GetBool(
-+        "network.proxy.socks_remote_udp", false);
-+    bool isProxyAllowed = pi
-+        ? (pi->IsDirect() || pi->IsHttp3Proxy() ||
-+           (socksUdpEnabled && pi->IsSOCKS()))
-+        : true;
++    // STEALTH-HOOK(network/socks-udp-h3)
++    bool isProxyAllowed = StealthHttp3ProxyAllowed(pi);
      if (!isProxyAllowed) {
        LOG(
            ("AltSvcCache::UpdateAltServiceMapping %p map %p ignored h3 because "
 diff --git a/netwerk/protocol/http/DnsAndConnectSocket.cpp b/netwerk/protocol/http/DnsAndConnectSocket.cpp
-index a49e9e63ee02a346f5cb3f46b2c537eec6c7ec5c..e9b846151542eca86376b69a8b11355c733b8e3a 100644
+index a49e9e63ee02a346f5cb3f46b2c537eec6c7ec5c..273fa4afccd176adf845807902f359c290d65e9e 100644
 --- a/netwerk/protocol/http/DnsAndConnectSocket.cpp
 +++ b/netwerk/protocol/http/DnsAndConnectSocket.cpp
-@@ -11,6 +11,7 @@
- #include "HttpLog.h"
- #include "NullHttpTransaction.h"
- #include "mozilla/Components.h"
-+#include "mozilla/Preferences.h"
- #include "mozilla/StaticPrefs_network.h"
- #include "mozilla/SyncRunnable.h"
- #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-@@ -23,6 +24,7 @@
- #include "nsIDNSRecord.h"
+@@ -24,6 +24,7 @@
  #include "nsIHttpActivityObserver.h"
  #include "nsIInterfaceRequestorUtils.h"
-+#include "nsIProxyInfo.h"
  #include "nsQueryObject.h"
++#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/socks-udp-h3)
  #include "nsServiceManagerUtils.h"
  #include "nsSocketTransportService2.h"
-@@ -71,7 +73,19 @@ DnsAndConnectSocket::DnsAndConnectSocket(nsHttpConnectionInfo* ci,
+ #include "nsURLHelper.h"
+@@ -71,7 +72,10 @@ DnsAndConnectSocket::DnsAndConnectSocket(nsHttpConnectionInfo* ci,
         trans, mConnInfo->Origin(), mConnInfo->HashKey().get()));
  
    if (mConnInfo->UsingProxy()) {
 -    mIsHttp3 = mConnInfo->IsHttp3ProxyConnection();
-+    // Stealthfox: when our SOCKS5 UDP-ASSOCIATE layer is enabled, treat
-+    // SOCKS5 as transparent to h3 — the proxy tunnels QUIC datagrams via
-+    // UDP_ASSOCIATE, so the connection should still be created as
-+    // HttpConnectionUDP (not TCP nsHttpConnection with ALPN h3).
-+    bool socksUdpEnabled = mozilla::Preferences::GetBool(
-+        "network.proxy.socks_remote_udp", false);
-+    nsCOMPtr<nsProxyInfo> pi = mConnInfo->ProxyInfo();
-+    bool isSocks = pi && pi->IsSOCKS();
-+    if (socksUdpEnabled && isSocks) {
-+      mIsHttp3 = mConnInfo->IsHttp3();
-+    } else {
-+      mIsHttp3 = mConnInfo->IsHttp3ProxyConnection();
-+    }
++    // STEALTH-HOOK(network/socks-udp-h3)
++    mIsHttp3 = StealthSocksUdpH3ViaProxy(mConnInfo->ProxyInfo(),
++                                         mConnInfo->IsHttp3(),
++                                         mConnInfo->IsHttp3ProxyConnection());
    } else {
      mIsHttp3 = mConnInfo->IsHttp3();
    }
-@@ -136,16 +150,22 @@ void DnsAndConnectSocket::CheckProxyConfig() {
-     }
- 
-     if (mProxyTransparentResolvesHost) {
--      // Name resolution is done on the server side.  Just pretend
--      // client resolution is complete, this will get picked up later.
--      // since we don't need to do DNS now, we bypass the resolving
--      // step by initializing mNetAddr to an empty address, but we
--      // must keep the port. The SOCKS IO layer will use the hostname
--      // we send it when it's created, rather than the empty address
--      // we send with the connect call.
+@@ -143,9 +147,11 @@ void DnsAndConnectSocket::CheckProxyConfig() {
+       // must keep the port. The SOCKS IO layer will use the hostname
+       // we send it when it's created, rather than the empty address
+       // we send with the connect call.
 -      mPrimaryTransport.mSkipDnsResolution = true;
 -      mBackupTransport.mSkipDnsResolution = true;
 -      mSkipDnsResolution = true;
-+      // Stealthfox: when our SOCKS5-UDP layer is enabled AND this
-+      // connection is for HTTP/3 (UDP), we MUST resolve the host name
-+      // client-side. Reason: h3 packets are UDP and bypass the SOCKS5
-+      // CONNECT path; the proxy never sees a CONNECT containing the
-+      // hostname. Our nsSOCKSUDPIOLayer needs a real numeric IP target
-+      // to wrap into the SOCKS5 UDP datagram header (ATYP=IPv4 + ADDR).
-+      // Without client-side DNS, h3+SOCKS goes through DnsAndConnectSocket
-+      // but never fires OnLookupComplete, so SetupConn is never reached
-+      // and HttpConnectionUDP::Init never runs.
-+      bool socksUdpEnabled = mozilla::Preferences::GetBool(
-+          "network.proxy.socks_remote_udp", false);
-+      bool isHttp3Path = mIsHttp3;
-+      bool skipDns = !(socksUdpEnabled && isHttp3Path);
++      // STEALTH-HOOK(network/socks-udp-h3)
++      const bool skipDns = StealthSocksUdpSkipDns(mIsHttp3);
 +      mPrimaryTransport.mSkipDnsResolution = skipDns;
 +      mBackupTransport.mSkipDnsResolution = skipDns;
 +      mSkipDnsResolution = skipDns;
@@ -104,39 +60,50 @@ index a49e9e63ee02a346f5cb3f46b2c537eec6c7ec5c..e9b846151542eca86376b69a8b11355c
  
      if (!proxyTransparent && !proxyInfo->Host().IsEmpty()) {
 diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
-index 77e11d8302b4cfdeba622f33ad75a87c67ed3610..d520a15cb249b6af57fade07825834bb1b2f734d 100644
+index 77e11d8302b4cfdeba622f33ad75a87c67ed3610..8a85f8522cdb25296eb66a8bb5d6d68831b73779 100644
 --- a/netwerk/protocol/http/HttpBaseChannel.cpp
 +++ b/netwerk/protocol/http/HttpBaseChannel.cpp
-@@ -26,6 +26,7 @@
- #include "mozilla/Mutex.h"
- #include "mozilla/NullPrincipal.h"
- #include "mozilla/PermissionManager.h"
-+#include "mozilla/Preferences.h"
- #include "mozilla/RemoteLazyInputStreamChild.h"
- #include "mozilla/StaticPrefs_browser.h"
- #include "mozilla/StaticPrefs_fission.h"
-@@ -6691,10 +6692,18 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
+@@ -12,6 +12,7 @@
+ #include "HttpLog.h"
+ #include "LoadInfo.h"
+ #include "ReferrerInfo.h"
++#include "StealthH3Proxy.h"  // STEALTH-HOOK(network/socks-udp-h3)
+ #include "mozIRemoteLazyInputStream.h"
+ #include "mozIThirdPartyUtil.h"
+ #include "mozilla/AntiTrackingUtils.h"
+@@ -6691,10 +6692,8 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
  void HttpBaseChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
  
  bool HttpBaseChannel::Http3Allowed() const {
-+  // Stealthfox: also allow SOCKS proxy when our SOCKS5-UDP-ASSOCIATE
-+  // layer is enabled (network.proxy.socks_remote_udp). Otherwise Firefox
-+  // unconditionally disables h3 whenever any non-direct proxy is set.
-+  bool socksUdpEnabled = mozilla::Preferences::GetBool(
-+      "network.proxy.socks_remote_udp", false);
-   bool allowedProxyInfo =
+-  bool allowedProxyInfo =
 -      mProxyInfo ? (static_cast<nsProxyInfo*>(mProxyInfo.get())->IsDirect() ||
 -                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy())
 -                 : true;
-+      mProxyInfo
-+          ? (static_cast<nsProxyInfo*>(mProxyInfo.get())->IsDirect() ||
-+             static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy() ||
-+             (socksUdpEnabled &&
-+              static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS()))
-+          : true;
++  // STEALTH-HOOK(network/socks-udp-h3)
++  bool allowedProxyInfo = StealthH3ProxyAllowed(mProxyInfo.get());
    // TODO: When mUpgradeProtocolCallback is not null, we should allow HTTP/3 for
    // connect-udp.
    return !mUpgradeProtocolCallback && allowedProxyInfo &&
+diff --git a/netwerk/protocol/http/moz.build b/netwerk/protocol/http/moz.build
+index 1b8068f235e421e97fc316f218efc14e551a07a5..0b32b16c09f0ff91937e3a4745d33c10da59b4dc 100644
+--- a/netwerk/protocol/http/moz.build
++++ b/netwerk/protocol/http/moz.build
+@@ -87,6 +87,7 @@ EXPORTS.mozilla.net += [
+ 
+ SOURCES += [
+     "nsHttpChannelAuthProvider.cpp",  # redefines GetAuthType
++    "StealthH3Proxy.cpp",  # STEALTH-HOOK(network/socks-udp-h3)
+ ]
+ 
+ UNIFIED_SOURCES += [
+@@ -181,6 +182,7 @@ UNIFIED_SOURCES += [
+     "QuicSocketControl.cpp",
+     "ReplacedHttpResponse.cpp",
+     "SpeculativeTransaction.cpp",
++    "StealthInterception.cpp",
+     "TlsHandshaker.cpp",
+     "TLSTransportLayer.cpp",
+     "TRRServiceChannel.cpp",
 diff --git a/netwerk/socket/moz.build b/netwerk/socket/moz.build
 index 97b6d04e2c3d3e689b32daa848b9a7774106f885..b33a509794dcd7724920fa2e7de3885d70c1479c 100644
 --- a/netwerk/socket/moz.build

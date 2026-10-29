@@ -2,7 +2,6 @@
  "modified": [
   "docshell/base/BrowsingContext.cpp",
   "dom/base/Document.cpp",
-  "dom/ipc/ContentChild.cpp",
   "dom/xslt/xslt/txEXSLTFunctions.cpp",
   "js/xpconnect/src/nsXPConnect.cpp"
  ],
@@ -57,27 +56,6 @@
      "notes"
     ],
     "why": "Bug/risk claims checked in source."
-   }
-  },
-  {
-   "file": "dom/ipc/ContentChild.cpp",
-   "category": "other",
-   "feature": "timezone-declared",
-   "prefs": [],
-   "added": 11,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "ContentChild::RecvSetXPCOMProcessAttributes; ContentChild::RecvSystemTimezoneChanged",
-   "evidence": [
-    "+  // STEALTHFOX (firefox-50): the block that applied `juggler.timezone.override`",
-    "+  // Stealth: SetTimeZoneOverride was removed in 150. Just reset like vanilla."
-   ],
-   "notes": "Comment-only: no code added or removed. The first comment records removal of a juggler.timezone.override block (it never ran); the second is a note on RecvSystemTimezoneChanged. The patch should drop these comments; the zone now comes from StealthSessionDeclaration (dom/base, not in this group).",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff and source; no correction needed."
    }
   },
   {

@@ -1,9 +1,11 @@
 {
  "modified": [
   "netwerk/protocol/http/nsHttpHandler.cpp",
-  "netwerk/test/browser/browser_accept_language_override.js"
+  "netwerk/test/browser/browser.toml"
  ],
- "added": {},
+ "added": {
+  "netwerk/test/browser/browser_stealth_accept_language_list.js": "100644"
+ },
  "inventory": [
   {
    "file": "netwerk/protocol/http/nsHttpHandler.cpp",
@@ -28,27 +30,21 @@
    }
   },
   {
-   "file": "netwerk/test/browser/browser_accept_language_override.js",
-   "category": "other",
+   "file": "netwerk/test/browser/browser.toml",
+   "category": "build",
    "feature": "accept-language-override-list",
-   "prefs": [
-    "intl.accept_languages"
-   ],
-   "added": 36,
+   "prefs": [],
+   "added": 3,
    "removed": 0,
    "hunks": 1,
-   "inline_logic_lines": 27,
-   "hookable": "movable",
-   "anchor": "test_language_override_list_is_prepared (new add_task)",
-   "evidence": [
-    "+  const list = \"it-IT, it, en-US, en\";",
-    "+    \"it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7\",",
-    "+  browser.browsingContext.languageOverride = list;"
-   ],
-   "notes": "Test code (no test category in the enum). It is added inside an existing Mozilla test file; move it to our own test file and register that in the test moz.build. The expected header 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7' is hard-coded and must be updated if Firefox changes the q-value preparation.",
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
    "verifier": {
     "changed": [],
-    "why": "all fields checked against the diff; no change"
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

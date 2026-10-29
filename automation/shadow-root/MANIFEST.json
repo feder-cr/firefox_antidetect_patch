@@ -4,25 +4,29 @@
   "dom/base/Element.h",
   "dom/webidl/Element.webidl"
  ],
- "added": {},
+ "added": {
+  "dom/base/StealthShadowRoot.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/base/Element.cpp",
    "category": "juggler",
    "feature": "shadow-root-sandbox-access",
-   "prefs": [],
+   "prefs": [
+    "zoom.stealth.fpp.hw_seed"
+   ],
    "added": 84,
    "removed": 5,
    "hunks": 3,
-   "inline_logic_lines": 10,
-   "hookable": "movable",
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
    "anchor": "Element::GetShadowRootForBindings",
    "evidence": [
     "-ShadowRoot* Element::GetShadowRootForBindings() const {",
     "+  if (!BasePrincipal::Cast(aSubject).Is<ExpandedPrincipal>()) {",
     "+  if (shadowRoot->IsUAWidget()) {"
    ],
-   "notes": "Closed shadow roots are returned only to the automation sandbox (ExpandedPrincipal subject), never UA widgets; the page keeps the spec answer (null). The decision is about 10 logic lines and can move to one of our files behind a one-line call. The principal test is deliberately before the pref read (the comment says content must not pay for the exception; timing was measured). mozilla::gfx::StealthEngineActive() is defined outside this diff (not checked). Hunk 1 adds #include StaticPrefs_zoom.h, which the changed code does not use; drop it. Signature change is in Element.h. VERIFIED: mozilla::gfx::StealthEngineActive is defined at gfx/thebes/StealthDeclarationGate.h:42 (confirmed). StaticPrefs_zoom.h include (Element.cpp:66) is unused: no StaticPrefs::zoom_ call exists in the file (confirmed). Despite the comments, the added code reads no pref; the only gate is StealthEngineActive().",
+   "notes": "Hook (4 lines): GetShadowRootForBindings takes the subject principal and, for a null or closed root, returns StealthClosedShadowRootForBindings (dom/base/StealthShadowRoot.h, inline): content gets null as upstream; the automation sandbox (ExpandedPrincipal) gets an author closed root when the engine is active (zoom.stealth.fpp.hw_seed), never a UA widget.",
    "verifier": {
     "changed": [
      "notes"

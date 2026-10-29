@@ -1,9 +1,17 @@
 {
  "modified": [
   "dom/media/webspeech/synth/SpeechSynthesis.cpp",
-  "dom/media/webspeech/synth/SpeechSynthesisVoice.cpp"
+  "dom/media/webspeech/synth/SpeechSynthesisVoice.cpp",
+  "dom/media/webspeech/synth/moz.build",
+  "dom/media/webspeech/synth/test/mochitest.toml"
  ],
- "added": {},
+ "added": {
+  "dom/media/webspeech/synth/StealthSpeechVoice.cpp": "100644",
+  "dom/media/webspeech/synth/StealthSpeechVoice.h": "100644",
+  "dom/media/webspeech/synth/StealthSpeechVoices.cpp": "100644",
+  "dom/media/webspeech/synth/StealthSpeechVoices.h": "100644",
+  "dom/media/webspeech/synth/test/test_stealth_voices.html": "100644"
+ },
  "inventory": [
   {
    "file": "dom/media/webspeech/synth/SpeechSynthesis.cpp",
@@ -53,6 +61,42 @@
      "notes"
     ],
     "why": "Added the verified consequence of the GetVoiceURI rewrite for the speak path."
+   }
+  },
+  {
+   "file": "dom/media/webspeech/synth/moz.build",
+   "category": "build",
+   "feature": "speech-voices-declared",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
+   "file": "dom/media/webspeech/synth/test/mochitest.toml",
+   "category": "build",
+   "feature": "speech-voices-declared",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

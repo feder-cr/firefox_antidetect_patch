@@ -1,223 +1,94 @@
+diff --git a/dom/base/test/browser.toml b/dom/base/test/browser.toml
+index 2b89ef3e43b07dd4815da47333c443f8380ea6f2..ff1d1d2937ad1f7c15b87a75de63ef22b1f88d43 100644
+--- a/dom/base/test/browser.toml
++++ b/dom/base/test/browser.toml
+@@ -294,6 +294,9 @@ skip-if = [
+   "true", # Bug 1271028
+ ]
+ 
++# STEALTH-HOOK(fingerprint/locale-time/workers)
++["browser_stealth_language_workers.js"]
++
+ ["browser_timeout_throttling_with_audio_playback.js"]
+ 
+ ["browser_timezone_override.js"]
 diff --git a/dom/serviceworkers/ServiceWorkerPrivate.cpp b/dom/serviceworkers/ServiceWorkerPrivate.cpp
-index 5507534c9cc67eec3e8e04bcd14c1644a36ddee2..7b8f8b127f872ace39261483213db54f92152615 100644
+index 5507534c9cc67eec3e8e04bcd14c1644a36ddee2..a67194c5372b8f34b8bbbef90a0f9b4a8c0f17cc 100644
 --- a/dom/serviceworkers/ServiceWorkerPrivate.cpp
 +++ b/dom/serviceworkers/ServiceWorkerPrivate.cpp
-@@ -27,6 +27,8 @@
- #include "mozilla/StaticPrefs_dom.h"
- #include "mozilla/StaticPrefs_privacy.h"
- #include "mozilla/StoragePrincipalHelper.h"
-+#include "mozilla/dom/BrowsingContext.h"
-+#include "mozilla/dom/BrowsingContextGroup.h"
- #include "mozilla/dom/Client.h"
- #include "mozilla/dom/ClientIPCTypes.h"
- #include "mozilla/dom/ClientManager.h"
-@@ -805,8 +807,11 @@ nsresult ServiceWorkerPrivate::Initialize() {
-       OriginTrials(), std::move(serviceWorkerData), regInfo->AgentClusterId(),
-       remoteType.unwrap(),
-       // Bug 2040904. Add support for language override for service workers.
-+      // STEALTHFOX: the locale is filled by RefreshRemoteWorkerData, before
-+      // every spawn; WorkerPrivate derives the language list from it.
-       ""_ns, nsTArray<nsString>(),
-       // Bug 2039330. Add support for timezone override for service workers.
-+      // STEALTHFOX: filled by RefreshRemoteWorkerData as well.
-       u""_ns);
- 
-   mRemoteWorkerData.referrerInfo() = MakeAndAddRef<ReferrerInfo>(nullptr);
-@@ -1911,6 +1916,70 @@ void ServiceWorkerPrivate::Terminated() {
-   Shutdown();
- }
- 
-+// STEALTHFOX: the language and the zone of the context a service worker
-+// belongs to.
-+//
-+// A service worker has no owner document: it is keyed by principal, origin
-+// attributes included, so it is shared by every page of ONE user context (one
-+// Playwright browser context) and only by them. Juggler writes the same
-+// LanguageOverride and TimezoneOverride on every top-level BrowsingContext of
-+// a context (PageTarget.updateLanguageOverride, updateTimezoneOverride), so
-+// any of those pages answers the question, and the window that registered the
-+// worker and the worker itself end up with the same language and the same
-+// clock. Retail Firefox 151, measured, gives a window and its dedicated,
-+// shared and service workers the same navigator.languages, Intl locale and
-+// zone; with one of each per process that is automatic, with one per context
-+// it has to be carried here.
-+//
-+// Each is empty when no open page of that context is found, or when its pages
-+// disagree on it (an override set per tab, not by Juggler): the worker then
-+// gets the session's declaration in WorkerPrivate.
-+static void ContextDeclaration(nsIPrincipal* aPrincipal, nsACString& aLanguage,
-+                               nsAString& aZone) {
-+  AssertIsOnMainThread();
-+  MOZ_ASSERT(aPrincipal);
-+
-+  aLanguage.Truncate();
-+  aZone.Truncate();
-+
-+  const OriginAttributes& attrs =
-+      BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
-+
-+  nsTArray<RefPtr<BrowsingContextGroup>> groups;
-+  BrowsingContextGroup::GetAllGroups(groups);
-+
-+  bool seen = false;
-+  bool languageAgrees = true;
-+  bool zoneAgrees = true;
-+  for (const RefPtr<BrowsingContextGroup>& group : groups) {
-+    for (const RefPtr<BrowsingContext>& top : group->Toplevels()) {
-+      if (top->IsDiscarded() || !top->IsContent()) {
-+        continue;
-+      }
-+      const OriginAttributes& topAttrs = top->OriginAttributesRef();
-+      if (topAttrs.mUserContextId != attrs.mUserContextId ||
-+          topAttrs.mPrivateBrowsingId != attrs.mPrivateBrowsingId) {
-+        continue;
-+      }
-+      if (!seen) {
-+        aLanguage = top->GetLanguageOverride();
-+        aZone = top->GetTimezoneOverride();
-+        seen = true;
-+        continue;
-+      }
-+      languageAgrees =
-+          languageAgrees && aLanguage.Equals(top->GetLanguageOverride());
-+      zoneAgrees = zoneAgrees && aZone.Equals(top->GetTimezoneOverride());
-+    }
-+  }
-+  if (!languageAgrees) {
-+    aLanguage.Truncate();
-+  }
-+  if (!zoneAgrees) {
-+    aZone.Truncate();
-+  }
-+}
-+
- void ServiceWorkerPrivate::RefreshRemoteWorkerData(
-     const RefPtr<ServiceWorkerRegistrationInfo>& aRegistration) {
-   AssertIsOnMainThread();
-@@ -1921,6 +1990,12 @@ void ServiceWorkerPrivate::RefreshRemoteWorkerData(
+@@ -10,6 +10,7 @@
+ #include "ServiceWorkerManager.h"
+ #include "ServiceWorkerRegistrationInfo.h"
+ #include "ServiceWorkerUtils.h"
++#include "StealthWorkerDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/workers)
+ #include "js/ErrorReport.h"
+ #include "mozIThirdPartyUtil.h"
+ #include "mozilla/Assertions.h"
+@@ -1921,6 +1922,8 @@ void ServiceWorkerPrivate::RefreshRemoteWorkerData(
    serviceWorkerData.descriptor() = mInfo->Descriptor().ToIPC();
    serviceWorkerData.registrationDescriptor() =
        aRegistration->Descriptor().ToIPC();
-+
-+  // Only the locale travels: the resolved navigator.languages list stays
-+  // empty and WorkerPrivate derives it from the locale in the worker process.
-+  ContextDeclaration(mInfo->Principal(),
-+                     mRemoteWorkerData.languageOverrideLocale(),
-+                     mRemoteWorkerData.timezoneOverride());
++  // STEALTH-HOOK(fingerprint/locale-time/workers)
++  StealthWorkerDeclaration(mInfo->Principal(), mRemoteWorkerData);
  }
  
  RefPtr<FetchServicePromises> ServiceWorkerPrivate::SetupNavigationPreload(
-diff --git a/dom/workers/WorkerLoadInfo.h b/dom/workers/WorkerLoadInfo.h
-index c354aab96f9391f3aa7f5c7ddf62cf82e18d6258..d97e2e1b54b47940ebec722ab06b07ae58082483 100644
---- a/dom/workers/WorkerLoadInfo.h
-+++ b/dom/workers/WorkerLoadInfo.h
-@@ -149,6 +149,12 @@ struct WorkerLoadInfoData {
-   // browsingContext.timezoneOverride. It's applied the same was as for
-   // mLanguageOverrideLocale and mLanguageOverride.
-   nsString mTimezoneOverride;
-+  // STEALTHFOX: these three also reach service workers, from the context of
-+  // the registration (ServiceWorkerPrivate::RefreshRemoteWorkerData), and
-+  // WorkerPrivate's constructor fills empty ones with the session's
-+  // (intl/locale/StealthSessionPrefs.h), so a worker keeps the time and speaks
-+  // the language of the document that created it instead of the process-wide
-+  // ones.
+diff --git a/dom/serviceworkers/moz.build b/dom/serviceworkers/moz.build
+index ced898d0af8b48a5bbd188681a9fdac9b3689310..3227b4e2a2aca9f41b0444f8ff8d0fc9a6dab4be 100644
+--- a/dom/serviceworkers/moz.build
++++ b/dom/serviceworkers/moz.build
+@@ -82,6 +82,7 @@ UNIFIED_SOURCES += [
+     "ServiceWorkerUnregisterJob.cpp",
+     "ServiceWorkerUpdateJob.cpp",
+     "ServiceWorkerUtils.cpp",
++    "StealthWorkerDeclaration.cpp",  # STEALTH-HOOK(fingerprint/locale-time/workers)
+ ]
  
-   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
-   OriginTrials mTrials;
+ IPDL_SOURCES += [
 diff --git a/dom/workers/WorkerPrivate.cpp b/dom/workers/WorkerPrivate.cpp
-index 0a8f381e93bec2404789d3f8a6646e43b879e519..f1c5435577c5a52ffdda025e376c94c2dc4b36a1 100644
+index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f489273274acc871 100644
 --- a/dom/workers/WorkerPrivate.cpp
 +++ b/dom/workers/WorkerPrivate.cpp
-@@ -94,6 +94,7 @@
- #include "mozilla/extensions/ExtensionBrowser.h"  // extensions::Create{AndDispatchInitWorkerContext,WorkerLoaded,WorkerDestroyed}Runnable
- #include "mozilla/extensions/WebExtensionPolicy.h"
- #include "mozilla/glean/DomUseCounterMetrics.h"
-+#include "mozilla/intl/StealthSessionPrefs.h"
- #include "mozilla/ipc/BackgroundChild.h"
- #include "mozilla/ipc/PBackgroundChild.h"
- #include "mozilla/net/CookieJarSettings.h"
-@@ -2972,12 +2973,50 @@ WorkerPrivate::WorkerPrivate(
+@@ -9,6 +9,7 @@
+ #include "MessageEventRunnable.h"
+ #include "RuntimeService.h"
+ #include "ScriptLoader.h"
++#include "StealthWorkerDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/workers)
+ #include "WorkerCSPEventListener.h"
+ #include "WorkerDebugger.h"
+ #include "WorkerDebuggerManager.h"
+@@ -2972,6 +2973,8 @@ WorkerPrivate::WorkerPrivate(
    } else {
      AssertIsOnMainThread();
  
-+    // STEALTHFOX (firefox-50): the owner's language and zone, or the
-+    // session's when the owner carries none (a service worker spawned while
-+    // no page of its context is open, a chrome worker). From here on
-+    // mLoadInfo holds what this worker declares, and its nested workers copy
-+    // it (GetLoadInfo).
-+    intl::OrSessionLanguage(mLoadInfo.mLanguageOverrideLocale);
-+    intl::OrSessionTimezone(mLoadInfo.mTimezoneOverride);
-+
-+    // STEALTHFOX: navigator.languages of this worker, from the same
-+    // LanguageOverride its owner's window reads (Navigator::GetLanguages).
-+    // GetLoadInfo already resolved the list for a worker with a window owner;
-+    // it is still empty when the locale came from the session or from a
-+    // RemoteWorkerData that only carries the locale (service workers). An
-+    // empty list means nothing is declared: WorkerNavigator then keeps the
-+    // process-wide list from intl.accept_languages, as upstream does.
-+    if (!mLoadInfo.mLanguageOverrideLocale.IsEmpty() &&
-+        mLoadInfo.mLanguageOverride.IsEmpty()) {
-+      Navigator::GetAcceptLanguages(mLoadInfo.mLanguageOverride,
-+                                    &mLoadInfo.mLanguageOverrideLocale);
-+    }
-+
++    // STEALTH-HOOK(fingerprint/locale-time/workers)
++    DeclareWorkerLanguageAndZone(mLoadInfo);
      RuntimeService::GetDefaultJSSettings(mJSSettings);
  
      {
-       JS::RealmOptions& chromeRealmOptions = mJSSettings.chromeRealmOptions;
-       JS::RealmOptions& contentRealmOptions = mJSSettings.contentRealmOptions;
- 
-+      // STEALTHFOX (firefox-50): the worker's realm is born with the language
-+      // and the zone its owner declares, through the same
-+      // SetRealmTimeAndLanguage the window's realm goes through
-+      // (xpc::InitGlobalObjectOptions). Upstream's update path
-+      // (UpdateLanguageOverrideInternal, UpdateTimezoneOverrideInternal) only
-+      // runs on a later BrowsingContext change; the session fallback above
-+      // is applied here, at birth.
-+      //
-+      // Both arguments were empty literals once. The language until
-+      // 2026-08-20: the worker spoke the machine's locale while its page
-+      // spoke the declared one, in all of Intl and in toLocaleString
-+      // (71-bug-archive.md [B165]). The zone until firefox-50: the worker
-+      // took the PROCESS's zone, the `TZ` the core put in the environment,
-+      // which was right only where `TZ` was. On Windows the C runtime and
-+      // ICU read `TZ` differently and no value satisfies both, so
-+      // America/Phoenix gave the machine's zone in a Worker ([B334]), and a
-+      // second context with a zone of its own gave the session's ([B346]).
-       const nsCString& languageOverride = mLoadInfo.mLanguageOverrideLocale;
-       const nsAString& timezoneOverride = mLoadInfo.mTimezoneOverride;
- 
-@@ -6350,7 +6389,13 @@ void WorkerPrivate::UpdateLanguageOverrideInternal(
+@@ -6350,7 +6353,8 @@ void WorkerPrivate::UpdateLanguageOverrideInternal(
          if (aLanguageOverride.IsEmpty()) {
            JS::SetRealmLocaleOverride(realm, nullptr);
          } else {
 -          JS::SetRealmLocaleOverride(realm, aLanguageOverride.get());
-+          // STEALTHFOX: the override may be an Accept-Language list
-+          // ("fr-FR, fr"); the realm's Intl default locale is a single BCP-47
-+          // tag, as at birth (SetRealmTimeAndLanguage) and in the window
-+          // (BrowsingContext::DidSet).
-+          nsAutoCString primaryLocale;
-+          intl::PrimaryLanguageTag(aLanguageOverride, primaryLocale);
-+          JS::SetRealmLocaleOverride(realm, primaryLocale.get());
++          // STEALTH-HOOK(fingerprint/locale-time/workers)
++          SetWorkerRealmLocale(realm, aLanguageOverride);
          }
        }
      }
-@@ -6396,6 +6441,13 @@ void WorkerPrivate::UpdateTimezoneOverrideInternal(JSContext* aCx,
+@@ -6396,6 +6400,10 @@ void WorkerPrivate::UpdateTimezoneOverrideInternal(JSContext* aCx,
  
  void WorkerPrivate::UpdateLanguagesInternal(
      const nsTArray<nsString>& aLanguages) {
-+  // STEALTHFOX: this is the intl.accept_languages broadcast. A worker that
-+  // follows its owner's LanguageOverride ignores it, exactly as the owner's
-+  // Navigator::GetLanguages does; its nested workers carry the same list.
-+  if (!mLoadInfo.mLanguageOverride.IsEmpty()) {
++  // STEALTH-HOOK(fingerprint/locale-time/workers)
++  if (WorkerFollowsOwnerLanguage(mLoadInfo)) {
 +    return;
 +  }
-+
    WorkerGlobalScope* globalScope = GlobalScope();
    RefPtr<WorkerNavigator> nav = globalScope->GetExistingNavigator();
    if (nav) {
 diff --git a/dom/worklet/WorkletGlobalScope.cpp b/dom/worklet/WorkletGlobalScope.cpp
-index c40353f140d091be5e7a4e04a0248daa2326b904..818fb71d3a51b16db51814bcc5eb9388b40dcbd1 100644
+index c40353f140d091be5e7a4e04a0248daa2326b904..3d903db3c3b272cf626b23b9c0203e18f660a2e6 100644
 --- a/dom/worklet/WorkletGlobalScope.cpp
 +++ b/dom/worklet/WorkletGlobalScope.cpp
 @@ -7,6 +7,7 @@
@@ -228,7 +99,7 @@ index c40353f140d091be5e7a4e04a0248daa2326b904..818fb71d3a51b16db51814bcc5eb9388
  #include "mozilla/dom/WorkletGlobalScopeBinding.h"
  #include "mozilla/dom/WorkletImpl.h"
  #include "mozilla/dom/WorkletThread.h"
-@@ -130,16 +131,18 @@ void WorkletGlobalScope::Dump(const Optional<nsAString>& aString) const {
+@@ -130,16 +131,13 @@ void WorkletGlobalScope::Dump(const Optional<nsAString>& aString) const {
  JS::RealmOptions WorkletGlobalScope::CreateRealmOptions() const {
    JS::RealmOptions options;
  
@@ -236,12 +107,7 @@ index c40353f140d091be5e7a4e04a0248daa2326b904..818fb71d3a51b16db51814bcc5eb9388
 -    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
 -    options.behaviors().setTimeZoneOverride(timeZone.get());
 -  }
-+  // STEALTHFOX (firefox-50): the rule of the window's and the workers' realms
-+  // (SetRealmTimeAndLanguage), with the language and the zone of the context
-+  // that created the worklet. Until firefox-50 a worklet's realm got only
-+  // resistFingerprinting's values: it took the process's zone, and a default
-+  // locale nobody set (WorkletThread, "FIXME: JS_SetDefaultLocale"), so
-+  // Intl in an AudioWorklet answered en-US whatever the session declared.
++  // STEALTH-HOOK(fingerprint/locale-time/workers)
 +  SetRealmTimeAndLanguage(
 +      options, ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
 +      ShouldResistFingerprinting(RFPTarget::JSLocale),
@@ -256,10 +122,10 @@ index c40353f140d091be5e7a4e04a0248daa2326b904..818fb71d3a51b16db51814bcc5eb9388
    // The SharedArrayBuffer global constructor property should not be present in
    // a fresh global object when shared memory objects aren't allowed (because
 diff --git a/dom/worklet/WorkletImpl.cpp b/dom/worklet/WorkletImpl.cpp
-index 1d3fc2a703a55e3c5390e79e93eb1ebc34217500..a58128fc59995b7521a9489b6a136c596797e783 100644
+index 1d3fc2a703a55e3c5390e79e93eb1ebc34217500..cd96fc78771b96877971e26484067abf2c5be1d6 100644
 --- a/dom/worklet/WorkletImpl.cpp
 +++ b/dom/worklet/WorkletImpl.cpp
-@@ -13,10 +13,16 @@
+@@ -13,10 +13,13 @@
  #include "mozilla/dom/PolicyContainer.h"
  #include "mozilla/dom/RegisterWorkletBindings.h"
  #include "mozilla/dom/ScriptSettings.h"
@@ -268,15 +134,12 @@ index 1d3fc2a703a55e3c5390e79e93eb1ebc34217500..a58128fc59995b7521a9489b6a136c59
  #include "mozilla/dom/WorkletGlobalScope.h"
  #include "mozilla/dom/worklet/WorkletModuleLoader.h"
  #include "nsGlobalWindowInner.h"
-+// STEALTH: GetBrowsingContext() is declared inline in nsPIDOMWindow.h and
-+// defined here; the declared language and timezone below call it. Without this
-+// include the file links only when the unified build happens to group it with
-+// one that includes it (151 did, 157 does not: an undefined symbol in libxul).
++// STEALTH-HOOK(fingerprint/locale-time/workers)
 +#include "nsPIDOMWindowInlines.h"
  
  using mozilla::dom::loader::WorkletModuleLoader;
  using mozilla::dom::loader::WorkletScriptLoader;
-@@ -34,6 +40,8 @@ WorkletLoadInfo::WorkletLoadInfo(nsPIDOMWindowInner* aWindow)
+@@ -34,6 +37,8 @@ WorkletLoadInfo::WorkletLoadInfo(nsPIDOMWindowInner* aWindow)
    } else {
      mOuterWindowID = 0;
    }
@@ -286,7 +149,7 @@ index 1d3fc2a703a55e3c5390e79e93eb1ebc34217500..a58128fc59995b7521a9489b6a136c59
  
  // ---------------------------------------------------------------------------
 diff --git a/dom/worklet/WorkletImpl.h b/dom/worklet/WorkletImpl.h
-index 1089511fcdb8ff31b0fdd4d38c4040810551daf7..d3ff66dab0f2a6447e5ed910b18ccff2a850a318 100644
+index 1089511fcdb8ff31b0fdd4d38c4040810551daf7..d6aaf878cfe518dc30ba9dfb0cac7a14b8a240aa 100644
 --- a/dom/worklet/WorkletImpl.h
 +++ b/dom/worklet/WorkletImpl.h
 @@ -13,6 +13,7 @@
@@ -297,14 +160,11 @@ index 1089511fcdb8ff31b0fdd4d38c4040810551daf7..d3ff66dab0f2a6447e5ed910b18ccff2
  
  class nsPIDOMWindowInner;
  class nsIPrincipal;
-@@ -35,10 +36,19 @@ class WorkletLoadInfo {
+@@ -35,10 +36,16 @@ class WorkletLoadInfo {
    uint64_t OuterWindowID() const { return mOuterWindowID; }
    uint64_t InnerWindowID() const { return mInnerWindowID; }
  
-+  // STEALTHFOX (firefox-50): the language and the zone the creating window's
-+  // context declares, read on the main thread when the worklet is created,
-+  // for the realm the worklet thread creates later
-+  // (WorkletGlobalScope::CreateRealmOptions). Any thread: never modified.
++  // STEALTH-HOOK(fingerprint/locale-time/workers)
 +  const nsCString& Language() const { return mLanguage; }
 +  const nsString& Timezone() const { return mTimezone; }
 +

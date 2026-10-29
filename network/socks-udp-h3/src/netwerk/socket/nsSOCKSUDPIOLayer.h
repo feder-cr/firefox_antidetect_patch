@@ -36,6 +36,8 @@
 namespace mozilla {
 namespace net {
 
+class nsProxyInfo;
+
 /*
  * Push the SOCKS5 UDP layer onto `aFd`. The layer immediately opens a TCP
  * control connection to `aProxyHost:aProxyPort`, performs greeting+auth+
@@ -52,6 +54,31 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd,
                                       int32_t aProxyPort,
                                       const char* aProxyUsername,
                                       const char* aProxyPassword);
+
+/*
+ * Proxy gate for HTTP/3 in AltSvcCache::UpdateAltServiceMapping.
+ * Returns true when there is no proxy, or the proxy is direct or an HTTP/3
+ * proxy, or (network.proxy.socks_remote_udp is true and the proxy is SOCKS).
+ */
+bool StealthHttp3ProxyAllowed(nsProxyInfo* aProxyInfo);
+
+/*
+ * HTTP/3 over SOCKS5 (UDP ASSOCIATE) decisions of DnsAndConnectSocket.
+ * All of them depend on the pref network.proxy.socks_remote_udp.
+ */
+
+// True when network.proxy.socks_remote_udp is set (read on every call).
+bool StealthSocksUdpEnabled();
+
+// Value for DnsAndConnectSocket::mIsHttp3 of a connection that goes through a
+// proxy. aProxyInfo is nsHttpConnectionInfo::ProxyInfo(), aIsHttp3 is
+// IsHttp3(), aIsHttp3ProxyConnection is IsHttp3ProxyConnection().
+bool StealthSocksUdpH3ViaProxy(nsProxyInfo* aProxyInfo, bool aIsHttp3,
+                               bool aIsHttp3ProxyConnection);
+
+// Value for the three mSkipDnsResolution flags of DnsAndConnectSocket when the
+// SOCKS proxy resolves the host name.
+bool StealthSocksUdpSkipDns(bool aIsHttp3);
 
 }  // namespace net
 }  // namespace mozilla

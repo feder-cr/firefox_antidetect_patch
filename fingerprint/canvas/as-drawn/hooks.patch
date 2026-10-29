@@ -15,18 +15,14 @@ index 4f8d895b37612679b9255ac52a6037400fdc9d19..e2270d7e614763870963147e6b461234
      // If the element doesn't have a context then we won't get a snapshot. The
      // canvas spec wants us to not error and just draw nothing, so return an
 diff --git a/layout/base/nsLayoutUtils.h b/layout/base/nsLayoutUtils.h
-index be8109708926064f6da60e7b118f74cfe078f014..a40ebc2b2d8ba3ff74a488590491a5e1280d16ed 100644
+index be8109708926064f6da60e7b118f74cfe078f014..6799de0680bd4400c0c8b386beb091bc40bd9410 100644
 --- a/layout/base/nsLayoutUtils.h
 +++ b/layout/base/nsLayoutUtils.h
-@@ -2384,6 +2384,12 @@ class nsLayoutUtils {
+@@ -2384,6 +2384,8 @@ class nsLayoutUtils {
      SFE_ORIENTATION_FROM_IMAGE = 1 << 7,
      /* Caller handles SFER::mCropRect.isSome() */
      SFE_ALLOW_UNCROPPED_UNSCALED = 1 << 8,
-+    /* A canvas as DRAWN, without the canvas noise: for the browser's own
-+       readers that show it and never hand its bytes to a page (-moz-element,
-+       nsDOMWindowUtils). Every other caller is a page reading the canvas or
-+       drawing with it, and gets what HTMLCanvasElement::GetSurfaceSnapshot
-+       and OffscreenCanvas::GetSurfaceSnapshot give a page. */
++    /* STEALTH-HOOK(fingerprint/canvas/as-drawn): canvas as drawn, no noise */
 +    SFE_AS_DRAWN = 1 << 9,
    };
  

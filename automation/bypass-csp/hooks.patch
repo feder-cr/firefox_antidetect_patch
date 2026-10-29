@@ -1,37 +1,24 @@
+diff --git a/dom/security/moz.build b/dom/security/moz.build
+index a637a9f981e5a7b28bc8c473f11dd6d75bd030ba..8b2a0a1d201e3d20a87b0e00c6bf3c647393fb71 100644
+--- a/dom/security/moz.build
++++ b/dom/security/moz.build
+@@ -71,6 +71,7 @@ UNIFIED_SOURCES += [
+     "SecFetch.cpp",
+     "SRICheck.cpp",
+     "SRIMetadata.cpp",
++    "StealthBypassCSP.cpp",
+     "WAICTUtils.cpp",
+ ]
+ 
 diff --git a/dom/security/nsCSPUtils.cpp b/dom/security/nsCSPUtils.cpp
-index 11de03cf6eaf8fa6fff602cc12a78acc08f2e25f..0e7814d208d56867f89ff89520ea40c92289410e 100644
+index 11de03cf6eaf8fa6fff602cc12a78acc08f2e25f..e9c92af9bb079c8b5fde621edab09d19141404ae 100644
 --- a/dom/security/nsCSPUtils.cpp
 +++ b/dom/security/nsCSPUtils.cpp
-@@ -22,6 +22,7 @@
- #include "nsIChannel.h"
- #include "nsIConsoleService.h"
- #include "nsIContentSecurityPolicy.h"
-+#include "nsIDocShell.h"
- #include "nsICryptoHash.h"
- #include "nsIScriptError.h"
- #include "nsIStringBundle.h"
-@@ -128,12 +129,28 @@ bool CSP_ShouldURIInheritCSP(nsIURI* aURI) {
-          aURI->SchemeIs("filesystem") || aURI->SchemeIs("javascript");
- }
- 
-+bool CSP_IsBypassedFor(const mozilla::dom::Document& aDoc) {
-+  // ⛔ Until this existed the docshell attribute was stored and never read:
-+  // the 2026-05 port added it as storage only, so `bypass_csp=True` changed
-+  // nothing a page enforced (issue #295 of invisible_playwright).
-+  nsIDocShell* docShell = aDoc.GetDocShell();
-+  if (!docShell) {
-+    return false;
-+  }
-+  bool bypass = false;
-+  return NS_SUCCEEDED(docShell->GetBypassCSPEnabled(&bypass)) && bypass;
-+}
-+
- void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
-                            const nsAString& aPolicyStr) {
-   if (aDoc.IsLoadedAsData()) {
+@@ -134,6 +134,11 @@ void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
      return;
    }
  
++  // STEALTH-HOOK(automation/bypass-csp)
 +  if (CSP_IsBypassedFor(aDoc)) {
 +    return;
 +  }
@@ -40,17 +27,14 @@ index 11de03cf6eaf8fa6fff602cc12a78acc08f2e25f..0e7814d208d56867f89ff89520ea40c9
        nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
            aPolicyStr));
 diff --git a/dom/security/nsCSPUtils.h b/dom/security/nsCSPUtils.h
-index ddc5b3eec628412c063e58c11edf6039fdc225bc..14c69607b8d0221eb6c2808e2cd761a90ecb28f5 100644
+index ddc5b3eec628412c063e58c11edf6039fdc225bc..3aa85a604d5935becf6e4b6979858d2aefad0796 100644
 --- a/dom/security/nsCSPUtils.h
 +++ b/dom/security/nsCSPUtils.h
-@@ -216,6 +216,12 @@ bool CSP_ShouldURIInheritCSP(nsIURI* aURI);
+@@ -216,6 +216,9 @@ bool CSP_ShouldURIInheritCSP(nsIURI* aURI);
  void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
                             const nsAString& aPolicyStr);
  
-+// Whether the automation asked this document's docshell to ignore the page's
-+// own policies (Juggler's `bypassCSP` context setting, Playwright's
-+// `bypass_csp`). The one place the question is answered: InitCSP for the
-+// header policies, CSP_ApplyMetaCSPToDoc for a <meta> one.
++// STEALTH-HOOK(automation/bypass-csp)
 +bool CSP_IsBypassedFor(const mozilla::dom::Document& aDoc);
 +
  // Checks if the URI is "chrome://browser/content/browser.xhtml"

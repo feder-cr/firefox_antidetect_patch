@@ -1,0 +1,33 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+// Types named by nsIDownloadInterceptor. nsIHelperAppLauncher is defined in
+// nsIExternalHelperAppService.idl, which includes this file, so it can only
+// be forward-declared here.
+interface nsIFile;
+interface nsIHelperAppLauncher;
+interface nsIRequest;
+webidl BrowsingContext;
+
+/**
+ * Stealthfox: Interceptor interface used by Juggler to redirect downloads
+ * into a developer-controlled location (Playwright's downloadOptions).
+ * Restored from FF146 stealth patch series — not present in vanilla FF150.
+ *
+ * Stealthfox: nsIExternalHelperAppService.setDownloadInterceptor() installs a
+ * Juggler-side download interceptor that takes over download routing (returns
+ * a target file from Playwright's downloadOptions). Called from
+ * juggler/TargetRegistry.js at constructor time. The setter is declared in
+ * nsIExternalHelperAppService.idl because an XPIDL method can only be declared
+ * inside its own interface block.
+ */
+[scriptable, uuid(9a20e9b0-75d0-11ea-bc55-0242ac130003)]
+interface nsIDownloadInterceptor : nsISupports
+{
+  boolean interceptDownloadRequest(in nsIHelperAppLauncher aHandler, in nsIRequest aRequest, in BrowsingContext aBrowsingContext, out nsIFile file);
+
+  void onDownloadComplete(in nsIHelperAppLauncher aHandler, in ACString aErrorName);
+};

@@ -1,8 +1,12 @@
 {
  "modified": [
-  "toolkit/components/browser/nsIWebBrowserChrome.idl"
+  "toolkit/components/browser/nsIWebBrowserChrome.idl",
+  "toolkit/components/windowwatcher/moz.build"
  ],
- "added": {},
+ "added": {
+  "toolkit/components/windowwatcher/JugglerWindowSize.cpp": "100644",
+  "toolkit/components/windowwatcher/JugglerWindowSize.h": "100644"
+ },
  "inventory": [
   {
    "file": "toolkit/components/browser/nsIWebBrowserChrome.idl",
@@ -24,6 +28,24 @@
    "verifier": {
     "changed": [],
     "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "toolkit/components/windowwatcher/moz.build",
+   "category": "build",
+   "feature": "juggler-popup-explicit-size",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

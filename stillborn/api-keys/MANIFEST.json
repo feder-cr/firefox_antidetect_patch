@@ -2,10 +2,15 @@
  "modified": [
   "toolkit/components/url-classifier/SafeBrowsing.sys.mjs",
   "toolkit/components/urlformatter/URLFormatter.sys.mjs",
+  "toolkit/components/urlformatter/moz.build",
+  "toolkit/components/urlformatter/tests/unit/xpcshell.toml",
   "toolkit/modules/AppConstants.sys.mjs",
   "toolkit/modules/moz.build"
  ],
- "added": {},
+ "added": {
+  "toolkit/components/urlformatter/StealthApiKeys.sys.mjs": "100644",
+  "toolkit/components/urlformatter/tests/unit/test_stealth_apikeys.js": "100644"
+ },
  "inventory": [
   {
    "file": "toolkit/components/url-classifier/SafeBrowsing.sys.mjs",
@@ -53,6 +58,42 @@
    "verifier": {
     "changed": [],
     "why": "Checked against the diff and tree; no correction needed."
+   }
+  },
+  {
+   "file": "toolkit/components/urlformatter/moz.build",
+   "category": "build",
+   "feature": "api-keys-declared",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
+   "file": "toolkit/components/urlformatter/tests/unit/xpcshell.toml",
+   "category": "build",
+   "feature": "api-keys-declared",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   },
   {

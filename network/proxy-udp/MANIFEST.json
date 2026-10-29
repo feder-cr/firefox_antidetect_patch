@@ -3,7 +3,11 @@
   "dom/media/webrtc/transport/nr_socket_prsock.cpp",
   "netwerk/base/nsUDPSocket.cpp"
  ],
- "added": {},
+ "added": {
+  "dom/media/webrtc/transport/nr_stealth_proxy_udp.h": "100644",
+  "netwerk/base/StealthSocksUdp.cpp": "100644",
+  "netwerk/base/StealthSocksUdp.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/media/webrtc/transport/nr_socket_prsock.cpp",

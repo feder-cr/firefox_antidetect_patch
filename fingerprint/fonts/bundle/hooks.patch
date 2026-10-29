@@ -1,144 +1,13 @@
 diff --git a/browser/fonts/moz.build b/browser/fonts/moz.build
-index 0ebf2de60f2c32f58635deaccae164c0a9b22ed5..0eae14f0cbed2392aaaf4cceafbfa3bfd5752683 100644
+index 0ebf2de60f2c32f58635deaccae164c0a9b22ed5..8ef5c32c65570c7e9d5715a632202cae7ea56040 100644
 --- a/browser/fonts/moz.build
 +++ b/browser/fonts/moz.build
-@@ -2,6 +2,134 @@
- # License, v. 2.0. If a copy of the MPL was not distributed with this
- # file, You can obtain one at http://mozilla.org/MPL/2.0/.
- 
--if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk"):
-+# Stealthfox: ship the Windows core font set so MOZ_BUNDLED_FONTS makes the
-+# whitelisted families render with genuine glyphs on every host (incl. Linux /
-+# macOS that lack them). The font-list ctor sets font.system.whitelist; without
-+# the bundled files a non-Windows host can't render the families. macOS also
-+# needs --enable-bundled-fonts in its mozconfig.
-+if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk", "cocoa"):
+@@ -5,3 +5,5 @@
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk"):
      DIST_SUBDIR = ""
--    FINAL_TARGET_FILES.fonts += ["TwemojiMozilla.ttf"]
-+    FINAL_TARGET_FILES.fonts += [
-+        "arial7_04.ttf",
-+        "arialbd7_04.ttf",
-+        "arialbi7_04.ttf",
-+        "ariali7_04.ttf",
-+        "ariblk.ttf",
-+        "bahnschrift2_07.ttf",
-+        # Our uniform-font-list manifest (read at font-list init from <GRE>/fonts).
-+        "bundle-fonts.list",
-+        "calibri6_26.ttf",
-+        "calibrib6_26.ttf",
-+        "calibrii6_26.ttf",
-+        "calibriz6_26.ttf",
-+        "cambria6_99.ttc",
-+        "cambriab6_98.ttf",
-+        "cambriai6_98.ttf",
-+        "cambriaz6_98.ttf",
-+        "candara5_64.ttf",
-+        "candarab5_64.ttf",
-+        "candarai5_64.ttf",
-+        "candaraz5_64.ttf",
-+        "comic5_15.ttf",
-+        "comicbd5_15.ttf",
-+        "comici5_15.ttf",
-+        "comicz5_15.ttf",
-+        "consola7_00.ttf",
-+        "consolab7_00.ttf",
-+        "consolai7_00.ttf",
-+        "consolaz7_00.ttf",
-+        "constan5_93.ttf",
-+        "constanb5_93.ttf",
-+        "constani5_93.ttf",
-+        "constanz5_93.ttf",
-+        "corbel6_01.ttf",
-+        "corbelb6_01.ttf",
-+        "corbeli6_01.ttf",
-+        "corbelz6_01.ttf",
-+        "cour6_94.ttf",
-+        "courbd6_94.ttf",
-+        "courbi6_94.ttf",
-+        "couri6_94.ttf",
-+        "ebrima5_19.ttf",
-+        "ebrimabd5_19.ttf",
-+        "framd5_02.ttf",
-+        "framdit5_01.ttf",
-+        "gabriola5_93.ttf",
-+        "gadugi1_13.ttf",
-+        "gadugib1_13.ttf",
-+        "georgia5_59.ttf",
-+        "georgiab5_59.ttf",
-+        "georgiai5_59.ttf",
-+        "georgiaz5_59.ttf",
-+        "himalaya5_23.ttf",
-+        "impact5_11.ttf",
-+        "inkfree2_00.ttf",
-+        "javatext1_10.ttf",
-+        "L_10646.TTF",
-+        "leelauib5_06.ttf",
-+        "LEELAWUI.TTF",
-+        "leelawui5_06.ttf",
-+        "LUCON.TTF",
-+        "malgun.ttf",
-+        "marlett5_01.ttf",
-+        "micross7_03.ttf",
-+        "mingliub.ttc",
-+        "mmrtext1_21.ttf",
-+        "mmrtextb1_21.ttf",
-+        "monbaiti5_54.ttf",
-+        "msgothic5_32.ttc",
-+        "msjh6_15.ttc",
-+        "msyh6_31.ttc",
-+        "msyi6_00.ttf",
-+        "mvboli6_85.ttf",
-+        "Nirmala.ttf",
-+        "ntailu5_99.ttf",
-+        "ntailub5_99.ttf",
-+        "pala5_03.ttf",
-+        "palab5_03.ttf",
-+        "palabi5_03.ttf",
-+        "palai5_03.ttf",
-+        "phagspa6_00.ttf",
-+        "phagspab6_00.ttf",
-+        "segmdl21_86.ttf",
-+        "segoeicons1_44.ttf",
-+        "segoepr5_04.ttf",
-+        "segoeprb5_04.ttf",
-+        "segoesc5_03.ttf",
-+        "segoescb5_03.ttf",
-+        "segoeui5_67.ttf",
-+        "segoeuib5_67.ttf",
-+        "segoeuii5_66.ttf",
-+        "segoeuil.ttf",
-+        "segoeuisl.ttf",
-+        "segoeuiz5_66.ttf",
-+        "seguiemj1_60.ttf",
-+        "seguihis1_09.ttf",
-+        "seguisym6_24.ttf",
-+        "seguivar2_03.ttf",
-+        "simsun.ttc",
-+        "simsunb5_08.ttf",
-+        "SitkaSmall.ttf",
-+        "sylfaen5_08.ttf",
-+        "symbol5_01.ttf",
-+        "tahoma7_04.ttf",
-+        "tahomabd7_04.ttf",
-+        "taile6_00.ttf",
-+        "taileb6_00.ttf",
-+        "times7_11.ttf",
-+        "timesbd7_11.ttf",
-+        "timesbi7_11.ttf",
-+        "timesi7_11.ttf",
-+        "trebuc5_15.ttf",
-+        "trebucbd5_15.ttf",
-+        "trebucbi5_15.ttf",
-+        "trebucit5_15.ttf",
-+        "TwemojiMozilla.ttf",
-+        "verdana5_33.ttf",
-+        "verdanab5_33.ttf",
-+        "verdanai5_33.ttf",
-+        "verdanaz5_33.ttf",
-+        "webdings5_01.ttf",
-+        "wingding5_01.ttf",
-+        "yugothm1_95.ttc",
-+    ]
+     FINAL_TARGET_FILES.fonts += ["TwemojiMozilla.ttf"]
++
++include("StealthFonts.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/bundle)
 diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
 index 46725ca0498537098daebed34a5e503306e44882..c92a9b64b2086fe5d96204c3036c39274c4eb398 100644
 --- a/browser/installer/package-manifest.in
@@ -153,30 +22,14 @@ index 46725ca0498537098daebed34a5e503306e44882..c92a9b64b2086fe5d96204c3036c3927
  #endif
  @RESPATH@/hyphenation/*
 diff --git a/gfx/2d/2D.h b/gfx/2d/2D.h
-index d697d4dcbe855e97802ff1a16eae209564e2dbc4..47bffb5d7b5dc2645a25d547b3c7c2fca91f6b6d 100644
+index d697d4dcbe855e97802ff1a16eae209564e2dbc4..431dd2f5ae5b68d331633b151af2335f120cf67a 100644
 --- a/gfx/2d/2D.h
 +++ b/gfx/2d/2D.h
-@@ -1211,10 +1211,33 @@ class FTUserFontData final
+@@ -1211,10 +1211,17 @@ class FTUserFontData final
    explicit FTUserFontData(FontData* aFontData) : mFontData(aFontData) {}
    explicit FTUserFontData(const char* aFilename) : mFilename(aFilename) {}
  
-+  // STEALTH: i byte appartengono a QUALCUN ALTRO e non vanno liberati qui.
-+  //
-+  // Simmetrico al costruttore in prestito di `gfxDWriteFontFileStream` (§5.2l):
-+  // su ENTRAMBE le piattaforme una sola mappatura per FILE viene prestata a
-+  // tutte le facce di quel file, invece di una copia per faccia. Il prestito e'
-+  // sicuro per la stessa ragione di la': la cache di `StealthBundleFontList` e'
-+  // immortale per costruzione - l'oggetto e' volutamente leaked e non svuota mai
-+  // `mFileCache` - e il valore della mappa e' un `RefPtr`, quindi se la tabella
-+  // hash rialloca a spostarsi e' il puntatore e mai i byte.
-+  //
-+  // Serve un costruttore NUOVO: `FontData` e' il proprietario che chiama
-+  // `free()` sui suoi byte, quindi un puntatore mappato non puo' stare li'
-+  // dentro. I byte prestati restano in `mBorrowedData` / `mBorrowedLength`,
-+  // `mFontData` resta nullo, e `GetData()` / `Length()` rispondono per
-+  // entrambi i casi, cosi' i chiamanti non sanno nulla del prestito.
-+  // `CloneFace` (gfx/2d/Factory.cpp) apre i byte prestati quando manca
-+  // `mFontData`.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  enum class Prestito { Si };
 +  FTUserFontData(const uint8_t* aData, uint32_t aLength, Prestito)
 +      : mBorrowedData(aData), mBorrowedLength(aLength) {}
@@ -192,7 +45,7 @@ index d697d4dcbe855e97802ff1a16eae209564e2dbc4..47bffb5d7b5dc2645a25d547b3c7c2fc
  
    already_AddRefed<mozilla::gfx::SharedFTFace> CloneFace(
        int aFaceIndex = 0) override;
-@@ -1224,6 +1247,8 @@ class FTUserFontData final
+@@ -1224,6 +1231,8 @@ class FTUserFontData final
  
    std::string mFilename;
    RefPtr<FontData> mFontData;
@@ -202,7 +55,7 @@ index d697d4dcbe855e97802ff1a16eae209564e2dbc4..47bffb5d7b5dc2645a25d547b3c7c2fc
  
  /** SharedFTFace is a shared wrapper around an FT_Face. It is ref-counted,
 diff --git a/gfx/2d/Factory.cpp b/gfx/2d/Factory.cpp
-index d52f761dc99d42b17babb79e63bdd34e94b6f71d..58e4189a6e8141009e17bfbd4c476e487f9722e1 100644
+index d52f761dc99d42b17babb79e63bdd34e94b6f71d..22034d9fbbfd17e1707f5f0d1199c201161029c3 100644
 --- a/gfx/2d/Factory.cpp
 +++ b/gfx/2d/Factory.cpp
 @@ -119,9 +119,16 @@ FT_Library Factory::mFTLibrary = nullptr;
@@ -219,35 +72,21 @@ index d52f761dc99d42b17babb79e63bdd34e94b6f71d..58e4189a6e8141009e17bfbd4c476e48
 +                                              this);
 +    } else if (FT_Face ft = Factory::NewFTFaceFromData(
 +                   nullptr, mBorrowedData, mBorrowedLength, aFaceIndex)) {
-+      // STEALTH: bundle bytes lent by StealthBundleFontList (see 2D.h).
++      // STEALTH-HOOK(fingerprint/fonts/bundle)
 +      face = MakeAndAddRef<SharedFTFace>(ft, this);
 +    }
      if (!face ||
          (FT_Select_Charmap(face->GetFace(), FT_ENCODING_UNICODE) != FT_Err_Ok &&
           FT_Select_Charmap(face->GetFace(), FT_ENCODING_MS_SYMBOL) !=
 diff --git a/gfx/2d/ScaledFontDWrite.cpp b/gfx/2d/ScaledFontDWrite.cpp
-index cab04f04b6da699656bd987bef8700e5b44407ac..819493579a57e7e2aeb99928cb558c57acd1e8a5 100644
+index cab04f04b6da699656bd987bef8700e5b44407ac..858e122b5d47b2ad752aa883d71115cf12532b10 100644
 --- a/gfx/2d/ScaledFontDWrite.cpp
 +++ b/gfx/2d/ScaledFontDWrite.cpp
-@@ -272,6 +272,28 @@ bool UnscaledFontDWrite::GetFontDescriptor(FontDescriptorOutput aCb,
+@@ -272,6 +272,14 @@ bool UnscaledFontDWrite::GetFontDescriptor(FontDescriptorOutput aCb,
                                             void* aBaton) {
    MOZ_ASSERT(NS_IsMainThread());
  
-+  // STEALTH: se il percorso e' DICHIARATO, si usa quello e si salta il resto.
-+  //
-+  // La guardia `!mFont` qui sotto e' un PROXY: "non e' un font di sistema" sta
-+  // per "non ha un file", e il commento al punto di costruzione lo dice
-+  // esplicitamente ("this signals whether or not we can safely query a
-+  // descriptor"). Per un font scaricato da una pagina e' corretto, perche' li'
-+  // un file non esiste. Per le nostre facce imbarcate e' falso: il file esiste
-+  // e lo conosciamo, e tacerlo fa mandare a WebRender i BYTE del font invece
-+  // del percorso. Misurati 65,9 MB nel processo padre su Linux, dove la stessa
-+  // correzione e' stata fatta per prima - `70-known-bugs.md` [B154].
-+  //
-+  // Non si passa da `GetFontFileName` perche' quella pretende un
-+  // `IDWriteLocalFontFileLoader`, e il nostro caricatore presta byte in
-+  // memoria: non e' locale e non lo sara'. La convenzione dei byte e' la stessa
-+  // che usa lei, terminatore nullo compreso.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  if (!mPercorsoDichiarato.empty()) {
 +    aCb(reinterpret_cast<const uint8_t*>(mPercorsoDichiarato.c_str()),
 +        (mPercorsoDichiarato.size() + 1) * sizeof(WCHAR), mFontFace->GetIndex(),
@@ -259,7 +98,7 @@ index cab04f04b6da699656bd987bef8700e5b44407ac..819493579a57e7e2aeb99928cb558c57
      return false;
    }
 diff --git a/gfx/2d/UnscaledFontDWrite.h b/gfx/2d/UnscaledFontDWrite.h
-index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..ddcbae196a0176d1d6a2202e2919c5d3c8bb3937 100644
+index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..d9f5558406b56f93e0a75b55c4bbe5f6ee200fd7 100644
 --- a/gfx/2d/UnscaledFontDWrite.h
 +++ b/gfx/2d/UnscaledFontDWrite.h
 @@ -7,6 +7,7 @@
@@ -270,22 +109,11 @@ index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..ddcbae196a0176d1d6a2202e2919c5d3
  #include <vector>
  
  #include "2D.h"
-@@ -19,9 +20,22 @@ class ScaledFontDWrite;
+@@ -19,9 +20,11 @@ class ScaledFontDWrite;
  class UnscaledFontDWrite final : public UnscaledFont {
   public:
    MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(UnscaledFontDWrite, override)
-+  // STEALTH: `aFilePath` e' il file da cui questa faccia viene, quando esiste.
-+  //
-+  // Serve perche' `GetFontDescriptor` non riesce a ricavarlo da solo per le
-+  // nostre facce: quel percorso passa da `IDWriteLocalFontFileLoader`, e il
-+  // nostro caricatore presta byte in memoria, quindi non e' locale. Senza il
-+  // percorso Gecko ripiega sui BYTE del font verso WebRender - misurati 65,9 MB
-+  // nel processo padre su Linux, dove lo stesso difetto e' stato corretto per
-+  // primo. Vedi `70-known-bugs.md` [B154].
-+  //
-+  // Chi non passa un percorso non vede nessuna differenza: resta il
-+  // comportamento upstream, che per un font scaricato da una pagina e' quello
-+  // giusto perche' li' un file non esiste davvero.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
    UnscaledFontDWrite(const RefPtr<IDWriteFontFace>& aFontFace,
 -                     const RefPtr<IDWriteFont>& aFont)
 -      : mFontFace(aFontFace), mFont(aFont) {}
@@ -295,155 +123,104 @@ index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..ddcbae196a0176d1d6a2202e2919c5d3
  
    FontType GetType() const override { return FontType::DWRITE; }
  
-@@ -52,6 +66,8 @@ class UnscaledFontDWrite final : public UnscaledFont {
+@@ -52,6 +55,8 @@ class UnscaledFontDWrite final : public UnscaledFont {
    RefPtr<IDWriteFontFace> mFontFaceBold;
    RefPtr<IDWriteFont> mFont;
    std::vector<WCHAR> mFontFileName;
-+  // STEALTH: vuoto per ogni font che non sia dei nostri imbarcati.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  std::wstring mPercorsoDichiarato;
  };
  
  }  // namespace gfx
 diff --git a/gfx/thebes/gfxDWriteCommon.cpp b/gfx/thebes/gfxDWriteCommon.cpp
-index e3a2501a9bfa9f280e593f73e9a04ed530019f1b..70b1500588d9a30fd369d3774e7a9cec1d951461 100644
+index e3a2501a9bfa9f280e593f73e9a04ed530019f1b..2117d39b5b108ff5f622ece4fcf03d98a89273a8 100644
 --- a/gfx/thebes/gfxDWriteCommon.cpp
 +++ b/gfx/thebes/gfxDWriteCommon.cpp
-@@ -39,13 +39,30 @@ gfxDWriteFontFileStream::gfxDWriteFontFileStream(FontData* aData,
-                                                  uint64_t aFontFileKey)
-     : mData(aData), mFontFileKey(aFontFileKey) {}
+@@ -13,10 +13,7 @@ class gfxDWriteFontFileStream;
  
-+gfxDWriteFontFileStream::gfxDWriteFontFileStream(const uint8_t* aData,
-+                                                 uint32_t aLength,
-+                                                 uint64_t aFontFileKey,
-+                                                 Borrowed)
-+    : mBorrowed(aData), mBorrowedLength(aLength), mFontFileKey(aFontFileKey) {
-+  // Nothing to copy. The caller guarantees the bytes outlive this object; see
-+  // the header for why that guarantee holds for the only caller.
-+}
-+
- gfxDWriteFontFileStream::~gfxDWriteFontFileStream() {
-   sFontFileStreams.erase(mFontFileKey);
- }
+ using namespace mozilla;
  
-+const uint8_t* gfxDWriteFontFileStream::Bytes() const {
-+  return mBorrowed ? mBorrowed : mData->Data();
-+}
-+
-+uint32_t gfxDWriteFontFileStream::BytesLength() const {
-+  return mBorrowed ? mBorrowedLength : mData->Length();
-+}
-+
+-static StaticMutex sFontFileStreamsMutex MOZ_UNANNOTATED;
+-static uint64_t sNextFontFileKey = 0;
+-MOZ_RUNINIT static std::unordered_map<uint64_t, gfxDWriteFontFileStream*>
+-    sFontFileStreams;
++#include "StealthFontFileStream.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
+ 
+ IDWriteFontFileLoader* gfxDWriteFontFileLoader::mInstance = nullptr;
+ 
+@@ -45,7 +42,7 @@ gfxDWriteFontFileStream::~gfxDWriteFontFileStream() {
+ 
  HRESULT STDMETHODCALLTYPE
  gfxDWriteFontFileStream::GetFileSize(UINT64* fileSize) {
 -  *fileSize = mData->Length();
-+  *fileSize = BytesLength();
++  *fileSize = BytesLength();  // STEALTH-HOOK(fingerprint/fonts/bundle)
    return S_OK;
  }
  
-@@ -58,11 +75,11 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileStream::ReadFileFragment(
+@@ -58,11 +55,13 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileStream::ReadFileFragment(
      const void** fragmentStart, UINT64 fileOffset, UINT64 fragmentSize,
      void** fragmentContext) {
    // We are required to do bounds checking.
 -  if (fileOffset + fragmentSize > (UINT64)mData->Length()) {
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  if (fileOffset + fragmentSize > (UINT64)BytesLength()) {
      return E_FAIL;
    }
    // We should be alive for the duration of this.
 -  *fragmentStart = mData->Data() + fileOffset;
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  *fragmentStart = Bytes() + fileOffset;
    *fragmentContext = nullptr;
    return S_OK;
  }
-@@ -90,11 +107,16 @@ HRESULT STDMETHODCALLTYPE gfxDWriteFontFileLoader::CreateStreamFromKey(
-   return S_OK;
- }
- 
--/* static */
--HRESULT
--gfxDWriteFontFileLoader::CreateCustomFontFile(
--    FontData* aFontData, IDWriteFontFile** aFontFile,
--    gfxDWriteFontFileStream** aFontFileStream) {
-+// Stealth: the body of the two entry points below, which differ ONLY in whether
-+// the stream holds a FontData or borrows the bytes. Written as one function
-+// instead of two so the registration, the key allocation and the locking cannot
-+// drift apart. aBorrowedData non-null selects the borrowed stream (aFontData is
-+// then ignored and may be null).
-+static HRESULT CreateFontFileImpl(FontData* aFontData,
-+                                  const uint8_t* aBorrowedData,
-+                                  uint32_t aBorrowedLength,
-+                                  IDWriteFontFile** aFontFile,
-+                                  gfxDWriteFontFileStream** aFontFileStream) {
-   MOZ_ASSERT(aFontFile);
-   MOZ_ASSERT(aFontFileStream);
- 
-@@ -108,13 +130,17 @@ gfxDWriteFontFileLoader::CreateCustomFontFile(
-   sFontFileStreamsMutex.Lock();
-   uint64_t fontFileKey = sNextFontFileKey++;
-   RefPtr<gfxDWriteFontFileStream> ffsRef =
+@@ -95,35 +94,8 @@ HRESULT
+ gfxDWriteFontFileLoader::CreateCustomFontFile(
+     FontData* aFontData, IDWriteFontFile** aFontFile,
+     gfxDWriteFontFileStream** aFontFileStream) {
+-  MOZ_ASSERT(aFontFile);
+-  MOZ_ASSERT(aFontFileStream);
+-
+-  RefPtr<IDWriteFactory> factory = gfx::Factory::GetDWriteFactory();
+-  if (!factory) {
+-    gfxCriticalError()
+-        << "Failed to get DWrite Factory in CreateCustomFontFile.";
+-    return E_FAIL;
+-  }
+-
+-  sFontFileStreamsMutex.Lock();
+-  uint64_t fontFileKey = sNextFontFileKey++;
+-  RefPtr<gfxDWriteFontFileStream> ffsRef =
 -      new gfxDWriteFontFileStream(aFontData, fontFileKey);
-+      aBorrowedData ? new gfxDWriteFontFileStream(
-+                          aBorrowedData, aBorrowedLength, fontFileKey,
-+                          gfxDWriteFontFileStream::Borrowed::Yes)
-+                    : new gfxDWriteFontFileStream(aFontData, fontFileKey);
-   sFontFileStreams[fontFileKey] = ffsRef;
-   sFontFileStreamsMutex.Unlock();
- 
-   RefPtr<IDWriteFontFile> fontFile;
-   HRESULT hr = factory->CreateCustomFontFileReference(
+-  sFontFileStreams[fontFileKey] = ffsRef;
+-  sFontFileStreamsMutex.Unlock();
+-
+-  RefPtr<IDWriteFontFile> fontFile;
+-  HRESULT hr = factory->CreateCustomFontFileReference(
 -      &fontFileKey, sizeof(fontFileKey), Instance(), getter_AddRefs(fontFile));
-+      &fontFileKey, sizeof(fontFileKey),
-+      gfxDWriteFontFileLoader::Instance(), getter_AddRefs(fontFile));
-   if (FAILED(hr)) {
-     NS_WARNING("Failed to load font file from data!");
-     return hr;
-@@ -126,6 +152,25 @@ gfxDWriteFontFileLoader::CreateCustomFontFile(
-   return S_OK;
+-  if (FAILED(hr)) {
+-    NS_WARNING("Failed to load font file from data!");
+-    return hr;
+-  }
+-
+-  fontFile.forget(aFontFile);
+-  ffsRef.forget(aFontFileStream);
+-
+-  return S_OK;
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
++  return StealthCreateOwningFontFile(aFontData, aFontFile, aFontFileStream);
  }
  
-+/* static */
-+HRESULT
-+gfxDWriteFontFileLoader::CreateCustomFontFile(
-+    FontData* aFontData, IDWriteFontFile** aFontFile,
-+    gfxDWriteFontFileStream** aFontFileStream) {
-+  return CreateFontFileImpl(aFontData, /* aBorrowedData */ nullptr,
-+                            /* aBorrowedLength */ 0, aFontFile,
-+                            aFontFileStream);
-+}
-+
-+/* static */
-+HRESULT
-+gfxDWriteFontFileLoader::CreateBorrowedFontFile(
-+    const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
-+    gfxDWriteFontFileStream** aFontFileStream) {
-+  return CreateFontFileImpl(/* aFontData */ nullptr, aFontData, aLength,
-+                            aFontFile, aFontFileStream);
-+}
-+
  size_t gfxDWriteFontFileLoader::SizeOfIncludingThis(
-     MallocSizeOf mallocSizeOf) const {
-   // We are a singleton type that is effective owner of sFontFileStreams.
 diff --git a/gfx/thebes/gfxDWriteCommon.h b/gfx/thebes/gfxDWriteCommon.h
-index 7f44e21df3561bd5c6969522c67ea7ed881570a3..1b1f2f2ea737e85beee1da6ea2147905d21bf672 100644
+index 7f44e21df3561bd5c6969522c67ea7ed881570a3..527c1ae74a81057bb9aa1c22e25c44b3687740b0 100644
 --- a/gfx/thebes/gfxDWriteCommon.h
 +++ b/gfx/thebes/gfxDWriteCommon.h
-@@ -106,6 +106,24 @@ class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
+@@ -106,6 +106,12 @@ class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
     * @param aData Font data
     */
    gfxDWriteFontFileStream(FontData* aData, uint64_t aFontFileKey);
 +
-+  /**
-+   * Stealth: a stream that does NOT hold a FontData. The caller LENDS bytes it
-+   * guarantees outlive the stream; the only user is the bundled-font cache in
-+   * StealthBundleFontList, which is immortal by construction - that object is
-+   * deliberately leaked and never clears the cache, and it stores refcounted
-+   * blobs so rehashing cannot move the bytes.
-+   *
-+   * Why it exists: the bundle is 218.7 MB over 126 files, the largest a 35.4 MB
-+   * .ttc with two faces, and DirectWrite holds one stream per FACE. A FontData
-+   * owns a malloc'd buffer and frees it (gfx/thebes/FontData.h), so wrapping
-+   * the cache's bytes in one means a permanent copy per face on top of the
-+   * cache's own: that single file cost 106 MB where 35.4 is enough.
-+   */
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  enum class Borrowed { Yes };
 +  gfxDWriteFontFileStream(const uint8_t* aData, uint32_t aLength,
 +                          uint64_t aFontFileKey, Borrowed);
@@ -451,24 +228,11 @@ index 7f44e21df3561bd5c6969522c67ea7ed881570a3..1b1f2f2ea737e85beee1da6ea2147905
    ~gfxDWriteFontFileStream();
  
    // IUnknown interface
-@@ -141,7 +159,9 @@ class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
- 
-   size_t SizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
-     // We don't report the size of mData, because the original user font entry
--    // will account for that.
-+    // will account for that. A borrowed stream owns no bytes either, and
-+    // counting the lender's would double-count them in about:memory: the
-+    // bundle cache is where those bytes belong and where they are reported.
-     return 0;
-   }
- 
-@@ -150,7 +170,15 @@ class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
+@@ -150,7 +156,13 @@ class gfxDWriteFontFileStream final : public IDWriteFontFileStream {
    }
  
   private:
-+  // Exactly one of these two is in use: mData when the stream holds a FontData,
-+  // mBorrowed when it was lent bytes that outlive it (then mData is null).
-+  // Defined in the .cpp because FontData is only forward-declared here.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  const uint8_t* Bytes() const;
 +  uint32_t BytesLength() const;
 +
@@ -478,15 +242,11 @@ index 7f44e21df3561bd5c6969522c67ea7ed881570a3..1b1f2f2ea737e85beee1da6ea2147905
    mozilla::Atomic<uint32_t> mRefCnt;
    uint64_t mFontFileKey;
  };
-@@ -211,6 +239,15 @@ class gfxDWriteFontFileLoader : public IDWriteFontFileLoader {
+@@ -211,6 +223,11 @@ class gfxDWriteFontFileLoader : public IDWriteFontFileLoader {
        FontData* aFontData, IDWriteFontFile** aFontFile,
        gfxDWriteFontFileStream** aFontFileStream);
  
-+  /**
-+   * Stealth: as above, but the stream BORROWS aFontData instead of copying it.
-+   * Only for bytes that outlive the stream; today that is exactly the bundled
-+   * font cache. See gfxDWriteFontFileStream's Borrowed constructor.
-+   */
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  static HRESULT CreateBorrowedFontFile(
 +      const uint8_t* aFontData, uint32_t aLength, IDWriteFontFile** aFontFile,
 +      gfxDWriteFontFileStream** aFontFileStream);
@@ -495,7 +255,7 @@ index 7f44e21df3561bd5c6969522c67ea7ed881570a3..1b1f2f2ea737e85beee1da6ea2147905
  
   private:
 diff --git a/gfx/thebes/gfxDWriteFontList.h b/gfx/thebes/gfxDWriteFontList.h
-index 442939be588704373bd88a7fe6721f69521bffb2..f05268cb99195923ee48763cabab1a28c9fa6415 100644
+index 442939be588704373bd88a7fe6721f69521bffb2..8643fd3708153a76deb26635645d58b61cc2b12a 100644
 --- a/gfx/thebes/gfxDWriteFontList.h
 +++ b/gfx/thebes/gfxDWriteFontList.h
 @@ -6,6 +6,7 @@
@@ -506,26 +266,28 @@ index 442939be588704373bd88a7fe6721f69521bffb2..f05268cb99195923ee48763cabab1a28
  
  #include "cairo-win32.h"
  #include "dwrite_3.h"
-@@ -237,6 +238,19 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
+@@ -237,6 +238,10 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
  
    DWRITE_FONT_FACE_TYPE mFaceType;
  
-+  // Face index within a custom (bundle) font file; 0 for single-face files and
-+  // for system fonts. Lets a .ttc face be addressed by index in CreateFontFace.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  uint16_t mBundleFaceIndex = 0;
-+
-+  // STEALTH: il percorso del file di bundle, vuoto per ogni altro font.
-+  //
-+  // Il byte-serving verso WebRender passa da `UnscaledFontDWrite`, che il
-+  // percorso non riesce a ricavarlo da solo: lo prende da un
-+  // `IDWriteLocalFontFileLoader`, e il nostro caricatore presta byte in memoria.
-+  // Dichiararlo qui e' l'unico modo di farlo arrivare la', ed evita che Gecko
-+  // mandi i BYTE del font - 65,9 MB nel padre, misurati su Linux ([B154]).
 +  std::wstring mBundleFilePath;
 +
    mozilla::Atomic<FontTableCache*> mFontTableCache;
  
    int8_t mIsCJK;
+@@ -465,6 +470,10 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
+       IDWriteFactory* aFactory);
+ #endif
+ 
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
++  already_AddRefed<gfxFontEntry> CreateStealthBundleFontEntry(
++      mozilla::fontlist::Face* aFace, const mozilla::fontlist::Family* aFamily);
++
+   /**
+    * Fonts listed in the registry as substitutes but for which no actual
+    * font family is found.
 diff --git a/gfx/thebes/gfxFT2FontList.cpp b/gfx/thebes/gfxFT2FontList.cpp
 index d0397ef465f61ca5b86905bcfa7fb61cc825a76f..49ebce15bc5151bdb3d8b4997c2e87181f5076b0 100644
 --- a/gfx/thebes/gfxFT2FontList.cpp
@@ -553,19 +315,19 @@ index d0397ef465f61ca5b86905bcfa7fb61cc825a76f..49ebce15bc5151bdb3d8b4997c2e8718
    }
  
 diff --git a/gfx/thebes/gfxFcPlatformFontList.h b/gfx/thebes/gfxFcPlatformFontList.h
-index a8f8103d24039560ec5562cb74f6cbcef52edcaa..fb0f28481906e33b31fa8238d02dd20eccc2d2d5 100644
+index a8f8103d24039560ec5562cb74f6cbcef52edcaa..e3b2b10850dfef9047baf4c9ff748c014c7e3526 100644
 --- a/gfx/thebes/gfxFcPlatformFontList.h
 +++ b/gfx/thebes/gfxFcPlatformFontList.h
-@@ -77,10 +77,17 @@ class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
+@@ -68,6 +68,8 @@ struct default_delete<FcObjectSet> {
  
-   // used for data fonts where the fontentry takes ownership
-   // of the font data and the FT_Face
-+  //
-+  // STEALTH: `aFile`/`aIndex` sono il file da cui quella faccia viene, quando
-+  // ce n'e' uno. Per un font scaricato da una pagina non c'e' e restano vuoti,
-+  // che e' il comportamento upstream; per le facce del nostro bundle c'e', e
-+  // dichiararlo evita che WebRender riceva i BYTE al posto del percorso. Vedi
-+  // `70-known-bugs.md` [B154]: erano 65,9 MB nel processo padre.
+ class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
+   friend class gfxFcPlatformFontList;
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
++  friend struct StealthFcAccess;
+   using FTUserFontData = mozilla::gfx::FTUserFontData;
+ 
+  public:
+@@ -80,7 +82,8 @@ class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
    explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
                                    WeightRange aWeight, WidthRange aWidth,
                                    SlantStyleRange aStyle,
@@ -576,132 +338,75 @@ index a8f8103d24039560ec5562cb74f6cbcef52edcaa..fb0f28481906e33b31fa8238d02dd20e
    // used for @font-face local system fonts with explicit patterns
    explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
 diff --git a/gfx/thebes/gfxFontEntry.cpp b/gfx/thebes/gfxFontEntry.cpp
-index ec143246d878d9ed5332a43da6acfa69cb28c53b..3026c397a28c5a445aed5b514c71b3f2f23d1793 100644
+index ec143246d878d9ed5332a43da6acfa69cb28c53b..f8e6379752b9d02730fc25beee865f2a50d3d6a7 100644
 --- a/gfx/thebes/gfxFontEntry.cpp
 +++ b/gfx/thebes/gfxFontEntry.cpp
-@@ -154,6 +154,32 @@ void gfxFontEntry::SetSkrifaFont(SkrifaFontRef* aSkrifaFont) {
+@@ -7,6 +7,7 @@
+ #include <algorithm>
+ 
+ #include "COLRFonts.h"
++#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
+ #include "ThebesRLBox.h"
+ #include "gfxContext.h"
+ #include "gfxGraphiteShaper.h"
+@@ -154,6 +155,11 @@ void gfxFontEntry::SetSkrifaFont(SkrifaFontRef* aSkrifaFont) {
  }
  #endif
  
++// STEALTH-HOOK(fingerprint/fonts/bundle)
 +bool gfxFontEntry::ShouldPublishCharacterMap() const {
-+  if (!mShmemFace) {
-+    // Not a face from the shared list: there is no slot to publish into. This
-+    // alone excludes every downloaded @font-face, which is never built from a
-+    // fontlist::Face and so never has an mShmemFace.
-+    return false;
-+  }
-+  if (mIsLocalUserFont) {
-+    // A `src: local()` reference borrows the list's face but carries the
-+    // @font-face rule's own weight/stretch/style ranges; its cmap must not
-+    // overwrite the slot the list's own face owns.
-+    return false;
-+  }
-+  if (!mIsDataUserFont) {
-+    // Upstream case: an installed system face, exactly what the old
-+    // `!IsUserFont()` test meant to allow.
-+    return true;
-+  }
-+  // Bundle-only: every face in the list is instantiated from its bundle file, so
-+  // mIsDataUserFont is true for all of them and the old test rejected the entire
-+  // font list. Publishing is what makes the family character map a real union
-+  // instead of the deliberate empty "unusable family" map, and therefore what
-+  // lets IsFullyInitialized() ever become true.
-+  return gfxPlatformFontList::PlatformFontList()->StealthBundleOnly();
++  return StealthBundleFontList::ShouldPublishCharacterMap(*this);
 +}
 +
  bool gfxFontEntry::TrySetShmemCharacterMap() {
    auto* pfl = gfxPlatformFontList::PlatformFontList();
    // Hold the platform-fontlist lock so InitFontList() cannot reset
 diff --git a/gfx/thebes/gfxFontEntry.h b/gfx/thebes/gfxFontEntry.h
-index 4696115ed8bd55cf1b9de11b048c6b74ad0d275d..5089798775d9465d8149c3d27954a92edb430fd9 100644
+index 4696115ed8bd55cf1b9de11b048c6b74ad0d275d..850e57be540903f530ba39debeeb6b9d55d63c40 100644
 --- a/gfx/thebes/gfxFontEntry.h
 +++ b/gfx/thebes/gfxFontEntry.h
-@@ -449,7 +449,27 @@ class gfxFontEntry {
+@@ -449,7 +449,9 @@ class gfxFontEntry {
      explicit AutoHBFace(hb_face_t* aFace) : mFace(aFace) {}
      ~AutoHBFace() { hb_face_destroy(mFace); }
  
 -    operator hb_face_t*() const { return mFace; }
-+    // La conversione vale solo su un LVALUE. Legarsi a un temporaneo e'
-+    // vietato dal TIPO, non da una convenzione:
-+    //
-+    //     hb_face_t* f = entry->GetHBFace();   // non compila
-+    //     const auto f(entry->GetHBFace());    // corretto
-+    //
-+    // GetHBFace() torna per valore, quindi scrivendo la prima forma il
-+    // temporaneo si converte e viene distrutto alla fine di quella stessa
-+    // istruzione: il puntatore e' penzolante dalla riga dopo, e chi lo usa
-+    // scrive dentro memoria liberata. Misurato il 2026-08-10 su
-+    // gfxHarfBuzzShaper::GetDesignFont(), che era l'unico dei quattordici
-+    // chiamanti a sbagliarlo: 6 sessioni di navigazione morte su 10 contro 0
-+    // dopo la correzione. Il difetto era silenzioso perche' la memoria appena
-+    // liberata resta quasi sempre leggibile, e il segmentation fault arrivava
-+    // altrove e molto dopo.
-+    //
-+    // Sta nel TIPO e non solo in un gate perche' il progetto sapeva gia' la
-+    // regola in tredici punti su quattordici e il quattordicesimo e' stato
-+    // scritto sbagliato lo stesso: qui il compilatore lo rifiuta.
++    // STEALTH-HOOK(fingerprint/fonts/bundle)
 +    operator hb_face_t*() const& { return mFace; }
 +    operator hb_face_t*() const&& = delete;
  
      // Not default-constructible, not copyable.
      AutoHBFace() = delete;
-@@ -830,6 +850,14 @@ class gfxFontEntry {
+@@ -830,6 +832,9 @@ class gfxFontEntry {
    void InitializeFrom(mozilla::fontlist::Face* aFace,
                        const mozilla::fontlist::Family* aFamily);
  
-+  // Stealth: does this entry's character map belong in the shared font list?
-+  // Every backend's ReadCMAP asked `!IsUserFont() && mShmemFace`, four copies of
-+  // one rule, and that rule is WRONG for a bundled face: it is constructed from
-+  // file data (so IsUserFont() is true) while being one of the list's own faces.
-+  // The consequence was that no bundled face's cmap ever reached shared memory.
-+  // One predicate, four readers.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  bool ShouldPublishCharacterMap() const;
 +
  #ifdef MOZ_FONTATIONS
    // Set the Skrifa font ref and hold on to the memory mapping, unless the
    // face has already been set, in which case the passed font and mapping
 diff --git a/gfx/thebes/gfxFontUtils.cpp b/gfx/thebes/gfxFontUtils.cpp
-index e4e2d989e730b529bd226a419b7e6113934c055e..d3d7448ed374b2cd6d6ddc603d7471ff226a4220 100644
+index e4e2d989e730b529bd226a419b7e6113934c055e..f75aeece16e811022a58f39873565334ea4a51ec 100644
 --- a/gfx/thebes/gfxFontUtils.cpp
 +++ b/gfx/thebes/gfxFontUtils.cpp
-@@ -1085,10 +1085,34 @@ static int DirEntryCmp(const void* aKey, const void* aItem) {
-   return tag - int32_t(entry->tag);
- }
+@@ -1087,8 +1087,13 @@ static int DirEntryCmp(const void* aKey, const void* aItem) {
  
-+/* static */
-+const void* gfxFontUtils::FindSfntOffset(const void* aFontData,
-+                                         uint32_t aFaceIndex) {
-+  const auto* data = reinterpret_cast<const uint8_t*>(aFontData);
-+  const SFNTHeader* sfnt = reinterpret_cast<const SFNTHeader*>(data);
-+  if (sfnt->sfntVersion == 0x74746366u) {  // 'ttcf'
-+    const TTCHeader* ttc = reinterpret_cast<const TTCHeader*>(data);
-+    if (aFaceIndex >= uint32_t(ttc->numFonts)) {
-+      return nullptr;
-+    }
-+    // The offset table immediately follows the TTCHeader (12 bytes).
-+    const AutoSwap_PRUint32* offsets =
-+        reinterpret_cast<const AutoSwap_PRUint32*>(data + sizeof(TTCHeader));
-+    uint32_t faceOffset = offsets[aFaceIndex];
-+    return data + faceOffset;
-+  }
-+  return aFontData;
-+}
-+
  /* static */
  TableDirEntry* gfxFontUtils::FindTableDirEntry(const void* aFontData,
 -                                               uint32_t aTableTag) {
 -  const SFNTHeader* header = reinterpret_cast<const SFNTHeader*>(aFontData);
 +                                               uint32_t aTableTag,
 +                                               uint32_t aFaceIndex) {
-+  const void* sfntData = FindSfntOffset(aFontData, aFaceIndex);
-+  if (!sfntData) {
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
++  const SFNTHeader* header = FindSfntOffset(aFontData, aFaceIndex);
++  if (!header) {
 +    return nullptr;
 +  }
-+  const SFNTHeader* header = reinterpret_cast<const SFNTHeader*>(sfntData);
    const TableDirEntry* dir = reinterpret_cast<const TableDirEntry*>(header + 1);
    return static_cast<TableDirEntry*>(
        bsearch(&aTableTag, dir, uint16_t(header->numTables),
-@@ -1097,9 +1121,12 @@ TableDirEntry* gfxFontUtils::FindTableDirEntry(const void* aFontData,
+@@ -1097,8 +1102,10 @@ TableDirEntry* gfxFontUtils::FindTableDirEntry(const void* aFontData,
  
  /* static */
  hb_blob_t* gfxFontUtils::GetTableFromFontData(const void* aFontData,
@@ -709,48 +414,34 @@ index e4e2d989e730b529bd226a419b7e6113934c055e..d3d7448ed374b2cd6d6ddc603d7471ff
 -  const TableDirEntry* dir = FindTableDirEntry(aFontData, aTableTag);
 +                                              uint32_t aTableTag,
 +                                              uint32_t aFaceIndex) {
-+  const TableDirEntry* dir = FindTableDirEntry(aFontData, aTableTag, aFaceIndex);
++  const TableDirEntry* dir =
++      FindTableDirEntry(aFontData, aTableTag, aFaceIndex);
    if (dir) {
-+    // Table offsets are always relative to the beginning of the file, even
-+    // for faces within a .ttc collection.
      return hb_blob_create(
          reinterpret_cast<const char*>(aFontData) + dir->offset, dir->length,
-         HB_MEMORY_MODE_READONLY, nullptr, nullptr);
 diff --git a/gfx/thebes/gfxFontUtils.h b/gfx/thebes/gfxFontUtils.h
-index ea64ad7a4cb46338a14d8df4312a603840174b5f..af57e94088100b839c754f22f4b358f6b5cf7f91 100644
+index ea64ad7a4cb46338a14d8df4312a603840174b5f..e0e8c9fea85ad493bf63fa00d59232c6e29b3eb9 100644
 --- a/gfx/thebes/gfxFontUtils.h
 +++ b/gfx/thebes/gfxFontUtils.h
-@@ -567,19 +567,33 @@ class gfxFontUtils {
+@@ -567,10 +567,15 @@ class gfxFontUtils {
    static nsresult GetFamilyNameFromTable(hb_blob_t* aNameTable,
                                           nsACString& aFamilyName);
  
-+  // Resolve the sfnt offset for a given face within a buffer of font data.
-+  // For single-face sfnt data, returns aFontData. For .ttc collections,
-+  // reads the TTC header's offset table and returns the pointer to the
-+  // sfnt header for the requested face. Returns null if aFaceIndex is out
-+  // of range.
-+  static const void* FindSfntOffset(const void* aFontData, uint32_t aFaceIndex);
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
++  static const mozilla::SFNTHeader* FindSfntOffset(const void* aFontData,
++                                                   uint32_t aFaceIndex);
 +
    // Find the table directory entry for a given table tag, in a (validated)
--  // buffer of 'sfnt' data. Returns null if the tag is not present.
-+  // buffer of font data (single-face sfnt or .ttc collection). aFaceIndex
-+  // selects the face within a .ttc (ignored for single-face fonts).
-+  // Returns null if the tag is not present.
+   // buffer of 'sfnt' data. Returns null if the tag is not present.
    static mozilla::TableDirEntry* FindTableDirEntry(const void* aFontData,
 -                                                   uint32_t aTableTag);
 +                                                   uint32_t aTableTag,
 +                                                   uint32_t aFaceIndex = 0);
  
--  // Return a blob that wraps a table found within a buffer of font data.
-+  // Return a blob that wraps a table found within a buffer of font data
-+  // (single-face sfnt or .ttc collection). aFaceIndex selects the face
-+  // within a .ttc (ignored for single-face fonts). Table offsets are
-+  // relative to the beginning of the file, so the blob points into aFontData.
+   // Return a blob that wraps a table found within a buffer of font data.
    // The blob does NOT own its data; caller guarantees that the buffer
-   // will remain valid at least as long as the blob.
-   // Returns null if the specified table is not found.
--  // This method assumes aFontData is valid 'sfnt' data; before using this,
-+  // This method assumes aFontData is valid font data; before using this,
+@@ -579,7 +584,8 @@ class gfxFontUtils {
+   // This method assumes aFontData is valid 'sfnt' data; before using this,
    // caller is responsible to do any sanitization/validation necessary.
    static hb_blob_t* GetTableFromFontData(const void* aFontData,
 -                                         uint32_t aTableTag);
@@ -760,88 +451,80 @@ index ea64ad7a4cb46338a14d8df4312a603840174b5f..af57e94088100b839c754f22f4b358f6
    // create a new name table and build a new font with that name table
    // appended on the end, returns true on success
 diff --git a/gfx/thebes/gfxPlatformGtk.cpp b/gfx/thebes/gfxPlatformGtk.cpp
-index de866d03d3a2be630a2bdab1e83963bf3740779c..9bc62a6f3a668f13efd4b47ce96496c0846f3ea9 100644
+index de866d03d3a2be630a2bdab1e83963bf3740779c..343339268c3b90a9af904f305767acc1658e1c29 100644
 --- a/gfx/thebes/gfxPlatformGtk.cpp
 +++ b/gfx/thebes/gfxPlatformGtk.cpp
-@@ -428,6 +428,33 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
+@@ -11,6 +11,7 @@
+ #include <gtk/gtk.h>
+ 
+ #include "GLContextProvider.h"
++#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
+ #include "VsyncSource.h"
+ #include "base/message_loop.h"
+ #include "base/task.h"
+@@ -428,6 +429,8 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
  void gfxPlatformGtk::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
                                              FontPresentation aPresentation,
                                              nsTArray<const char*>& aFontList) {
-+  // Stealth: the bundled Windows faces come FIRST, mirroring the order
-+  // gfxWindowsPlatform::GetCommonFallbackFonts uses, so a codepoint no
-+  // requested family covers resolves to the same face on every host.
-+  //
-+  // Every name in the upstream Linux list below - Twemoji Mozilla, DejaVu,
-+  // FreeSerif/Sans, Symbola, Noto Sans Symbols 1/2 - is absent from
-+  // bundle-fonts.list, so under bundle-only this whole function was a
-+  // guaranteed miss for EVERY codepoint, on every script, not just emoji.
-+  // (Twemoji Mozilla ships in browser/fonts but is excluded from the manifest
-+  // by the Microsoft-attribution filter and is registered as a family on
-+  // neither OS, so naming it here has never resolved.) The upstream names are
-+  // kept after ours: they cost nothing when absent and keep the non-bundle
-+  // build working.
-+  // The ORDER mirrors gfxWindowsPlatform::GetCommonFallbackFonts exactly -
-+  // Segoe UI Emoji, then Arial, Segoe UI, Segoe UI Symbol, Cambria Math -
-+  // because the order decides WHICH face covers a codepoint, and a different
-+  // face means a different advance. Measured 2026-08-07: listing Segoe UI
-+  // Symbol before Arial (an earlier version of this block) left five emoji
-+  // widths apart from Windows even though every family already resolved.
-+  if (PrefersColor(aPresentation)) {
-+    aFontList.AppendElement("Segoe UI Emoji");
-+  }
-+  aFontList.AppendElement("Arial");
-+  aFontList.AppendElement("Segoe UI");
-+  aFontList.AppendElement("Segoe UI Symbol");
-+  aFontList.AppendElement("Cambria Math");
-+
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
++  StealthAppendWindowsFallbackNames(PrefersColor(aPresentation), aFontList);
    if (PrefersColor(aPresentation)) {
      aFontList.AppendElement(kFontTwemojiMozilla);
    }
 diff --git a/gfx/thebes/gfxTextRun.cpp b/gfx/thebes/gfxTextRun.cpp
-index f2c42a498e7fb14187876470ae34d0ef75992c7e..f1e0e190a612d95cb00c70c90c4d2b365f96c1bc 100644
+index f2c42a498e7fb14187876470ae34d0ef75992c7e..372baabc9e283db10b52a1eb65133a6bf74eeddc 100644
 --- a/gfx/thebes/gfxTextRun.cpp
 +++ b/gfx/thebes/gfxTextRun.cpp
-@@ -3107,9 +3107,13 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFallbackFaceForChar(
+@@ -3107,9 +3107,8 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFallbackFaceForChar(
  
    // If async fallback is enabled, and the family isn't fully initialized yet,
    // just start the async cmap loading and return.
 -  if (!aFamily->IsFullyInitialized() &&
 -      StaticPrefs::gfx_font_rendering_fallback_async() &&
 -      !XRE_IsParentProcess()) {
-+  //
-+  // Stealth: this is the site the bundle-only condition was missing from. The
-+  // twin site in GlobalFontFallback spelled it out by hand, this one did not, and
-+  // under bundle-only NO family is ever fully initialized - so every text run
-+  // that needed a fallback face within a family took this early return in the
-+  // content process. MayDeferCmapLoading is now the single answer for both.
++  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +  if (!aFamily->IsFullyInitialized() && pfl->MayDeferCmapLoading()) {
      pfl->StartCmapLoadingFromFamily(aFamily - list->Families());
      return nullptr;
    }
 diff --git a/gfx/thebes/moz.build b/gfx/thebes/moz.build
-index a9f68b056300c4b545832f641b2520c50d566628..81b442ac285a198fa7a654560d6845833b74a8a6 100644
+index a9f68b056300c4b545832f641b2520c50d566628..f1a1bd85a126244ffebbe599493e04a3fa4c5776 100644
 --- a/gfx/thebes/moz.build
 +++ b/gfx/thebes/moz.build
-@@ -62,6 +62,10 @@ EXPORTS += [
+@@ -62,6 +62,8 @@ EXPORTS += [
      "gfxUtils.h",
      "SharedFontList.h",
      "SoftwareVsyncSource.h",
-+    # STEALTH: exported because dom/canvas reads the coverage ladder from
-+    # it (the alpha-quantisation hook in CanvasRenderingContext2D).
 +    "StealthBundleFontList.h",
 +    "StealthDeclarationGate.h",
      "ThebesRLBoxTypes.h",
      "VsyncSource.h",
  ]
+@@ -137,6 +139,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+         "gfxFT2Utils.cpp",
+         "gfxPlatformGtk.cpp",
+         "PrintTargetPDF.cpp",
++        "StealthFcFontList.cpp",  # STEALTH-HOOK(fingerprint/fonts/font-list)
+     ]
+ 
+     if CONFIG["MOZ_X11"]:
+@@ -172,6 +175,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+         "gfxWindowsSurface.cpp",
+         "PrintTargetPDF.cpp",
+         "PrintTargetWindows.cpp",
++        "StealthDWriteFontList.cpp",
+     ]
+     UNIFIED_SOURCES += [
+         "gfxDWriteFontList.cpp",
 @@ -234,6 +238,13 @@ UNIFIED_SOURCES += [
      "VsyncSource.cpp",
  ]
  
-+# Our uniform bundle-only font-list builder. Non-unified: it defines a few
-+# short-named file-static helpers that could collide in a unified blob.
++# Non-unified: file-static helpers with short names.
 +SOURCES += [
 +    "StealthBundleFontList.cpp",
 +    "StealthDeclarationGate.cpp",
++    "StealthDesignMetrics.cpp",  # STEALTH-HOOK(fingerprint/fonts/metrics)
 +]
 +
  UNIFIED_SOURCES += [

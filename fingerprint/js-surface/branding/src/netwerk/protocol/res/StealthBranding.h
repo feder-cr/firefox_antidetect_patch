@@ -49,7 +49,10 @@ namespace mozilla::net {
  * Called by the chrome registry, in the parent and in every content process,
  * whenever a package's content directory is registered. Only the branding
  * package is kept. A registry reset re-registers every package, so the last
- * registration wins and nothing needs clearing.
+ * registration wins and nothing needs clearing. The content process resolves
+ * branding URIs itself, so it needs to know where the branding directory is
+ * too: nsChromeRegistryContent::RegisterPackage calls this for every package
+ * with a content directory, so the content processes register it as well.
  */
 void StealthBrandingRegisterPackage(const nsACString& aPackage, nsIURI* aBase);
 
@@ -61,8 +64,30 @@ void StealthBrandingRegisterPackage(const nsACString& aPackage, nsIURI* aBase);
  * the build's own brand - when the engine is on and the declaration is missing
  * or malformed. Safe on any thread: ResolveURI is called off the main thread
  * too.
+ *
+ * SubstitutingProtocolHandler::ResolveURI calls it at two places: on the result
+ * of ResolveSpecialCases, so the declared branding applies on every way a URI
+ * can reach the branding directory, special cases included; and after the
+ * normal resolution, because resource://usercontext-content/branding/ reaches
+ * the branding directory too and must read the same declared set as
+ * chrome://branding/content/.
  */
 nsresult StealthBrandingRedirect(nsACString& aResolvedSpec);
+
+/**
+ * The body of nsChromeRegistry::ConvertChromeURL's last step. Resolves aPath
+ * against aBase (the package's registered content directory) exactly as the
+ * stock code does, then runs the resolved spec through StealthBrandingRedirect
+ * so that chrome://branding/content/ reads the set invisible_core declares,
+ * through the same function as resource://usercontext-content/branding/. The
+ * two ways a page reaches the branding cannot disagree. When the redirect leaves
+ * the spec unchanged (engine off, or not a branding URI) the URI resolved by the
+ * stock call is returned as is, with no second parse. Otherwise a new URI is
+ * built from the declared spec. Any failure of the resolve, of GetSpec or of
+ * the redirect is returned unchanged. Runs on the thread of its caller.
+ */
+nsresult StealthBrandingResolveChromeURL(const nsACString& aPath,
+                                         nsIURI* aBase, nsIURI** aResult);
 
 /**
  * Whether a declaration is well formed: a file: URI of a file, i.e. starting
@@ -81,6 +106,11 @@ bool StealthBrandingIsDeclaredArchive(const nsACString& aSpec);
  * launch when it is null, and the content sandbox grants READ access to exactly
  * this file - it lives wherever invisible_core keeps it, which the sandbox would
  * otherwise keep closed to the content processes that load from it.
+ * SandboxBrokerPolicyFactory::InitContentPolicy (Linux) adds this file as a
+ * READ rule for the content processes: the branding a page reads is declared
+ * by invisible_core, which keeps the archive wherever it is installed; the
+ * content processes load from it, so they get READ access to exactly that file
+ * - the same one the declaration gate accepted, through the same function.
  */
 already_AddRefed<nsIFile> StealthBrandingDeclaredArchive();
 

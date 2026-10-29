@@ -19,3 +19,20 @@ TODO: one paragraph, from the notes below.
 
 - `dom/media/StealthMediaDeclaration.cpp`
 - `dom/media/StealthMediaDeclaration.h`
+
+## dom/media/DecoderTraits.cpp: CanHandleMediaType
+
+Stealth: there is deliberately no declared-answer hook in DecoderTraits.cpp any
+more, in front of CanHandleMediaType.
+
+One lived at the top of CanHandleMediaType until 2026-08-08, matching whole type
+STRINGS against a table from invisible_core. It could only ever hold the
+strings somebody had seen: measured that day against retail Windows, our
+Linux build differed on 12 rows and the table covered 3 of them, because the
+space it was trying to enumerate - profile x constraint x level x container x
+the audio codec travelling along - has no end.
+
+The declaration moved one layer down, to PDMFactory::Supports, where the key
+is a track mime type and the set is a dozen names Gecko defines itself. See
+dom/media/StealthMediaDeclaration.h. Everything in DecoderTraits.cpp is then
+Gecko's own host-independent logic and needs no help.

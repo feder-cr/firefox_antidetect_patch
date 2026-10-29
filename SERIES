@@ -21,7 +21,6 @@ automation/bypass-csp
 automation/docshell-attrs
 automation/downloads
 automation/element-atoms
-automation/enterprise-policies
 automation/file-chooser
 automation/hybrid-xrays
 automation/ignore-https-errors
@@ -40,7 +39,6 @@ fingerprint/canvas/noise-projection
 fingerprint/canvas/text-metrics
 fingerprint/fonts/bundle
 fingerprint/fonts/font-list
-fingerprint/fonts/font-loading
 fingerprint/fonts/metrics
 fingerprint/hardware/concurrency
 fingerprint/hardware/profile

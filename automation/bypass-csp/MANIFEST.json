@@ -1,10 +1,31 @@
 {
  "modified": [
+  "dom/security/moz.build",
   "dom/security/nsCSPUtils.cpp",
   "dom/security/nsCSPUtils.h"
  ],
- "added": {},
+ "added": {
+  "dom/security/StealthBypassCSP.cpp": "100644"
+ },
  "inventory": [
+  {
+   "file": "dom/security/moz.build",
+   "category": "build",
+   "feature": "bypass-csp",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
   {
    "file": "dom/security/nsCSPUtils.cpp",
    "category": "juggler",

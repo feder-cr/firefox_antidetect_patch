@@ -15,80 +15,54 @@ index 5cb6c5aee8e783886841d6ebd0dd33362a7c9fbe..b3c460a350cd09659f92ab40dbec7dfb
              # Don't bother with a list file if we're only linking objects built
              # in this directory.
 diff --git a/python/mozbuild/mozbuild/frontend/data.py b/python/mozbuild/mozbuild/frontend/data.py
-index e866ecd2784e513ce092bd2836e815529c5722ad..4af21d0ffcdd36f7c8bdd24256e9a2f794e58e12 100644
+index e866ecd2784e513ce092bd2836e815529c5722ad..844738a3e639dba69380700b0c66639b8b7997ab 100644
 --- a/python/mozbuild/mozbuild/frontend/data.py
 +++ b/python/mozbuild/mozbuild/frontend/data.py
-@@ -1181,8 +1181,13 @@ class UnifiedSources(BaseSources):
+@@ -1181,8 +1181,9 @@ class UnifiedSources(BaseSources):
              # On Windows, path names have a maximum length of 255 characters,
              # so avoid creating extremely long path names.
              unified_prefix = context.relsrcdir
 -            if len(unified_prefix) > 20:
 -                unified_prefix = unified_prefix[-20:].split("/", 1)[-1]
 +            if len(unified_prefix) > 30:
-+                # Stealthfox fix: Mozilla's `[-20:]` truncation causes collisions
-+                # in FF 150 libwebrtc (e.g. goog_cc_scream_network_controller_gn
-+                # and scream_network_controller_gn both → "etwork_controller_gn").
-+                # `[-30:]` gives unique prefixes without lengthening filenames
-+                # past mozmake's path-handling threshold (~150 chars relative).
++                # STEALTH-HOOK(platform/build-tools)
 +                unified_prefix = unified_prefix[-30:].split("/", 1)[-1]
              unified_prefix = unified_prefix.replace("/", "_")
  
              suffix = self.canonical_suffix[1:]
 diff --git a/python/mozbuild/mozbuild/jar.py b/python/mozbuild/mozbuild/jar.py
-index ffc4d2d5b3a15afee685af4403eb6b8c062ec6af..42c5c2441a134cb1972f9e3098a310eef474fa16 100644
+index ffc4d2d5b3a15afee685af4403eb6b8c062ec6af..3bb0992179414480b64a685ab1963e27ff2eae83 100644
 --- a/python/mozbuild/mozbuild/jar.py
 +++ b/python/mozbuild/mozbuild/jar.py
-@@ -563,6 +563,12 @@ class JarMaker:
+@@ -563,6 +563,9 @@ class JarMaker:
              except OSError as e:
                  if e.errno != errno.ENOENT:
                      raise
-+            # Stealthfox fix: webcompat builtin-addons CSS files have
-+            # very long names that overflow Windows MAX_PATH=260 unless
-+            # we use \\?\<absolute> long-path syntax. abspath collapses
-+            # the .. so the resolved absolute is much shorter.
++            # STEALTH-HOOK(platform/build-tools)
 +            if os.name == "nt":
 +                out = "\\\\?\\" + os.path.abspath(out).replace("/", "\\")
              if "b" in mode:
                  return open(out, mode)
              else:
 diff --git a/third_party/python/vsdownload/vsdownload.py b/third_party/python/vsdownload/vsdownload.py
-index 28f2c660cf6a42603d08e0bbf961c93f60a205cc..ad86c2cda1fc9a3b91ec6d62a11a2871a4f1b11d 100755
+index 28f2c660cf6a42603d08e0bbf961c93f60a205cc..28827039b16ddc82e2fc15ffb58cecebaffff756 100755
 --- a/third_party/python/vsdownload/vsdownload.py
 +++ b/third_party/python/vsdownload/vsdownload.py
-@@ -24,6 +24,7 @@ import json
- import platform
- import re
- import shutil
-+import signal
- import socket
- import subprocess
- import sys
-@@ -634,7 +635,27 @@ def _downloadPayload(payload, destname, fileid, allowHashMismatch):
+@@ -31,6 +31,7 @@ import tempfile
+ import urllib.request
+ import xml.etree.ElementTree as ET
+ import zipfile
++from stealth_download_watchdog import stealth_urlretrieve  # STEALTH-HOOK(platform/build-tools)
+ 
+ def getArgsParser():
+     class OptionalBoolean(argparse.Action):
+@@ -634,7 +635,8 @@ def _downloadPayload(payload, destname, fileid, allowHashMismatch):
              if "size" in payload:
                  size = payload["size"]
              print("Downloading %s (%s)" % (fileid, formatSize(size)), flush=True)
 -            urllib.request.urlretrieve(payload["url"], destname)
-+            # Stealthfox: total per-file watchdog. socket.setdefaulttimeout only
-+            # catches a fully stalled connection, not a slow trickle from a flaky
-+            # CDN edge -- the Win11 SDK "X64 Debuggers And Tools" MSI dripped for
-+            # hours without ever erroring, so this 5-attempt loop never retried
-+            # and the cross-compile build hung. Cap each file and raise on
-+            # overrun so the loop reconnects (fresh CDN edge) instead of hanging.
-+            def _dl_watchdog(signum, frame):
-+                raise TimeoutError("download exceeded 120s for %s" % fileid)
-+            # signal.SIGALRM is Unix-only (the watchdog is for the Linux cross-build).
-+            # On native Windows it does not exist, so skip the alarm and rely on the
-+            # socket.setdefaulttimeout set in main() instead of crashing get_vs.
-+            _have_alarm = hasattr(signal, "SIGALRM")
-+            if _have_alarm:
-+                _prev_alarm = signal.signal(signal.SIGALRM, _dl_watchdog)
-+                signal.alarm(120)
-+            try:
-+                urllib.request.urlretrieve(payload["url"], destname)
-+            finally:
-+                if _have_alarm:
-+                    signal.alarm(0)
-+                    signal.signal(signal.SIGALRM, _prev_alarm)
++            # STEALTH-HOOK(platform/build-tools): per-file download watchdog, logic in stealth_download_watchdog.py
++            stealth_urlretrieve(payload, destname, fileid)
              if "sha256" in payload:
                  if sha256File(destname).lower() != payload["sha256"].lower():
                      if allowHashMismatch:

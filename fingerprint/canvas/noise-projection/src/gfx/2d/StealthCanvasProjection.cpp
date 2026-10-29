@@ -7,6 +7,8 @@
 
 #include <string.h>
 
+#include "DrawEventRecorder.h"
+#include "RecordedEventImpl.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/StealthRefuse.h"
 #include "nsTArray.h"
@@ -303,6 +305,39 @@ already_AddRefed<DataSourceSurface> StealthProjectedRegion(
   StealthProjectPixels(src.GetData(), src.GetStride(), size, format, aRect,
                        dst.GetData(), dst.GetStride(), aPremultiplied, aNoise);
   return out.forget();
+}
+
+// The projected stand-in reads as projected here too.
+already_AddRefed<DataSourceSurface> StealthProjectOriginal(
+    SourceSurface* aOriginal, const IntSize& aSize,
+    const StealthStandIn& aStandIn) {
+  RefPtr<DataSourceSurface> data = aOriginal->GetDataSurface();
+  if (data && aStandIn.noise) {
+    return StealthProjectedRegion(data, IntRect(IntPoint(), aSize),
+                                  aStandIn.premultiplied, aStandIn.noise);
+  }
+  return data.forget();
+}
+
+// Since 157 a canvas recording wraps its snapshots in a surface whose
+// GetType() is CANVAS_RECORDING (gfx/layers/ipc/CanvasChild.cpp); what it
+// wraps is what GetUnderlyingType() answers. Those are the surfaces this was
+// written for, so the test is on the underlying type: a plain RECORDING
+// surface answers RECORDING there too.
+bool StealthCanProjectRecording(SourceSurface* aSurface,
+                                const StealthCanvasNoise& aNoise) {
+  return aSurface && aSurface->GetUnderlyingType() == SurfaceType::RECORDING &&
+         aNoise;
+}
+
+void StealthRecordProjection(const DrawTargetRecording* aDT,
+                             DrawEventRecorderPrivate* aRecorder,
+                             SourceSurface* aSurface, const void* aStandIn,
+                             bool aPremultiplied,
+                             const StealthCanvasNoise& aNoise) {
+  aRecorder->RecordEvent(
+      aDT, RecordedStealthProjectSurface(aSurface, aStandIn, aPremultiplied,
+                                         aNoise));
 }
 
 }  // namespace gfx

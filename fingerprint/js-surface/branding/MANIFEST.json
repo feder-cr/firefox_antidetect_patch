@@ -10,7 +10,8 @@
  ],
  "added": {
   "netwerk/protocol/res/StealthBranding.cpp": "100644",
-  "netwerk/protocol/res/StealthBranding.h": "100644"
+  "netwerk/protocol/res/StealthBranding.h": "100644",
+  "security/sandbox/win/src/sandboxbroker/StealthSandboxBranding.h": "100644"
  },
  "inventory": [
   {

@@ -1,190 +1,99 @@
 diff --git a/docshell/base/CanonicalBrowsingContext.cpp b/docshell/base/CanonicalBrowsingContext.cpp
-index 7d9ac5fbccfd345498c5878019d4702bb27532bd..ad7e7e36b36b18da347d43efd583cea5de5e3717 100644
+index 7d9ac5fbccfd345498c5878019d4702bb27532bd..409bea822367b8c8d07cdb6fb6de01a0e093c7a1 100644
 --- a/docshell/base/CanonicalBrowsingContext.cpp
 +++ b/docshell/base/CanonicalBrowsingContext.cpp
-@@ -1976,6 +1976,17 @@ void CanonicalBrowsingContext::LoadURI(nsIURI* aURI,
+@@ -9,6 +9,7 @@
+ #include "ContentAnalysis.h"
+ #include "ErrorList.h"
+ #include "SessionHistoryEntry.h"
++#include "StealthNavigationEvents.h"  // STEALTH-HOOK(automation/navigation)
+ #include "mozilla/CheckedInt.h"
+ #include "mozilla/Components.h"
+ #include "mozilla/ErrorResult.h"
+@@ -1976,6 +1977,8 @@ void CanonicalBrowsingContext::LoadURI(nsIURI* aURI,
      (void)SetIsCaptivePortalTab(true);
    }
  
-+  {
-+    nsCOMPtr<nsIObserverService> observerService =
-+        mozilla::services::GetObserverService();
-+    if (observerService) {
-+      observerService->NotifyObservers(
-+          ToSupports(this), "juggler-navigation-started-browser",
-+          NS_ConvertASCIItoUTF16(
-+              nsPrintfCString("%" PRIu64, loadState->GetLoadIdentifier()))
-+              .get());
-+    }
-+  }
++  // STEALTH-HOOK(automation/navigation)
++  StealthNotifyNavigationStarted(this, loadState);
    LoadURI(loadState, true);
  }
  
-@@ -2001,6 +2012,17 @@ void CanonicalBrowsingContext::FixupAndLoadURIString(
+@@ -2001,6 +2004,8 @@ void CanonicalBrowsingContext::FixupAndLoadURIString(
      (void)SetIsCaptivePortalTab(true);
    }
  
-+  {
-+    nsCOMPtr<nsIObserverService> observerService =
-+        mozilla::services::GetObserverService();
-+    if (observerService) {
-+      observerService->NotifyObservers(
-+          ToSupports(this), "juggler-navigation-started-browser",
-+          NS_ConvertASCIItoUTF16(
-+              nsPrintfCString("%" PRIu64, loadState->GetLoadIdentifier()))
-+              .get());
-+    }
-+  }
++  // STEALTH-HOOK(automation/navigation)
++  StealthNotifyNavigationStarted(this, loadState);
    LoadURI(loadState, true);
  }
  
 diff --git a/docshell/base/nsDocShell.cpp b/docshell/base/nsDocShell.cpp
-index 48be2ce822c12f18f0b54daaef7009e549beb280..2304254fc8cfdd2e8686c39910337d2a1c8e2df0 100644
+index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a80d859004 100644
 --- a/docshell/base/nsDocShell.cpp
 +++ b/docshell/base/nsDocShell.cpp
-@@ -366,6 +366,8 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
+@@ -4,6 +4,8 @@
+ 
+ #include "nsDocShell.h"
+ 
++#include "StealthNavigation.h"  // STEALTH-HOOK(automation/navigation)
++
+ #include <algorithm>
+ #include "mozilla/CycleCollectedJSContext.h"
+ #include "mozilla/dom/HTMLFormElement.h"
+@@ -366,6 +368,9 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
        mURIResultedInDocument(false),
        mIsBeingDestroyed(false),
        mIsExecutingOnLoadHandler(false),
++      // STEALTH-HOOK(automation/docshell-attrs)
 +      mFileInputInterceptionEnabled(false),
 +      mBypassCSPEnabled(false),
        mInvisible(false),
        mHasLoadedNonBlankURI(false),
        mHasStartedLoadingOtherThanInitialBlankURI(false),
-@@ -2900,6 +2902,29 @@ nsDocShell* nsDocShell::GetInProcessChildAt(int32_t aIndex) {
-   return static_cast<nsDocShell*>(child);
- }
- 
-+// Stealthfox: the two attributes Juggler sets; see nsIDocShell.idl for
-+// where each is read.
-+NS_IMETHODIMP
-+nsDocShell::GetFileInputInterceptionEnabled(bool* aEnabled) {
-+  *aEnabled = mFileInputInterceptionEnabled;
-+  return NS_OK;
-+}
-+NS_IMETHODIMP
-+nsDocShell::SetFileInputInterceptionEnabled(bool aEnabled) {
-+  mFileInputInterceptionEnabled = aEnabled;
-+  return NS_OK;
-+}
-+NS_IMETHODIMP
-+nsDocShell::GetBypassCSPEnabled(bool* aEnabled) {
-+  *aEnabled = mBypassCSPEnabled;
-+  return NS_OK;
-+}
-+NS_IMETHODIMP
-+nsDocShell::SetBypassCSPEnabled(bool aEnabled) {
-+  mBypassCSPEnabled = aEnabled;
-+  return NS_OK;
-+}
-+
- NS_IMETHODIMP nsDocShell::SynchronizeLayoutHistoryState() {
-   if (mActiveEntry && mActiveEntry->GetLayoutHistoryState() &&
-       mBrowsingContext) {
-@@ -9014,6 +9039,22 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
+@@ -9014,6 +9019,8 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
    attrs.SetFirstPartyDomain(isTopLevelDoc, aLoadState->URI());
  
    nsCOMPtr<nsIRequest> req;
-+
-+  // Juggler: report navigation started for non-same-document and non-javascript
-+  // navigations.  This drives the Juggler protocol's Page.navigationStarted and
-+  // ultimately Page.ready events.
-+  if (!isJavaScript && !sameDocument) {
-+    nsCOMPtr<nsIObserverService> observerService =
-+        mozilla::services::GetObserverService();
-+    if (observerService) {
-+      observerService->NotifyObservers(
-+          GetAsSupports(this), "juggler-navigation-started-renderer",
-+          NS_ConvertASCIItoUTF16(
-+              nsPrintfCString("%" PRIu64, aLoadState->GetLoadIdentifier()))
-+              .get());
-+    }
-+  }
-+
++  // STEALTH-HOOK(automation/navigation)
++  StealthNavigationStarted(this, aLoadState, !isJavaScript && !sameDocument);
    rv = DoURILoad(aLoadState, aCacheKey, getter_AddRefs(req));
  
    if (NS_SUCCEEDED(rv)) {
-@@ -12112,6 +12153,24 @@ nsresult nsDocShell::EnsureCommandHandler() {
- 
- // link handling
- 
-+// STEALTHFOX (juggler): a link click or form submission is a PLANNED
-+// navigation, an OnLinkClickEvent that runs after the input that caused it
-+// returns; from 157 a form submission is one too
-+// (dom.forms.submit_async_navigation, true as in the retail). Juggler reports
-+// the plan as Page.linkClicked "before" and its end as "after"
-+// (juggler/content/PageAgent.js), so a client can tell an action that is about
-+// to navigate from one that is not: without it the POST of a submitted form was
-+// announced after page.click() had returned. Every "before" gets exactly one
-+// "after", sent when the navigation starts or when the plan is cancelled
-+// (another submission replaces it), so a client waiting on the pair is never
-+// left waiting. Observer notifications: nothing a page can see.
-+static void NotifyJugglerLinkClick(nsIContent* aContent, const char* aTopic) {
-+  if (nsCOMPtr<nsIObserverService> observerService =
-+          mozilla::services::GetObserverService()) {
-+    observerService->NotifyObservers(ToSupports(aContent), aTopic, nullptr);
-+  }
-+}
-+
- class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
-  public:
-   OnLinkClickEvent(nsDocShell* aHandler, nsIContent* aContent,
-@@ -12136,9 +12195,12 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
+@@ -12136,9 +12143,12 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
        if (!mLoadState->HasSourceElement()) {
          mLoadState->SetSourceElement(mContent->AsElement());
        }
-+      mRunning = true;
++      mStealth.SetRunning(true);  // STEALTH-HOOK(automation/navigation)
        mHandler->OnLinkClickSync(mContent, mLoadState, mNoOpenerImplied,
                                  mTriggeringPrincipal);
-+      mRunning = false;
++      mStealth.SetRunning(false);  // STEALTH-HOOK(automation/navigation)
      }
-+    NotifyJugglerDone();
++    mStealth.Done(mContent);  // STEALTH-HOOK(automation/navigation)
      return NS_OK;
    }
  
-@@ -12147,9 +12209,26 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
+@@ -12147,6 +12157,7 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
      // Don't clear mLoadState, etc. here since this can be called
      // from the OnLinkClickSync() above, and we might be holding
      // the last references to them.
-+    // STEALTHFOX (juggler): it is, for a form: InternalLoad stops this
-+    // docshell's network, which cancels its planned form navigation - the one
-+    // running here - before the navigation is announced. Run says "after"
-+    // once OnLinkClickSync has started it.
-+    if (!mRunning) {
-+      NotifyJugglerDone();
-+    }
++    mStealth.Cancelled(mContent);  // STEALTH-HOOK(automation/navigation)
      return NS_OK;
    }
  
-+  // STEALTHFOX (juggler): the "after" of the "before" OnLinkClickWithLoadState
-+  // sent, once, whichever of Run and Cancel comes first.
-+  void NotifyJugglerDone() {
-+    if (mJugglerNotified) {
-+      return;
-+    }
-+    mJugglerNotified = true;
-+    NotifyJugglerLinkClick(mContent, "juggler-link-click-sync");
-+  }
-+
-  private:
-   RefPtr<nsDocShell> mHandler;
-   nsCOMPtr<nsIContent> mContent;
-@@ -12157,6 +12236,8 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
+@@ -12157,6 +12168,7 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
    nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
    bool mNoOpenerImplied;
    bool mCancelled = false;
-+  bool mRunning = false;
-+  bool mJugglerNotified = false;
++  StealthLinkClickAfter mStealth;  // STEALTH-HOOK(automation/navigation)
  };
  
  OnLinkClickEvent::OnLinkClickEvent(nsDocShell* aHandler, nsIContent* aContent,
-@@ -12197,6 +12278,9 @@ Result<RefPtr<OnLinkClickEvent>, nsresult> nsDocShell::OnLinkClickWithLoadState(
+@@ -12197,6 +12209,7 @@ Result<RefPtr<OnLinkClickEvent>, nsresult> nsDocShell::OnLinkClickWithLoadState(
    RefPtr<nsIRunnable> runnable = ev;
    nsresult rv = Dispatch(runnable.forget());
    NS_ENSURE_SUCCESS(rv, Err(rv));
-+  // STEALTHFOX (juggler): the plan exists only once it is dispatched, so the
-+  // "before" is sent here and never for a click that planned nothing.
-+  NotifyJugglerLinkClick(aContent, "juggler-link-click");
++  StealthLinkClickBefore(aContent);  // STEALTH-HOOK(automation/navigation)
    return ev;
  }
  

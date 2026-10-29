@@ -1,9 +1,10 @@
 {
  "modified": [
-  "dom/media/MediaManager.cpp",
-  "dom/media/MediaManager.h"
+  "dom/media/MediaManager.cpp"
  ],
- "added": {},
+ "added": {
+  "dom/media/StealthMediaEnumeration.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/media/MediaManager.cpp",
@@ -30,26 +31,6 @@
      "notes"
     ],
     "why": "Pref name is zoom.stealth.media.enumeration_ms (StaticPrefList.yaml:21478); risk claim checked."
-   }
-  },
-  {
-   "file": "dom/media/MediaManager.h",
-   "category": "spoof",
-   "feature": "media-enumeration",
-   "prefs": [],
-   "added": 3,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 1,
-   "hookable": "already-hook",
-   "anchor": "MediaManager::EnumerationParams (declarations)",
-   "evidence": [
-    "+    bool HostSpeakersRequested() const;"
-   ],
-   "notes": "Declares the one decision point shared by RealDeviceRequested, the permission path and EnumerateRawDevices.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff and source; no correction needed."
    }
   }
  ]

@@ -3,7 +3,10 @@
   "browser/app/winlauncher/LauncherProcessWin.cpp",
   "toolkit/xre/nsWindowsWMain.cpp"
  ],
- "added": {},
+ "added": {
+  "browser/app/winlauncher/StealthJugglerPipe.h": "100644",
+  "toolkit/xre/StealthPipeStdio.h": "100644"
+ },
  "inventory": [
   {
    "file": "browser/app/winlauncher/LauncherProcessWin.cpp",

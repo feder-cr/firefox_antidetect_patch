@@ -6,7 +6,12 @@
 #ifndef mozilla_intl_StealthSessionPrefs_h__
 #define mozilla_intl_StealthSessionPrefs_h__
 
+#include "mozilla/AlreadyAddRefed.h"
+#include "nsError.h"
 #include "nsStringFwd.h"
+#include "nsTArrayForwardDeclare.h"
+
+class nsAtom;
 
 namespace mozilla::intl {
 
@@ -16,7 +21,7 @@ namespace mozilla::intl {
  *
  * invisible_core writes them as `juggler.timezone.override` (an IANA zone) and
  * `juggler.locale.override` (an Accept-Language list, "it-IT, it, en-US, en"),
- * static prefs that reach every process and any thread (StaticPrefList.yaml).
+ * static prefs that reach every process and any thread (StealthPrefList.yaml).
  *
  * A context may carry its own zone and language, in its top BrowsingContext's
  * TimezoneOverride and LanguageOverride fields; the session's are the floor
@@ -42,9 +47,28 @@ void OrSessionTimezone(nsAString& aZone);
 // The session's language as one tag, or empty.
 void SessionLanguageTag(nsACString& aTag);
 
+// STEALTHFOX (firefox-50): the language the session declares is the language
+// of text that declares none, which picks the fonts of its language group
+// (nsFontCache, EncodingToLang, a canvas with no `lang`). It was the host's
+// regional settings, which nsLanguageAtomService::GetLocaleLanguage still
+// asks right after this when nothing is declared. Per process, not per
+// context: a second context with a language of its own keeps the session's
+// here, in its layout and its canvas alike.
+//
+// The session's language as a lowercase atom, or null when nothing is
+// declared. The caller holds nsLanguageAtomService::mLock for writing.
+already_AddRefed<nsAtom> SessionLocaleLanguage();
+
+// The regional-settings locales of the machine the session declares: the
+// declared language as the only entry when one is declared, else the
+// operating system's (OSPreferences::GetRegionalPrefsLocales). Same contract
+// as that method: on success aRetVal holds at least the entries it returns.
+nsresult MachineRegionalPrefsLocales(nsTArray<nsCString>& aRetVal);
+
 // The primary tag of an Accept-Language list: "fr-FR, fr, en-US, en" gives
 // "fr-FR"; a single tag passes through. The one place the list becomes a tag,
 // for every realm and every process-wide question that needs a BCP-47 tag.
+// A realm takes only this tag; navigator.languages keeps the full list.
 void PrimaryLanguageTag(const nsACString& aList, nsACString& aTag);
 
 }  // namespace mozilla::intl

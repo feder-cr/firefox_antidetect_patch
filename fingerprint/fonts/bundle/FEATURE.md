@@ -153,3 +153,196 @@ TODO: one paragraph, from the notes below.
 - `browser/fonts/yugothm1_95.ttc`
 - `gfx/thebes/StealthBundleFontList.cpp`
 - `gfx/thebes/StealthBundleFontList.h`
+
+## Why StealthBundleFontList.h is exported
+
+StealthBundleFontList.h is exported because dom/canvas reads the coverage ladder from it (the alpha-quantisation hook in CanvasRenderingContext2D).
+
+
+## gfx/2d/2D.h: FTUserFontData borrowing constructor (Prestito)
+
+Hook: the constructor `FTUserFontData(const uint8_t* aData, uint32_t aLength, Prestito)`
+with the `enum class Prestito { Si }` tag, the changed `GetData()` / `Length()`
+and the members `mBorrowedData` / `mBorrowedLength` (all in class `FTUserFontData`).
+The comment that stood on the constructor in 2D.h, moved here unchanged:
+
+STEALTH: i byte appartengono a QUALCUN ALTRO e non vanno liberati qui.
+
+Simmetrico al costruttore in prestito di `gfxDWriteFontFileStream` (§5.2l):
+su ENTRAMBE le piattaforme una sola mappatura per FILE viene prestata a
+tutte le facce di quel file, invece di una copia per faccia. Il prestito e'
+sicuro per la stessa ragione di la': la cache di `StealthBundleFontList` e'
+immortale per costruzione - l'oggetto e' volutamente leaked e non svuota mai
+`mFileCache` - e il valore della mappa e' un `RefPtr`, quindi se la tabella
+hash rialloca a spostarsi e' il puntatore e mai i byte.
+
+Serve un costruttore NUOVO: `FontData` e' il proprietario che chiama
+`free()` sui suoi byte, quindi un puntatore mappato non puo' stare li'
+dentro. I byte prestati restano in `mBorrowedData` / `mBorrowedLength`,
+`mFontData` resta nullo, e `GetData()` / `Length()` rispondono per
+entrambi i casi, cosi' i chiamanti non sanno nulla del prestito.
+`CloneFace` (gfx/2d/Factory.cpp) apre i byte prestati quando manca
+`mFontData`.
+
+## gfx/2d/Factory.cpp: FTUserFontData::CloneFace
+
+Hook: the borrowed branch (`mBorrowedData`, `Factory::NewFTFaceFromData`). The
+one-line comment that stood on it in Factory.cpp, moved here unchanged:
+
+STEALTH: bundle bytes lent by StealthBundleFontList (see 2D.h).
+
+(See the section on gfx/2d/2D.h above: the bytes are lent by the immortal bundle
+cache.)
+
+## gfx/2d/ScaledFontDWrite.cpp: UnscaledFontDWrite::GetFontDescriptor
+
+Hook: the early `if (!mPercorsoDichiarato.empty())` block that hands the declared
+file path to the callback. The comment that stood on it in ScaledFontDWrite.cpp,
+moved here unchanged except that "qui sotto" is replaced by the spot it named:
+
+STEALTH: se il percorso e' DICHIARATO, si usa quello e si salta il resto.
+
+La guardia `!mFont` che segue il blocco, in `GetFontDescriptor`, e' un PROXY:
+"non e' un font di sistema" sta
+per "non ha un file", e il commento al punto di costruzione lo dice
+esplicitamente ("this signals whether or not we can safely query a
+descriptor"). Per un font scaricato da una pagina e' corretto, perche' li'
+un file non esiste. Per le nostre facce imbarcate e' falso: il file esiste
+e lo conosciamo, e tacerlo fa mandare a WebRender i BYTE del font invece
+del percorso. Misurati 65,9 MB nel processo padre su Linux, dove la stessa
+correzione e' stata fatta per prima - `70-known-bugs.md` [B154].
+
+Non si passa da `GetFontFileName` perche' quella pretende un
+`IDWriteLocalFontFileLoader`, e il nostro caricatore presta byte in
+memoria: non e' locale e non lo sara'. La convenzione dei byte e' la stessa
+che usa lei, terminatore nullo compreso.
+
+## gfx/2d/UnscaledFontDWrite.h: UnscaledFontDWrite constructor and mPercorsoDichiarato
+
+Hook: the optional constructor argument `aFilePath` (default empty), the member
+`std::wstring mPercorsoDichiarato` and the `<string>` include. The comment on the
+constructor, moved here unchanged:
+
+STEALTH: `aFilePath` e' il file da cui questa faccia viene, quando esiste.
+
+Serve perche' `GetFontDescriptor` non riesce a ricavarlo da solo per le
+nostre facce: quel percorso passa da `IDWriteLocalFontFileLoader`, e il
+nostro caricatore presta byte in memoria, quindi non e' locale. Senza il
+percorso Gecko ripiega sui BYTE del font verso WebRender - misurati 65,9 MB
+nel processo padre su Linux, dove lo stesso difetto e' stato corretto per
+primo. Vedi `70-known-bugs.md` [B154].
+
+Chi non passa un percorso non vede nessuna differenza: resta il
+comportamento upstream, che per un font scaricato da una pagina e' quello
+giusto perche' li' un file non esiste davvero.
+
+The comment on the member `mPercorsoDichiarato`:
+
+STEALTH: vuoto per ogni font che non sia dei nostri imbarcati.
+
+## gfx/thebes/gfxDWriteCommon.h: gfxDWriteFontFileStream::SizeOfExcludingThis
+
+Hook: none in code (`SizeOfExcludingThis` still returns 0). Mozilla's comment in
+the header there says "We don't report the size of mData, because the original
+user font entry will account for that."; the sentence we appended to it, moved
+here unchanged:
+
+A borrowed stream owns no bytes either, and
+counting the lender's would double-count them in about:memory: the
+bundle cache is where those bytes belong and where they are reported.
+
+(The Borrowed constructor, `Bytes()` / `BytesLength()` and
+`CreateBorrowedFontFile` carry their comments in gfx/thebes/StealthFontFileStream.cpp;
+the members `mBorrowed` / `mBorrowedLength` are described by the comment on
+`Bytes()` / `BytesLength()` there.)
+
+## gfx/thebes/gfxDWriteFontList.h: gfxDWriteFontEntry::mBundleFaceIndex and mBundleFilePath
+
+Hook: the two members (and the `<string>` include). The comments that stood on them
+in gfxDWriteFontList.h, moved here unchanged:
+
+mBundleFaceIndex: Face index within a custom (bundle) font file; 0 for single-face files and
+for system fonts. Lets a .ttc face be addressed by index in CreateFontFace.
+
+mBundleFilePath: Bundle file path; see StealthDWriteFontList.cpp (CreateFontInstance).
+
+## gfx/thebes/gfxFontEntry.h: gfxFontEntry::AutoHBFace conversion operator
+
+Hook: `operator hb_face_t*() const&` and the deleted `operator hb_face_t*() const&&`
+(feature hb-face-lifetime). The comment that stood on it in gfxFontEntry.h, moved
+here unchanged:
+
+La conversione vale solo su un LVALUE. Legarsi a un temporaneo e'
+vietato dal TIPO, non da una convenzione:
+
+        hb_face_t* f = entry->GetHBFace();   // non compila
+        const auto f(entry->GetHBFace());    // corretto
+
+GetHBFace() torna per valore, quindi scrivendo la prima forma il
+temporaneo si converte e viene distrutto alla fine di quella stessa
+istruzione: il puntatore e' penzolante dalla riga dopo, e chi lo usa
+scrive dentro memoria liberata. Misurato il 2026-08-10 su
+gfxHarfBuzzShaper::GetDesignFont(), che era l'unico dei quattordici
+chiamanti a sbagliarlo: 6 sessioni di navigazione morte su 10 contro 0
+dopo la correzione. Il difetto era silenzioso perche' la memoria appena
+liberata resta quasi sempre leggibile, e il segmentation fault arrivava
+altrove e molto dopo.
+
+Sta nel TIPO e non solo in un gate perche' il progetto sapeva gia' la
+regola in tredici punti su quattordici e il quattordicesimo e' stato
+scritto sbagliato lo stesso: qui il compilatore lo rifiuta.
+
+## gfx/thebes/gfxFontEntry.h: gfxFontEntry::ShouldPublishCharacterMap declaration
+
+Hook: the declaration `bool ShouldPublishCharacterMap() const;` (defined in
+gfxFontEntry.cpp, forwarding to `StealthBundleFontList::ShouldPublishCharacterMap`
+in gfx/thebes/StealthBundleFontList.cpp, which explains each branch of the predicate
+in its own comments). The comment
+that stood on the declaration, moved here unchanged:
+
+Stealth: does this entry's character map belong in the shared font list?
+Every backend's ReadCMAP asked `!IsUserFont() && mShmemFace`, four copies of
+one rule, and that rule is WRONG for a bundled face: it is constructed from
+file data (so IsUserFont() is true) while being one of the list's own faces.
+The consequence was that no bundled face's cmap ever reached shared memory.
+One predicate, four readers.
+
+## gfx/thebes/gfxFontUtils.h: FindTableDirEntry and GetTableFromFontData (aFaceIndex)
+
+Hook: the new parameter `uint32_t aFaceIndex = 0` on `FindTableDirEntry` and
+`GetTableFromFontData`, and the declaration of `FindSfntOffset` (defined in
+gfx/thebes/StealthBundleFontList.cpp). In gfxFontUtils.h we had edited Mozilla's
+doc comments of the two functions; Mozilla's wording is restored there and our
+version is kept here, unchanged.
+
+FindTableDirEntry:
+
+Find the table directory entry for a given table tag, in a (validated)
+buffer of font data (single-face sfnt or .ttc collection). aFaceIndex
+selects the face within a .ttc (ignored for single-face fonts).
+Returns null if the tag is not present.
+
+GetTableFromFontData:
+
+Return a blob that wraps a table found within a buffer of font data
+(single-face sfnt or .ttc collection). aFaceIndex selects the face
+within a .ttc (ignored for single-face fonts). Table offsets are
+relative to the beginning of the file, so the blob points into aFontData.
+The blob does NOT own its data; caller guarantees that the buffer
+will remain valid at least as long as the blob.
+Returns null if the specified table is not found.
+This method assumes aFontData is valid font data; before using this,
+caller is responsible to do any sanitization/validation necessary.
+
+## gfx/thebes/gfxTextRun.cpp: gfxFontGroup::FindFallbackFaceForChar
+
+Hook: the condition `pfl->MayDeferCmapLoading()` in place of the three-part
+async-fallback condition. The comment that stood on it (the same text now also sits
+at `gfxPlatformFontList::MayDeferCmapLoading` in gfx/thebes/StealthBundleFontList.cpp,
+the function the hook calls):
+
+Stealth: this is the site the bundle-only condition was missing from. The
+twin site in GlobalFontFallback spelled it out by hand, this one (FindFallbackFaceForChar) did not, and
+under bundle-only NO family is ever fully initialized - so every text run
+that needed a fallback face within a family took this early return in the
+content process. MayDeferCmapLoading is now the single answer for both.

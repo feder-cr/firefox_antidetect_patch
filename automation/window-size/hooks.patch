@@ -1,18 +1,33 @@
 diff --git a/toolkit/components/browser/nsIWebBrowserChrome.idl b/toolkit/components/browser/nsIWebBrowserChrome.idl
-index c5c10b0e20fac2c7771a571ecc6dc092d5d77d8f..61a66d773123061f6273070475be4bf7a150277a 100644
+index c5c10b0e20fac2c7771a571ecc6dc092d5d77d8f..4733430c983cd0c46bc41b5698bada57fca7a0e3 100644
 --- a/toolkit/components/browser/nsIWebBrowserChrome.idl
 +++ b/toolkit/components/browser/nsIWebBrowserChrome.idl
-@@ -94,7 +94,12 @@ interface nsIWebBrowserChrome : nsISupports
+@@ -94,7 +94,10 @@ interface nsIWebBrowserChrome : nsISupports
      // ignored for Linux.
      const unsigned long CHROME_SUPPRESS_ANIMATION     = 1 << 24;
  
 -    // Two bits are free here.
-+    // Juggler: the window.open features that opened this popup give a size
-+    // (width, height, innerWidth or innerHeight). Juggler then leaves the
-+    // window at that size instead of applying the context's default viewport.
++    // STEALTH-HOOK(automation/window-size): popup size from window.open features.
 +    const unsigned long JUGGLER_WINDOW_EXPLICIT_SIZE  = 1 << 25;
 +
 +    // One bit is free here.
  
      const unsigned long CHROME_CENTER_SCREEN          = 1 << 27;
  
+diff --git a/toolkit/components/windowwatcher/moz.build b/toolkit/components/windowwatcher/moz.build
+index 4d1326dbbb1367a7f721cb6e36fec5c34442a223..13de7ee0dbe184de4e32d0d0f93501ee8b0c3ee5 100644
+--- a/toolkit/components/windowwatcher/moz.build
++++ b/toolkit/components/windowwatcher/moz.build
+@@ -25,10 +25,12 @@ EXPORTS += [
+ ]
+ 
+ UNIFIED_SOURCES += [
++    "JugglerWindowSize.cpp",
+     "nsAutoWindowStateHelper.cpp",
+     "nsDialogParamBlock.cpp",
+     "nsOpenWindowInfo.cpp",
+     "nsWindowWatcher.cpp",
++    "StealthWindowPlacement.cpp",
+ ]
+ 
+ FINAL_LIBRARY = "xul"

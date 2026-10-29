@@ -2,7 +2,10 @@
  "modified": [
   "toolkit/components/windowwatcher/nsWindowWatcher.cpp"
  ],
- "added": {},
+ "added": {
+  "toolkit/components/windowwatcher/StealthWindowPlacement.cpp": "100644",
+  "toolkit/components/windowwatcher/StealthWindowPlacement.h": "100644"
+ },
  "inventory": [
   {
    "file": "toolkit/components/windowwatcher/nsWindowWatcher.cpp",

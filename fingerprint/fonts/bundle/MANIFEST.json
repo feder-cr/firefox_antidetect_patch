@@ -25,6 +25,7 @@
   "browser/fonts/L_10646.TTF": "100644",
   "browser/fonts/Nirmala.ttf": "100644",
   "browser/fonts/SitkaSmall.ttf": "100644",
+  "browser/fonts/StealthFonts.mozbuild": "100644",
   "browser/fonts/arial7_04.ttf": "100644",
   "browser/fonts/arialbd7_04.ttf": "100644",
   "browser/fonts/arialbi7_04.ttf": "100644",
@@ -141,7 +142,10 @@
   "browser/fonts/wingding5_01.ttf": "100644",
   "browser/fonts/yugothm1_95.ttc": "100644",
   "gfx/thebes/StealthBundleFontList.cpp": "100644",
-  "gfx/thebes/StealthBundleFontList.h": "100644"
+  "gfx/thebes/StealthBundleFontList.h": "100644",
+  "gfx/thebes/StealthDWriteFontList.cpp": "100644",
+  "gfx/thebes/StealthFontFileStream.cpp": "100644",
+  "gfx/thebes/StealthFontFileStream.h": "100644"
  },
  "inventory": [
   {
@@ -149,8 +153,8 @@
    "category": "build",
    "feature": "font-bundle-files",
    "prefs": [],
-   "added": 130,
-   "removed": 2,
+   "added": 2,
+   "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 1,
    "hookable": "already-hook",
@@ -159,7 +163,7 @@
     "-if CONFIG[\"MOZ_WIDGET_TOOLKIT\"] in (\"windows\", \"gtk\"):",
     "+if CONFIG[\"MOZ_WIDGET_TOOLKIT\"] in (\"windows\", \"gtk\", \"cocoa\"):"
    ],
-   "notes": "Replaces the single TwemojiMozilla.ttf install with a FINAL_TARGET_FILES list of 121 quoted entries (bundled Windows core fonts plus bundle-fonts.list and TwemojiMozilla.ttf, which stays in the list). Adds cocoa to the platform condition. The list is hand-maintained here and must stay in sync with the bundle manifest. The comment says macOS also needs --enable-bundled-fonts in its mozconfig. The font binaries themselves are not in this diff.",
+   "notes": "One include() of our StealthFonts.mozbuild, which lists the bundled font files.",
    "verifier": {
     "changed": [],
     "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."

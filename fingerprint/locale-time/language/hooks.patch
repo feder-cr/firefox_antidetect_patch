@@ -1,151 +1,34 @@
-diff --git a/dom/base/test/browser_language_override.js b/dom/base/test/browser_language_override.js
-index 23fff355fd66467765db74e8252a374a5ac6f87d..b65469a0a7a65d1168b0e780b406123b07f8b8d7 100644
---- a/dom/base/test/browser_language_override.js
-+++ b/dom/base/test/browser_language_override.js
-@@ -119,6 +119,87 @@ add_task(async function test_set_language_override_in_different_contexts() {
-   BrowserTestUtils.removeTab(tab2);
- });
- 
-+add_task(async function test_language_override_reaches_workers() {
-+  const tab = BrowserTestUtils.addTab(gBrowser, PAGE_URL);
-+  const browser = gBrowser.getBrowserForTab(tab);
-+
-+  await BrowserTestUtils.browserLoaded(browser);
-+
-+  const defaultLanguage = await getIntlLanguage(browser);
-+  const languageOverride = getLanguageToOverride(defaultLanguage);
-+
-+  info("Set language override before the workers are created");
-+  browser.browsingContext.languageOverride = languageOverride;
-+  await assertLanguageOverridden(browser, languageOverride);
-+
-+  for (const kind of ["dedicated", "nested", "shared"]) {
-+    const result = await getWorkerLanguages(browser, kind);
-+    is(
-+      result.intl,
-+      languageOverride,
-+      `Intl locale in a ${kind} worker follows the language override`
-+    );
-+    is(
-+      result.language,
-+      languageOverride,
-+      `navigator.language in a ${kind} worker follows the language override`
-+    );
-+    Assert.deepEqual(
-+      result.languages,
-+      [languageOverride],
-+      `navigator.languages in a ${kind} worker follows the language override`
-+    );
-+  }
-+
-+  BrowserTestUtils.removeTab(tab);
-+});
-+
-+async function getWorkerLanguages(browser, kind) {
-+  return SpecialPowers.spawn(browser, [kind], async workerKind => {
-+    const probe = `
-+      function probe() {
-+        return {
-+          intl: Intl.DateTimeFormat().resolvedOptions().locale,
-+          language: navigator.language,
-+          languages: Array.from(navigator.languages),
-+        };
-+      }
-+    `;
-+    const blobURL = source =>
-+      content.URL.createObjectURL(
-+        new content.Blob([source], { type: "text/javascript" })
-+      );
-+    const receive = target =>
-+      new Promise(resolve => {
-+        target.addEventListener(
-+          "message",
-+          event => resolve(JSON.parse(content.JSON.stringify(event.data))),
-+          { once: true }
-+        );
-+      });
-+
-+    if (workerKind === "shared") {
-+      const worker = new content.SharedWorker(
-+        blobURL(
-+          probe + "onconnect = e => e.ports[0].postMessage(probe());"
-+        )
-+      );
-+      const received = receive(worker.port);
-+      worker.port.start();
-+      return received;
-+    }
-+
-+    let source = probe + "postMessage(probe());";
-+    if (workerKind === "nested") {
-+      const inner = blobURL(source);
-+      source = `const w = new Worker("${inner}");
-+                w.onmessage = e => postMessage(e.data);`;
-+    }
-+    const worker = new content.Worker(blobURL(source));
-+    return receive(worker);
-+  });
-+}
-+
- function getLanguageToOverride(defaultLanguage) {
-   return languages.find(lang => lang !== defaultLanguage);
- }
 diff --git a/intl/locale/LocaleService.cpp b/intl/locale/LocaleService.cpp
-index d1721d1e7b224b92e8a0bf158c7e9191d68cf80c..c639ecb9191acd82ab2247217a89430d88802b37 100644
+index d1721d1e7b224b92e8a0bf158c7e9191d68cf80c..dc1e50d7165a5ae8cb55774b679c20daaccd4292 100644
 --- a/intl/locale/LocaleService.cpp
 +++ b/intl/locale/LocaleService.cpp
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,8 @@
  #include "mozilla/intl/FluentBindings.h"
  #include "mozilla/intl/OSPreferences.h"
  #include "mozilla/intl/RegistryBindings.h"
++// STEALTH-HOOK(fingerprint/locale-time/language)
 +#include "mozilla/intl/StealthSessionPrefs.h"
  #include "mozilla/intl/locale_service_glue_generated.h"
  #include "nsContentUtils.h"
  #include "nsDirectoryService.h"
-@@ -490,6 +491,27 @@ LocaleService::GetAppLocaleAsBCP47(nsACString& aRetVal) {
-   return NS_OK;
- }
- 
-+// STEALTHFOX (firefox-50): the regional settings of the machine the session
-+// declares, in place of this machine's: its language when one is declared,
-+// else what the operating system says. Only the INPUT changes; the rule
-+// below, which keeps the app locale unless the regional language matches
-+// it, stays upstream's, because this is an en-US build and a real en-US
-+// build on a de-DE machine formats as en-US. Before, the input was the
-+// host's, so the same session gave en-GB on an en-GB machine and en-US on
-+// any other, in the main runtime's default locale (XPCLocale), the locales
-+// date and time inputs render with (GetWebExposedLocales, datetimebox.js)
-+// and AppDateTimeFormat.
-+static nsresult MachineRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
-+  nsAutoCString declared;
-+  SessionLanguageTag(declared);
-+  if (!declared.IsEmpty()) {
-+    aRetVal.Clear();
-+    aRetVal.AppendElement(declared);
-+    return NS_OK;
-+  }
-+  return OSPreferences::GetInstance()->GetRegionalPrefsLocales(aRetVal);
-+}
-+
- NS_IMETHODIMP
- LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
-   bool useOSLocales =
-@@ -498,8 +520,7 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
+@@ -498,8 +500,8 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
    // If the user specified that they want to use OS Regional Preferences
    // locales, try to retrieve them and use.
    if (useOSLocales) {
 -    if (NS_SUCCEEDED(
 -            OSPreferences::GetInstance()->GetRegionalPrefsLocales(aRetVal))) {
++    // STEALTH-HOOK(fingerprint/locale-time/language)
 +    if (NS_SUCCEEDED(MachineRegionalPrefsLocales(aRetVal))) {
        return NS_OK;
      }
  
-@@ -518,8 +539,7 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
+@@ -518,8 +520,8 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
    AutoTArray<nsCString, 10> regionalPrefsLocales;
    LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
  
 -  if (NS_FAILED(OSPreferences::GetInstance()->GetRegionalPrefsLocales(
 -          regionalPrefsLocales))) {
++  // STEALTH-HOOK(fingerprint/locale-time/language)
 +  if (NS_FAILED(MachineRegionalPrefsLocales(regionalPrefsLocales))) {
      GetAppLocalesAsBCP47(aRetVal);
      return NS_OK;
@@ -171,35 +54,26 @@ index 4d6ff0428de7faaa6f6c6570708f7f5690e0e4df..7e753f0f3582a71e62e63da66b55fcfc
  
  MOZ_SRC_FILES += [
 diff --git a/intl/locale/nsLanguageAtomService.cpp b/intl/locale/nsLanguageAtomService.cpp
-index 1761b528e4acb2eecf440a65f67d17175266eeb3..e35d7f7b502411ae9723903d297c5dfac43a6dd7 100644
+index 1761b528e4acb2eecf440a65f67d17175266eeb3..1788700a99e1cba81d1852dd7a05e1e548414d07 100644
 --- a/intl/locale/nsLanguageAtomService.cpp
 +++ b/intl/locale/nsLanguageAtomService.cpp
 @@ -7,6 +7,7 @@
  #include "mozilla/Encoding.h"
  #include "mozilla/intl/Locale.h"
  #include "mozilla/intl/OSPreferences.h"
-+#include "mozilla/intl/StealthSessionPrefs.h"
++#include "mozilla/intl/StealthSessionPrefs.h"  // STEALTH-HOOK(fingerprint/locale-time/language)
  #include "MainThreadUtils.h"
  #include "nsGkAtoms.h"
  #include "nsUConvPropertySearch.h"
-@@ -114,6 +115,20 @@ nsAtom* nsLanguageAtomService::GetLocaleLanguage() {
+@@ -114,6 +115,11 @@ nsAtom* nsLanguageAtomService::GetLocaleLanguage() {
  
    AutoWriteLock lock(mLock);
    if (!mLocaleLanguage) {
-+    // STEALTHFOX (firefox-50): the language the session declares is the
-+    // language of text that declares none, which picks the fonts of its
-+    // language group (nsFontCache, EncodingToLang, a canvas with no `lang`).
-+    // It was the host's regional settings, below. Per process, not per
-+    // context: a second context with a language of its own keeps the
-+    // session's here, in its layout and its canvas alike.
-+    nsAutoCString declared;
-+    intl::SessionLanguageTag(declared);
-+    if (!declared.IsEmpty()) {
-+      ToLowerCase(declared);
-+      mLocaleLanguage = NS_Atomize(declared);
++    // STEALTH-HOOK(fingerprint/locale-time/language)
++    mLocaleLanguage = intl::SessionLocaleLanguage();
++    if (mLocaleLanguage) {
 +      return mLocaleLanguage;
 +    }
-+
      AutoTArray<nsCString, 10> regionalPrefsLocales;
      // XXX Are the OSPreferences calls here safe to call from any thread?
      // In practice GetLocaleLanguage will be called early on the main thread

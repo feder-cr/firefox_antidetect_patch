@@ -15,3 +15,11 @@ TODO: one paragraph, from the notes below.
 - `layout/painting/nsImageRenderer.cpp` (nsImageRenderer::PrepareImage, already-hook): -moz-element painting takes the as-drawn path, so the element is shown without canvas noise, like on screen. Category spoof because what it renders is what a page sees.
 - `widget/nsBaseDragService.cpp` (nsBaseDragSession::DrawDragForImage (hunk header line 1139), already-hook): Not spoof: GetSurfaceSnapshot applies CanvasUtils::StealthProjectSnapshot noise for WebGL/WebGPU contexts (dom/canvas/OffscreenCanvasDisplayHelper.cpp:459-478) and GetSurfaceSnapshotAsDrawn (line 481) skips it, so the drag image / taskbar preview show the real pixels; a page cannot read either. Companion of the canvas-noise feature, no page-visible effect.
 - `widget/windows/TaskbarPreview.cpp` (TaskbarPreviewCallback::Done (hunk header line 332), already-hook): Not spoof: GetSurfaceSnapshot applies CanvasUtils::StealthProjectSnapshot noise for WebGL/WebGPU contexts (dom/canvas/OffscreenCanvasDisplayHelper.cpp:459-478) and GetSurfaceSnapshotAsDrawn (line 481) skips it, so the drag image / taskbar preview show the real pixels; a page cannot read either. Companion of the canvas-noise feature, no page-visible effect.
+
+## layout/base/nsLayoutUtils.h: SFE_AS_DRAWN
+
+A canvas as DRAWN, without the canvas noise: for the browser's own
+readers that show it and never hand its bytes to a page (-moz-element,
+nsDOMWindowUtils). Every other caller is a page reading the canvas or
+drawing with it, and gets what HTMLCanvasElement::GetSurfaceSnapshot
+and OffscreenCanvas::GetSurfaceSnapshot give a page.

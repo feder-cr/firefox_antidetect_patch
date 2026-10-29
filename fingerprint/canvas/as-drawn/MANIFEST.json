@@ -6,7 +6,9 @@
   "widget/nsBaseDragService.cpp",
   "widget/windows/TaskbarPreview.cpp"
  ],
- "added": {},
+ "added": {
+  "dom/base/StealthCanvasAsDrawn.h": "100644"
+ },
  "inventory": [
   {
    "file": "layout/base/nsLayoutUtils.cpp",

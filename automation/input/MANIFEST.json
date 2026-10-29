@@ -10,7 +10,11 @@
   "widget/nsGUIEventIPC.h",
   "xpcom/reflect/xptinfo/xptinfo.h"
  ],
- "added": {},
+ "added": {
+  "dom/base/StealthJugglerEventId.h": "100644",
+  "dom/base/StealthJugglerInput.h": "100644",
+  "layout/base/StealthJugglerAck.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/base/nsDOMWindowUtils.cpp",

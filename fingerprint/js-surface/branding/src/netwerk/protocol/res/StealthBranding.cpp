@@ -9,6 +9,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
@@ -147,6 +148,25 @@ nsresult StealthBrandingRedirect(nsACString& aResolvedSpec) {
   aResolvedSpec.Replace(0, brandingLength,
                         "jar:"_ns + declared + "!/"_ns);
   return NS_OK;
+}
+
+nsresult StealthBrandingResolveChromeURL(const nsACString& aPath,
+                                         nsIURI* aBase, nsIURI** aResult) {
+  nsresult rv;
+  nsCOMPtr<nsIURI> resolved;
+  rv = NS_NewURI(getter_AddRefs(resolved), aPath, nullptr, aBase);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoCString spec;
+  rv = resolved->GetSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoCString declared(spec);
+  rv = StealthBrandingRedirect(declared);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (declared == spec) {
+    resolved.forget(aResult);
+    return NS_OK;
+  }
+  return NS_NewURI(aResult, declared);
 }
 
 }  // namespace mozilla::net

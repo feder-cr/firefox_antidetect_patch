@@ -7,7 +7,10 @@
   "gfx/thebes/gfxPlatformFontList.h"
  ],
  "added": {
-  "gfx/tests/gtest/TestStealthBundledCollection.cpp": "100644"
+  "gfx/tests/gtest/TestStealthBundledCollection.cpp": "100644",
+  "gfx/tests/gtest/TestStealthFcFontList.cpp": "100644",
+  "gfx/thebes/StealthFcFontList.cpp": "100644",
+  "gfx/thebes/StealthFcFontList.h": "100644"
  },
  "inventory": [
   {

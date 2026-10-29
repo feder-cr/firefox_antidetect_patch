@@ -2,7 +2,9 @@
  "modified": [
   "js/src/vm/SavedStacks.cpp"
  ],
- "added": {},
+ "added": {
+  "js/src/vm/StealthStackFrames.h": "100644"
+ },
  "inventory": [
   {
    "file": "js/src/vm/SavedStacks.cpp",

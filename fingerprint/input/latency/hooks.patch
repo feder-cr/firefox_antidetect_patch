@@ -1,16 +1,13 @@
 diff --git a/dom/webidl/Window.webidl b/dom/webidl/Window.webidl
-index c4191015847190625f22da9aae85eb79a4016913..4492e43ae62488ab183773c561c9de412b86ee45 100644
+index c4191015847190625f22da9aae85eb79a4016913..fcd7b4f008dacbee3b4b344d86e8042787bd96bb 100644
 --- a/dom/webidl/Window.webidl
 +++ b/dom/webidl/Window.webidl
-@@ -396,6 +396,12 @@ dictionary SynthesizeMouseEventData : SynthesizeEventData {
+@@ -396,6 +396,9 @@ dictionary SynthesizeMouseEventData : SynthesizeEventData {
    short inputSource = 1;
    // Modifiers pressed, using constants defined as MODIFIER_* in nsIDOMWindowUtils.
    long modifiers = 0;
-+  // Juggler event identifier for tracking events across processes.
++  // STEALTH-HOOK(fingerprint/input/latency)
 +  unsigned long jugglerEventId = 0;
-+  // Stealthfox [B299]: how many milliseconds before its dispatch the event was
-+  // born, as an input event is born in the system before a page's handler
-+  // runs. 0 is born now.
 +  double latency = 0;
  };
  

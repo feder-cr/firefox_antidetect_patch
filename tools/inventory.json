@@ -69,59 +69,104 @@
  {
   "file": "browser/app/profile/firefox.js",
   "category": "prefs",
-  "feature": "firefox-js-stealth-defaults",
+  "feature": "stealth-pref-defaults",
   "prefs": [
-   "termsofuse.acceptedVersion",
-   "termsofuse.acceptedDate",
-   "browser.translations.select.enable",
-   "invisible_firefox.usage_ping.enabled",
-   "invisible_firefox.usage_ping.url"
+   "ui.font.caption",
+   "ui.font.caption.size",
+   "ui.font.icon",
+   "ui.font.icon.size",
+   "ui.font.menu",
+   "ui.font.menu.size",
+   "ui.font.message-box",
+   "ui.font.message-box.size",
+   "ui.font.small-caption",
+   "ui.font.small-caption.size",
+   "ui.font.status-bar",
+   "ui.font.status-bar.size",
+   "ui.font.-moz-pull-down-menu",
+   "ui.font.-moz-pull-down-menu.size",
+   "ui.font.-moz-button",
+   "ui.font.-moz-button.size",
+   "ui.font.-moz-list",
+   "ui.font.-moz-list.size",
+   "ui.font.-moz-field",
+   "ui.font.-moz-field.size",
+   "network.proxy.socks_username",
+   "network.proxy.socks_password",
+   "font.size.monospace.ar",
+   "font.size.monospace.el",
+   "font.size.monospace.he",
+   "font.size.monospace.x-cyrillic",
+   "font.size.monospace.x-unicode",
+   "font.size.monospace.x-western",
+   "datareporting.policy.dataSubmissionPolicyBypassNotification"
   ],
-  "added": 87,
-  "removed": 9,
-  "hunks": 3,
+  "added": 4,
+  "removed": 4,
+  "hunks": 4,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "(top-level pref() defaults)",
-  "evidence": [
-   "-pref(\"termsofuse.acceptedVersion\", 0);",
-   "+pref(\"termsofuse.acceptedDate\", \"1785573000000\");",
-   "-pref(\"browser.translations.enable\", true);"
-  ],
-  "notes": "Pure pref defaults, but three sub-changes with different meanings (see pref_groups). (a) stillborn: termsofuse.acceptedVersion 0 -> 999 and acceptedDate set to a fixed timestamp string; suppresses the first-run Terms of Use modal that intercepts mouse input on official Windows/macOS builds (per the comment). (b) stillborn: the browser.translations.enable override line is deleted (it is not in the added lines; effective value falls back to false at modules/libpref/init/all.js:3670, CONFIRMED) and browser.translations.select.enable is set false (all.js:3674 already false). (c) other: invisible_firefox.usage_ping.enabled/url at the end are the launch counter; the url default (firefox_antidetect_patch) differs from the BrowserGlue fallback and the README (CONFIRMED, see README note); because the pref always exists the BrowserGlue fallback literal is never used. COMMENT CLAIMS IN THE DIFF: (1) 'upstream declares acceptedVersion at 999 fifteen lines above, so only the date is touched' is REFUTED: upstream had pref(\"termsofuse.acceptedVersion\", 0) (tag FIREFOX_157_0_1_RELEASE firefox.js:1944) and this patch changes it to 999 (current firefox.js:1944), so two TOU prefs are changed, not one. (2) The comment cites TelemetryReportingPolicy.sys.mjs:536 for hasUserAcceptedCurrentTOU; the getter is at toolkit/components/telemetry/app/TelemetryReportingPolicy.sys.mjs:562 (line cite stale, logic as described: non-zero date and acceptedVersion >= minimumVersion, CONFIRMED). (3) 'Linux has preonboarding off via #ifdef XP_LINUX' not checked (unverified).",
+  "anchor": "values changed in place on 2026-10-29",
+  "evidence": [],
+  "notes": "Terms-of-use values changed on their lines; the two translations enable lines become a marker.",
   "pref_groups": [
    {
-    "feature": "tou-preonboarding-suppressed",
-    "category": "stillborn",
+    "feature": "system-fonts-pinned-windows",
+    "category": "spoof",
     "prefs": [
-     "termsofuse.acceptedVersion",
-     "termsofuse.acceptedDate"
+     "ui.font.caption",
+     "ui.font.caption.size",
+     "ui.font.icon",
+     "ui.font.icon.size",
+     "ui.font.menu",
+     "ui.font.menu.size",
+     "ui.font.message-box",
+     "ui.font.message-box.size",
+     "ui.font.small-caption",
+     "ui.font.small-caption.size",
+     "ui.font.status-bar",
+     "ui.font.status-bar.size",
+     "ui.font.-moz-pull-down-menu",
+     "ui.font.-moz-pull-down-menu.size",
+     "ui.font.-moz-button",
+     "ui.font.-moz-button.size",
+     "ui.font.-moz-list",
+     "ui.font.-moz-list.size",
+     "ui.font.-moz-field",
+     "ui.font.-moz-field.size"
     ]
    },
    {
-    "feature": "translations-disabled",
-    "category": "stillborn",
+    "feature": "monospace-size-windows",
+    "category": "spoof",
     "prefs": [
-     "browser.translations.enable",
-     "browser.translations.select.enable"
+     "font.size.monospace.ar",
+     "font.size.monospace.el",
+     "font.size.monospace.he",
+     "font.size.monospace.x-cyrillic",
+     "font.size.monospace.x-unicode",
+     "font.size.monospace.x-western"
     ]
    },
    {
-    "feature": "anonymous-launch-counter",
+    "feature": "socks-credentials",
     "category": "other",
     "prefs": [
-     "invisible_firefox.usage_ping.enabled",
-     "invisible_firefox.usage_ping.url"
+     "network.proxy.socks_username",
+     "network.proxy.socks_password"
+    ]
+   },
+   {
+    "feature": "data-submission-notification-bypassed",
+    "category": "stillborn",
+    "prefs": [
+     "datareporting.policy.dataSubmissionPolicyBypassNotification"
     ]
    }
   ],
   "verifier": {
-   "changed": [
-    "prefs",
-    "pref_groups",
-    "notes"
-   ],
-   "why": "Removed browser.translations.enable from prefs (only in comments of added lines, the pref line was deleted); corrected comment-claim verdicts; added pref_groups."
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -176,12 +221,48 @@
   }
  },
  {
+  "file": "browser/components/moz.build",
+  "category": "build",
+  "feature": "anonymous-launch-counter",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "browser/components/tests/unit/xpcshell.toml",
+  "category": "build",
+  "feature": "anonymous-launch-counter",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "browser/fonts/moz.build",
   "category": "build",
   "feature": "font-bundle-files",
   "prefs": [],
-  "added": 130,
-  "removed": 2,
+  "added": 2,
+  "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
@@ -190,7 +271,7 @@
    "-if CONFIG[\"MOZ_WIDGET_TOOLKIT\"] in (\"windows\", \"gtk\"):",
    "+if CONFIG[\"MOZ_WIDGET_TOOLKIT\"] in (\"windows\", \"gtk\", \"cocoa\"):"
   ],
-  "notes": "Replaces the single TwemojiMozilla.ttf install with a FINAL_TARGET_FILES list of 121 quoted entries (bundled Windows core fonts plus bundle-fonts.list and TwemojiMozilla.ttf, which stays in the list). Adds cocoa to the platform condition. The list is hand-maintained here and must stay in sync with the bundle manifest. The comment says macOS also needs --enable-bundled-fonts in its mozconfig. The font binaries themselves are not in this diff.",
+  "notes": "One include() of our StealthFonts.mozbuild, which lists the bundled font files.",
   "verifier": {
    "changed": [],
    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
@@ -385,6 +466,24 @@
   }
  },
  {
+  "file": "docshell/base/moz.build",
+  "category": "build",
+  "feature": "juggler-docshell-attrs",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "docshell/base/nsDocShell.cpp",
   "category": "juggler",
   "feature": "juggler-link-click-events",
@@ -480,19 +579,21 @@
   "file": "dom/base/Element.cpp",
   "category": "juggler",
   "feature": "shadow-root-sandbox-access",
-  "prefs": [],
+  "prefs": [
+   "zoom.stealth.fpp.hw_seed"
+  ],
   "added": 84,
   "removed": 5,
   "hunks": 3,
-  "inline_logic_lines": 10,
-  "hookable": "movable",
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
   "anchor": "Element::GetShadowRootForBindings",
   "evidence": [
    "-ShadowRoot* Element::GetShadowRootForBindings() const {",
    "+  if (!BasePrincipal::Cast(aSubject).Is<ExpandedPrincipal>()) {",
    "+  if (shadowRoot->IsUAWidget()) {"
   ],
-  "notes": "Closed shadow roots are returned only to the automation sandbox (ExpandedPrincipal subject), never UA widgets; the page keeps the spec answer (null). The decision is about 10 logic lines and can move to one of our files behind a one-line call. The principal test is deliberately before the pref read (the comment says content must not pay for the exception; timing was measured). mozilla::gfx::StealthEngineActive() is defined outside this diff (not checked). Hunk 1 adds #include StaticPrefs_zoom.h, which the changed code does not use; drop it. Signature change is in Element.h. VERIFIED: mozilla::gfx::StealthEngineActive is defined at gfx/thebes/StealthDeclarationGate.h:42 (confirmed). StaticPrefs_zoom.h include (Element.cpp:66) is unused: no StaticPrefs::zoom_ call exists in the file (confirmed). Despite the comments, the added code reads no pref; the only gate is StealthEngineActive().",
+  "notes": "Hook (4 lines): GetShadowRootForBindings takes the subject principal and, for a null or closed root, returns StealthClosedShadowRootForBindings (dom/base/StealthShadowRoot.h, inline): content gets null as upstream; the automation sandbox (ExpandedPrincipal) gets an author closed root when the engine is active (zoom.stealth.fpp.hw_seed), never a UA widget.",
   "verifier": {
    "changed": [
     "notes"
@@ -588,26 +689,6 @@
    "+  mouseOrPointerEvent.mJugglerEventId = aMouseEventData.mJugglerEventId;"
   ],
   "notes": "Two concerns. (1) spoof, input-event-birth: InputEventBirth moves a synthetic event's timeStamp back by the caller's latency and keeps births monotonic through the function-static sLastBorn (no lock; not verified that SynthesizeMouseEvent always runs on the main thread). The function is about 6 logic lines and can move to our file, leaving only the declaration in nsContentUtils.h. (2) juggler, juggler-event-id: copies mJugglerEventId onto the mouse event (B217); that line belongs to another feature and could be split out.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and source; no correction needed."
-  }
- },
- {
-  "file": "dom/base/nsContentUtils.h",
-  "category": "spoof",
-  "feature": "input-event-birth",
-  "prefs": [],
-  "added": 7,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "nsContentUtils (static declarations)",
-  "evidence": [
-   "+  static mozilla::TimeStamp InputEventBirth(double aLatencyMs);"
-  ],
-  "notes": "Declaration plus doc comment. If the function moves to our own file, this declaration goes away and the Mozilla header has no change for this feature.",
   "verifier": {
    "changed": [],
    "why": "Checked against the diff and source; no correction needed."
@@ -711,27 +792,39 @@
   }
  },
  {
-  "file": "dom/base/test/browser_language_override.js",
-  "category": "other",
-  "feature": "language-declared",
+  "file": "dom/base/test/browser.toml",
+  "category": "build",
+  "feature": "worker-locale-timezone",
   "prefs": [],
-  "added": 81,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
-  "inline_logic_lines": 62,
-  "hookable": "movable",
-  "anchor": "add_task test_language_override_reaches_workers (new); getWorkerLanguages (new helper)",
-  "evidence": [
-   "+add_task(async function test_language_override_reaches_workers() {",
-   "+async function getWorkerLanguages(browser, kind) {"
-  ],
-  "notes": "New browser test that the language override reaches dedicated, nested and shared workers (Intl locale, navigator.language, navigator.languages). It is test code inside a Mozilla test file. It could live in a test file of ours registered in the test manifest, which would need a manifest entry. Not run here. Category is other because it is a test, not a fingerprint change; it exercises feature language-declared.",
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
   "verifier": {
-   "changed": [
-    "category",
-    "notes"
-   ],
-   "why": "A browser test changes nothing a page can observe, so it is not spoof."
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "dom/base/test/gtest/moz.build",
+  "category": "build",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -757,30 +850,6 @@
     "notes"
    ],
    "why": "Two evidence quotes had the wrong indentation (8 spaces, not 6); notes now say which pref StealthEngineActive() reads."
-  }
- },
- {
-  "file": "dom/canvas/CanvasUtils.cpp",
-  "category": "spoof",
-  "feature": "canvas-noise-projection",
-  "prefs": [],
-  "added": 32,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 22,
-  "hookable": "movable",
-  "anchor": "mozilla::CanvasUtils::StealthNoise and StealthProjectSnapshot (new free functions, placed before CheckWriteOnlySecurity)",
-  "evidence": [
-   "+  if (aCanvasPrincipal && (aCanvasPrincipal->IsSystemPrincipal() ||",
-   "+  const gfx::StealthCanvasNoise noise = StealthNoise(aCanvasPrincipal);",
-   "+  if (projected) {"
-  ],
-  "notes": "Both functions are plain logic defined in a Mozilla file; their definitions can move into an own .cpp, keeping only the declarations in CanvasUtils.h. StealthNoise returns no noise for system, chrome and resource principals (automation screenshots); that exemption is decided by the principal of the canvas, so a page cannot opt out. Includes are the only other change. The diff reads no pref itself; StealthCanvasNoiseDeclared() (gfx/thebes/StealthDeclarationGate.h:54) reads zoom.stealth.fpp.hw_seed, zoom.stealth.canvas.substitute_pixels and zoom.stealth.canvas.edge_tolerance.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Added the prefs that StealthCanvasNoiseDeclared() reads indirectly; the diff itself reads none."
   }
  },
  {
@@ -1067,6 +1136,24 @@
   }
  },
  {
+  "file": "dom/canvas/moz.build",
+  "category": "build",
+  "feature": "canvas-noise-projection",
+  "prefs": [],
+  "added": 4,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "dom/events/Event.cpp",
   "category": "spoof",
   "feature": "window-geometry",
@@ -1223,6 +1310,24 @@
   }
  },
  {
+  "file": "dom/html/moz.build",
+  "category": "build",
+  "feature": "canvas-noise-projection",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "dom/interfaces/base/nsIDOMWindowUtils.idl",
   "category": "juggler",
   "feature": "juggler-input-dispatch",
@@ -1268,27 +1373,6 @@
   }
  },
  {
-  "file": "dom/ipc/ContentChild.cpp",
-  "category": "other",
-  "feature": "timezone-declared",
-  "prefs": [],
-  "added": 11,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "ContentChild::RecvSetXPCOMProcessAttributes; ContentChild::RecvSystemTimezoneChanged",
-  "evidence": [
-   "+  // STEALTHFOX (firefox-50): the block that applied `juggler.timezone.override`",
-   "+  // Stealth: SetTimeZoneOverride was removed in 150. Just reset like vanilla."
-  ],
-  "notes": "Comment-only: no code added or removed. The first comment records removal of a juggler.timezone.override block (it never ran); the second is a note on RecvSystemTimezoneChanged. The patch should drop these comments; the zone now comes from StealthSessionDeclaration (dom/base, not in this group).",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and source; no correction needed."
-  }
- },
- {
   "file": "dom/media/CubebUtils.cpp",
   "category": "spoof",
   "feature": "audio-sample-rate",
@@ -1311,27 +1395,6 @@
     "prefs"
    ],
    "why": "Pref name is zoom.stealth.audio.sample_rate in StaticPrefList.yaml:21466, not underscored."
-  }
- },
- {
-  "file": "dom/media/DecoderTraits.cpp",
-  "category": "other",
-  "feature": "media-codecs-declared",
-  "prefs": [],
-  "added": 13,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "CanHandleMediaType (comment above it)",
-  "evidence": [
-   "+// Stealth: there is deliberately no declared-answer hook here any more.",
-   "+// The declaration moved one layer down, to PDMFactory::Supports, where the key"
-  ],
-  "notes": "Comment-only (13 lines) recording that a codec-string table was removed on 2026-08-08 and that the declaration now lives in PDMFactory::Supports (dom/media/StealthMediaDeclaration.h, not in this group). No code in the diff. Drop the comment from the patch.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and source; no correction needed."
   }
  },
  {
@@ -1362,23 +1425,21 @@
   }
  },
  {
-  "file": "dom/media/MediaManager.h",
-  "category": "spoof",
-  "feature": "media-enumeration",
+  "file": "dom/media/gtest/moz.build",
+  "category": "build",
+  "feature": "audio-fingerprint-noise",
   "prefs": [],
-  "added": 3,
+  "added": 1,
   "removed": 0,
   "hunks": 1,
-  "inline_logic_lines": 1,
+  "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "MediaManager::EnumerationParams (declarations)",
-  "evidence": [
-   "+    bool HostSpeakersRequested() const;"
-  ],
-  "notes": "Declares the one decision point shared by RealDeviceRequested, the permission path and EnumerateRawDevices.",
+  "anchor": "UNIFIED_SOURCES (TestStealthAudioNoise.cpp, alphabetical)",
+  "evidence": [],
+  "notes": "One line registering our own file in the build.",
   "verifier": {
    "changed": [],
-   "why": "Checked against the diff and source; no correction needed."
+   "why": "Added with the 2026-10-29 hook move of fingerprint/audio/noise."
   }
  },
  {
@@ -1554,6 +1615,24 @@
   }
  },
  {
+  "file": "dom/media/webaudio/moz.build",
+  "category": "build",
+  "feature": "audio-fingerprint-noise",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "UNIFIED_SOURCES (StealthAudioNoise.cpp, alphabetical)",
+  "evidence": [],
+  "notes": "One line registering our own file in the build.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move of fingerprint/audio/noise."
+  }
+ },
+ {
   "file": "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp",
   "category": "spoof",
   "feature": "webrtc-ice-candidates",
@@ -1577,6 +1656,24 @@
     "notes"
    ],
    "why": "Pref cite was wrong (StaticPrefList.yaml:47 is a header comment); stale-comment claim confirmed."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/jsapi/moz.build",
+  "category": "build",
+  "feature": "webrtc-ice-candidates",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -1819,6 +1916,42 @@
   }
  },
  {
+  "file": "dom/media/webspeech/synth/moz.build",
+  "category": "build",
+  "feature": "speech-voices-declared",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "dom/media/webspeech/synth/test/mochitest.toml",
+  "category": "build",
+  "feature": "speech-voices-declared",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "dom/quota/ActorsParent.cpp",
   "category": "spoof",
   "feature": "storage-quota-estimate",
@@ -1840,6 +1973,24 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff; no change needed."
+  }
+ },
+ {
+  "file": "dom/security/moz.build",
+  "category": "build",
+  "feature": "bypass-csp",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -1934,6 +2085,24 @@
   }
  },
  {
+  "file": "dom/serviceworkers/moz.build",
+  "category": "build",
+  "feature": "worker-locale-timezone",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "dom/webgpu/CanvasContext.cpp",
   "category": "spoof",
   "feature": "canvas-noise-projection",
@@ -2002,26 +2171,6 @@
     "notes"
    ],
    "why": "Mixed file: latency is consumed by nsDOMWindowUtils.cpp (InputEventBirth, event timestamps a page can read) so the stealth part is a spoof; jugglerEventId is plain automation plumbing."
-  }
- },
- {
-  "file": "dom/workers/WorkerLoadInfo.h",
-  "category": "other",
-  "feature": "worker-locale-timezone",
-  "prefs": [],
-  "added": 6,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "struct WorkerLoadInfoData (comment after mTimezoneOverride)",
-  "evidence": [
-   "+  // STEALTHFOX: these three also reach service workers, from the context of"
-  ],
-  "notes": "Comment only, no code. It belongs in our docs rather than the Mozilla file. It refers to intl/locale/StealthSessionPrefs.h, which is our file.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no change needed."
   }
  },
  {
@@ -2650,15 +2799,15 @@
   "added": 152,
   "removed": 0,
   "hunks": 5,
-  "inline_logic_lines": 66,
-  "hookable": "movable",
-  "anchor": "gfxFont::GetStealthHostIndepVMetrics (new, placed before InitMetricsFromSfntTables); GetStealthBundleVMetrics (new static); gfxFont::SanitizeMetrics",
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "gfxFont::SanitizeMetrics, after the zero-size early return",
   "evidence": [
    "+bool gfxFont::GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,",
    "+  if (GetStealthBundleVMetrics(mFontEntry, vm)) {",
    "+  aMaxAscent = uint16_t(os2->usWinAscent) * mFUnitsConvFactor;"
   ],
-  "notes": "SanitizeMetrics is the shared point where DirectWrite, FreeType and CoreText finish their metrics. For a bundled face, the manifest's vertical metrics overwrite maxAscent/maxDescent/emHeight/emAscent/emDescent/internalLeading/externalLeading and xHeight/capHeight/underline/strikeout when the manifest has them, then the existing clamps run. GetStealthHostIndepVMetrics reads OS/2 directly for canvas TextMetrics; its caller is outside this list. GetStealthBundleVMetrics is keyed on mShmemFace and the manifest lookup. The manifest type StealthBundleVMetrics is defined in StealthBundleFontList.h, which is not in this list. Movable: the whole override block can move into a helper in our own file behind one call. Verifier: the caller exists, dom/canvas/CanvasRenderingContext2D.cpp:5454 (font->GetStealthHostIndepVMetrics). Placement caveat: the new function sits in the middle of an upstream comment block (the upstream lines \"Return FALSE if the gfxFontEntry subclass does not implement GetFontTable()...\" now precede our function and \"If this returns TRUE without setting the mIsValid flag...\" follows it), so upstream comments are split; move it elsewhere when relocating.",
+  "notes": "Hook (3 lines): include + StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), aMetrics) in SanitizeMetrics. The manifest vertical metrics, GetStealthBundleVMetrics and gfxFont::GetStealthHostIndepVMetrics live in gfx/thebes/StealthBundleFontList.cpp.",
   "verifier": {
    "changed": [
     "notes"
@@ -3245,30 +3394,6 @@
   }
  },
  {
-  "file": "js/xpconnect/wrappers/XrayWrapper.cpp",
-  "category": "juggler",
-  "feature": "hybrid-xrays",
-  "prefs": [],
-  "added": 458,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 370,
-  "hookable": "movable",
-  "anchor": "new code after XrayWrapper<Base,Traits>::getPropertyKeys: IsHybridXrayWrapper, HybridXrayWrapper<Traits> methods, IsStandardLevel, NativeOwn, ChainLookup, ContentLookup, HybridXrayGetBareName, ContentGet",
-  "evidence": [
-   "+bool IsHybridXrayWrapper(JSObject* obj) {",
-   "+static bool ChainLookup(JSContext* cx, HandleObject wrapper, HandleId id,",
-   "+template class HybridXrayDOM;"
-  ],
-  "notes": "Single pure addition of about 460 lines in one place, with no edits to existing Mozilla code, so it moves to our own file. Access needed: IsTypedArrayKey is file-local (inline, XrayWrapper.cpp:77), so it must be exposed first. ensureHolder (XrayWrapper.h:102), getProtoKey (:266) and isPrototype (:271) are already public members, so they need no change (the first pass said they must be made reachable: refuted). The page's chain is walked in ChainLookup: a scripted Proxy in the page's prototype chain has its traps run (stated price, per the header comment). Not reached by page code: the view is for the caller's world only.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Refuted the claim that ensureHolder/getProtoKey/isPrototype must be made reachable; they are already public."
-  }
- },
- {
   "file": "js/xpconnect/wrappers/XrayWrapper.h",
   "category": "juggler",
   "feature": "hybrid-xrays",
@@ -3288,6 +3413,24 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+  }
+ },
+ {
+  "file": "js/xpconnect/wrappers/moz.build",
+  "category": "build",
+  "feature": "hybrid-xrays",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -3410,80 +3553,6 @@
   }
  },
  {
-  "file": "layout/style/FontFace.cpp",
-  "category": "other",
-  "feature": "font-loading-api-inert",
-  "prefs": [],
-  "added": 24,
-  "removed": 1,
-  "hunks": 2,
-  "inline_logic_lines": 15,
-  "hookable": "movable",
-  "anchor": "FontFace::Status; FontFace::Load",
-  "evidence": [
-   "-FontFaceLoadStatus FontFace::Status() { return mImpl->Status(); }",
-   "+  if (Maybe<bool> allowed = StealthFontAllowed(stealthFamily)) {"
-  ],
-  "notes": "Inert in this build: StealthFontAllowed (FontFaceImpl.cpp) always returns Nothing, so these branches never run. When it returns a value, Status() reports Loaded or Error, and Load() resolves or rejects without loading. The hunk also adds a GetFamily call per Status() call. Movable: the two branches can collapse into one call in FontFaceImpl. Verifier: StealthFontAllowed has no other definition or caller (only FontFaceImpl.h:36, FontFaceImpl.cpp:357,377, FontFace.cpp:247,265), so it is always Nothing and this code changes nothing a page can observe; the category is \"other\" because \"spoof\" requires an observable change. Candidate for deletion when the patch series is built.",
-  "verifier": {
-   "changed": [
-    "category",
-    "feature",
-    "notes"
-   ],
-   "why": "The hook is inert (StealthFontAllowed always returns Nothing), so it is not a spoof."
-  }
- },
- {
-  "file": "layout/style/FontFaceImpl.cpp",
-  "category": "other",
-  "feature": "font-loading-api-inert",
-  "prefs": [],
-  "added": 37,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 16,
-  "hookable": "movable",
-  "anchor": "StealthFontAllowed (new, in mozilla::dom); FontFaceImpl::SetStatus; FontFaceImpl::DoLoad (context only)",
-  "evidence": [
-   "+Maybe<bool> StealthFontAllowed(const nsACString& aFamily) {",
-   "+      FontFaceLoadStatus forced ="
-  ],
-  "notes": "StealthFontAllowed always returns Nothing (inert), so the SetStatus override block never runs. If it ever returns a value, SetStatus forces the status and notifies the font-face sets. The comment still describes a per-profile fontlist that the code no longer reads. The file adds includes for StaticPrefs_zoom.h and nsUnicharUtils.h; no pref is read in the added code. Movable: the SetStatus block can move behind one call. Verifier: StealthFontAllowed has no other definition or caller (only FontFaceImpl.h:36, FontFaceImpl.cpp:357,377, FontFace.cpp:247,265), so it is always Nothing and this code changes nothing a page can observe; the category is \"other\" because \"spoof\" requires an observable change. Candidate for deletion when the patch series is built.",
-  "verifier": {
-   "changed": [
-    "category",
-    "feature",
-    "notes"
-   ],
-   "why": "The hook is inert (StealthFontAllowed always returns Nothing), so it is not a spoof."
-  }
- },
- {
-  "file": "layout/style/FontFaceImpl.h",
-  "category": "other",
-  "feature": "font-loading-api-inert",
-  "prefs": [],
-  "added": 8,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "namespace mozilla::dom: StealthFontAllowed declaration (before class FontFaceImpl)",
-  "evidence": [
-   "+mozilla::Maybe<bool> StealthFontAllowed(const nsACString& aFamily);"
-  ],
-  "notes": "Declaration of the inert hook defined in FontFaceImpl.cpp. Adds mozilla/Maybe.h include. The header comment describes a per-profile fontlist gate that is not implemented. Verifier: StealthFontAllowed has no other definition or caller (only FontFaceImpl.h:36, FontFaceImpl.cpp:357,377, FontFace.cpp:247,265), so it is always Nothing and this code changes nothing a page can observe; the category is \"other\" because \"spoof\" requires an observable change. Candidate for deletion when the patch series is built. The header comment also names a pref zoom.stealth.font.fontlist that no code reads and that has no definition seen in this diff.",
-  "verifier": {
-   "changed": [
-    "category",
-    "feature",
-    "notes"
-   ],
-   "why": "The hook is inert (StealthFontAllowed always returns Nothing), so it is not a spoof."
-  }
- },
- {
   "file": "layout/style/nsMediaFeatures.cpp",
   "category": "spoof",
   "feature": "css-media-features",
@@ -3536,305 +3605,7 @@
   }
  },
  {
-  "file": "modules/libpref/init/StaticPrefList.yaml",
-  "category": "prefs",
-  "feature": "stealth-pref-declarations",
-  "prefs": [
-   "juggler.locale.override",
-   "juggler.timezone.override",
-   "zoom.stealth.fpp.hw_seed",
-   "zoom.stealth.screen.width",
-   "zoom.stealth.screen.height",
-   "zoom.stealth.audio.sample_rate",
-   "zoom.stealth.media.enumeration_ms",
-   "zoom.stealth.audio.fp_noise",
-   "zoom.stealth.audio.output_latency_ms",
-   "zoom.stealth.audio.max_channel_count",
-   "zoom.stealth.hw_concurrency",
-   "zoom.stealth.dns.no_local_resolution",
-   "zoom.stealth.webrtc.no_direct_udp",
-   "zoom.stealth.max_touch_points",
-   "zoom.stealth.widget.occlusion_tracking.enabled",
-   "zoom.stealth.focus.ignore_os_deactivation",
-   "zoom.stealth.screen.taskbar_px",
-   "zoom.stealth.screen.color_depth",
-   "zoom.stealth.pointer.primary",
-   "zoom.stealth.pointer.all",
-   "zoom.stealth.screen.frame_border",
-   "zoom.stealth.screen.maximized_ui",
-   "zoom.stealth.screen.popup_ui",
-   "zoom.stealth.screen.popup_position",
-   "zoom.stealth.screen.avail_device_width",
-   "zoom.stealth.screen.avail_device_height",
-   "zoom.stealth.webgl.renderer",
-   "zoom.stealth.webgl.vendor",
-   "zoom.stealth.webgl.shader_output_language",
-   "zoom.stealth.text.freetype_hintstyle",
-   "zoom.stealth.text.freetype_antialias",
-   "zoom.stealth.webgl.extensions",
-   "zoom.stealth.webgl2.extensions",
-   "zoom.stealth.webgl.int_params",
-   "zoom.stealth.webgl.float_params",
-   "zoom.stealth.webgl.int2_params",
-   "zoom.stealth.webgl.shader_precisions",
-   "zoom.stealth.font.fontlist",
-   "zoom.stealth.font.system_ui",
-   "zoom.stealth.canvas.substitute_pixels",
-   "zoom.stealth.canvas.edge_tolerance",
-   "zoom.stealth.voices.list",
-   "zoom.stealth.branding.archive",
-   "zoom.stealth.text.coverage_ladder",
-   "zoom.stealth.text.system_quality",
-   "zoom.stealth.fonts.generics",
-   "zoom.stealth.fonts.manifest",
-   "zoom.stealth.media.decode_support",
-   "zoom.stealth.media.decoding_info",
-   "zoom.stealth.storage.quota_mb",
-   "zoom.stealth.webrtc.host_ip"
-  ],
-  "added": 563,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(YAML pref list: new 'juggler.' group before 'layers.'; zoom.stealth.* block before 'End of prefs')",
-  "evidence": [
-   "+- name: juggler.locale.override",
-   "+- name: zoom.stealth.fpp.hw_seed",
-   "+- name: zoom.stealth.webgl.renderer"
-  ],
-  "notes": "Pure definitions (51 entries, list matches the added '- name:' lines exactly), but they declare the whole spoof surface: screen and window geometry, pointer, WebGL, fonts, canvas, text rendering, media capabilities, voices, branding, storage quota, WebRTC host IP, and the juggler session locale and timezone (mirror always, so any thread reads them). Many are read by C++ elsewhere. Misplaced-comment claims, all CONFIRMED in modules/libpref/init/StaticPrefList.yaml: (1) the 'The declared navigator.maxTouchPoints...' comment (line 21534) sits above zoom.stealth.webrtc.no_direct_udp (21539) while the entry it describes, zoom.stealth.max_touch_points (21544), has no comment; (2) the 'The declared screen colour depth' comment (21572) sits above zoom.stealth.screen.taskbar_px (21587), whose own comment follows it, and color_depth (21592) has none; (3) the 'Where the window sits' comment (21597) describes window_x/window_y/chrome_w/chrome_h, which the file says were replaced by frame_border and related prefs, and it sits above the pointer comment and zoom.stealth.pointer.primary (21628); (4) NEW: 'The whole font manifest...' (21890) sits directly above the 'CSS generic families' comment (21896) and zoom.stealth.fonts.generics (21906), so zoom.stealth.fonts.manifest (21911) has no comment of its own. Removed prefs (zoom.stealth.timezone, webrtc.public_ip, webrtc.disable_ipv6, and the older canvas noise tuning prefs) are only mentioned in comments, not as entries. zoom.stealth.webrtc.no_direct_udp is read by dom/media/webrtc/transport/nr_socket_prsock.cpp (feature proxy-udp-egress).",
-  "pref_groups": [
-   {
-    "feature": "session-language-declared",
-    "category": "spoof",
-    "prefs": [
-     "juggler.locale.override"
-    ]
-   },
-   {
-    "feature": "timezone-declared",
-    "category": "spoof",
-    "prefs": [
-     "juggler.timezone.override"
-    ]
-   },
-   {
-    "feature": "session-seed",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.fpp.hw_seed"
-    ]
-   },
-   {
-    "feature": "screen-metrics",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.screen.width",
-     "zoom.stealth.screen.height",
-     "zoom.stealth.screen.color_depth",
-     "zoom.stealth.screen.taskbar_px",
-     "zoom.stealth.screen.avail_device_width",
-     "zoom.stealth.screen.avail_device_height"
-    ]
-   },
-   {
-    "feature": "window-geometry",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.screen.frame_border",
-     "zoom.stealth.screen.maximized_ui",
-     "zoom.stealth.screen.popup_ui",
-     "zoom.stealth.screen.popup_position"
-    ]
-   },
-   {
-    "feature": "css-media-features",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.pointer.primary",
-     "zoom.stealth.pointer.all"
-    ]
-   },
-   {
-    "feature": "navigator-max-touch-points",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.max_touch_points"
-    ]
-   },
-   {
-    "feature": "navigator-hardware-concurrency",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.hw_concurrency"
-    ]
-   },
-   {
-    "feature": "audio-context-values",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.audio.sample_rate",
-     "zoom.stealth.audio.output_latency_ms",
-     "zoom.stealth.audio.max_channel_count"
-    ]
-   },
-   {
-    "feature": "audio-fingerprint-noise",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.audio.fp_noise"
-    ]
-   },
-   {
-    "feature": "media-enumeration",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.media.enumeration_ms"
-    ]
-   },
-   {
-    "feature": "media-decode-declaration",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.media.decode_support",
-     "zoom.stealth.media.decoding_info"
-    ]
-   },
-   {
-    "feature": "dns-no-local-resolution",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.dns.no_local_resolution"
-    ]
-   },
-   {
-    "feature": "proxy-udp-egress",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.webrtc.no_direct_udp"
-    ]
-   },
-   {
-    "feature": "webrtc-ice-candidates",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.webrtc.host_ip"
-    ]
-   },
-   {
-    "feature": "occlusion-tracking",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.widget.occlusion_tracking.enabled"
-    ]
-   },
-   {
-    "feature": "focus-ignore-os-deactivation",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.focus.ignore_os_deactivation"
-    ]
-   },
-   {
-    "feature": "webgl-parameters",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.webgl.renderer",
-     "zoom.stealth.webgl.vendor",
-     "zoom.stealth.webgl.extensions",
-     "zoom.stealth.webgl2.extensions",
-     "zoom.stealth.webgl.int_params",
-     "zoom.stealth.webgl.float_params",
-     "zoom.stealth.webgl.int2_params",
-     "zoom.stealth.webgl.shader_precisions"
-    ]
-   },
-   {
-    "feature": "webgl-shader-output-language",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.webgl.shader_output_language"
-    ]
-   },
-   {
-    "feature": "freetype-rendering-declared",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.text.freetype_hintstyle",
-     "zoom.stealth.text.freetype_antialias"
-    ]
-   },
-   {
-    "feature": "cleartype-declared",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.text.system_quality"
-    ]
-   },
-   {
-    "feature": "glyph-coverage-quantise",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.text.coverage_ladder"
-    ]
-   },
-   {
-    "feature": "font-list-bundle-only",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.font.fontlist",
-     "zoom.stealth.fonts.manifest"
-    ]
-   },
-   {
-    "feature": "font-generics-declared",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.fonts.generics",
-     "zoom.stealth.font.system_ui"
-    ]
-   },
-   {
-    "feature": "canvas-noise-projection",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.canvas.substitute_pixels",
-     "zoom.stealth.canvas.edge_tolerance"
-    ]
-   },
-   {
-    "feature": "speech-voices-declared",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.voices.list"
-    ]
-   },
-   {
-    "feature": "stealth-branding-redirect",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.branding.archive"
-    ]
-   },
-   {
-    "feature": "storage-quota-estimate",
-    "category": "spoof",
-    "prefs": [
-     "zoom.stealth.storage.quota_mb"
-    ]
-   }
-  ],
-  "verifier": {
-   "changed": [
-    "pref_groups",
-    "notes"
-   ],
-   "why": "Added pref_groups; added a fourth misplaced comment; added source line numbers for the misplaced-comment claims."
-  }
- },
- {
-  "file": "modules/libpref/init/all.js",
+  "file": "modules/libpref/greprefs.js",
   "category": "prefs",
   "feature": "stealth-pref-defaults",
   "prefs": [
@@ -3868,18 +3639,14 @@
    "font.size.monospace.x-western",
    "datareporting.policy.dataSubmissionPolicyBypassNotification"
   ],
-  "added": 70,
-  "removed": 7,
-  "hunks": 7,
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "(top-level pref defaults: ui.font block near ui.scrollToClick; proxy block; font.size.monospace block; datareporting block inside an #if)",
-  "evidence": [
-   "+pref(\"ui.font.caption\", \"Segoe UI\");",
-   "-  pref(\"font.size.monospace.ar\", 12);",
-   "-  pref(\"datareporting.policy.dataSubmissionPolicyBypassNotification\", false);"
-  ],
-  "notes": "Pure defaults with mixed sub-categories (see pref_groups). spoof: ui.font.* system font keywords pinned to Segoe UI 12 on every host (unconditional, placed after the #endif at all.js:446), so Linux no longer reveals 'Sans 13.33px' (values quoted on purpose: float read); font.size.monospace.ar/el/he/x-cyrillic/x-unicode/x-western changed 12 -> 13; they sit inside the Unix-only block '#if !defined(ANDROID) && !defined(XP_MACOSX) && defined(XP_UNIX)' (all.js:2728-2913), CONFIRMED, so Windows/macOS were already unaffected. stillborn: datareporting.policy.dataSubmissionPolicyBypassNotification false -> true, inside '#ifdef MOZ_DATA_REPORTING' (all.js:3809-3818); the pref is read by toolkit/components/telemetry/app/TelemetryUtils.sys.mjs:84 and suppresses Firefox's data-submission notification (the earlier note that the #if condition was unknown is wrong, it is visible in the file). other: network.proxy.socks_username and socks_password added as empty defaults; they ARE read, by netwerk/base/nsProtocolProxyService.cpp and netwerk/base/nsUDPSocket.cpp (both in the network groups), so credentials live in prefs (CONFIRMED from those diffs). The juggler block is a comment only (no pref added). One comment block has odd 3-space indentation (cosmetic, confirmed in the diff).",
+  "anchor": "hook moved off the end of the pref files on 2026-10-29",
+  "evidence": [],
+  "notes": "Includes our StealthPrefs.js right after all.js, so our defaults win.",
   "pref_groups": [
    {
     "feature": "system-fonts-pinned-windows",
@@ -3936,28 +3703,128 @@
    }
   ],
   "verifier": {
-   "changed": [
-    "pref_groups",
-    "notes"
-   ],
-   "why": "Corrected the #if remark (it is visible: MOZ_DATA_REPORTING), added the readers of the socks prefs and the pref_groups."
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "modules/libpref/init/all.js",
+  "category": "prefs",
+  "feature": "stealth-pref-defaults",
+  "prefs": [
+   "ui.font.caption",
+   "ui.font.caption.size",
+   "ui.font.icon",
+   "ui.font.icon.size",
+   "ui.font.menu",
+   "ui.font.menu.size",
+   "ui.font.message-box",
+   "ui.font.message-box.size",
+   "ui.font.small-caption",
+   "ui.font.small-caption.size",
+   "ui.font.status-bar",
+   "ui.font.status-bar.size",
+   "ui.font.-moz-pull-down-menu",
+   "ui.font.-moz-pull-down-menu.size",
+   "ui.font.-moz-button",
+   "ui.font.-moz-button.size",
+   "ui.font.-moz-list",
+   "ui.font.-moz-list.size",
+   "ui.font.-moz-field",
+   "ui.font.-moz-field.size",
+   "network.proxy.socks_username",
+   "network.proxy.socks_password",
+   "font.size.monospace.ar",
+   "font.size.monospace.el",
+   "font.size.monospace.he",
+   "font.size.monospace.x-cyrillic",
+   "font.size.monospace.x-unicode",
+   "font.size.monospace.x-western",
+   "datareporting.policy.dataSubmissionPolicyBypassNotification"
+  ],
+  "added": 7,
+  "removed": 7,
+  "hunks": 7,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "values changed in place on 2026-10-29",
+  "evidence": [],
+  "notes": "Six monospace sizes and the data-submission notification changed on their own lines, marked.",
+  "pref_groups": [
+   {
+    "feature": "system-fonts-pinned-windows",
+    "category": "spoof",
+    "prefs": [
+     "ui.font.caption",
+     "ui.font.caption.size",
+     "ui.font.icon",
+     "ui.font.icon.size",
+     "ui.font.menu",
+     "ui.font.menu.size",
+     "ui.font.message-box",
+     "ui.font.message-box.size",
+     "ui.font.small-caption",
+     "ui.font.small-caption.size",
+     "ui.font.status-bar",
+     "ui.font.status-bar.size",
+     "ui.font.-moz-pull-down-menu",
+     "ui.font.-moz-pull-down-menu.size",
+     "ui.font.-moz-button",
+     "ui.font.-moz-button.size",
+     "ui.font.-moz-list",
+     "ui.font.-moz-list.size",
+     "ui.font.-moz-field",
+     "ui.font.-moz-field.size"
+    ]
+   },
+   {
+    "feature": "monospace-size-windows",
+    "category": "spoof",
+    "prefs": [
+     "font.size.monospace.ar",
+     "font.size.monospace.el",
+     "font.size.monospace.he",
+     "font.size.monospace.x-cyrillic",
+     "font.size.monospace.x-unicode",
+     "font.size.monospace.x-western"
+    ]
+   },
+   {
+    "feature": "socks-credentials",
+    "category": "other",
+    "prefs": [
+     "network.proxy.socks_username",
+     "network.proxy.socks_password"
+    ]
+   },
+   {
+    "feature": "data-submission-notification-bypassed",
+    "category": "stillborn",
+    "prefs": [
+     "datareporting.policy.dataSubmissionPolicyBypassNotification"
+    ]
+   }
+  ],
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
   "file": "modules/libpref/moz.build",
   "category": "build",
-  "feature": "juggler-prefs",
+  "feature": "stealth-pref-declarations",
   "prefs": [],
-  "added": 1,
+  "added": 2,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "pref_groups list",
   "evidence": [
    "+    \"juggler\","
   ],
-  "notes": "Registers the 'juggler' pref group, so the juggler.* entries in StaticPrefList.yaml are built into the generated StaticPrefs headers. Pure registration.",
+  "notes": "Registers the juggler pref group and adds our StealthPrefList.yaml as a second input of the static pref generator.",
   "verifier": {
    "changed": [],
    "why": "Checked against the diff; no correction needed."
@@ -4025,6 +3892,24 @@
     "notes"
    ],
    "why": "The infallible-stub risk is refuted: upstream TRRLoadInfo already does this for other infallible attributes."
+  }
+ },
+ {
+  "file": "netwerk/base/moz.build",
+  "category": "build",
+  "feature": "socks-credentials",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -4176,6 +4061,24 @@
   }
  },
  {
+  "file": "netwerk/dns/moz.build",
+  "category": "build",
+  "feature": "dns-no-local-resolution",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "netwerk/ipc/DocumentLoadListener.cpp",
   "category": "juggler",
   "feature": "juggler-load-identifier",
@@ -4318,6 +4221,24 @@
   }
  },
  {
+  "file": "netwerk/protocol/http/moz.build",
+  "category": "build",
+  "feature": "socks-udp-h3",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "netwerk/protocol/http/nsHttpHandler.cpp",
   "category": "spoof",
   "feature": "accept-language-override-list",
@@ -4407,27 +4328,39 @@
   }
  },
  {
-  "file": "netwerk/test/browser/browser_accept_language_override.js",
-  "category": "other",
+  "file": "netwerk/test/browser/browser.toml",
+  "category": "build",
   "feature": "accept-language-override-list",
-  "prefs": [
-   "intl.accept_languages"
-  ],
-  "added": 36,
+  "prefs": [],
+  "added": 3,
   "removed": 0,
   "hunks": 1,
-  "inline_logic_lines": 27,
-  "hookable": "movable",
-  "anchor": "test_language_override_list_is_prepared (new add_task)",
-  "evidence": [
-   "+  const list = \"it-IT, it, en-US, en\";",
-   "+    \"it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7\",",
-   "+  browser.browsingContext.languageOverride = list;"
-  ],
-  "notes": "Test code (no test category in the enum). It is added inside an existing Mozilla test file; move it to our own test file and register that in the test moz.build. The expected header 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7' is hard-coded and must be updated if Firefox changes the q-value preparation.",
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
   "verifier": {
    "changed": [],
-   "why": "all fields checked against the diff; no change"
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "netwerk/test/gtest/moz.build",
+  "category": "build",
+  "feature": "socks-credentials",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -4737,31 +4670,6 @@
   }
  },
  {
-  "file": "toolkit/components/enterprisepolicies/EnterprisePoliciesParent.sys.mjs",
-  "category": "juggler",
-  "feature": "juggler-enterprise-policies",
-  "prefs": [
-   "browser.policies.alternatePath"
-  ],
-  "added": 13,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 9,
-  "hookable": "movable",
-  "anchor": "module scope, new class PlaywrightPoliciesProvider after class JSONPoliciesProvider (line 688 in the Mozilla base)",
-  "evidence": [
-   "+class PlaywrightPoliciesProvider extends JSONPoliciesProvider {",
-   "+    dump(`Playwright: loading enterprise policies from ${prefPath}\\n`);"
-  ],
-  "notes": "The class is defined but NOT registered in this file: the provider list at line 176 still pushes only the stock providers, so the class is dead code. JSONPoliciesProvider is module-local, so moving the class to our own file needs an export or a shim. The dump() string contains a product name (Playwright) in code, check it against the no-vendor-names rule. Verified dead: git grep over the whole tracked C:/ff/source tree finds PlaywrightPoliciesProvider only at EnterprisePoliciesParent.sys.mjs:798 (provider list pushes only the stock JSONPoliciesProvider at line 176). Reads the existing pref browser.policies.alternatePath (PREF_ALTERNATE_PATH, line 30). Candidate to drop from the series.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Whole-tree grep confirms the class is never referenced; flagged as dead code."
-  }
- },
- {
   "file": "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
   "category": "stillborn",
   "feature": "pingsender-session-route",
@@ -4784,6 +4692,24 @@
     "notes"
    ],
    "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
+  }
+ },
+ {
+  "file": "toolkit/components/telemetry/moz.build",
+  "category": "build",
+  "feature": "pingsender-session-route",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -4858,6 +4784,60 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "toolkit/components/urlformatter/moz.build",
+  "category": "build",
+  "feature": "api-keys-declared",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/components/urlformatter/tests/unit/xpcshell.toml",
+  "category": "build",
+  "feature": "api-keys-declared",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/components/windowwatcher/moz.build",
+  "category": "build",
+  "feature": "juggler-popup-explicit-size",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {
@@ -4980,6 +4960,24 @@
   "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
  },
  {
+  "file": "toolkit/xre/dllservices/moz.build",
+  "category": "build",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
   "file": "toolkit/xre/dllservices/tests/gtest/moz.build",
   "category": "other",
   "feature": "untrusted-modules-own-binaries",
@@ -5012,6 +5010,24 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "uriloader/exthandler/moz.build",
+  "category": "build",
+  "feature": "juggler-download-interceptor",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
   }
  },
  {

@@ -1,13 +1,14 @@
 {
  "modified": [
-  "dom/canvas/CanvasUtils.cpp",
   "dom/canvas/CanvasUtils.h",
   "dom/canvas/ClientWebGLContext.h",
   "dom/canvas/OffscreenCanvas.cpp",
   "dom/canvas/OffscreenCanvasDisplayHelper.cpp",
   "dom/canvas/OffscreenCanvasDisplayHelper.h",
+  "dom/canvas/moz.build",
   "dom/html/HTMLCanvasElement.cpp",
   "dom/html/HTMLCanvasElement.h",
+  "dom/html/moz.build",
   "dom/webgpu/CanvasContext.cpp",
   "gfx/2d/DrawTargetRecording.cpp",
   "gfx/2d/DrawTargetRecording.h",
@@ -17,35 +18,18 @@
   "gfx/tests/gtest/moz.build"
  ],
  "added": {
+  "dom/canvas/StealthCanvasNoise.cpp": "100644",
+  "dom/canvas/StealthOffscreenSnapshot.cpp": "100644",
+  "dom/canvas/StealthOffscreenSnapshot.h": "100644",
+  "dom/canvas/StealthWebGLReadback.h": "100644",
+  "dom/html/StealthCanvasSnapshot.cpp": "100644",
+  "dom/html/StealthCanvasSnapshot.h": "100644",
   "gfx/2d/StealthCanvasProjection.cpp": "100644",
   "gfx/2d/StealthCanvasProjection.h": "100644",
+  "gfx/2d/StealthRecordedProjection.h": "100644",
   "gfx/tests/gtest/TestStealthCanvasProjection.cpp": "100644"
  },
  "inventory": [
-  {
-   "file": "dom/canvas/CanvasUtils.cpp",
-   "category": "spoof",
-   "feature": "canvas-noise-projection",
-   "prefs": [],
-   "added": 32,
-   "removed": 0,
-   "hunks": 3,
-   "inline_logic_lines": 22,
-   "hookable": "movable",
-   "anchor": "mozilla::CanvasUtils::StealthNoise and StealthProjectSnapshot (new free functions, placed before CheckWriteOnlySecurity)",
-   "evidence": [
-    "+  if (aCanvasPrincipal && (aCanvasPrincipal->IsSystemPrincipal() ||",
-    "+  const gfx::StealthCanvasNoise noise = StealthNoise(aCanvasPrincipal);",
-    "+  if (projected) {"
-   ],
-   "notes": "Both functions are plain logic defined in a Mozilla file; their definitions can move into an own .cpp, keeping only the declarations in CanvasUtils.h. StealthNoise returns no noise for system, chrome and resource principals (automation screenshots); that exemption is decided by the principal of the canvas, so a page cannot opt out. Includes are the only other change. The diff reads no pref itself; StealthCanvasNoiseDeclared() (gfx/thebes/StealthDeclarationGate.h:54) reads zoom.stealth.fpp.hw_seed, zoom.stealth.canvas.substitute_pixels and zoom.stealth.canvas.edge_tolerance.",
-   "verifier": {
-    "changed": [
-     "notes"
-    ],
-    "why": "Added the prefs that StealthCanvasNoiseDeclared() reads indirectly; the diff itself reads none."
-   }
-  },
   {
    "file": "dom/canvas/CanvasUtils.h",
    "category": "spoof",
@@ -158,6 +142,24 @@
    }
   },
   {
+   "file": "dom/canvas/moz.build",
+   "category": "build",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
    "file": "dom/html/HTMLCanvasElement.cpp",
    "category": "spoof",
    "feature": "canvas-noise-projection",
@@ -200,6 +202,24 @@
    "verifier": {
     "changed": [],
     "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "dom/html/moz.build",
+   "category": "build",
+   "feature": "canvas-noise-projection",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   },
   {

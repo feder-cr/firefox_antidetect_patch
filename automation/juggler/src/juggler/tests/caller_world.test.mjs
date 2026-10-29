@@ -125,3 +125,30 @@ test('a frame builds each world as its kind was declared', () => {
   assert.deepEqual(Frame.prototype._createIsolatedContext.call(frame, 'w'), ['w', 'caller']);
   assert.deepEqual(Frame.prototype._createIsolatedContext.call(frame, 'u'), ['u', 'isolated']);
 });
+
+// A navigation away from a page the back-forward cache keeps starts the new
+// document in another process, which gets the context's init scripts and
+// bindings at once. The bindings went first: one for the caller's world made it
+// an isolated world, the init scripts' declaration of it as 'caller' was then
+// refused, and the document never committed. Measured on firefox-53: after a
+// client added a binding to the caller's world, every navigation timed out.
+test('a new process takes the init scripts before the bindings, so a binding does not decide a world\'s kind', () => {
+  const t = {
+    ...worlds(),
+    addBinding: FrameTree.prototype.addBinding,
+    applyCrossProcessState: FrameTree.prototype.applyCrossProcessState,
+  };
+  t.applyCrossProcessState(
+    [{ script: '', worldName: '__ctx_caller__', worldKind: 'caller' }],
+    [{ worldName: '__ctx_caller__', name: 'exposed', script: '' }]);
+  const world = t._isolatedWorlds.get('__ctx_caller__');
+  assert.equal(world._kind, 'caller');
+  assert.equal(world._bindings.get('exposed'), '');
+});
+
+test('the content process starts its frame tree through that order', () => {
+  const main = fs.readFileSync(path.join(ROOT, 'content/main.js'), 'utf8');
+  const start = main.slice(main.indexOf('data.frameTree = new FrameTree('), main.indexOf('data.channel = new SimpleChannel('));
+  assert.match(start, /applyCrossProcessState\(/);
+  assert.doesNotMatch(start, /\.addBinding\(/);
+});

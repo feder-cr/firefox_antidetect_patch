@@ -1,9 +1,14 @@
 {
  "modified": [
   "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
+  "toolkit/components/telemetry/moz.build",
   "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs"
  ],
- "added": {},
+ "added": {
+  "juggler/tests/pingsender_route_lives_in_our_file.test.mjs": "100644",
+  "toolkit/components/telemetry/app/StealthPingsender.sys.mjs": "100644",
+  "toolkit/components/telemetry/pings/StealthPingsenderRoute.sys.mjs": "100644"
+ },
  "inventory": [
   {
    "file": "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
@@ -28,6 +33,24 @@
      "notes"
     ],
     "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
+   }
+  },
+  {
+   "file": "toolkit/components/telemetry/moz.build",
+   "category": "build",
+   "feature": "pingsender-session-route",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   },
   {

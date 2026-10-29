@@ -1,6 +1,5 @@
 {
  "modified": [
-  "dom/media/DecoderTraits.cpp",
   "dom/media/mediacapabilities/MediaCapabilities.cpp",
   "dom/media/moz.build",
   "dom/media/platforms/PDMFactory.cpp"
@@ -10,27 +9,6 @@
   "dom/media/StealthMediaDeclaration.h": "100644"
  },
  "inventory": [
-  {
-   "file": "dom/media/DecoderTraits.cpp",
-   "category": "other",
-   "feature": "media-codecs-declared",
-   "prefs": [],
-   "added": 13,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "CanHandleMediaType (comment above it)",
-   "evidence": [
-    "+// Stealth: there is deliberately no declared-answer hook here any more.",
-    "+// The declaration moved one layer down, to PDMFactory::Supports, where the key"
-   ],
-   "notes": "Comment-only (13 lines) recording that a codec-string table was removed on 2026-08-08 and that the declaration now lives in PDMFactory::Supports (dom/media/StealthMediaDeclaration.h, not in this group). No code in the diff. Drop the comment from the patch.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff and source; no correction needed."
-   }
-  },
   {
    "file": "dom/media/mediacapabilities/MediaCapabilities.cpp",
    "category": "spoof",

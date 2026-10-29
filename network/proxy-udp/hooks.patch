@@ -1,173 +1,53 @@
 diff --git a/dom/media/webrtc/transport/nr_socket_prsock.cpp b/dom/media/webrtc/transport/nr_socket_prsock.cpp
-index f15df437c8b6bbe76fb701ad62dbb6308b07456a..058a43b9a42905f48d2fcbb74c0c75479ea97956 100644
+index f15df437c8b6bbe76fb701ad62dbb6308b07456a..a4f13d5c9a8a7e06a05c5d8083414153c36f4e94 100644
 --- a/dom/media/webrtc/transport/nr_socket_prsock.cpp
 +++ b/dom/media/webrtc/transport/nr_socket_prsock.cpp
-@@ -154,6 +154,7 @@ nrappkit copyright:
- #include "nr_socket_local.h"
+@@ -155,6 +155,7 @@ nrappkit copyright:
  #include "nr_socket_proxy_config.h"
  #include "nr_socket_prsock.h"
-+#include "mozilla/StaticPrefs_zoom.h"
  #include "nr_socket_tcp.h"
++#include "nr_stealth_proxy_udp.h"  // STEALTH-HOOK(network/proxy-udp)
  #include "simpletokenbucket.h"
  #include "stun_hint.h"
-@@ -729,6 +730,71 @@ static int ShouldDrop(size_t len) {
- }
- 
- // This should be called on the STS thread.
-+/* Un pacchetto UDP di ICE puo' uscire DIRETTAMENTE anche dietro un proxy, e
-+ * chi riceve vede l'indirizzo VERO della macchina.
-+ *
-+ * MISURATO il 2026-08-26 su tre fornitori e due schemi. Con uno STUN scritto
-+ * come INDIRIZZO NUMERICO nella configurazione della pagina, il log del motore
-+ * riporta:
-+ *
-+ *   STUN-CLIENT(srflx(IP4:192.168.1.172:55440/UDP|IP4:162.159.207.0:3478/UDP)):
-+ *       Received mapped address: IP4:81.56.22.74:4318/UDP
-+ *
-+ * cioe' il nostro indirizzo di casa, restituito da un server che qualcun altro
-+ * gestisce, mentre la PAGINA vedeva l'uscita del proxy perche' il candidato
-+ * reale viene riscritto. Una fuga invisibile a qualunque controllo lato pagina.
-+ *
-+ * Con un NOME invece del numero non succede, ma per un motivo che non e' una
-+ * difesa: il cancello DNS rifiuta la risoluzione, quindi il pacchetto non parte.
-+ * Ci proteggeva il formato dell'URL scelto dal rilevatore.
-+ *
-+ * ⛔ NON si puo' usare la leva che c'era gia'. `GetForceProxy()`
-+ * (`media.peerconnection.ice.proxy_only`) rifiuta la CREAZIONE del socket UDP,
-+ * quindi cancella anche i candidati host: misurato su tre fornitori, zero
-+ * candidati e il rilevatore che scrive "Javascript is manipulated", cioe' il
-+ * peggiore dei suoi messaggi.
-+ *
-+ * Qui si lascia creare il socket e si rifiuta l'INVIO verso destinazioni
-+ * pubbliche. Restano il multicast (l'mDNS che offusca gli host), il loopback e
-+ * le reti private, che non escono dalla macchina. Il risultato e' che un server
-+ * scritto come numero si comporta ESATTAMENTE come uno scritto come nome:
-+ * irraggiungibile. Che e' cio' che vede chiunque stia dietro un proxy.
-+ */
-+static bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {
-+  if (!mozilla::StaticPrefs::zoom_stealth_webrtc_no_direct_udp()) {
-+    return false;
-+  }
-+  if (!to) {
-+    return false;
-+  }
-+  if (to->ip_version == NR_IPV4) {
-+    uint32_t a = ntohl(to->u.addr4.sin_addr.s_addr);
-+    uint8_t o1 = (a >> 24) & 0xFF;
-+    uint8_t o2 = (a >> 16) & 0xFF;
-+    if (a == 0) return false;
-+    if (o1 == 127) return false;                          /* loopback */
-+    if (o1 == 10) return false;                           /* 10/8 */
-+    if (o1 == 172 && o2 >= 16 && o2 <= 31) return false;  /* 172.16/12 */
-+    if (o1 == 192 && o2 == 168) return false;             /* 192.168/16 */
-+    if (o1 == 169 && o2 == 254) return false;             /* link-local */
-+    if (o1 >= 224 && o1 <= 239) return false;             /* multicast, mDNS */
-+    return true;
-+  }
-+  if (to->ip_version == NR_IPV6) {
-+    const uint8_t* b = to->u.addr6.sin6_addr.s6_addr;
-+    if (b[0] == 0xFF) return false;                       /* multicast */
-+    if ((b[0] & 0xFE) == 0xFC) return false;              /* fc00::/7 */
-+    if (b[0] == 0xFE && (b[1] & 0xC0) == 0x80) return false; /* fe80::/10 */
-+    bool loopback = true;
-+    for (int k = 0; k < 15; ++k) {
-+      if (b[k] != 0) { loopback = false; break; }
-+    }
-+    if (loopback && b[15] == 1) return false;
-+    return true;
-+  }
-+  return false;
-+}
-+
- int NrSocket::sendto(const void* msg, size_t len, int flags,
-                      const nr_transport_addr* to) {
-   ASSERT_ON_THREAD(ststhread_);
-@@ -736,6 +802,13 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
+ #include "test_nr_socket.h"
+@@ -736,6 +737,9 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
    PRNetAddr naddr;
    int32_t status;
  
-+  if (StealthUscitaUdpDirettaVietata(to)) {
-+    r_log(LOG_GENERIC, LOG_INFO,
-+          "stealth: UDP diretto rifiutato verso %s (dietro proxy)",
-+          to->as_string);
-+    ABORT(R_REJECTED);
-+  }
++  // STEALTH-HOOK(network/proxy-udp)
++  if (StealthUscitaUdpDirettaVietataLog(to)) ABORT(R_REJECTED);
 +
    if ((r = nr_transport_addr_to_praddr(to, &naddr))) ABORT(r);
  
    if (fd_ == nullptr) ABORT(R_EOD);
-@@ -1271,6 +1344,10 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
+@@ -1271,6 +1275,9 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
                             const nr_transport_addr* to) {
    ASSERT_ON_THREAD(sts_thread_);
  
-+  if (StealthUscitaUdpDirettaVietata(to)) {
-+    return R_REJECTED;
-+  }
++  // STEALTH-HOOK(network/proxy-udp)
++  if (StealthUscitaUdpDirettaVietata(to)) return R_REJECTED;
 +
    ReentrantMonitorAutoEnter mon(monitor_);
  
    // If send err happened before, simply return the error.
 diff --git a/netwerk/base/nsUDPSocket.cpp b/netwerk/base/nsUDPSocket.cpp
-index f052d8afa22e136bb85ce10d02de6c732dd26cc8..db9d4b4b6448182e14d2ab23b659d51c811dba6c 100644
+index f052d8afa22e136bb85ce10d02de6c732dd26cc8..f1319bd0bd31c314c88b5d05559c310e103ff479 100644
 --- a/netwerk/base/nsUDPSocket.cpp
 +++ b/netwerk/base/nsUDPSocket.cpp
-@@ -8,6 +8,7 @@
- #include "MockNetworkLayer.h"
- #include "mozilla/Components.h"
- #include "mozilla/HoldDropJSObjects.h"
-+#include "mozilla/Preferences.h"
- #include "mozilla/ProfilerBandwidthCounter.h"
- #include "mozilla/StaticPrefs_network.h"
- #include "mozilla/dom/TypedArray.h"
-@@ -24,6 +25,7 @@
- #include "nsNetUtil.h"
- #include "nsProxyRelease.h"
- #include "nsQueryObject.h"
-+#include "nsSOCKSUDPIOLayer.h"
- #include "nsServiceManagerUtils.h"
- #include "nsSocketTransport2.h"
- #include "nsStreamUtils.h"
-@@ -618,6 +620,43 @@ nsUDPSocket::InitWithAddress(const NetAddr* aAddr, nsIPrincipal* aPrincipal,
+@@ -33,6 +33,7 @@
+ #include "prio.h"
+ #include "private/pprio.h"
+ #include "prnetdb.h"
++#include "StealthSocksUdp.h"  // STEALTH-HOOK(network/proxy-udp)
+ 
+ #if defined(FUZZING)
+ #  include "FuzzyLayer.h"
+@@ -618,6 +619,8 @@ nsUDPSocket::InitWithAddress(const NetAddr* aAddr, nsIPrincipal* aPrincipal,
      return NS_ERROR_FAILURE;
    }
  
-+  // Stealthfox: if a SOCKS5 proxy is configured AND socks_remote_udp is
-+  // enabled, push the SOCKS UDP layer onto the socket so that all
-+  // sendto() / recvfrom() are tunneled via the proxy's UDP ASSOCIATE
-+  // endpoint. Without this, QUIC / HTTP/3 traffic bypasses the proxy and
-+  // leaks the host's real IP.
-+  // Stealthfox: when SOCKS5 proxy is configured AND
-+  // network.proxy.socks_remote_udp is true, push the SOCKS UDP layer
-+  // onto the new fd so all sendto/recvfrom calls are tunneled via the
-+  // proxy's UDP_ASSOCIATE relay. Without this, QUIC/HTTP-3 traffic
-+  // would either bypass the proxy (leaking the host IP) or fail.
-+  if (mozilla::Preferences::GetBool("network.proxy.socks_remote_udp", false)) {
-+    int32_t proxyType = mozilla::Preferences::GetInt("network.proxy.type", 0);
-+    int32_t socksVer = mozilla::Preferences::GetInt(
-+        "network.proxy.socks_version", 5);
-+    if (proxyType == 1 && socksVer == 5) {
-+      nsAutoCString host;
-+      mozilla::Preferences::GetCString("network.proxy.socks", host);
-+      int32_t port = mozilla::Preferences::GetInt(
-+          "network.proxy.socks_port", 0);
-+      if (!host.IsEmpty() && port > 0) {
-+        nsAutoCString user, pass;
-+        mozilla::Preferences::GetCString("network.proxy.socks_username", user);
-+        mozilla::Preferences::GetCString("network.proxy.socks_password", pass);
-+        nsresult sr = mozilla::net::nsSOCKSUDPIOLayerAddToSocket(
-+            mFD, host.get(), port, user.get(), pass.get());
-+        if (NS_FAILED(sr)) {
-+          UDPSOCKET_LOG(("SOCKS UDP layer push failed (%" PRIx32
-+                         "); falling back to direct UDP",
-+                         static_cast<uint32_t>(sr)));
-+        } else {
-+          UDPSOCKET_LOG(("SOCKS UDP layer attached (proxy %s:%d)",
-+                         host.get(), port));
-+        }
-+      }
-+    }
-+  }
-+
++  // STEALTH-HOOK(network/proxy-udp)
++  StealthAttachSocksUdpLayer(mFD);
  #ifdef FUZZING
    if (StaticPrefs::fuzzing_necko_enabled()) {
      rv = AttachFuzzyIOLayer(mFD);

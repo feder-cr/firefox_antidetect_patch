@@ -169,6 +169,62 @@ Maybe<nsPoint> StealthDeclaredOriginShift(
     const Maybe<LayoutDeviceIntPoint>& aPopupWindowOrigin,
     int32_t aAppUnitsPerDevPixel);
 
+/**
+ * The colour depth the persona declares (zoom.stealth.screen.color_depth), or 0
+ * when none is declared, in which case the caller carries on as stock Firefox.
+ *
+ * Read before anything asks the real panel. It used to fall through to
+ * nsDeviceContext::GetDepth() and report whatever display the user actually
+ * has, which is a host value inside a persona that claims to be a particular
+ * Windows machine.
+ *
+ * It survived every cross-OS comparison we ran, and the reason is worth
+ * keeping: both development machines are 24-bit, so the field AGREED across
+ * platforms and looked declared. Agreement is not declaration - an absence of
+ * difference is not evidence of a shared source, and this is the field that
+ * proved it. Found by the field-by-field audit (19-field-declaration-audit.md),
+ * which asks for the source in the code rather than for equality in the
+ * measurement.
+ */
+int32_t StealthDeclaredPixelDepth();
+
+/**
+ * The screen the persona declares, in CSS pixels: {0, 0, width, height} from
+ * zoom.stealth.screen.width/height (set by invisible_core at launch), or
+ * Nothing() when either is not above zero and the caller carries on as stock
+ * Firefox.
+ *
+ * Deliberately NOT gated through StealthAssertDeclarationsComplete: that is what
+ * StealthDeclaredAvailRect does on the first use of a declared value, and the
+ * old inline code in GetRect never did. Keeping it that way keeps the output of
+ * the engine byte for byte what it was.
+ */
+Maybe<CSSIntRect> StealthDeclaredScreenRect();
+
+/**
+ * The available part of the declared screen, in CSS pixels: {0, 0, width,
+ * height - taskbar} from zoom.stealth.screen.width/height/taskbar_px, or
+ * Nothing() when width or height is not above zero and the caller carries on
+ * as stock Firefox.
+ *
+ * The strip by which availHeight is short of height is the Windows taskbar, and
+ * its height is DECLARED - by invisible_core, once, and by nothing else. It used
+ * to be the literal 48 in the engine and a second literal 48 in the generator's
+ * Python, in two languages with nothing tying them together: a persona needing
+ * a different one (auto-hide, a second monitor, a scaled display) had to be
+ * changed in both, and nothing would have said so if only one moved.
+ *
+ * There is NO compiled floor under it any more (engine rule 7, 2026-08-09). The
+ * "-1 keeps the 48 that was compiled in" that used to sit here was the second
+ * source of truth the rule forbids: it made a browser launched with a
+ * half-written profile look like it was working. A missing declaration now
+ * refuses, in StealthAssertDeclarationsComplete, on the FIRST USE of a declared
+ * value - not at startup, where the first attempt put it and where it hung
+ * every legitimate launch, because on the production path the prefs arrive over
+ * the connection after the process is already up.
+ */
+Maybe<CSSIntRect> StealthDeclaredAvailRect();
+
 }  // namespace gfx
 }  // namespace mozilla
 

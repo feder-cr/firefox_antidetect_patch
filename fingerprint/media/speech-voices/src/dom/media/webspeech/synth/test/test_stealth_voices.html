@@ -1,0 +1,66 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Declared speech voices (zoom.stealth.voices.list)</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<p id="display"></p>
+<pre id="test">
+<script type="application/javascript">
+
+SimpleTest.waitForExplicitFinish();
+
+const kList =
+  "Microsoft David - English (United States)|en-US|1|1,Foo|fr|0|1,Bar|de";
+
+add_task(async function declared_voices() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.webspeech.synth.enabled", true],
+      ["zoom.stealth.voices.list", kList],
+    ],
+  });
+  const voices = speechSynthesis.getVoices();
+  is(voices.length, 3, "three declared voices");
+
+  is(voices[0].voiceURI,
+     "urn:moz-tts:sapi:Microsoft David - English (United States)?en-US",
+     "voice 0 voiceURI is the retail form");
+  is(voices[0].name, "Microsoft David - English (United States)", "voice 0 name");
+  is(voices[0].lang, "en-US", "voice 0 lang");
+  is(voices[0].default, true, "voice 0 default");
+  is(voices[0].localService, true, "voice 0 localService");
+
+  is(voices[1].voiceURI, "urn:moz-tts:sapi:Foo?fr", "voice 1 voiceURI");
+  is(voices[1].default, false, "voice 1 default");
+  is(voices[1].localService, true, "voice 1 localService");
+
+  is(voices[2].voiceURI, "urn:moz-tts:sapi:Bar?de", "voice 2 voiceURI");
+  is(voices[2].lang, "de", "voice 2 lang");
+  is(voices[2].default, false, "voice 2 default (missing field)");
+  is(voices[2].localService, false, "voice 2 localService (missing field)");
+
+  for (const v of voices) {
+    ok(!v.voiceURI.startsWith("stealth"), "the internal form never reaches the page");
+  }
+});
+
+add_task(async function registry_fallthrough() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.webspeech.synth.enabled", true],
+      ["zoom.stealth.voices.list", ""],
+    ],
+  });
+  for (const v of speechSynthesis.getVoices()) {
+    ok(!v.voiceURI.startsWith("stealth"), "registry voice keeps its own URI");
+  }
+});
+
+</script>
+</pre>
+</body>
+</html>

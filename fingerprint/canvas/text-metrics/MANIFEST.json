@@ -2,7 +2,9 @@
  "modified": [
   "dom/canvas/CanvasRenderingContext2D.cpp"
  ],
- "added": {},
+ "added": {
+  "dom/canvas/StealthCanvasTextMetrics.h": "100644"
+ },
  "inventory": [
   {
    "file": "dom/canvas/CanvasRenderingContext2D.cpp",

@@ -1,81 +1,46 @@
 diff --git a/toolkit/components/windowwatcher/nsWindowWatcher.cpp b/toolkit/components/windowwatcher/nsWindowWatcher.cpp
-index 1a7068e4d6e9d8731be559b05955898f426d76b5..7c897fe6b213170dd9e4a8be9a05274dac59ee48 100644
+index 1a7068e4d6e9d8731be559b05955898f426d76b5..d8105e03dfe142ac58162063191b89280b358d59 100644
 --- a/toolkit/components/windowwatcher/nsWindowWatcher.cpp
 +++ b/toolkit/components/windowwatcher/nsWindowWatcher.cpp
-@@ -76,6 +76,7 @@
+@@ -76,6 +76,9 @@
  #include "nsIAppWindow.h"
  #include "nsIXULBrowserWindow.h"
  #include "ReferrerInfo.h"
-+#include "StealthDeclarationGate.h"
++#include "JugglerWindowSize.h"  // STEALTH-HOOK(automation/window-size)
++// STEALTH-HOOK(fingerprint/screen-window/popup-position)
++#include "StealthWindowPlacement.h"
  
  using namespace mozilla;
  using namespace mozilla::dom;
-@@ -1901,8 +1902,19 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForContent(
+@@ -1901,7 +1904,8 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForContent(
      return nsIWebBrowserChrome::CHROME_DOCUMENT_PICTURE_IN_PICTURE_FLAGS;
    }
    *aIsPopupRequested = ShouldOpenPopup(aFeatures);
 -  return *aIsPopupRequested ? nsIWebBrowserChrome::CHROME_MINIMAL_POPUP
--                            : nsIWebBrowserChrome::CHROME_ALL;
-+  if (!*aIsPopupRequested) {
-+    return nsIWebBrowserChrome::CHROME_ALL;
-+  }
-+  // Juggler reads this flag to tell a popup that asked for a size from one
-+  // that did not: without it every popup got the browser context's default
-+  // viewport, so window.open(url, '', 'width=500,height=400') reported the
-+  // tab's 1920x947 where Firefox reports 499x400. HaveSpecifiedSize is the
-+  // test this file already uses to decide whether the window gets sized.
-+  if (HaveSpecifiedSize(aFeatures)) {
-+    return nsIWebBrowserChrome::CHROME_MINIMAL_POPUP |
-+           nsIWebBrowserChrome::JUGGLER_WINDOW_EXPLICIT_SIZE;
-+  }
-+  return nsIWebBrowserChrome::CHROME_MINIMAL_POPUP;
++  // STEALTH-HOOK(automation/window-size)
++  return *aIsPopupRequested ? mozilla::JugglerPopupChromeFlags(aFeatures)
+                             : nsIWebBrowserChrome::CHROME_ALL;
  }
  
- /**
-@@ -2320,6 +2332,37 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
+@@ -2320,6 +2324,11 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
      top = *aSizeSpec.mTop;
    }
  
-+  // Stealth: a window a PAGE opens without left/top is born at the declared
-+  // default position, not wherever the host puts it (70-known-bugs.md B258).
-+  // Retail Firefox 151 on Windows 11 opens it at 4,4 device pixels (3,3 CSS at
-+  // 125%, 2,2 at 200%); the host would put it anywhere - Windows staggers from
-+  // the opener, a bare X server has no window manager at all - and a popup's
-+  // screenX is its REAL position (nsGlobalWindowOuter::GetScreenXY). Blocked
-+  // here, at birth, so both builds have the same real position and nothing
-+  // corrects it afterwards (engine rule 3). Chrome callers keep the stock
-+  // behaviour.
-+  //
-+  // A position the page DOES give needs nothing: CalcSizeSpec has already
-+  // turned its CSS pixels into desktop pixels with the opener's own
-+  // CSS-to-desktop scale, which carries the persona's scale and the host
-+  // display's together. Measured on the Linux build at 1.25, 1.5 and 2: a
-+  // second conversion here put left=100 at screenX 125, 150 and 200.
-+  const Maybe<mozilla::gfx::StealthWindowFrame> stealthFrame =
-+      aIsCallerChrome ? Nothing() : mozilla::gfx::StealthDeclaredWindowFrame();
-+  if (stealthFrame) {
-+    const DesktopToLayoutDeviceScale devToDesktop =
-+        treeOwnerAsWin->DevicePixelsPerDesktopPixel();
-+    const DesktopIntCoord byDefault = DesktopIntCoord(
-+        (LayoutDeviceCoord(stealthFrame->mPopupPosition) / devToDesktop)
-+            .Rounded());
-+    if (!aSizeSpec.mLeft) {
-+      left = byDefault;
-+    }
-+    if (!aSizeSpec.mTop) {
-+      top = byDefault;
-+    }
-+  }
++  // STEALTH-HOOK(fingerprint/screen-window/popup-position)
++  const bool stealthPlaced = mozilla::StealthPlacePopupAtDefault(
++      aIsCallerChrome, treeOwnerAsWin, aSizeSpec.mLeft.isSome(),
++      aSizeSpec.mTop.isSome(), left, top);
 +
    // Set up width
    if (aSizeSpec.mOuterWidth) {
      width = *aSizeSpec.mOuterWidth;
-@@ -2336,7 +2379,7 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
+@@ -2336,7 +2345,8 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
      height = *aSizeSpec.mInnerHeight;
    }
  
 -  bool positionSpecified = aSizeSpec.PositionSpecified();
-+  bool positionSpecified = aSizeSpec.PositionSpecified() || stealthFrame;
++  // STEALTH-HOOK(fingerprint/screen-window/popup-position)
++  bool positionSpecified = aSizeSpec.PositionSpecified() || stealthPlaced;
  
    // Check security state for use in determining window dimensions
    bool enabled = false;

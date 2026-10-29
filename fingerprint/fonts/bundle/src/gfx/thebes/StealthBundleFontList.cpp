@@ -12,23 +12,88 @@
 
 #include "StealthBundleFontList.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+
+#include "SharedFontList-impl.h"
+#include "gfxFont.h"
+#include "gfxFontEntry.h"
+#include "gfxPlatform.h"
+#include "gfxPlatformFontList.h"
+#include "nsMathUtils.h"
 #include "gfxFontConstants.h"
 #include "gfxFontUtils.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/StealthRefuse.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "prenv.h"
 #include "nsIFile.h"
 #include "nsIInputStream.h"
+#include "nsIMemoryReporter.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsReadableUtils.h"
+#include "nsUnicharUtils.h"
+#include "nsUnicodeProperties.h"
+#include "nsXULAppAPI.h"
+
+#ifdef XP_DARWIN
+#  include <CoreFoundation/CoreFoundation.h>
+#  include <CoreGraphics/CoreGraphics.h>
+#  include <CoreText/CoreText.h>
+
+#  include "AppleUtils.h"
+#  include "CoreTextFontList.h"
+#endif
+
+// This is our uniform bundle-only font-list builder. It is listed under SOURCES,
+// not UNIFIED_SOURCES, in gfx/thebes/moz.build: it defines a few short-named
+// file-static helpers that could collide in a unified blob.
 
 using namespace mozilla;
 using mozilla::fontlist::Face;
 using mozilla::fontlist::Family;
+
+// ---------------------------------------------------------------------------
+// .ttc support for gfxFontUtils (feature font-ttc-face-index).
+//
+// The hook in gfxFontUtils::FindTableDirEntry (gfxFontUtils.cpp) calls this to
+// find the sfnt header of face aFaceIndex. Before it, the table lookup read
+// only the file header, so only the first face of a collection was readable.
+//
+// Resolve the sfnt header for a given face within a buffer of font data. For
+// single-face sfnt data, returns aFontData (aFaceIndex is ignored). For a .ttc
+// collection, reads the TTC header's offset table and returns the pointer to
+// the sfnt header of the requested face; returns null if aFaceIndex is out of
+// range. Like the other gfxFontUtils table helpers, it assumes aFontData is a
+// validated buffer: no length check is made here.
+//
+// Table offsets inside a face are always relative to the beginning of the
+// file, even for faces within a .ttc collection. So GetTableFromFontData adds
+// dir->offset to aFontData, never to the face offset returned here.
+// ---------------------------------------------------------------------------
+/* static */
+const mozilla::SFNTHeader* gfxFontUtils::FindSfntOffset(const void* aFontData,
+                                                       uint32_t aFaceIndex) {
+  const auto* data = reinterpret_cast<const uint8_t*>(aFontData);
+  const SFNTHeader* sfnt = reinterpret_cast<const SFNTHeader*>(data);
+  if (sfnt->sfntVersion == 0x74746366u) {  // 'ttcf'
+    const TTCHeader* ttc = reinterpret_cast<const TTCHeader*>(data);
+    if (aFaceIndex >= uint32_t(ttc->numFonts)) {
+      return nullptr;
+    }
+    // The offset table immediately follows the TTCHeader (12 bytes).
+    const AutoSwap_PRUint32* offsets =
+        reinterpret_cast<const AutoSwap_PRUint32*>(data + sizeof(TTCHeader));
+    uint32_t faceOffset = offsets[aFaceIndex];
+    return reinterpret_cast<const SFNTHeader*>(data + faceOffset);
+  }
+  return sfnt;
+}
 
 // Split aLine on '|' into aOut, keeping empty fields (a face's psname may be
 // empty). Returns the field count.
@@ -482,6 +547,167 @@ bool StealthBundleFontList::GetVMetrics(const nsACString& aFile,
   return false;
 }
 
+// ---- Vertical metrics hooked from gfxFont (fingerprint/fonts/metrics) ----
+
+// STEALTH: host-independent vertical metrics straight from the font's own OS/2
+// sfnt table (FUnits->px), bypassing the platform backend (DWrite/FreeType/CoreText)
+// whose computed asc/desc differ per OS. For a given bundled font + size the values
+// are byte-identical on every host -> canvas TextMetrics vertical fields become
+// host-independent (see CanvasRenderingContext2D::DrawOrMeasureText). emAscent/Descent
+// from sTypoAscender/sTypoDescender, maxAscent/Descent from usWinAscent/usWinDescent
+// (the Windows convention we always claim). Returns false if no usable OS/2 table.
+bool gfxFont::GetStealthHostIndepVMetrics(gfxFloat& aEmAscent, gfxFloat& aEmDescent,
+                                          gfxFloat& aMaxAscent,
+                                          gfxFloat& aMaxDescent) {
+  if (mFUnitsConvFactor < 0.0) {
+    uint16_t unitsPerEm =
+        GetFontEntry() ? GetFontEntry()->UnitsPerEm() : gfxFontEntry::kInvalidUPEM;
+    if (unitsPerEm == gfxFontEntry::kInvalidUPEM || unitsPerEm == 0) {
+      return false;
+    }
+    mFUnitsConvFactor = GetAdjustedSize() / unitsPerEm;
+  }
+  if (mFUnitsConvFactor <= 0.0) {
+    return false;
+  }
+  gfxFontEntry::AutoTable os2Table(mFontEntry, TRUETYPE_TAG('O', 'S', '/', '2'));
+  if (!os2Table) {
+    return false;
+  }
+  uint32_t len;
+  const OS2Table* os2 =
+      reinterpret_cast<const OS2Table*>(hb_blob_get_data(os2Table, &len));
+  if (len < offsetof(OS2Table, usWinDescent) + sizeof(uint16_t)) {
+    return false;
+  }
+  aEmAscent = int16_t(os2->sTypoAscender) * mFUnitsConvFactor;
+  aEmDescent = -int16_t(os2->sTypoDescender) * mFUnitsConvFactor;  // sTypoDescender < 0
+  aMaxAscent = uint16_t(os2->usWinAscent) * mFUnitsConvFactor;
+  aMaxDescent = uint16_t(os2->usWinDescent) * mFUnitsConvFactor;
+  return true;
+}
+
+// STEALTH: resolve this font entry's manifest vertical metrics, if it is one
+// of the bundled faces. False for everything else - a web/user font, a font
+// outside the shared list, or a v1 manifest with no metrics - and in that case
+// the backend's own values must stand untouched.
+static bool GetStealthBundleVMetrics(gfxFontEntry* aFontEntry,
+                                     StealthBundleVMetrics& aOut) {
+  // mShmemFace is what identifies a bundled face, so it is also the reason
+  // this returns false for a web font. Note it is only non-null because
+  // every backend's CreateFontEntry calls InitializeFrom - the Linux
+  // bundle-only branch did NOT until 2026-08-07, and while that was true this
+  // whole function silently no-opped on Linux, which is precisely the platform
+  // the metrics were meant to correct.
+  if (!aFontEntry) {
+    return false;
+  }
+  // Deliberately NOT gated on IsUserFont(). On Linux the bundle-only branch of
+  // gfxFcPlatformFontList::CreateFontEntry loads each face from an in-memory
+  // buffer through FTUserFontData - the same machinery a web font uses - so
+  // every bundled face reports IsUserFont() == true. An earlier version of this
+  // guard rejected all 72 of them for that reason, on the one platform the
+  // metrics exist to correct.
+  //
+  // mShmemFace alone is the right discriminator: it means "this face came from
+  // the shared font list", and a genuine web font never has one - gfxUserFontSet
+  // explicitly clears it (gfxUserFontSet.cpp:1117). Even if one slipped through,
+  // the manifest lookup below is keyed on (bundle file, face index) and would
+  // simply miss.
+  if (!aFontEntry->mShmemFace) {
+    return false;
+  }
+  auto* pfl = gfxPlatformFontList::PlatformFontList(false);
+  if (!pfl) {
+    return false;
+  }
+  mozilla::fontlist::FontList* sharedList = pfl->SharedFontList();
+  if (!sharedList) {
+    return false;
+  }
+  auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
+  // A Face's mDescriptor is the bundle file name and mIndex the face within
+  // it - the same pair every backend's CreateFontEntry uses to load the file.
+  const nsCString file =
+      aFontEntry->mShmemFace->mDescriptor.AsString(sharedList);
+  return bundle->GetVMetrics(file, aFontEntry->mShmemFace->mIndex, aOut);
+}
+
+// STEALTH: impose the manifest's vertical metrics, so that no platform
+// backend decides them.
+//
+// This is the single choke point where DWrite, FreeType and CoreText meet:
+// all three call gfxFont::SanitizeMetrics as the last step of populating their own
+// mMetrics (gfxDWriteFonts.cpp, gfxFT2FontBase.cpp, gfxMacFont.cpp), and it
+// runs inside font init, so it is upstream of both gfxFontCache and the lazy
+// mVerticalMetrics cache - no per-query cost, no const-ness problem.
+//
+// Why: each backend derived ascent/descent from the SAME bundled file by its
+// own rule, and they disagreed. Measured 2026-08-07 on the shipped
+// firefox-18, Windows vs Linux, same seed and same build: ascent/descent
+// differed on 58 of 72 families (up to 27px at a 72px size), line-box height
+// on 61, capHeight on 10, xHeight on 5 - while every advance width already
+// matched, because shaping is HarfBuzz in-tree. That divergence is a tell:
+// it is what makes a Linux-hosted session's font metrics disagree with the
+// Windows persona this build claims everywhere else.
+//
+// The values come from bundle-fonts.list v2, resolved offline to what a real
+// Windows Firefox produces (DirectWrite's usWin*-vs-sTypo* rule) and
+// validated against the shipped Windows build for 72/72 families. The
+// arithmetic mirrors gfxDWriteFonts.cpp:396-421 on purpose, so Windows keeps
+// the numbers it already had and the other two are brought TO it, instead of
+// all three moving somewhere new.
+//
+// Called from gfxFont::SanitizeMetrics, right after its zero-size early
+// return, with that font's entry and adjusted size.
+void StealthImposeBundleVMetrics(gfxFontEntry* aFontEntry,
+                                 gfxFloat aAdjustedSize,
+                                 gfxFont::Metrics* aMetrics) {
+  MOZ_ASSERT(aMetrics);
+  StealthBundleVMetrics vm;
+  if (GetStealthBundleVMetrics(aFontEntry, vm)) {
+    const gfxFloat size = aAdjustedSize;
+    const gfxFloat conv = size / gfxFloat(vm.mUpem);
+
+    aMetrics->maxAscent = NS_round(vm.mAscent * conv);
+    aMetrics->maxDescent = NS_round(vm.mDescent * conv);
+    aMetrics->maxHeight = aMetrics->maxAscent + aMetrics->maxDescent;
+    aMetrics->emHeight = size;
+    // Keep emAscent + emDescent == emHeight: gfxHarfBuzzShaper reads both to
+    // place the vertical VOrg and the glyph y_bearing, so breaking that
+    // invariant would move glyph bounding boxes, not just line boxes.
+    aMetrics->emAscent =
+        aMetrics->maxHeight > 0.0
+            ? aMetrics->emHeight * aMetrics->maxAscent / aMetrics->maxHeight
+            : aMetrics->emHeight;
+    aMetrics->emDescent = aMetrics->emHeight - aMetrics->emAscent;
+    aMetrics->internalLeading =
+        std::max(aMetrics->maxHeight - aMetrics->emHeight, 0.0);
+    aMetrics->externalLeading = std::ceil(vm.mLineGap * conv);
+
+    // xHeight / capHeight are absent from a pre-v2 OS/2 table; when the
+    // manifest carries 0 keep whatever the backend derived, rather than
+    // zeroing a real value.
+    if (vm.mXHeight) {
+      aMetrics->xHeight = vm.mXHeight * conv;
+    }
+    if (vm.mCapHeight) {
+      aMetrics->capHeight = vm.mCapHeight * conv;
+    }
+    if (vm.mUnderlineSize) {
+      aMetrics->underlineOffset = vm.mUnderlineOffset * conv;
+      aMetrics->underlineSize = vm.mUnderlineSize * conv;
+    }
+    if (vm.mStrikeoutSize) {
+      aMetrics->strikeoutOffset = vm.mStrikeoutOffset * conv;
+      aMetrics->strikeoutSize = vm.mStrikeoutSize * conv;
+    }
+    // The clamps in gfxFont::SanitizeMetrics after the call site
+    // (underlineSize >= 1, underlineOffset <= -1, maxAscent >= 1, ...) still
+    // run, exactly as they do for backend values.
+  }
+}
+
 bool StealthBundleFontList::GetAlias(const nsACString& aName,
                                      nsACString& aOut) {
   nsAutoCString key(aName);
@@ -526,6 +752,39 @@ bool StealthBundleFontList::GetCommonFallback(
   return true;
 }
 
+// Called by gfxPlatformGtk::GetCommonFallbackFonts before it appends the
+// upstream Linux names; "below" in the comment means "after these names".
+void StealthAppendWindowsFallbackNames(bool aPrefersColor,
+                                       nsTArray<const char*>& aFontList) {
+  // Stealth: the bundled Windows faces come FIRST, mirroring the order
+  // gfxWindowsPlatform::GetCommonFallbackFonts uses, so a codepoint no
+  // requested family covers resolves to the same face on every host.
+  //
+  // Every name in the upstream Linux list below - Twemoji Mozilla, DejaVu,
+  // FreeSerif/Sans, Symbola, Noto Sans Symbols 1/2 - is absent from
+  // bundle-fonts.list, so under bundle-only this whole function was a
+  // guaranteed miss for EVERY codepoint, on every script, not just emoji.
+  // (Twemoji Mozilla ships in browser/fonts but is excluded from the manifest
+  // by the Microsoft-attribution filter and is registered as a family on
+  // neither OS, so naming it here has never resolved.) The upstream names are
+  // kept after ours: they cost nothing when absent and keep the non-bundle
+  // build working.
+  // The ORDER mirrors the leading names of
+  // gfxWindowsPlatform::GetCommonFallbackFonts -
+  // Segoe UI Emoji, then Arial, Segoe UI, Segoe UI Symbol, Cambria Math -
+  // because the order decides WHICH face covers a codepoint, and a different
+  // face means a different advance. Measured 2026-08-07: listing Segoe UI
+  // Symbol before Arial (an earlier version of this block) left five emoji
+  // widths apart from Windows even though every family already resolved.
+  if (aPrefersColor) {
+    aFontList.AppendElement("Segoe UI Emoji");
+  }
+  aFontList.AppendElement("Arial");
+  aFontList.AppendElement("Segoe UI");
+  aFontList.AppendElement("Segoe UI Symbol");
+  aFontList.AppendElement("Cambria Math");
+}
+
 /* static */
 StealthBundleFontList* StealthBundleFontList::Get() {
   static StealthBundleFontList* sInstance = []() -> StealthBundleFontList* {
@@ -540,8 +799,9 @@ StealthBundleFontList* StealthBundleFontList::Get() {
     // enumeration, vertical metrics, aliases, the per-script fallback table and
     // the generic families, twelve sites across the three platform back ends.
     // That is the worst failure mode this build has, because mStealthBundleOnly
-    // is on unconditionally (gfxPlatformFontList.cpp:325) and the browser would
-    // keep running and rendering, fingerprinting as whatever machine it is on.
+    // is on unconditionally (the gfxPlatformFontList constructor) and the
+    // browser would keep running and rendering, fingerprinting as whatever
+    // machine it is on.
     //
     // Reaching this line means all three sources failed: the
     // STEALTHFOX_FONT_MANIFEST env var, the zoom.stealth.fonts.manifest pref,
@@ -555,4 +815,673 @@ StealthBundleFontList* StealthBundleFontList::Get() {
         "refusing to run with host fonts");
   }();
   return sInstance;
+}
+
+// ---------------------------------------------------------------------------
+// gfxFontEntry::ShouldPublishCharacterMap (hook in gfxFontEntry.cpp).
+// ---------------------------------------------------------------------------
+
+bool StealthBundleFontList::ShouldPublishCharacterMap(
+    const gfxFontEntry& aEntry) {
+  if (!aEntry.mShmemFace) {
+    // Not a face from the shared list: there is no slot to publish into. This
+    // alone excludes every downloaded @font-face, which is never built from a
+    // fontlist::Face and so never has an mShmemFace.
+    return false;
+  }
+  if (aEntry.mIsLocalUserFont) {
+    // A `src: local()` reference borrows the list's face but carries the
+    // @font-face rule's own weight/stretch/style ranges; its cmap must not
+    // overwrite the slot the list's own face owns.
+    return false;
+  }
+  if (!aEntry.mIsDataUserFont) {
+    // Upstream case: an installed system face, exactly what the old
+    // `!IsUserFont()` test meant to allow.
+    return true;
+  }
+  // Bundle-only: every face in the list is instantiated from its bundle file, so
+  // mIsDataUserFont is true for all of them and the old test rejected the entire
+  // font list. Publishing is what makes the family character map a real union
+  // instead of the deliberate empty "unusable family" map, and therefore what
+  // lets IsFullyInitialized() ever become true.
+  return gfxPlatformFontList::PlatformFontList()->StealthBundleOnly();
+}
+
+// ---------------------------------------------------------------------------
+// Hooks called from gfxPlatformFontList.cpp (series folder
+// fingerprint/fonts/font-list). Declared in StealthBundleFontList.h.
+// ---------------------------------------------------------------------------
+
+// Reports one number to about:memory. A free function cannot use
+// MOZ_COLLECT_REPORT: that macro names KIND_HEAP / UNITS_BYTES unqualified and
+// only compiles inside a class deriving from nsIMemoryReporter, so this spells
+// the same call the macro expands to (xpcom/base/nsIMemoryReporter.idl:608-611),
+// with the constants qualified.
+static void ReportBundleBytes(nsIHandleReportCallback* aHandleReport,
+                              nsISupports* aData, const nsACString& aPath,
+                              int32_t aKind, size_t aBytes,
+                              const nsACString& aDescription) {
+  (void)aHandleReport->Callback(""_ns, aPath, aKind,
+                                nsIMemoryReporter::UNITS_BYTES, int64_t(aBytes),
+                                aDescription, aData);
+}
+
+void StealthReportBundleFiles(mozilla::MallocSizeOf aMallocSizeOf,
+                              nsIHandleReportCallback* aHandleReport,
+                              nsISupports* aData) {
+  // The bundled font FILES, which are the largest single allocation this build
+  // makes and had no reporter at all - so they landed in heap-unclassified and
+  // about:memory could not see them. The bundle is 218.7 MB over 126 files, the
+  // cache is per PROCESS (every process that rasterises a face reads its file),
+  // and it is never cleared. Not being able to measure the biggest thing you
+  // allocate is how an optimisation gets planned on a guess.
+  //
+  // Get() never returns null (it crashes first, see its contract), so the null
+  // test the inline code had is gone.
+  auto* bundle = StealthBundleFontList::Get();
+  size_t bundleHeap = bundle->SizeOfIncludingThis(aMallocSizeOf);
+  ReportBundleBytes(
+      aHandleReport, aData, "explicit/gfx/font-bundle-files"_ns,
+      nsIMemoryReporter::KIND_HEAP, bundleHeap,
+      "Bundled font files held on this process's HEAP. Zero once they are "
+      "mapped instead of read; one entry per FILE, never per face."_ns);
+
+  // Reported apart and as NONHEAP, because these pages are the file's: the
+  // operating system shares them with every process that maps the same file,
+  // so adding them to the heap figure would count one physical page N times.
+  size_t bundleMapped = bundle->MappedBytes();
+  if (bundleMapped) {
+    ReportBundleBytes(
+        aHandleReport, aData, "font-bundle-files-mapped"_ns,
+        nsIMemoryReporter::KIND_NONHEAP, bundleMapped,
+        "Bundled font files MAPPED read-only. Shared with every other "
+        "process that mapped them, and evictable by the OS."_ns);
+  }
+}
+
+// gfxPlatformFontList::mStealthBundleOnly (declared in gfxPlatformFontList.h):
+// Stealth bundle-only: always true in this patched build. The platform font
+// list is built from the bundled fonts ALONE; the host font enumeration is
+// skipped entirely (see the InitFontList backends), so host system fonts
+// never enter it. The exposed set is exactly the bundle - no external
+// allow-list. Set in the constructor.
+
+// Stealth: true in this patched build. Set in the constructor and never
+// mutated, so it is safe to read without holding mLock. Needed outside this
+// class because "is this face one of ours" cannot be answered by IsUserFont():
+// every bundled face is constructed from file data and so reports true.
+bool gfxPlatformFontList::StealthBundleOnly() const {
+  return mStealthBundleOnly;
+}
+
+// The three gfxPlatformFontList members below are STEALTH [B317]: they give
+// the bundle's faces the alias, PostScript and full names a platform gives its
+// installed fonts. Defined here and not in gfxPlatformFontList.cpp so that the
+// Mozilla file carries no logic; a member definition in another .cpp has the
+// same access as one in the class's own .cpp, so the protected members they use
+// need no friend and no header change.
+
+// STEALTH [B317]: record what one face's 'name' table says - its alternate
+// family names in mAliasTable, its PostScript and full names in the local
+// names table that @font-face src:local() searches. It reads the bundle's
+// faces (from the bundle file) through ReadFaceNamesForFamily below; the
+// DirectWrite back end keeps its own upstream loop for installed fonts and
+// does not call it. Before it the bundle's tables were never read on any
+// platform, so src:local() found no bundled face and no localized family name
+// resolved.
+void gfxPlatformFontList::RecordFaceNamesFromTable(
+    fontlist::Family* aFamily, uint32_t aFaceIndex, const nsACString& aKey,
+    const nsCString& aFamilyName, const char* aNameTable, uint32_t aLength) {
+  // The same reading gfxDWriteFontList::ReadFaceNamesForFamily does for an
+  // installed font (that loop keeps its upstream text), so that the bundle's
+  // faces get exactly what DirectWrite gives an installed font, and nothing
+  // that could drift from it.
+  const fontlist::Pointer* facePtrs = aFamily->Faces(SharedFontList());
+  AutoTArray<nsCString, 4> otherFamilyNames;
+  gfxFontUtils::ReadOtherFamilyNamesForFace(aFamilyName, aNameTable, aLength,
+                                            otherFamilyNames, false);
+  for (const auto& alias : otherFamilyNames) {
+    nsAutoCString key(alias);
+    ToLowerCase(key);
+    auto aliasData = mAliasTable.GetOrInsertNew(key);
+    aliasData->InitFromFamily(aFamily, aFamilyName);
+    aliasData->mFaces.AppendElement(facePtrs[aFaceIndex]);
+  }
+
+  nsAutoCString psname, fullname;
+  // Bug 1854090: don't load PSname if the family name ends with ".tmp",
+  // as some PDF-related software appears to pollute the font collection
+  // with spurious re-encoded versions of standard fonts like Arial, fails
+  // to alter the PSname, and thus can result in garbled rendering because
+  // the wrong resource may be found via src:local(...).
+  if (!StringEndsWith(aKey, ".tmp"_ns)) {
+    if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
+            aNameTable, aLength, gfxFontUtils::NAME_ID_POSTSCRIPT, psname))) {
+      ToLowerCase(psname);
+      MaybeAddToLocalNameTable(psname,
+                               fontlist::LocalFaceRec::InitData(aKey, aFaceIndex));
+    }
+  }
+  if (NS_SUCCEEDED(gfxFontUtils::ReadCanonicalName(
+          aNameTable, aLength, gfxFontUtils::NAME_ID_FULL, fullname))) {
+    ToLowerCase(fullname);
+    if (fullname != psname) {
+      MaybeAddToLocalNameTable(fullname,
+                               fontlist::LocalFaceRec::InitData(aKey, aFaceIndex));
+    }
+  }
+}
+
+void gfxPlatformFontList::ReadFaceNamesForFamily(
+    fontlist::Family* aFamily, bool aNeedFullnamePostscriptNames) {
+  // STEALTH [B317]: a platform that reads names while enumerating (fontconfig)
+  // has nothing to do here for its own fonts; the bundle's faces were never
+  // enumerated by any platform, so their names are read here, on every one.
+  if (!mStealthBundleOnly) {
+    return;
+  }
+  if (!aFamily->IsInitialized() && !InitializeFamily(aFamily)) {
+    return;
+  }
+  fontlist::FontList* list = SharedFontList();
+  const fontlist::Pointer* facePtrs = aFamily->Faces(list);
+  nsAutoCString familyName(aFamily->DisplayName().AsString(list));
+  nsAutoCString key(aFamily->Key().AsString(list));
+  auto* bundle = StealthBundleFontList::Get();
+  for (uint32_t i = 0; i < aFamily->NumFaces(); ++i) {
+    auto* face = facePtrs[i].ToPtr<fontlist::Face>(list);
+    if (!face) {
+      continue;
+    }
+    gfxFontUtils::AutoHBBlob names(bundle->GetFaceNameTable(
+        nsCString(face->mDescriptor.AsString(list)), face->mIndex));
+    if (!names) {
+      continue;
+    }
+    unsigned int length = 0;
+    const char* data = hb_blob_get_data(names, &length);
+    RecordFaceNamesFromTable(aFamily, i, key, familyName, data, length);
+  }
+}
+
+// STEALTH [B317]: implemented here for the bundle's faces, on every platform,
+// from the 'name' table of the bundle file; a platform's override delegates
+// here when the font list is bundle-only.
+bool gfxPlatformFontList::ReadFaceNames(const fontlist::Family* aFamily,
+                                        const fontlist::Face* aFace,
+                                        nsCString& aPSName,
+                                        nsCString& aFullName) {
+  // STEALTH [B317]: the bundle's faces, on every platform; the platform's own
+  // faces are its override's business.
+  if (!mStealthBundleOnly) {
+    return false;
+  }
+  gfxFontUtils::AutoHBBlob names(StealthBundleFontList::Get()->GetFaceNameTable(
+      nsCString(aFace->mDescriptor.AsString(SharedFontList())), aFace->mIndex));
+  if (!names) {
+    return false;
+  }
+  (void)gfxFontUtils::ReadCanonicalName(names, gfxFontUtils::NAME_ID_POSTSCRIPT,
+                                        aPSName);
+  (void)gfxFontUtils::ReadCanonicalName(names, gfxFontUtils::NAME_ID_FULL,
+                                        aFullName);
+  return !aPSName.IsEmpty() || !aFullName.IsEmpty();
+}
+
+void StealthGetCommonFallbackFonts(bool aBundleOnly, uint32_t aCh,
+                                   mozilla::intl::Script aRunScript,
+                                   FontPresentation aPresentation,
+                                   nsTArray<const char*>& aOut) {
+  // This is the list that decides which font renders a character its own font
+  // lacks, and it was the last per-platform font decision left.
+  // gfxWindowsPlatform answers with a 93-case script switch plus a
+  // character-dependent tail; gfxPlatformGtk answered with a flat list that
+  // merely began with four Windows names.
+  //
+  // CORRECTED 2026-08-08 by an audit, because the original justification here
+  // was WRONG and would have been the reason a future reader kept 139 records
+  // without re-examining them. This block used to cite a bare U+2764 measuring
+  // 31.77 on Windows against 40.03 on Linux. Neither number is a fallback
+  // advance: both are Arial's OWN aveCharWidth, i.e. the missing-glyph hex box
+  // (gfxFont.cpp:858-865, the advance is max(aveCharWidth, hex-box minimum)).
+  // DWrite reads OS/2 xAvgCharWidth, 904/2048 x 72 = 31.78; FreeType takes
+  // max(that, the '0' advance), 1139/2048 x 72 = 40.04. No fallback font was
+  // chosen on EITHER host, so no list could have caused it - the empty family
+  // charmap did, see StealthLoadMissingCharacterMaps below. For U+2764 both
+  // lists in fact answer Segoe UI Symbol, identically.
+  //
+  // What the table really buys is CJK. For U+4E00 twelve bundled families
+  // carry the codepoint, so GlobalFontFallback's whole-list scan lands on MS
+  // Gothic, while S|17|SimSun|SimSun-ExtB gives what Windows gives. That is
+  // the evidence it survives on.
+  //
+  // The NAMES and their order come from the manifest on every host. The
+  // classification below stays here on purpose - the colour-presentation test
+  // and the symbol/punctuation test are properties of the CHARACTER, defined
+  // by Unicode, and were never the platform's font engine. Copied from
+  // gfxWindowsPlatform::GetCommonFallbackFonts so the condition matches the
+  // list it selects.
+  //
+  // The platform call is the upstream one: it runs when not bundle-only, and
+  // when the manifest has no fallback table (a pre-v4 file; GetCommonFallback
+  // returns false before appending anything).
+  if (aBundleOnly) {
+    auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
+    const uint32_t b = aCh >> 8;
+    // mozilla::unicode:: is spelled out: gfxPlatformFontList.cpp only compiled
+    // the unqualified call because a unified-build neighbour (gfxFont.cpp:63,
+    // gfxFontEntry.cpp:32 ...) has 'using namespace mozilla::unicode'; this
+    // file is not unified.
+    const bool symbolish =
+        aRunScript == mozilla::intl::Script::COMMON ||  // stray COMMON chars
+        (b >= 0x20 && b <= 0x2b) || b == 0x2e ||        // BMP symbols/punct.
+        mozilla::unicode::GetGenCategory(aCh) == nsUGenCategory::kSymbol ||
+        mozilla::unicode::GetGenCategory(aCh) == nsUGenCategory::kPunctuation;
+    if (bundle->GetCommonFallback(int16_t(aRunScript), PrefersColor(aPresentation),
+                                  symbolish, aOut)) {
+      return;
+    }
+  }
+  gfxPlatform::GetPlatform()->GetCommonFallbackFonts(aCh, aRunScript,
+                                                     aPresentation, aOut);
+}
+
+// Stealth: the ONE place that decides whether a fallback search may skip a
+// family whose character maps are not loaded yet, kicking off an async load
+// and moving on. Two sites ask (GlobalFontFallback and
+// gfxFontGroup::FindFallbackFaceForChar) and the answer has to be the same in
+// both: skipping makes the result depend on what this process happens to have
+// touched already, and that is observable in measureText widths. The condition
+// was written out by hand at the first site and was simply MISSING at the
+// second, so every text run took the deferring path while the code read as if
+// bundle-only had been handled. One predicate, two readers.
+bool gfxPlatformFontList::MayDeferCmapLoading() const {
+  // Never under bundle-only. Deferring means answering a fallback search from a
+  // partially loaded list, so the answer depends on what this process happens to
+  // have touched already - and that is observable: measured 2026-08-07, the
+  // regional-indicator pair through "Arial" gave 52.63 on BOTH platforms when it
+  // was the first thing a fresh page measured, and 63.53 (Windows) vs 80.07
+  // (Linux) once other families had been measured first. Same binary, same page;
+  // the divergence was the load order. 68 bundled families is a small enough list
+  // to search synchronously, and a deterministic answer is the whole point of
+  // moving fallback into the manifest.
+  //
+  // The condition used to be spelled out in GlobalFontFallback, and the same
+  // condition was MISSING at the other site that asks it
+  // (gfxFontGroup::FindFallbackFaceForChar, in gfxTextRun.cpp). It lives in one
+  // place - here - which carries the measurement and the reason.
+  //
+  // Stealth: gfxFontGroup::FindFallbackFaceForChar (gfxTextRun.cpp) is the site
+  // the bundle-only condition was missing from. The twin site in
+  // GlobalFontFallback spelled it out by hand, this one (FindFallbackFaceForChar)
+  // did not, and under bundle-only NO family is ever fully initialized - so every
+  // text run that needed a fallback face within a family took this early return
+  // in the content process. MayDeferCmapLoading is now the single answer for
+  // both.
+  return !mStealthBundleOnly &&
+         StaticPrefs::gfx_font_rendering_fallback_async() &&
+         !XRE_IsParentProcess();
+}
+
+void StealthApplyAlias(bool aBundleOnly, nsACString& aKey) {
+  // Applies the manifest's canonical Windows substitute table, on every OS,
+  // before the family list is consulted.
+  //
+  // A name that is not a family can still resolve through Windows' substitute
+  // table, and a detector reads the difference. Measured 2026-08-07 on the
+  // shipped firefox-18: a commercial fingerprinting service probes "HELV" and
+  // "Small Fonts", both resolved on Windows and neither on Linux (8 fonts
+  // resolved against 6), because gfxDWriteFontList reads them from the HOST
+  // REGISTRY with no bundle-only gate and Linux has no such registry. That made
+  // the answer depend on the OS and, on Windows, on the individual machine -
+  // third-party software adds registry entries.
+  //
+  // This is the single place all three backends pass through: the DWrite
+  // override calls up into this base after applying its own table, and the
+  // fontconfig one after its -moz-sentinel pass, so one hook covers them all.
+  // The platform tables are suppressed separately (see gfxDWriteFontList's
+  // GetFontSubstitutes call site) so this is the ONLY source of aliases.
+  if (!aBundleOnly) {
+    return;
+  }
+  nsAutoCString target;
+  if (StealthBundleFontList::Get()->GetAlias(aKey, target)) {
+    // What gfxPlatformFontList::GenerateFontListKey(target, key) does; that
+    // member is protected, so its two lines are repeated here (same bytes).
+    aKey = target;
+    ToLowerCase(aKey);
+  }
+}
+
+// InitializeFamily's eager character-map loader, run after BOTH branches of
+// `if (!aFamily->IsInitialized())`.
+//
+// It used to be the `else` of that branch, i.e. it ran ONLY for a family whose
+// face list already existed, on the assumption that a backend asked with
+// aLoadCmaps=true fills Face::InitData::mCharMap while it enumerates. Our bundle
+// path cannot do that without a SECOND cmap reader of its own, so under
+// bundle-only a family initialized with aLoadCmaps=true came out with every face
+// map null and stayed that way forever - the eager loader existed and was
+// unreachable on the first call, which is the only call most families ever get.
+//
+// Running it after both branches costs upstream nothing: the loop skips any face
+// that already has a map, so a backend that filled InitData still does the work
+// exactly once. It is used when a child process is doing SearchAllFontsForChar,
+// to have the parent load all the cmaps at once and reduce IPC traffic (and
+// content-process file access overhead, which is crippling for DirectWrite on
+// Windows).
+//
+// The SetupFamilyCharMap call that follows in InitializeFamily used to carry
+// `&& !mStealthBundleOnly`, and that deroga was CORRECT for as long as no bundled
+// face had a character map: with every face map null, SetupFamilyCharMap takes
+// its "unusable family" branch and stores the EMPTY map deliberately so it will
+// not retry, and from there SearchAllFontsForChar returns on its second line for
+// every codepoint, both CommonFontFallback and GlobalFontFallback funnel through
+// it, SystemFindFontForChar returns null, and every character needing system
+// fallback rendered as a hex box. Measured 2026-08-08: U+2764 through "Arial"
+// gave 31.77 on Windows and 40.03 on Linux, and neither is a font - both are the
+// hex box, whose advance is max(aveCharWidth, 13px) of the REQUESTED font, where
+// retail Firefox gives 69.97 (Segoe UI Symbol, a family we bundle and could not
+// reach).
+//
+// The deroga is gone because its PREMISE is gone:
+// gfxFontEntry::ShouldPublishCharacterMap now lets a bundled face publish into
+// the shared list, so the union computed there is a real union and not an empty
+// map. What the deroga cost while it stood is the whole reason this changed:
+// with no family map, IsFullyInitialized() is false for all 68 families forever,
+// so SearchAllFontsForChar could never reject a family cheaply AND every search
+// re-ran InitializeFamily through IPC because nothing was ever cached. Measured
+// 2026-08-13 on the cost bench: 176.9 ms per fallback lookup, and 206.7 ms on
+// the SECOND page of the same session - it did not warm up, because there was
+// nothing to warm.
+//
+// CreateFontEntry is a protected virtual of gfxPlatformFontList, so the caller
+// hands it in bound to the family instead of this function needing a friend or a
+// new member declaration in gfxPlatformFontList.h (whose hook budget can only
+// go down).
+void StealthLoadMissingCharacterMaps(
+    mozilla::fontlist::FontList* aList, mozilla::fontlist::Family* aFamily,
+    bool aLoadCmaps,
+    mozilla::FunctionRef<already_AddRefed<gfxFontEntry>(
+        mozilla::fontlist::Face*)>
+        aCreateFontEntry) {
+  if (!aLoadCmaps) {
+    return;
+  }
+  if (auto* faces = aFamily->Faces(aList)) {
+    for (size_t i = 0; i < aFamily->NumFaces(); i++) {
+      auto* face = faces[i].ToPtr<mozilla::fontlist::Face>(aList);
+      if (face && face->mCharacterMap.IsNull()) {
+        // We don't want to cache this font entry, as the parent will most
+        // likely never use it again; it's just to populate the charmap for
+        // the benefit of the child process.
+        RefPtr<gfxFontEntry> fe = aCreateFontEntry(face);
+        if (fe) {
+          fe->ReadCMAP();
+        }
+      }
+    }
+  }
+}
+
+void StealthSystemUIFamilies(nsTArray<nsCString>& aFamilies) {
+  // Our persona is always Windows, so `font-family: system-ui` must resolve to
+  // "Segoe UI" on every host - never the host's real menu font (Cantarell on
+  // Linux, San Francisco on macOS). Hardcoded, no external config.
+  aFamilies.AppendElement("Segoe UI"_ns);
+}
+
+// The DECLARED generic table, from zoom.stealth.fonts.generics, as
+// "generic|lang|family" records separated by newlines. It is the ONLY source:
+// an empty pref returns false here and no generic is prepended. The compiled
+// table that used to sit under it as a floor was deleted on 2026-08-09 (engine
+// rule 7), and a process never gets here with the pref empty because
+// StealthDeclarationGate refuses to launch (StealthDeclarationGate.cpp:96-99).
+// [The old comment said an empty pref "falls through to the compiled table
+// below"; that table no longer exists.]
+//
+// It is a pref rather than ten rows of C++ because the domain is finite and
+// perfectly known (four generics x five langgroups), which is the condition
+// under which a value belongs to the core rather than to the engine. Changing
+// which face answers `font-family: serif` should not cost a browser rebuild.
+//
+// Maps the standard CSS generics to the bundled Windows fonts, per language
+// group, matching a real Windows install. Returns false for generics we don't
+// force (natural resolution against the bundle) and for system-ui, which
+// StealthSystemUIFamilies handles separately.
+//
+// `cursive` joined the list on 2026-08-07. It had been grouped with the
+// "non-text generics" and left out, and that made it a cross-OS tell: Windows
+// resolves it from its own pref (font.name-list.cursive.x-western = "Comic Sans
+// MS" in the Windows block of all.js, which IS bundled) while Linux keeps the
+// literal pref value "cursive" (the Linux block of all.js), matching no bundled
+// family and collapsing to sans-serif. Measured on the shipped firefox-18:
+// 2191.95px wide on Windows against 2128.37 on Linux, the latter being exactly
+// the sans-serif width.
+//
+// `fantasy` is deliberately still excluded: it already agrees cross-OS (both
+// land on the sans-serif value), so forcing it would change behaviour without
+// closing a gap.
+bool StealthDeclaredGenericFont(StyleGenericFontFamily aGeneric,
+                                const char* aLang, nsACString& aOut) {
+  const char* generic = nullptr;
+  switch (aGeneric) {
+    case StyleGenericFontFamily::Serif:
+      generic = "serif";
+      break;
+    case StyleGenericFontFamily::SansSerif:
+      generic = "sans-serif";
+      break;
+    case StyleGenericFontFamily::Monospace:
+      generic = "monospace";
+      break;
+    case StyleGenericFontFamily::Cursive:
+      generic = "cursive";
+      break;
+    default:
+      return false;
+  }
+  nsAutoCString spec;
+  {
+    auto lock = mozilla::StaticPrefs::zoom_stealth_fonts_generics();
+    spec = *lock;
+  }
+  if (spec.IsEmpty()) {
+    return false;
+  }
+  const nsDependentCString wantGeneric(generic);
+  const nsDependentCString wantLang(aLang ? aLang : "");
+  // Two passes: an exact langgroup match wins over the default row, so the
+  // order of the records in the pref cannot change the answer.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (const nsACString& entry : spec.Split('\n')) {
+      nsCString rec(entry);
+      const int32_t bar1 = rec.FindChar('|');
+      if (bar1 <= 0) continue;
+      const int32_t bar2 = rec.FindChar('|', bar1 + 1);
+      if (bar2 <= bar1) continue;
+      if (!wantGeneric.Equals(Substring(rec, 0, bar1))) continue;
+      const nsDependentCSubstring lang(
+          Substring(rec, bar1 + 1, bar2 - bar1 - 1));
+      const bool isDefault = lang.IsEmpty();
+      if (pass == 0 ? (isDefault || !wantLang.Equals(lang)) : !isDefault) {
+        continue;
+      }
+      aOut.Assign(Substring(rec, bar2 + 1));
+      return !aOut.IsEmpty();
+    }
+  }
+  return false;
+}
+
+void StealthPrependDeclaredGeneric(bool aBundleOnly,
+                                   StyleGenericFontFamily aGeneric,
+                                   const char* aLang,
+                                   nsTArray<nsCString>& aFamilies) {
+  // Forces the standard generics to the bundled Windows fonts on every host
+  // (prepend = highest priority), so they never resolve to a dropped host font.
+  // No external font.name-list.* needed.
+  if (!aBundleOnly) {
+    return;
+  }
+  // ONE source: the declaration, and nothing under it. The compiled table that
+  // used to sit here as a floor was deleted on 2026-08-09 with engine rule 7 -
+  // two tables for one fact are two things that can disagree, which is how the
+  // taskbar height came to be written in four places. If the declaration is
+  // missing the process has already refused to start (StealthDeclarationGate),
+  // so reaching here means it is present.
+  nsAutoCString declared;
+  if (StealthDeclaredGenericFont(aGeneric, aLang, declared)) {
+    aFamilies.InsertElementAt(0, declared);
+  }
+}
+
+void StealthPrependEmojiFamily(bool aBundleOnly,
+                               nsTArray<nsCString>& aFamilies) {
+  // Same prepend StealthPrependDeclaredGeneric does for the other generics, for
+  // the same reason. ResolveEmojiFontNames was the one sibling that never got
+  // it, and that asymmetry WAS the emoji bug: font.name-list.emoji is a
+  // build-time #ifdef, "Segoe UI Emoji, Twemoji Mozilla" in the Windows block of
+  // all.js but "Noto Color Emoji, Twemoji Mozilla" in the Linux one. Only the
+  // Windows list names a bundled family, so on Linux this list resolved to
+  // nothing, emoji fell through to gfxPlatformGtk::GetCommonFallbackFonts -
+  // whose eight names are ALL absent from the bundle - and rendered from
+  // whatever the alphabetical cmap scan happened to reach.
+  //
+  // Measured on the shipped firefox-18: an emoji run under font-family:serif
+  // was 340.58px wide on Windows and 252.00 on Linux, while asking for
+  // "Segoe UI Emoji" explicitly gave the identical 340.58 on both - i.e. the
+  // bundled font was always there and simply never selected.
+  if (aBundleOnly) {
+    aFamilies.InsertElementAt(0, "Segoe UI Emoji"_ns);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CoreText back end hooks (series folder fingerprint/fonts/font-list), called
+// from CoreTextFontList.cpp.
+// ---------------------------------------------------------------------------
+
+bool StealthDropFamily(bool aBundleOnly,
+                       const nsTHashSet<nsCStringHashKey>& aBundled,
+                       const nsACString& aFamilyName) {
+  return aBundleOnly && !aBundled.Contains(aFamilyName);
+}
+
+bool StealthSetBundledFamilyNames(bool aBundleOnly,
+                                  mozilla::fontlist::FontList* aList) {
+  if (!aBundleOnly || !XRE_IsParentProcess()) {
+    return false;
+  }
+  // Uniform bundle: build the shared family list from our manifest (skipping
+  // the CoreText enumeration; host fonts never enter). Faces are provided
+  // lazily by GetFacesInitDataForFamily.
+  auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
+  if (!aList) {
+    return false;
+  }
+  nsTArray<Family::InitData> families(bundle->Families().Clone());
+  aList->SetFamilyNames(families);
+  return true;
+}
+
+#ifdef XP_DARWIN
+static void StealthCFStringToUTF16(CFStringRef aSrc, nsAString& aDest) {
+  auto len = CFStringGetLength(aSrc);
+  aDest.SetLength(len);
+  CFStringGetCharacters(aSrc, CFRangeMake(0, len),
+                        reinterpret_cast<UniChar*>(aDest.BeginWriting()));
+}
+
+RefPtr<CTFontEntry> StealthBundledCTFontEntry(
+    Face* aFace, const Family* aFamily, mozilla::fontlist::FontList* aList) {
+  // Instantiate the face straight from its bundle file:
+  // CTFontManagerCreateFontDescriptorsFromData yields one descriptor per face
+  // of a .ttc, so pick the wanted index and wrap its CGFont in a CTFontEntry.
+  auto* bundle = StealthBundleFontList::Get();  // never null; it crashes first
+  nsCString file(aFace->mDescriptor.AsString(aList));
+  // Borrow the ONE cached copy of the file instead of making two more per
+  // face - the same correction §5.2l applied to the DirectWrite path, here on
+  // CoreText. What was here copied in `ReadFaceData` and then copied AGAIN
+  // inside `CFDataCreate`, both per face: `mingliub.ttc` is 35.4 MB with two
+  // faces, so instantiating both cost ~106 MB where 35.4 are enough.
+  //
+  // The header's note that the CoreText path "hands ownership to the platform
+  // object" did not hold for this call site: `CFDataCreate` copies, so the
+  // nsTArray died at scope exit and nobody had taken ownership of anything.
+  //
+  // `kCFAllocatorNull` is the deallocator for the same reason the DirectWrite
+  // borrow is safe, and it is not an optimistic assumption: the blob lives in
+  // `mFileCache`, on a `StealthBundleFontList` that is leaked on purpose
+  // ("lives for the process") and never emptied. The bytes therefore outlive
+  // any CGFont CoreText derives from them, and CFData must NOT free them: they
+  // are not ours, and on a mapped blob they are the file's pages.
+  // `NativeFontResourceMac.cpp` builds a real deallocator instead, correctly -
+  // there the caller owns the bytes.
+  RefPtr<StealthBundleFontList::FileBlob> blob = bundle->GetFaceBlob(file);
+  if (!blob || !blob->Length()) {
+    return nullptr;
+  }
+  AutoCFTypeRef<CFDataRef> cfData(CFDataCreateWithBytesNoCopy(
+      kCFAllocatorDefault, blob->Data(), blob->Length(), kCFAllocatorNull));
+  if (!cfData) {
+    return nullptr;
+  }
+  AutoCFTypeRef<CFArrayRef> descriptors(
+      CTFontManagerCreateFontDescriptorsFromData(cfData));
+  if (!descriptors) {
+    return nullptr;
+  }
+  CFIndex descCount = CFArrayGetCount(descriptors);
+  // Pick the wanted face by PostScript name, NOT by raw array index: Apple
+  // does not document CTFontManagerCreateFontDescriptorsFromData as returning
+  // a .ttc's faces in the collection's file order, so indexing could select
+  // the wrong CJK face. Match kCTFontNameAttribute (the PostScript name)
+  // against the manifest's psname; fall back to the index only if that fails.
+  CTFontDescriptorRef desc = nullptr;
+  nsAutoCString wantPsname;
+  if (bundle->GetPsname(file, aFace->mIndex, wantPsname)) {
+    for (CFIndex i = 0; i < descCount; i++) {
+      auto* d = (CTFontDescriptorRef)CFArrayGetValueAtIndex(descriptors, i);
+      AutoCFTypeRef<CFStringRef> ps(
+          (CFStringRef)CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute));
+      if (!ps) {
+        continue;
+      }
+      nsAutoString ps16;
+      StealthCFStringToUTF16(ps, ps16);
+      if (NS_ConvertUTF16toUTF8(ps16).Equals(wantPsname)) {
+        desc = d;
+        break;
+      }
+    }
+  }
+  if (!desc) {
+    if (aFace->mIndex >= descCount) {
+      return nullptr;
+    }
+    desc = (CTFontDescriptorRef)CFArrayGetValueAtIndex(descriptors,
+                                                       aFace->mIndex);
+  }
+  AutoCFTypeRef<CTFontRef> ctFont(
+      CTFontCreateWithFontDescriptor(desc, 0.0, nullptr));
+  if (!ctFont) {
+    return nullptr;
+  }
+  AutoCFTypeRef<CGFontRef> cgFont(CTFontCopyGraphicsFont(ctFont, nullptr));
+  if (!cgFont) {
+    return nullptr;
+  }
+  nsAutoCString name(aFamily->DisplayName().AsString(aList));
+  return MakeRefPtr<CTFontEntry>(name, cgFont, aFace->mWeight, aFace->mWidth,
+                                 aFace->mStyle, true, false);
+}
+#endif  // XP_DARWIN
+
+void StealthFacesForFamily(const Family* aFamily,
+                           mozilla::fontlist::FontList* aList,
+                           nsTArray<Face::InitData>& aFaces) {
+  StealthBundleFontList::Get()->GetFaces(aFamily->DisplayName().AsString(aList),
+                                         aFaces);
 }

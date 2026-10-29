@@ -16,3 +16,19 @@ TODO: one paragraph, from the notes below.
 - `dom/worklet/WorkletGlobalScope.cpp` (WorkletGlobalScope::CreateRealmOptions, already-hook): One call to SetRealmTimeAndLanguage (dom/base/StealthSessionDeclaration.h, our file) replaces the two resistFingerprinting branches. The RFP flags are passed in as arguments. The 4 added lines are one multi-line call, counted as lines. The worklet thread reads LoadInfo().Language() and Timezone(), which are set on the main thread (WorkletImpl). [verified: SetRealmTimeAndLanguage (dom/base/StealthS
 - `dom/worklet/WorkletImpl.cpp` (WorkletLoadInfo::WorkletLoadInfo(nsPIDOMWindowInner*), already-hook): The nsPIDOMWindowInlines.h include is a port-fix, needed only on 157 (the comment says 151 linked by accident). The rest of the file is spoof. Split the include into a port-fix patch if the series is cut by category.
 - `dom/worklet/WorkletImpl.h` (class WorkletLoadInfo (accessors and members), already-hook): Two members and their accessors, no logic. Also adds an nsString.h include. The comment says the values are set at construction and never modified, and may be read from any thread.
+
+## dom/workers/WorkerLoadInfo.h: mLanguageOverrideLocale, mLanguageOverride, mTimezoneOverride
+
+STEALTHFOX: these three (mLanguageOverrideLocale, mLanguageOverride and mTimezoneOverride, in WorkerLoadInfoData) also reach service workers, from the context of the registration (ServiceWorkerPrivate::RefreshRemoteWorkerData), and WorkerPrivate's constructor fills empty ones with the session's (intl/locale/StealthSessionPrefs.h), so a worker keeps the time and speaks the language of the document that created it instead of the process-wide ones.
+
+## dom/worklet/WorkletGlobalScope.cpp: WorkletGlobalScope::CreateRealmOptions
+
+STEALTHFOX (firefox-50): the rule of the window's and the workers' realms (SetRealmTimeAndLanguage), with the language and the zone of the context that created the worklet. Until firefox-50 a worklet's realm got only resistFingerprinting's values: it took the process's zone, and a default locale nobody set (WorkletThread, "FIXME: JS_SetDefaultLocale"), so Intl in an AudioWorklet answered en-US whatever the session declared.
+
+## dom/worklet/WorkletImpl.cpp: include of nsPIDOMWindowInlines.h
+
+STEALTH: GetBrowsingContext() is declared inline in nsPIDOMWindow.h and defined in nsPIDOMWindowInlines.h; the declared language and timezone in WorkletLoadInfo::WorkletLoadInfo call it. Without this include the file links only when the unified build happens to group it with one that includes it (151 did, 157 does not: an undefined symbol in libxul).
+
+## dom/worklet/WorkletImpl.h: WorkletLoadInfo::Language(), Timezone(), mLanguage, mTimezone
+
+STEALTHFOX (firefox-50): the language and the zone the creating window's context declares, read on the main thread when the worklet is created, for the realm the worklet thread creates later (WorkletGlobalScope::CreateRealmOptions). Any thread: never modified.

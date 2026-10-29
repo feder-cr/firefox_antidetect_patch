@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/Types.h"
@@ -17,6 +18,9 @@ namespace mozilla {
 namespace gfx {
 
 class DataSourceSurface;
+class DrawEventRecorderPrivate;
+class DrawTargetRecording;
+class SourceSurface;
 
 /**
  * What the projection is told, by whoever decided the canvas is to be noised
@@ -44,6 +48,12 @@ class StealthCanvasNoise {
   int32_t mEdgeTolerance;
 };
 
+// Set on the stand-in DrawTargetRecording::StealthProjectedSurface makes.
+struct StealthStandIn {
+  StealthCanvasNoise noise = StealthCanvasNoise::Off();
+  bool premultiplied = true;
+};
+
 /**
  * The canvas noise: ONE pure function of the seed and of what the canvas holds,
  * applied wherever a canvas becomes bytes for the page or the source of another
@@ -52,6 +62,13 @@ class StealthCanvasNoise {
  * From firefox-52 only WebGL and WebGPU canvases go through it. A 2D canvas
  * reads back exactly as drawn, as on retail: a public test's grid of random
  * 1x1 pixels caught the projection on 2D (6 of 64 changed, retail 0).
+ * Measured 2026-10-24: retail 151 changed 0 of the 64. What makes two
+ * machines' 2D canvases differ is how they draw - display scale, ClearType
+ * tuning, fonts - and those are declared, not added at readback. So the 2D
+ * readers (getImageData, toDataURL, toBlob) are stock. createPattern reads
+ * its canvas source through the element (HTMLCanvasElement::GetSurfaceSnapshot,
+ * OffscreenCanvas::GetSurfaceSnapshot), as a page reads it: a WebGL/WebGPU
+ * source is projected, a 2D one is not.
  *
  * WHY ONE FUNCTION. Until firefox-50 the noise was three algorithms bolted onto
  * five read METHODS (getImageData, toDataURL/toBlob, readPixels, the WebGL
@@ -125,6 +142,68 @@ bool StealthProjectPixels(const uint8_t* aSrc, int32_t aSrcStride,
 already_AddRefed<DataSourceSurface> StealthProjectedRegion(
     DataSourceSurface* aSource, const IntRect& aRect, bool aPremultiplied,
     const StealthCanvasNoise& aNoise);
+
+/**
+ * aOriginal's pixels as a recording stand-in (aStandIn, set by
+ * DrawTargetRecording::StealthProjectedSurface) reads them: projected over
+ * the whole of aSize when the stand-in carries noise, as drawn otherwise.
+ * Null if aOriginal has no pixels.
+ */
+already_AddRefed<DataSourceSurface> StealthProjectOriginal(
+    SourceSurface* aOriginal, const IntSize& aSize,
+    const StealthStandIn& aStandIn);
+
+/**
+ * Whether DrawTargetRecording::StealthProjectedSurface
+ * (gfx/2d/DrawTargetRecording.cpp) may stand in for aSurface.
+ */
+bool StealthCanProjectRecording(SourceSurface* aSurface,
+                                const StealthCanvasNoise& aNoise);
+
+/**
+ * Records, on aRecorder, that the replaying process is to project aSurface
+ * into aStandIn (a SourceSurfaceRecording, passed as its address).
+ */
+void StealthRecordProjection(const DrawTargetRecording* aDT,
+                             DrawEventRecorderPrivate* aRecorder,
+                             SourceSurface* aSurface, const void* aStandIn,
+                             bool aPremultiplied,
+                             const StealthCanvasNoise& aNoise);
+
+/**
+ * The body of DrawTargetRecording::StealthProjectedSurface. StandIn is the
+ * recording surface class of DrawTargetRecording.cpp (it is not named in any
+ * header): constructed (aSize, aFormat, aRecorder, aOriginal), with a public
+ * StealthStandIn mStealth. The test comes BEFORE the stand-in is made:
+ * making it adds a stored object to the recorder and destroying it records an
+ * event, so a refusal must leave the recording untouched.
+ *
+ * Surface is SourceSurface; it is a parameter only so that the calls on it
+ * are resolved where the template is instantiated (DrawTargetRecording.cpp),
+ * which keeps mozilla/gfx/2D.h out of this header.
+ *
+ * The result is a recording surface standing for aSurface with the canvas
+ * noise applied in the process that replays the recording
+ * (RecordedStealthProjectSurface), or null if aSurface is not a recording
+ * surface. Read back in this process, it gives the same projection computed
+ * here. (DrawTargetRecording::StealthProjectedSurface is declared in
+ * DrawTargetRecording.h.)
+ */
+template <class StandIn, class Surface>
+already_AddRefed<Surface> StealthProjectedStandIn(
+    const DrawTargetRecording* aDT, DrawEventRecorderPrivate* aRecorder,
+    Surface* aSurface, bool aPremultiplied, const StealthCanvasNoise& aNoise) {
+  if (!StealthCanProjectRecording(aSurface, aNoise)) {
+    return nullptr;
+  }
+  RefPtr<StandIn> standIn = MakeRefPtr<StandIn>(
+      aSurface->GetSize(), aSurface->GetFormat(), aRecorder, aSurface);
+  standIn->mStealth.noise = aNoise;
+  standIn->mStealth.premultiplied = aPremultiplied;
+  StealthRecordProjection(aDT, aRecorder, aSurface, standIn.get(),
+                          aPremultiplied, aNoise);
+  return standIn.forget();
+}
 
 }  // namespace gfx
 }  // namespace mozilla

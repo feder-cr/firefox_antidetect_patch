@@ -1,8 +1,13 @@
 {
  "modified": [
-  "browser/components/BrowserGlue.sys.mjs"
+  "browser/components/BrowserGlue.sys.mjs",
+  "browser/components/moz.build",
+  "browser/components/tests/unit/xpcshell.toml"
  ],
- "added": {},
+ "added": {
+  "browser/components/StealthLaunchCounter.sys.mjs": "100644",
+  "browser/components/tests/unit/test_stealth_launch_counter.js": "100644"
+ },
  "inventory": [
   {
    "file": "browser/components/BrowserGlue.sys.mjs",
@@ -29,6 +34,42 @@
      "notes"
     ],
     "why": "Recounted logic lines (8); verified fallback-dead claim."
+   }
+  },
+  {
+   "file": "browser/components/moz.build",
+   "category": "build",
+   "feature": "anonymous-launch-counter",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
+   }
+  },
+  {
+   "file": "browser/components/tests/unit/xpcshell.toml",
+   "category": "build",
+   "feature": "anonymous-launch-counter",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

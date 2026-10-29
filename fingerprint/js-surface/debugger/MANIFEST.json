@@ -4,7 +4,9 @@
   "js/src/debugger/Debugger.cpp",
   "js/src/debugger/Debugger.h"
  ],
- "added": {},
+ "added": {
+  "js/src/debugger/StealthDebugger.h": "100644"
+ },
  "inventory": [
   {
    "file": "devtools/server/actors/thread.js",

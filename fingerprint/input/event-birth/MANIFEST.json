@@ -1,9 +1,12 @@
 {
  "modified": [
   "dom/base/nsContentUtils.cpp",
-  "dom/base/nsContentUtils.h"
+  "dom/base/test/gtest/moz.build"
  ],
- "added": {},
+ "added": {
+  "dom/base/StealthInputEventBirth.h": "100644",
+  "dom/base/test/gtest/TestStealthInputEventBirth.cpp": "100644"
+ },
  "inventory": [
   {
    "file": "dom/base/nsContentUtils.cpp",
@@ -28,23 +31,21 @@
    }
   },
   {
-   "file": "dom/base/nsContentUtils.h",
-   "category": "spoof",
+   "file": "dom/base/test/gtest/moz.build",
+   "category": "build",
    "feature": "input-event-birth",
    "prefs": [],
-   "added": 7,
+   "added": 1,
    "removed": 0,
    "hunks": 1,
-   "inline_logic_lines": 1,
+   "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "nsContentUtils (static declarations)",
-   "evidence": [
-    "+  static mozilla::TimeStamp InputEventBirth(double aLatencyMs);"
-   ],
-   "notes": "Declaration plus doc comment. If the function moves to our own file, this declaration goes away and the Mozilla header has no change for this feature.",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
    "verifier": {
     "changed": [],
-    "why": "Checked against the diff and source; no correction needed."
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

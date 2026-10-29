@@ -1,5 +1,5 @@
 diff --git a/xpfe/appshell/AppWindow.cpp b/xpfe/appshell/AppWindow.cpp
-index ff293fde9f5a16f063d013e321f9e32eb861b3f5..febc87b22e3004235a2f5f97a3dba520b2c50ad6 100644
+index ff293fde9f5a16f063d013e321f9e32eb861b3f5..c5002c8edd1f2fc82775e1a5061fd94ca6d1fd4c 100644
 --- a/xpfe/appshell/AppWindow.cpp
 +++ b/xpfe/appshell/AppWindow.cpp
 @@ -59,6 +59,7 @@
@@ -10,19 +10,11 @@ index ff293fde9f5a16f063d013e321f9e32eb861b3f5..febc87b22e3004235a2f5f97a3dba520
  #include "mozilla/dom/BarProps.h"
  #include "mozilla/dom/DOMRect.h"
  #include "mozilla/dom/Element.h"
-@@ -2746,6 +2747,21 @@ void AppWindow::WindowActivated() {
+@@ -2746,6 +2747,13 @@ void AppWindow::WindowActivated() {
    if (mDocShell) {
      if (nsCOMPtr<nsPIDOMWindowOuter> window = mDocShell->GetWindow()) {
        if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
-+        // With zoom.stealth.focus.ignore_os_deactivation the window this one
-+        // replaces was not lowered when the system took its focus (see
-+        // WindowDeactivated), so it is lowered here, first and with its own
-+        // action id: the order and the ids a page's process sees are those
-+        // of an ordinary switch. Left to WindowRaised, the lowering travels
-+        // with the raise's id, the page's process has already given up its
-+        // active window when the deactivation arrives, and
-+        // document.hasFocus() turns false with no blur event (measured, 4 in
-+        // 4, when the session opened another page).
++        // STEALTH-HOOK(fingerprint/screen-window/focus)
 +        if (StaticPrefs::zoom_stealth_focus_ignore_os_deactivation()) {
 +          nsCOMPtr<nsPIDOMWindowOuter> active = fm->GetActiveWindow();
 +          if (active && active != window) {
@@ -32,21 +24,11 @@ index ff293fde9f5a16f063d013e321f9e32eb861b3f5..febc87b22e3004235a2f5f97a3dba520
          fm->WindowRaised(window, nsFocusManager::GenerateFocusActionId());
        }
      }
-@@ -2757,6 +2773,20 @@ void AppWindow::WindowActivated() {
+@@ -2757,6 +2765,10 @@ void AppWindow::WindowActivated() {
  }
  
  void AppWindow::WindowDeactivated() {
-+  // ⛔ zoom.stealth.focus.ignore_os_deactivation (B149): the window keeps its
-+  // activation when the SYSTEM takes it away - another application, another
-+  // session's window on the same display - and loses it only to this
-+  // session's own windows, whose activation arrives as WindowActivated and
-+  // lowers the window it replaces there, with the same blur a page sees in
-+  // any Firefox. Measured: a second visible
-+  // session on one display took the focus of the first 4 times in 4, and a
-+  // window opened on the host's desktop 6 in 6, so a page read
-+  // document.hasFocus() false while nothing in its own session had moved.
-+  // focusmanager.testmode stops that too but also emulates every raise, and
-+  // a page can tell: hasFocus() turns false with no blur event (3 in 3).
++  // STEALTH-HOOK(fingerprint/screen-window/focus)
 +  if (StaticPrefs::zoom_stealth_focus_ignore_os_deactivation()) {
 +    return;
 +  }

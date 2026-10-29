@@ -1,31 +1,46 @@
+diff --git a/netwerk/base/moz.build b/netwerk/base/moz.build
+index c09cd25f07a2abc251e37a705f5d7ea5636133c8..19debfe3c65aa503e247a0b1a05c5aedc00e1ec2 100644
+--- a/netwerk/base/moz.build
++++ b/netwerk/base/moz.build
+@@ -252,6 +252,8 @@ UNIFIED_SOURCES += [
+     "SimpleChannel.cpp",
+     "SimpleURIUnknownSchemes.cpp",
+     "SSLTokensCache.cpp",
++    "StealthSocksCredentials.cpp",
++    "StealthSocksUdp.cpp",
+     "SuspendableChannelWrapper.cpp",
+     "ThrottleQueue.cpp",
+     "Tickler.cpp",
 diff --git a/netwerk/base/nsProtocolProxyService.cpp b/netwerk/base/nsProtocolProxyService.cpp
-index dcf0dca2de86ab0c8defbf9353fab40fb5c29d3b..a556579e7a268e58f59a372338835889091298c1 100644
+index dcf0dca2de86ab0c8defbf9353fab40fb5c29d3b..28d14770ecde9f4a7e1e20901ee7db6a9590a8fc 100644
 --- a/netwerk/base/nsProtocolProxyService.cpp
 +++ b/netwerk/base/nsProtocolProxyService.cpp
-@@ -1079,6 +1079,16 @@ void nsProtocolProxyService::PrefsChanged(nsIPrefBranch* prefBranch,
+@@ -5,6 +5,7 @@
+ #include "nsProtocolProxyService.h"
+ 
+ #include "SimpleChannel.h"
++#include "StealthSocksCredentials.h"
+ #include "mozilla/AutoRestore.h"
+ #include "mozilla/CondVar.h"
+ #include "mozilla/Logging.h"
+@@ -1079,6 +1080,9 @@ void nsProtocolProxyService::PrefsChanged(nsIPrefBranch* prefBranch,
      }
    }
  
-+  if (!pref || !strcmp(pref, PROXY_PREF("socks_username"))) {
-+    proxy_GetStringPref(prefBranch, PROXY_PREF("socks_username"),
-+                        mSOCKSProxyUsername);
-+  }
-+
-+  if (!pref || !strcmp(pref, PROXY_PREF("socks_password"))) {
-+    proxy_GetStringPref(prefBranch, PROXY_PREF("socks_password"),
-+                        mSOCKSProxyPassword);
-+  }
-+
++  // STEALTH-HOOK(network/socks)
++  StealthSocksPrefsChanged(prefBranch, pref, mSOCKSProxyUsername,
++                           mSOCKSProxyPassword);
    if (!pref || !strcmp(pref, PROXY_PREF("socks_remote_dns"))) {
      proxy_GetBoolPref(prefBranch, PROXY_PREF("socks_remote_dns"),
                        mSOCKS4ProxyRemoteDNS);
-@@ -2316,9 +2326,9 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
+@@ -2316,9 +2320,10 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
    }
  
    if (type) {
 -    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, ""_ns, ""_ns, ""_ns,
 -                               ""_ns, proxyFlags, UINT32_MAX, nullptr, flags,
 -                               result);
++    // STEALTH-HOOK(network/socks)
 +    rv = NewProxyInfo_Internal(type, *host, port, ""_ns, mSOCKSProxyUsername,
 +                               mSOCKSProxyPassword, ""_ns, ""_ns, proxyFlags,
 +                               UINT32_MAX, nullptr, flags, result);
@@ -45,3 +60,15 @@ index 104a1a6a88e6b34de77c15866bf715f23658f663..6ad5a9d516e1176aa60e55b5014f7ce3
    bool mSOCKS4ProxyRemoteDNS{false};
    bool mSOCKS5ProxyRemoteDNS{false};
    bool mProxyOverTLS{true};
+diff --git a/netwerk/test/gtest/moz.build b/netwerk/test/gtest/moz.build
+index 7d9ccf7b0bc24753709c6f5b9557cc3a8350058e..2fd7b5a9fcf9795e237034a73a6d6ba012fe2452 100644
+--- a/netwerk/test/gtest/moz.build
++++ b/netwerk/test/gtest/moz.build
+@@ -60,6 +60,7 @@ SOURCES += [
+     "TestCacheEntryWriterHang.cpp",
+     "TestHappyEyeballsConnectionAttempt.cpp",
+     "TestHappyEyeballsNetAddrArray.cpp",
++    "TestStealthSocksCredentials.cpp",
+ ]
+ 
+ if CONFIG["OS_TARGET"] == "WINNT":

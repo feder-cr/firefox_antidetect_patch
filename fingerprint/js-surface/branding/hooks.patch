@@ -1,38 +1,22 @@
 diff --git a/chrome/nsChromeRegistry.cpp b/chrome/nsChromeRegistry.cpp
-index fe6aa49a19eb361730b430376dcdfe283e0503dd..eeb9ffc01075df481b9d7a1114c6cff82c0873d6 100644
+index fe6aa49a19eb361730b430376dcdfe283e0503dd..9f51e1e620e1887fc16398c1c4d83d2944f4887a 100644
 --- a/chrome/nsChromeRegistry.cpp
 +++ b/chrome/nsChromeRegistry.cpp
 @@ -5,6 +5,7 @@
  #include "nsChromeRegistry.h"
  #include "nsChromeRegistryChrome.h"
  #include "nsChromeRegistryContent.h"
-+#include "mozilla/net/StealthBranding.h"
++#include "mozilla/net/StealthBranding.h"  // STEALTH-HOOK(fingerprint/js-surface/branding)
  
  #include "nsCOMPtr.h"
  #include "nsComponentManagerUtils.h"
-@@ -266,7 +267,24 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI** aResult) {
+@@ -266,7 +267,8 @@ nsChromeRegistry::ConvertChromeURL(nsIURI* aChromeURI, nsIURI** aResult) {
      return NS_ERROR_FILE_NOT_FOUND;
    }
  
 -  return NS_NewURI(aResult, path, nullptr, baseURI);
-+  // STEALTH: chrome://branding/content/ reads the set invisible_core declares,
-+  // through the same function as resource://usercontext-content/branding/, so
-+  // the two ways a page reaches the branding cannot disagree.
-+  // StealthBranding.h.
-+  nsCOMPtr<nsIURI> resolved;
-+  rv = NS_NewURI(getter_AddRefs(resolved), path, nullptr, baseURI);
-+  NS_ENSURE_SUCCESS(rv, rv);
-+  nsAutoCString spec;
-+  rv = resolved->GetSpec(spec);
-+  NS_ENSURE_SUCCESS(rv, rv);
-+  nsAutoCString declared(spec);
-+  rv = mozilla::net::StealthBrandingRedirect(declared);
-+  NS_ENSURE_SUCCESS(rv, rv);
-+  if (declared == spec) {
-+    resolved.forget(aResult);
-+    return NS_OK;
-+  }
-+  return NS_NewURI(aResult, declared);
++  // STEALTH-HOOK(fingerprint/js-surface/branding)
++  return mozilla::net::StealthBrandingResolveChromeURL(path, baseURI, aResult);
  }
  
  ////////////////////////////////////////////////////////////////////////
@@ -59,7 +43,7 @@ index b28f2b7ff80949bb81bedc8574a41187e047f7a4..b05a7868b4e181f92a977780f9ddf38f
    if (mDynamicRegistration) {
      ChromePackage chromePackage;
 diff --git a/chrome/nsChromeRegistryContent.cpp b/chrome/nsChromeRegistryContent.cpp
-index 0eb6421cfc024e377d4e4ce1ad69959a9bab45c5..e3570ff3bbf91031a204f118dd9fcfc422d72887 100644
+index 0eb6421cfc024e377d4e4ce1ad69959a9bab45c5..0c9eaa00f8794f19afb376fec616ef56560c8c15 100644
 --- a/chrome/nsChromeRegistryContent.cpp
 +++ b/chrome/nsChromeRegistryContent.cpp
 @@ -4,6 +4,7 @@
@@ -70,12 +54,11 @@ index 0eb6421cfc024e377d4e4ce1ad69959a9bab45c5..e3570ff3bbf91031a204f118dd9fcfc4
  #include "nsISubstitutingProtocolHandler.h"
  #include "nsString.h"
  #include "nsNetUtil.h"
-@@ -60,6 +61,12 @@ void nsChromeRegistryContent::RegisterPackage(const ChromePackage& aPackage) {
+@@ -60,6 +61,11 @@ void nsChromeRegistryContent::RegisterPackage(const ChromePackage& aPackage) {
      if (NS_FAILED(rv)) return;
    }
  
-+  // STEALTH: the content process resolves branding URIs itself, so it needs to
-+  // know where the branding directory is too. StealthBranding.h.
++  // STEALTH-HOOK(fingerprint/js-surface/branding)
 +  if (content) {
 +    mozilla::net::StealthBrandingRegisterPackage(aPackage.package, content);
 +  }
@@ -84,7 +67,7 @@ index 0eb6421cfc024e377d4e4ce1ad69959a9bab45c5..e3570ff3bbf91031a204f118dd9fcfc4
    entry->flags = aPackage.flags;
    entry->contentBaseURI = std::move(content);
 diff --git a/netwerk/protocol/res/SubstitutingProtocolHandler.cpp b/netwerk/protocol/res/SubstitutingProtocolHandler.cpp
-index 8aa1a50f0c6f7fec1c424ce1df550fcf046e04fc..8cebf68d777a378fb084d1ac58f154630f18362f 100644
+index 8aa1a50f0c6f7fec1c424ce1df550fcf046e04fc..58edb2dfdb30ca798764cb30a113245c26dee1e8 100644
 --- a/netwerk/protocol/res/SubstitutingProtocolHandler.cpp
 +++ b/netwerk/protocol/res/SubstitutingProtocolHandler.cpp
 @@ -10,6 +10,7 @@
@@ -95,24 +78,21 @@ index 8aa1a50f0c6f7fec1c424ce1df550fcf046e04fc..8cebf68d777a378fb084d1ac58f15463
  #include "nsEscape.h"
  #include "nsIChannel.h"
  #include "nsIClassInfoImpl.h"
-@@ -700,7 +701,9 @@ nsresult SubstitutingProtocolHandler::ResolveURI(nsIURI* uri,
+@@ -700,7 +701,8 @@ nsresult SubstitutingProtocolHandler::ResolveURI(nsIURI* uri,
    if (NS_FAILED(rv)) return rv;
  
    if (ResolveSpecialCases(host, path, pathname, result)) {
 -    return NS_OK;
-+    // STEALTH: the declared branding, on every way a URI can reach the
-+    // branding directory, special cases included. StealthBranding.h.
++    // STEALTH-HOOK(fingerprint/js-surface/branding)
 +    return StealthBrandingRedirect(result);
    }
  
    nsCOMPtr<nsIURI> baseURI;
-@@ -748,6 +751,14 @@ nsresult SubstitutingProtocolHandler::ResolveURI(nsIURI* uri,
+@@ -748,6 +750,12 @@ nsresult SubstitutingProtocolHandler::ResolveURI(nsIURI* uri,
      return rv;
    }
  
-+  // STEALTH: resource://usercontext-content/branding/ reaches the branding
-+  // directory too, and must read the same declared set as
-+  // chrome://branding/content/. StealthBranding.h.
++  // STEALTH-HOOK(fingerprint/js-surface/branding)
 +  rv = StealthBrandingRedirect(result);
 +  if (NS_FAILED(rv)) {
 +    return rv;
@@ -142,7 +122,7 @@ index 99ded3530e154b10e55d4a9dabf656294c243570..6efdcd7970f935816de2dd7246fc6569
  ]
  
 diff --git a/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp b/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
-index 5db7560cf68114646ca2a684cdfed4deb60c0539..a6f6abc0160723185cecca201d1f1afca5eb32c1 100644
+index 5db7560cf68114646ca2a684cdfed4deb60c0539..7ed334ce3a0da49100cb7b36f2e872e36a439925 100644
 --- a/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
 +++ b/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
 @@ -3,6 +3,7 @@
@@ -153,15 +133,11 @@ index 5db7560cf68114646ca2a684cdfed4deb60c0539..a6f6abc0160723185cecca201d1f1afc
  
  #ifdef MOZ_PROFILE_GENERATE
  #  include <string>
-@@ -745,6 +746,19 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
+@@ -745,6 +746,15 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
    AddDynamicPathList(policy, "security.sandbox.content.read_path_whitelist",
                       rdonly);
  
-+  // STEALTH: the branding a page reads is declared by invisible_core, which
-+  // keeps the archive wherever it is installed. The content processes load
-+  // from it, so they get READ access to exactly that file - the same one the
-+  // declaration gate accepted, through the same function.
-+  // netwerk/protocol/res/StealthBranding.h.
++  // STEALTH-HOOK(fingerprint/js-surface/branding)
 +  if (nsCOMPtr<nsIFile> branding =
 +          mozilla::net::StealthBrandingDeclaredArchive()) {
 +    nsAutoCString brandingPath;
@@ -174,38 +150,23 @@ index 5db7560cf68114646ca2a684cdfed4deb60c0539..a6f6abc0160723185cecca201d1f1afc
    // normally blocked.
    nsCOMPtr<nsIFile> profileDir;
 diff --git a/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp b/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
-index 74c0e5486b855849ca9298ae08ab0f32d0d61cb6..b83f1af143f466070eeea9c861dab72cc382d048 100644
+index 74c0e5486b855849ca9298ae08ab0f32d0d61cb6..914544eb0902d2b1b138d8b007993bd8074354a9 100644
 --- a/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
 +++ b/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
-@@ -30,6 +30,7 @@
- #include "mozilla/StaticPrefs_media.h"
- #include "mozilla/StaticPrefs_security.h"
- #include "mozilla/StaticPtr.h"
-+#include "mozilla/net/StealthBranding.h"
- #include "mozilla/UniquePtr.h"
- #include "mozilla/WinDllServices.h"
- #include "mozilla/WindowsVersion.h"
-@@ -1195,6 +1196,23 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
+@@ -14,6 +14,7 @@
+ 
+ #include "ConfigHelpers.h"
+ #include "GfxDriverInfo.h"
++#include "StealthSandboxBranding.h"  // STEALTH-HOOK(fingerprint/js-surface/branding)
+ #include "WinUtils.h"
+ #include "base/win/sid.h"
+ #include "base/win/windows_version.h"
+@@ -1195,6 +1196,8 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
      AddCachedDirRule(config, sandbox::FileSemantics::kAllowReadonly,
                       sProfileDir, u"\\chrome\\*"_ns);
  
-+    // STEALTH: the branding a page reads is declared by invisible_core, which
-+    // keeps the archive wherever it is installed. The content processes load
-+    // from it, so they get READ access to exactly that file - the same one the
-+    // declaration gate accepted, through the same function.
-+    // netwerk/protocol/res/StealthBranding.h.
-+    if (nsCOMPtr<nsIFile> branding =
-+            mozilla::net::StealthBrandingDeclaredArchive()) {
-+      nsAutoString brandingRule;
-+      if (NS_SUCCEEDED(branding->GetPath(brandingRule))) {
-+        result = config->AllowFileAccess(
-+            sandbox::FileSemantics::kAllowReadonly, brandingRule.get());
-+        if (sandbox::SBOX_ALL_OK != result) {
-+          NS_ERROR("Failed to add the declared branding read rule.");
-+        }
-+      }
-+    }
-+
++    // STEALTH-HOOK(fingerprint/js-surface/branding)
++    AddDeclaredBrandingReadRule(config);
      // Add rule to allow read access to the extensions directory within profile.
      AddCachedDirRule(config, sandbox::FileSemantics::kAllowReadonly,
                       sProfileDir, u"\\extensions\\*"_ns);

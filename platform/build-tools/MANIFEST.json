@@ -5,7 +5,10 @@
   "python/mozbuild/mozbuild/jar.py",
   "third_party/python/vsdownload/vsdownload.py"
  ],
- "added": {},
+ "added": {
+  "scripts/ci/test_stealth_download_watchdog.py": "100644",
+  "third_party/python/vsdownload/stealth_download_watchdog.py": "100644"
+ },
  "inventory": [
   {
    "file": "python/mozbuild/mozbuild/backend/recursivemake.py",

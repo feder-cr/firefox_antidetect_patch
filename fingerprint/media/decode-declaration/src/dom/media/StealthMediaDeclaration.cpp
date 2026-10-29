@@ -5,7 +5,12 @@
 
 #include "StealthMediaDeclaration.h"
 
+#include "DecoderTraits.h"
+#include "MediaContainerType.h"
+#include "MediaMIMETypes.h"
 #include "mozilla/StaticPrefs_zoom.h"
+#include "mozilla/dom/MediaCapabilitiesBinding.h"
+#include "mozilla/dom/MediaKeySystemAccess.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -63,6 +68,23 @@ bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
   return false;
 }
 
+Maybe<media::DecodeSupportSet> StealthDeclaredDecodeSupportSet(
+    const nsACString& aTrackMimeType) {
+  bool software = false;
+  bool hardware = false;
+  if (!StealthDeclaredDecodeSupport(aTrackMimeType, software, hardware)) {
+    return Nothing();
+  }
+  media::DecodeSupportSet declared{};
+  if (software) {
+    declared += media::DecodeSupport::SoftwareDecode;
+  }
+  if (hardware) {
+    declared += media::DecodeSupport::HardwareDecode;
+  }
+  return Some(declared);
+}
+
 bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
                                  const nsACString& aCodec, bool& aSupported,
                                  bool& aSmooth, bool& aPowerEfficient) {
@@ -116,3 +138,58 @@ bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
 }
 
 }  // namespace mozilla
+
+namespace mozilla::dom {
+
+Maybe<MediaCapabilitiesDecodingInfo> StealthDeclaredDecodingInfoFor(
+    const MediaDecodingConfiguration& aConfiguration) {
+  if (!aConfiguration.mVideo.WasPassed()) {
+    return Nothing();
+  }
+  Maybe<MediaContainerType> container =
+      MakeMediaContainerType(aConfiguration.mVideo.Value().mContentType);
+  if (!container) {
+    return Nothing();
+  }
+  // Gecko's own gate first, and it is a precondition rather than a fallback:
+  // this is the compiled, host-independent part - IsAllowedH264Codec's profile
+  // set and its [1, 6.2] level window, the container/codec pairing rules - and
+  // it answers the same on every platform.
+  //
+  // Without it the family key would be too coarse in exactly one place and
+  // wrongly: avc1.424028 and avc1.6E4028 share the family "avc1", retail
+  // answers supported/smooth/powerEfficient for the first and nothing for the
+  // second, and a declaration keyed on the family alone would have claimed
+  // high10 support that no Firefox has. Splitting the key finer would mean
+  // declaring the profile space we just established is not ours to declare.
+  if (DecoderTraits::CanHandleContainerType(*container, nullptr) == CANPLAY_NO) {
+    return Nothing();
+  }
+  const MediaCodecs& codecs = container->ExtendedType().Codecs();
+  if (codecs.IsEmpty()) {
+    return Nothing();
+  }
+  bool supported = true, smooth = true, powerEfficient = true;
+  bool sawOne = false;
+  for (const auto& codec : codecs.Range()) {
+    bool s = false, m = false, p = false;
+    if (!StealthDeclaredDecodingInfo(container->Type().AsString(),
+                                     NS_ConvertUTF16toUTF8(codec), s, m, p)) {
+      return Nothing();
+    }
+    sawOne = true;
+    supported &= s;
+    smooth &= m;
+    powerEfficient &= p;
+  }
+  if (!sawOne) {
+    return Nothing();
+  }
+  MediaCapabilitiesDecodingInfo info;
+  info.mSupported = supported;
+  info.mSmooth = smooth;
+  info.mPowerEfficient = powerEfficient;
+  return Some(std::move(info));
+}
+
+}  // namespace mozilla::dom

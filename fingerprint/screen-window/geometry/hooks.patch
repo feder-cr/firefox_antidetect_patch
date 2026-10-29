@@ -1,353 +1,114 @@
 diff --git a/dom/base/nsGlobalWindowOuter.cpp b/dom/base/nsGlobalWindowOuter.cpp
-index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..4f1786596e49d49d365588001a653ed3fc21257f 100644
+index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31c32e96dc 100644
 --- a/dom/base/nsGlobalWindowOuter.cpp
 +++ b/dom/base/nsGlobalWindowOuter.cpp
-@@ -3,6 +3,7 @@
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
- #include "nsGlobalWindowOuter.h"
-+#include "StealthDeclarationGate.h"
- 
- #include <algorithm>
- 
-@@ -35,6 +36,7 @@
+@@ -35,6 +35,7 @@
  #include "mozilla/dom/MaybeCrossOriginObject.h"
  #include "mozilla/dom/Performance.h"
  #include "mozilla/dom/ProxyHandlerUtils.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/screen-window/geometry)
  #include "mozilla/dom/Storage.h"
  #include "mozilla/dom/StorageEvent.h"
  #include "mozilla/dom/StorageEventBinding.h"
-@@ -112,6 +114,7 @@
+@@ -112,6 +113,7 @@
  #include "mozilla/StaticPrefs_fission.h"
  #include "mozilla/StaticPrefs_full_screen_api.h"
  #include "mozilla/StaticPrefs_print.h"
-+#include "mozilla/StaticPrefs_zoom.h"
++#include "StealthWindowGeometry.h"  // STEALTH-HOOK(fingerprint/screen-window/geometry)
  #include "mozilla/ThrottledEventQueue.h"
  #include "mozilla/dom/BarProps.h"
  #include "mozilla/dom/DocGroup.h"
-@@ -2070,13 +2073,18 @@ static nsresult CreateNativeGlobalForInner(
-   creationOptions.setDefineSharedArrayBufferConstructor(
-       aDefineSharedArrayBufferConstructor);
- 
-+  // STEALTHFOX (firefox-50): the declaration of this document's context, or
-+  // the session's when the context carries none (StealthSessionDeclaration).
-+  nsAutoCString declaredLanguage;
-+  nsAutoString declaredZone;
-+  GetDeclaredLanguage(aDocument->GetBrowsingContext(), declaredLanguage);
-+  GetDeclaredTimezone(aDocument->GetBrowsingContext(), declaredZone);
-   xpc::InitGlobalObjectOptions(
-       options, principal->IsSystemPrincipal(), aIsSecureContext,
+@@ -2075,8 +2077,8 @@ static nsresult CreateNativeGlobalForInner(
        aDocument->ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
        aDocument->ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
        aDocument->ShouldResistFingerprinting(RFPTarget::JSLocale),
 -      aDocument->GetBrowsingContext()->Top()->GetLanguageOverride(),
 -      aDocument->GetBrowsingContext()->Top()->GetTimezoneOverride());
-+      declaredLanguage, declaredZone);
++      // STEALTH-HOOK(fingerprint/screen-window/geometry)
++      GetDeclaredRealmLanguage(aDocument), GetDeclaredRealmTimezone(aDocument));
  
    if (principal->IsSystemPrincipal()) {
      creationOptions.setFreezeBuiltins(true);
-@@ -3529,6 +3537,52 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
+@@ -3529,6 +3531,11 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
      return {};
    }
  
-+  // Stealth: the outer size from the declared window, in device pixels,
-+  // converted below with the window's own scale exactly like the real size.
-+  //
-+  // The MAIN window is maximized: the work area plus Windows' invisible resize
-+  // border on each side (retail 151, 100%: outerWidth - availWidth = 16). Until
-+  // firefox-38 this answered the work area itself, a window that does not
-+  // exist maximized on Windows (B261). A POPUP is its real inner size plus its
-+  // frame - a border on the left, right and bottom, the popup UI above - where
-+  // it used to answer the maximized window's size, 1920x1032 for a
-+  // width=500,height=400 popup (B258). The inner size is the top-level one,
-+  // synced to every process in the BrowsingContext (see
-+  // nsPresContext::UpdateInnerSizeSpoofedForRFP), so an out-of-process iframe
-+  // in the popup answers the same.
-+  //
-+  // No compiled value anywhere: a missing declaration refuses in
-+  // StealthDeclarationGate instead of being papered over here.
-+  if (mozilla::gfx::StealthEngineActive()) {
-+    mozilla::gfx::StealthAssertDeclarationsComplete();
-+    nsCOMPtr<nsIBaseWindow> treeOwnerAsWin = GetTreeOwnerWindow();
-+    if (!treeOwnerAsWin) {
-+      aError.Throw(NS_ERROR_FAILURE);
-+      return {};
-+    }
-+    const CSSToLayoutDeviceScale scale =
-+        CSSToDevScaleForBaseWindow(treeOwnerAsWin);
-+    if (IsInStealthPopup()) {
-+      const auto frame = mozilla::gfx::StealthDeclaredWindowFrame();
-+      BrowsingContext* bc = GetBrowsingContext();
-+      if (frame && bc) {
-+        const LayoutDeviceIntSize inner =
-+            RoundedToInt(CSSSize(bc->TopInnerSizeSpoofedForRFP().width,
-+                                 bc->TopInnerSizeSpoofedForRFP().height) *
-+                         scale);
-+        const LayoutDeviceIntSize outer =
-+            inner + LayoutDeviceIntSize(2 * frame->mBorder,
-+                                        frame->mPopupUi + frame->mBorder);
-+        return RoundedToInt(outer / scale);
-+      }
-+    } else if (const auto maximized =
-+                   mozilla::gfx::StealthDeclaredMaximizedWindow()) {
-+      return RoundedToInt(maximized->Size() / scale);
-+    }
-+    // Unreachable: the gate refuses at launch without the declaration.
-+    return {};
++  // STEALTH-HOOK(fingerprint/screen-window/geometry)
++  if (CSSIntSize size; StealthOuterSize(*this, size, aError)) {
++    return size;
 +  }
 +
    // Windows showing documents in RDM panes and any subframes within them
    // return the simulated device size.
    if (mDoc) {
-@@ -3590,6 +3644,20 @@ CSSIntPoint nsGlobalWindowOuter::GetScreenXY(CallerType aCallerType,
+@@ -3590,6 +3597,11 @@ CSSIntPoint nsGlobalWindowOuter::GetScreenXY(CallerType aCallerType,
      return CSSIntPoint(0, 0);
    }
  
-+  // Stealth: the MAIN window's position is the declared maximized window's,
-+  // a resize border off the screen (-8 at 100%, -7 at 125%, -6 at 200% on
-+  // retail 151), which outerWidth above depends on: until 2026-08-09 the
-+  // position stayed whatever the OS handed the headless widget, and screenX +
-+  // outerWidth came to 1924 on a 1920 screen. A POPUP keeps its REAL
-+  // position: the page chose it, or nsWindowWatcher put it at the declared
-+  // default when the page did not, so it is the same on both builds.
-+  if (mozilla::gfx::StealthEngineActive() && !IsInStealthPopup()) {
-+    if (const auto maximized = mozilla::gfx::StealthDeclaredMaximizedWindow()) {
-+      return RoundedToInt(maximized->TopLeft() /
-+                          CSSToDevScaleForBaseWindow(treeOwnerAsWin));
-+    }
++  // STEALTH-HOOK(fingerprint/screen-window/geometry)
++  if (CSSIntPoint point; StealthScreenXY(*this, treeOwnerAsWin, point)) {
++    return point;
 +  }
 +
    LayoutDeviceIntPoint windowPos;
    aError = treeOwnerAsWin->GetPosition(&windowPos.x.value, &windowPos.y.value);
  
-@@ -3625,6 +3693,54 @@ nsRect nsGlobalWindowOuter::GetInnerScreenRect() {
-   return rootFrame->GetScreenRectInAppUnits();
- }
- 
-+/* static */
-+Maybe<nsPoint> nsGlobalWindowOuter::StealthContentOriginShift(
-+    nsPresContext* aPresContext) {
-+  if (!aPresContext || !mozilla::gfx::StealthEngineActive()) {
-+    return Nothing();
-+  }
-+  // L'origine reale e' l'offset su schermo del root widget: nel processo di
-+  // contenuto e' il PuppetWidget, il cui offset e' l'origine dell'area di
-+  // contenuto di primo livello - per il documento top coincide con
-+  // GetInnerScreenRect(), per un sottoframe no, ed e' proprio quella
-+  // differenza che va conservata. Solo chiamate al widget, niente layout:
-+  // Event.cpp chiama questa funzione per ogni evento del mouse.
-+  nsCOMPtr<nsIWidget> rootWidget = aPresContext->GetRootWidget();
-+  if (!rootWidget) {
-+    return Nothing();
-+  }
-+  const int32_t auPerDevPx = aPresContext->AppUnitsPerDevPixel();
-+  const nsPoint real = LayoutDevicePixel::ToAppUnits(
-+      rootWidget->WidgetToScreenOffset(), auPerDevPx);
-+  // Un popup si dichiara dalla sua posizione REALE: il rettangolo esterno della
-+  // finestra di primo livello, che BrowserChild riceve dal genitore - anche in
-+  // un iframe fuori processo, dove arriva dall'embedder. E' la stessa fonte di
-+  // GetScreenXY (nsIBaseWindow::GetPosition del tree owner).
-+  Maybe<LayoutDeviceIntPoint> popupOrigin;
-+  Document* doc = aPresContext->Document();
-+  BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
-+  if (bc && bc->Top()->GetIsPopupRequested()) {
-+    BrowserChild* child = rootWidget->GetOwningBrowserChild();
-+    if (!child) {
-+      // Il processo genitore non serve pagine: niente da dichiarare.
-+      return Nothing();
-+    }
-+    LayoutDeviceIntPoint outer;
-+    if (NS_FAILED(child->GetDimensions(mozilla::DimensionKind::Outer,
-+                                       &outer.x.value, &outer.y.value,
-+                                       nullptr, nullptr))) {
-+      return Nothing();
-+    }
-+    popupOrigin = Some(outer);
-+  }
-+  return mozilla::gfx::StealthDeclaredOriginShift(real, popupOrigin,
-+                                                  auPerDevPx);
-+}
-+
-+bool nsGlobalWindowOuter::IsInStealthPopup() const {
-+  return mBrowsingContext && mBrowsingContext->Top()->GetIsPopupRequested();
-+}
-+
- Maybe<CSSIntSize> nsGlobalWindowOuter::GetRDMDeviceSize(
-     const Document& aDocument) {
-   // RDM device size should reflect the simulated device resolution, and
-@@ -3670,7 +3786,29 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
-     return 0.0;
+@@ -3671,6 +3683,10 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
    }
  
-+  // Stealth: the content origin, from the ONE function that answers it.
-+  //
-+  // This used to read the two prefs here and do the arithmetic inline, and so
-+  // did mozInnerScreenY, and so did screenX with its own pair - three copies of
-+  // the same idea, and the EVENT path never got its copy because nothing in the
-+  // source connected them. A page found that with one subtraction: on every
-+  // mouse event, screenX - clientX must equal this value, and it did not, on 45
-+  // events out of 45. See StealthDeclarationGate.h for the measurement.
-+  //
-+  // GetInnerScreenRect below keeps serving its other callers - popup placement,
-+  // coordinate conversion - the real rect. Those are not content-visible.
-+  // Lo SCARTO, non la sostituzione. Sostituire risponde l'origine del PRIMO
-+  // LIVELLO a ogni finestra: misurato il 2026-08-10, un iframe a (220, 150)
-+  // nella pagina rispondeva (0, 85) come il top, e dentro quell'iframe
-+  // screenX - clientX dava 220 contro un mozInnerScreenX di 0 - la stessa
-+  // contraddizione che questa patch esiste per togliere, spostata di un
-+  // livello. Sommando lo scarto al rettangolo REALE della finestra, l'offset
-+  // fra i frame resta vero e la relazione vale a ogni profondita'.
    nsRect r = GetInnerScreenRect();
-+  RefPtr<nsPresContext> pc = mDocShell ? mDocShell->GetPresContext() : nullptr;
-+  if (const auto shift = StealthContentOriginShift(pc)) {
-+    return nsPresContext::AppUnitsToFloatCSSPixels(r.x + shift->x);
++  // STEALTH-HOOK(fingerprint/screen-window/geometry)
++  if (const Maybe<float> x = StealthMozInnerScreenX(*this, r)) {
++    return *x;
 +  }
    return nsPresContext::AppUnitsToFloatCSSPixels(r.x);
  }
  
-@@ -3681,7 +3819,15 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
-     return 0.0;
+@@ -3682,6 +3698,10 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
    }
  
-+  // Stealth: see GetMozInnerScreenXOuter. A maximized window's content starts
-+  // the UI height below the screen top - 85 device pixels at 100%, 107 at 125%,
-+  // which reads 85.6 like retail 151 - and a popup's the popup UI below its
-+  // own top.
    nsRect r = GetInnerScreenRect();
-+  RefPtr<nsPresContext> pc = mDocShell ? mDocShell->GetPresContext() : nullptr;
-+  if (const auto shift = StealthContentOriginShift(pc)) {
-+    return nsPresContext::AppUnitsToFloatCSSPixels(r.y + shift->y);
++  // STEALTH-HOOK(fingerprint/screen-window/geometry)
++  if (const Maybe<float> y = StealthMozInnerScreenY(*this, r)) {
++    return *y;
 +  }
    return nsPresContext::AppUnitsToFloatCSSPixels(r.y);
  }
  
 diff --git a/dom/base/nsGlobalWindowOuter.h b/dom/base/nsGlobalWindowOuter.h
-index 6958d974b4416151d1327f98d162c32f84e65e8e..37289d4752bf97529508fbb332f2d2871aa7df56 100644
+index 6958d974b4416151d1327f98d162c32f84e65e8e..11904f9ed543cdab1cca2bf0942a84dca113994a 100644
 --- a/dom/base/nsGlobalWindowOuter.h
 +++ b/dom/base/nsGlobalWindowOuter.h
-@@ -790,6 +790,19 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
+@@ -790,6 +790,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
    mozilla::CSSIntSize GetOuterSize(mozilla::dom::CallerType aCallerType,
                                     mozilla::ErrorResult& aError);
    nsRect GetInnerScreenRect();
-+
-+  // Lo scarto fra l'origine reale del contenuto di primo livello (l'offset su
-+  // schermo del root widget, cio' che mozInnerScreenX riportava prima di
-+  // diventare una dichiarazione) e quella dichiarata, in app units; Nothing()
-+  // col motore spento. UNA funzione per mozInnerScreenX/Y e per gli eventi
-+  // (Event.cpp): e' cosi' che screenX - clientX == mozInnerScreenX resta vero
-+  // anche nei popup e negli iframe. Un sottoframe somma lo scarto al PROPRIO
-+  // rettangolo, non lo sostituisce.
++  // STEALTH-HOOK(fingerprint/screen-window/geometry)
 +  static mozilla::Maybe<nsPoint> StealthContentOriginShift(
 +      nsPresContext* aPresContext);
-+  // La finestra di primo livello di questo documento e' un popup (aperto con
-+  // delle feature)? La dichiarazione della finestra dipende da questo.
-+  bool IsInStealthPopup() const;
    static mozilla::Maybe<mozilla::CSSIntSize> GetRDMDeviceSize(
        const Document& aDocument);
  
 diff --git a/dom/events/Event.cpp b/dom/events/Event.cpp
-index 98ebfdab771f69cf2d891c184511b6758261246d..c10a6185284b8a192926f74eeba05f525e46b8d1 100644
+index 98ebfdab771f69cf2d891c184511b6758261246d..dd421282c0c57a6413c8fa0348249816f8440c43 100644
 --- a/dom/events/Event.cpp
 +++ b/dom/events/Event.cpp
-@@ -39,6 +39,7 @@
- #include "nsDeviceContext.h"
- #include "nsError.h"
- #include "nsGlobalWindowInner.h"
-+#include "nsGlobalWindowOuter.h"
- #include "nsIContent.h"
- #include "nsIContentInlines.h"
- #include "nsIFrame.h"
-@@ -47,6 +48,7 @@
+@@ -47,6 +47,7 @@
  #include "nsPIDOMWindowInlines.h"
  #include "nsPIWindowRoot.h"
  #include "nsRFPService.h"
-+#include "StealthDeclarationGate.h"
++#include "StealthScreenCoords.h"  // STEALTH-HOOK(fingerprint/screen-window/geometry)
  
  namespace mozilla::dom {
  
-@@ -669,12 +671,80 @@ Maybe<CSSDoublePoint> Event::GetScreenCoords(
-   const LayoutDeviceIntPoint topLevelPoint = LayoutDeviceIntPoint::Round(
-       guiEvent->mWidget->WidgetToTopLevelWidgetTransform().TransformPoint(
-           aWidgetOrScreenRelativePoint));
-+  const int32_t auPerDevPx =
-+      aPresContext->DeviceContext()->AppUnitsPerDevPixel();
-+
-+  // Stealth: the origin comes from the SAME function mozInnerScreenX answers
-+  // with, and that is the whole point of it being a function.
-+  //
-+  // This is the funnel: MouseEvent, UIEvent, Touch and EventStateManager all
-+  // reach screen coordinates through here, so it is the one place where the
-+  // relation a page checks is either true or false.
-+  //
-+  //     event.screenX - event.clientX === window.mozInnerScreenX
-+  //
-+  // It holds on every real Firefox because both sides come from this widget.
-+  // When the window geometry became a declaration on 2026-08-09 the three DOM
-+  // getters were moved and this line was not, so the two sides came from
-+  // different places and the relation failed on 45 mouse events out of 45 on
-+  // Windows and 20 of 20 on Linux, against 0 of 6 on stock. Humanised movement
-+  // made it louder rather than quieter: dozens of events per action, each one a
-+  // fresh sample of the same contradiction.
-+  //
-+  // Adding the declared origin HERE rather than teaching the widget to lie is
-+  // deliberate. The widget works in device pixels and cannot see the CSS scale
-+  // - layout.css.devPixelsPerPx is applied above it, in the device context - so
-+  // a declaration down there would need a conversion factor the widget does not
-+  // have. Up here the units are known and the arithmetic is the same one the
-+  // getter does.
-+  // Written as the relation itself - screen = client + content origin - and not
-+  // as "the widget-relative point plus something", because the widget-relative
-+  // point sits inside the REAL window and carries the real chrome height with
-+  // it. That was the first attempt and it moved the declared amount while
-+  // leaving the same gap: with chrome_h at 85 the offset was 800, and with
-+  // chrome_h at 300 it was still 800, because both sides had moved together.
-+  // The client point is the one the page already receives, so adding the origin
-+  // to it makes the relation true by construction rather than by arithmetic
-+  // that happens to line up.
-+  //
-+  // Arithmetic only, and that is not an optimisation, it is a correctness
-+  // requirement. THIS FUNCTION IS THE HOT PATH: EventStateManager::PreHandleEvent
-+  // calls it for every trusted real mouse event and every wheel event, to store
-+  // sLastScreenPoint, and then calls GetClientCoords right after. A first
-+  // version of this branch derived the client point here with
-+  // nsLayoutUtils::GetEventCoordinatesRelativeTo, which put a SECOND layout
-+  // query on every mouse event - and humanised movement emits dozens per action.
-+  // Measured: the full Windows e2e went from 2 mouse failures to 7, plus 4
-+  // detector tests that had never failed, all of them timeouts, and all of them
-+  // passing again when the same tests ran alone. A correctness fix that makes
-+  // the browser too slow to click is not a fix.
-+  //
-+  // The identity used instead needs no layout at all:
-+  //
-+  //     screen_real     = topLevelRelative + topLevelWidgetOrigin
-+  //     client          = screen_real - realContentOrigin
-+  //     screen_declared = client + declaredContentOrigin
-+  //                     = screen_real - realContentOrigin + declaredOrigin
-+  //
-+  // realContentOrigin is the root widget's screen offset - the very quantity
-+  // mozInnerScreenX reported before it became a declaration - so the relation
-+  // the gate checks holds by construction, and both terms are widget calls the
-+  // original expression already made.
-+  // Lo scarto lo calcola UNA funzione, la stessa che chiamano mozInnerScreenX e
-+  // mozInnerScreenY. Quando l'aritmetica stava soltanto qui, la sostituzione
-+  // secca in nsGlobalWindowOuter ha ricreato dentro gli iframe la contraddizione
-+  // che questo blocco toglie al primo livello - misurato il 2026-08-10.
-+  nsPoint originShift;
-+  if (const auto shift =
-+          nsGlobalWindowOuter::StealthContentOriginShift(aPresContext)) {
-+    originShift = *shift;
-+  }
-+
-   const CSSPoint pt = CSSPixel::FromAppUnits(
-+      LayoutDevicePixel::ToAppUnits(topLevelPoint, auPerDevPx) +
+@@ -674,7 +675,9 @@ Maybe<CSSDoublePoint> Event::GetScreenCoords(
+           topLevelPoint, aPresContext->DeviceContext()->AppUnitsPerDevPixel()) +
        LayoutDevicePixel::ToAppUnits(
--          topLevelPoint, aPresContext->DeviceContext()->AppUnitsPerDevPixel()) +
--      LayoutDevicePixel::ToAppUnits(
--          guiEvent->mWidget->TopLevelWidgetToScreenOffset(),
+           guiEvent->mWidget->TopLevelWidgetToScreenOffset(),
 -          aPresContext->DeviceContext()->AppUnitsPerDevPixel()));
-+          guiEvent->mWidget->TopLevelWidgetToScreenOffset(), auPerDevPx) +
-+      originShift);
++          aPresContext->DeviceContext()->AppUnitsPerDevPixel()) +
++      // STEALTH-HOOK(fingerprint/screen-window/geometry)
++      StealthScreenOriginShift(aPresContext));
    return Some(CSSDoublePoint(pt.x, pt.y));
  }
  

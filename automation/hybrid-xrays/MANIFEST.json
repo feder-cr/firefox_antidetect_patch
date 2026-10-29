@@ -4,10 +4,14 @@
   "js/xpconnect/src/XPCJSRuntime.cpp",
   "js/xpconnect/src/xpcprivate.h",
   "js/xpconnect/wrappers/WrapperFactory.cpp",
-  "js/xpconnect/wrappers/XrayWrapper.cpp",
-  "js/xpconnect/wrappers/XrayWrapper.h"
+  "js/xpconnect/wrappers/XrayWrapper.h",
+  "js/xpconnect/wrappers/moz.build"
  ],
- "added": {},
+ "added": {
+  "js/xpconnect/src/StealthSandbox.h": "100644",
+  "js/xpconnect/wrappers/StealthHybridXray.cpp": "100644",
+  "js/xpconnect/wrappers/StealthHybridXray.h": "100644"
+ },
  "inventory": [
   {
    "file": "js/xpconnect/src/Sandbox.cpp",
@@ -100,30 +104,6 @@
    }
   },
   {
-   "file": "js/xpconnect/wrappers/XrayWrapper.cpp",
-   "category": "juggler",
-   "feature": "hybrid-xrays",
-   "prefs": [],
-   "added": 458,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 370,
-   "hookable": "movable",
-   "anchor": "new code after XrayWrapper<Base,Traits>::getPropertyKeys: IsHybridXrayWrapper, HybridXrayWrapper<Traits> methods, IsStandardLevel, NativeOwn, ChainLookup, ContentLookup, HybridXrayGetBareName, ContentGet",
-   "evidence": [
-    "+bool IsHybridXrayWrapper(JSObject* obj) {",
-    "+static bool ChainLookup(JSContext* cx, HandleObject wrapper, HandleId id,",
-    "+template class HybridXrayDOM;"
-   ],
-   "notes": "Single pure addition of about 460 lines in one place, with no edits to existing Mozilla code, so it moves to our own file. Access needed: IsTypedArrayKey is file-local (inline, XrayWrapper.cpp:77), so it must be exposed first. ensureHolder (XrayWrapper.h:102), getProtoKey (:266) and isPrototype (:271) are already public members, so they need no change (the first pass said they must be made reachable: refuted). The page's chain is walked in ChainLookup: a scripted Proxy in the page's prototype chain has its traps run (stated price, per the header comment). Not reached by page code: the view is for the caller's world only.",
-   "verifier": {
-    "changed": [
-     "notes"
-    ],
-    "why": "Refuted the claim that ensureHolder/getProtoKey/isPrototype must be made reachable; they are already public."
-   }
-  },
-  {
    "file": "js/xpconnect/wrappers/XrayWrapper.h",
    "category": "juggler",
    "feature": "hybrid-xrays",
@@ -143,6 +123,24 @@
    "verifier": {
     "changed": [],
     "why": "Checked against the diff and tree: category, feature, prefs, anchor, counts and evidence hold."
+   }
+  },
+  {
+   "file": "js/xpconnect/wrappers/moz.build",
+   "category": "build",
+   "feature": "hybrid-xrays",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "hook added by the 2026-10-29 move to our files",
+   "evidence": [],
+   "notes": "Hook registering or calling our own code.",
+   "verifier": {
+    "changed": [],
+    "why": "Added with the 2026-10-29 hook move."
    }
   }
  ]

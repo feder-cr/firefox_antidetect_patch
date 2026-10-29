@@ -8,7 +8,11 @@
   "netwerk/base/nsILoadInfo.idl",
   "netwerk/ipc/DocumentLoadListener.cpp"
  ],
- "added": {},
+ "added": {
+  "docshell/base/StealthNavigation.cpp": "100644",
+  "docshell/base/StealthNavigation.h": "100644",
+  "docshell/base/StealthNavigationEvents.h": "100644"
+ },
  "inventory": [
   {
    "file": "docshell/base/CanonicalBrowsingContext.cpp",

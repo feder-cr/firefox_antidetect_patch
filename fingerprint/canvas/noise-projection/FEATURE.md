@@ -31,3 +31,37 @@ TODO: one paragraph, from the notes below.
 - `gfx/2d/StealthCanvasProjection.cpp`
 - `gfx/2d/StealthCanvasProjection.h`
 - `gfx/tests/gtest/TestStealthCanvasProjection.cpp`
+
+## dom/canvas/CanvasUtils.h: StealthProjectsContextType
+
+Whether a canvas of this context type goes through the canvas noise at all:
+WebGL and WebGPU only. A 2D canvas, on the page or offscreen, and a
+bitmaprenderer read back exactly as drawn, as on retail; a bitmap taken from
+a WebGL canvas was already projected when it was taken.
+
+(The other two declarations in that header, StealthNoise and
+StealthProjectSnapshot, are defined in dom/canvas/StealthCanvasNoise.cpp, where
+their contract is written.)
+
+## dom/html/HTMLCanvasElement.h: GetSurfaceSnapshotAsync
+
+The async twin of GetSurfaceSnapshot; captureStream reads the canvas
+through it, so it is a PAGE reader too and what it resolves with must
+carry the same canvas noise. A context that reports SupportAsyncSnapshot()
+(WebGL with a child actor) answers it itself and never reaches
+GetSurfaceSnapshot, so the projection has to be applied to that result
+where it is returned: inside the context, in ClientWebGLContext::DoReadPixelsAsync
+(through StealthWebGLReadback::ProjectAsyncSnapshot), once, on the stored
+pixels. HTMLCanvasElement::GetSurfaceSnapshotAsync, in HTMLCanvasElement.cpp,
+only forwards that result and must not project it again; for a context that does
+not support the async snapshot it goes through GetSurfaceSnapshot, which projects.
+
+(The contract of GetSurfaceSnapshot and of GetSurfaceSnapshotAsDrawn is in
+dom/html/StealthCanvasSnapshot.h.)
+
+## dom/webgpu/CanvasContext.cpp: CanvasContext::GetImageBuffer and CanvasContext::GetInputStream
+
+toDataURL/toBlob: the canvas noise, as every reader of a canvas reads it.
+Both functions apply CanvasUtils::StealthProjectSnapshot to the snapshot (alpha
+type premultiplied, passed as true, and the context's PrincipalOrNull()) before
+taking its data surface.

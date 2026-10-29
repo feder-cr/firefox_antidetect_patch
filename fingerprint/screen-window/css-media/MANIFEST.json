@@ -2,7 +2,9 @@
  "modified": [
   "layout/style/nsMediaFeatures.cpp"
  ],
- "added": {},
+ "added": {
+  "layout/style/StealthMediaFeatures.h": "100644"
+ },
  "inventory": [
   {
    "file": "layout/style/nsMediaFeatures.cpp",

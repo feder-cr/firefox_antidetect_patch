@@ -18,6 +18,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsRFPService.h"
 #include "nsString.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla::dom {
 
@@ -64,6 +65,47 @@ void GetDeclaredTimezone(const Document* aDocument, nsAString& aZone) {
 
 void GetDeclaredLanguage(const Document* aDocument, nsACString& aLanguage) {
   GetDeclaredLanguage(ContextOf(aDocument), aLanguage);
+}
+
+nsCString GetDeclaredRealmLanguage(Document* aDocument) {
+  nsCString language;
+  GetDeclaredLanguage(aDocument->GetBrowsingContext(), language);
+  return language;
+}
+
+nsString GetDeclaredRealmTimezone(Document* aDocument) {
+  nsString zone;
+  GetDeclaredTimezone(aDocument->GetBrowsingContext(), zone);
+  return zone;
+}
+
+void SeedDeclaredTimezoneAndLanguage(BrowsingContext* aContext) {
+  MOZ_ASSERT(aContext);
+  if (aContext->IsTop() && aContext->GetTimezoneOverride().IsEmpty() &&
+      XRE_IsParentProcess()) {
+    nsAutoString zone;
+    intl::OrSessionTimezone(zone);
+    if (!zone.IsEmpty()) {
+      (void)aContext->SetTimezoneOverride(zone);
+    }
+  }
+
+  if (aContext->IsTop() && aContext->GetLanguageOverride().IsEmpty() &&
+      XRE_IsParentProcess()) {
+    nsAutoCString language;
+    intl::OrSessionLanguage(language);
+    if (!language.IsEmpty()) {
+      (void)aContext->SetLanguageOverride(language);
+    }
+  }
+}
+
+void SetRealmDeclaredLocale(JS::Realm* aRealm, const nsACString& aLanguage) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!aLanguage.IsEmpty());
+  nsAutoCString tag;
+  intl::PrimaryLanguageTag(aLanguage, tag);
+  JS::SetRealmLocaleOverride(aRealm, tag.get());
 }
 
 void SetRealmTimeAndLanguage(JS::RealmOptions& aOptions, bool aForceUTC,

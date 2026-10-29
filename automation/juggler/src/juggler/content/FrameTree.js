@@ -296,6 +296,19 @@ export class FrameTree {
     return true;
   }
 
+  // What a new content process gets of its context and page, applied in the
+  // one order that keeps each world what it was declared: the init scripts
+  // first, since they carry the kinds, then the bindings. A binding first would
+  // make an undeclared world isolated, the caller's among them, and the
+  // declaration that follows would be refused (the document then never
+  // commits). A navigation away from a page the back-forward cache keeps starts
+  // its document in such a process.
+  applyCrossProcessState(initScripts, bindings) {
+    this.setInitScripts(initScripts);
+    for (const { worldName, name, script } of bindings)
+      this.addBinding(worldName, name, script);
+  }
+
   addBinding(worldName, name, script) {
     worldName = worldName || '';
     const world = this._ensureWorld(worldName);
