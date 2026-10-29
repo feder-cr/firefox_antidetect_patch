@@ -113,7 +113,7 @@
  "gfx/thebes/gfxDWriteFonts.cpp": 11,
  "gfx/thebes/gfxFT2FontBase.cpp": 7,
  "gfx/thebes/gfxFT2FontList.cpp": 6,
- "gfx/thebes/gfxFcPlatformFontList.cpp": 48,
+ "gfx/thebes/gfxFcPlatformFontList.cpp": 46,
  "gfx/thebes/gfxFcPlatformFontList.h": 4,
  "gfx/thebes/gfxFont.cpp": 3,
  "gfx/thebes/gfxFont.h": 4,

@@ -36,6 +36,10 @@ struct StealthFcAccess {
                              const fontlist::Family* aFamily) {
     aEntry->InitializeFrom(aFace, aFamily);
   }
+  static void AddUnscaledFont(gfxFontconfigFontEntry* aEntry,
+                              const RefPtr<UnscaledFontFontconfig>& aFont) {
+    aEntry->mUnscaledFontCache.Add(aFont);
+  }
 };
 
 void StealthDeclareFontFile(FcPattern* aPattern, const char* aFile,
@@ -130,46 +134,56 @@ void StealthDeclareTextOptions(FcPattern* aPattern) {
   }
 }
 
-bool StealthResolveFontFile(FcPattern* aPattern, bool aFromData,
-                            std::string& aFile, int& aIndex) {
+void StealthDeclaredFontFile(FcPattern* aPattern, std::string& aFile,
+                             int& aIndex) {
   // STEALTH: si chiede al PATTERN se nomina un file, invece di dedurlo dal fatto
   // che la faccia sia stata creata dalla memoria.
   //
-  // Prima la condizione era `if (!face->GetData())`, cioe' un PROXY: "creata
-  // dalla memoria" stava per "non ha un file". Per le facce del nostro bundle
-  // quel proxy e' falso - i byte sono la mappatura DI un file, di cui
-  // conosciamo percorso e indice - e la conseguenza era che l'`UnscaledFont`
-  // nasceva senza percorso, `GetFontDescriptor` falliva, e Gecko mandava a
-  // WebRender i BYTE del font: 65,9 MB nel processo padre contro 1,9 su una
-  // pagina vuota (`70-known-bugs.md` [B154]).
+  // La condizione di Mozilla, subito prima, e' `if (!face->GetData())`, cioe'
+  // un PROXY: "creata dalla memoria" sta per "non ha un file". Per le facce del
+  // nostro bundle quel proxy e' falso - i byte sono la mappatura DI un file, di
+  // cui conosciamo percorso e indice - e la conseguenza era che
+  // l'`UnscaledFont` nasceva senza percorso, `GetFontDescriptor` falliva, e
+  // Gecko mandava a WebRender i BYTE del font: 65,9 MB nel processo padre
+  // contro 1,9 su una pagina vuota (`70-known-bugs.md` [B154]).
   //
-  // Il comportamento upstream non si muove, caso per caso: una faccia da dati
-  // SENZA file lascia `file` vuoto e prende il primo ramo come prima; una faccia
-  // normale col file prende il secondo come prima; e una faccia normale SENZA
-  // file continua a essere l'errore che era. L'unico caso che cambia e' il
-  // nostro, che prima non era previsto.
+  // Il comportamento upstream non si muove, caso per caso: una faccia normale
+  // esce dal blocco di Mozilla col file gia' scritto (o con l'errore che era);
+  // una faccia da dati SENZA file nel pattern (un font della pagina:
+  // `CreatePatternForFace` toglie il nome finto) lascia `file` vuoto come prima.
+  // L'unico caso che cambia e' il nostro, che prima non era previsto.
+  if (!aFile.empty()) {
+    return;
+  }
   const FcChar8* fcFile;
+  int index;
   if (FcPatternGetString(aPattern, FC_FILE, 0,
                          const_cast<FcChar8**>(&fcFile)) == FcResultMatch &&
-      FcPatternGetInteger(aPattern, FC_INDEX, 0, &aIndex) == FcResultMatch) {
+      FcPatternGetInteger(aPattern, FC_INDEX, 0, &index) == FcResultMatch) {
     aFile = reinterpret_cast<const char*>(fcFile);
-    return true;
+    aIndex = index;
   }
-  return aFromData;
 }
 
-already_AddRefed<UnscaledFontFontconfig> StealthNewUnscaledFont(
+void StealthPreferFileUnscaledFont(
+    gfxFontconfigFontEntry* aEntry, RefPtr<UnscaledFontFontconfig>& aFont,
     std::string& aFile, int aIndex, SharedFTFace* aFace) {
   // STEALTH: si sceglie su `file`, non su `GetData()`. E' lo stesso proxy
-  // corretto in StealthResolveFontFile: cio' che decide se un UnscaledFont puo'
-  // descriversi con un percorso e' AVERE un percorso, non da dove sono arrivati
-  // i byte.
-  if (aFile.empty()) {
-    return MakeAndAddRef<UnscaledFontFontconfig>(RefPtr<SharedFTFace>(aFace));
+  // corretto in StealthDeclaredFontFile: cio' che decide se un UnscaledFont
+  // puo' descriversi con un percorso e' AVERE un percorso, non da dove sono
+  // arrivati i byte.
+  //
+  // Mozilla ha gia' scelto e messo in cache; qui si corregge solo il caso del
+  // bundle (UnscaledFont senza percorso ma file noto). La prima voce, senza piu'
+  // riferimenti, muore e il suo puntatore debole in cache con lei; la ricerca
+  // successiva per (file, indice) trova questa.
+  // `aFont->GetFile()` non vuoto: Mozilla ha gia' usato il percorso (e `aFile`
+  // e' stato spostato, non va letto).
+  if (!aFont->GetFile().empty() || aFile.empty()) {
+    return;
   }
-  return MakeAndAddRef<UnscaledFontFontconfig>(
-      std::move(aFile), static_cast<uint32_t>(aIndex),
-      RefPtr<SharedFTFace>(aFace));
+  aFont = new UnscaledFontFontconfig(std::move(aFile), aIndex, aFace);
+  StealthFcAccess::AddUnscaledFont(aEntry, aFont);
 }
 
 bool StealthPopulateSharedList(fontlist::FontList* aList) {

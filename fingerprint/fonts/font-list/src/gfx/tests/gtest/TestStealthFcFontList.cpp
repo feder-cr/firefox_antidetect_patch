@@ -64,27 +64,34 @@ TEST(StealthFcFontList, DeclareFontFile)
   EXPECT_EQ(2, index);
 }
 
-TEST(StealthFcFontList, ResolveFontFile)
+TEST(StealthFcFontList, DeclaredFontFile)
 {
   std::string file;
   int index = 0;
   {
+    // A data face with no file in the pattern (a page's font): nothing is set.
     ScopedFcPattern p;
-    // A data face with no file in the pattern: fine, nothing is set.
-    EXPECT_TRUE(StealthResolveFontFile(p.mPattern, true, file, index));
+    StealthDeclaredFontFile(p.mPattern, file, index);
     EXPECT_TRUE(file.empty());
     EXPECT_EQ(0, index);
-    // A normal face with no file in the pattern: the upstream error.
-    EXPECT_FALSE(StealthResolveFontFile(p.mPattern, false, file, index));
   }
-  for (bool fromData : {true, false}) {
+  {
+    // A data face whose pattern names its file (the bundle): file and index.
     ScopedFcPattern p;
     FcPatternAddString(p.mPattern, FC_FILE,
                        reinterpret_cast<const FcChar8*>("/x/b.ttf"));
     FcPatternAddInteger(p.mPattern, FC_INDEX, 5);
-    file.clear();
-    index = 0;
-    EXPECT_TRUE(StealthResolveFontFile(p.mPattern, fromData, file, index));
+    StealthDeclaredFontFile(p.mPattern, file, index);
+    EXPECT_EQ("/x/b.ttf", file);
+    EXPECT_EQ(5, index);
+  }
+  {
+    // Mozilla's block already wrote the file (a normal face): left as it is.
+    ScopedFcPattern p;
+    FcPatternAddString(p.mPattern, FC_FILE,
+                       reinterpret_cast<const FcChar8*>("/x/other.ttf"));
+    FcPatternAddInteger(p.mPattern, FC_INDEX, 9);
+    StealthDeclaredFontFile(p.mPattern, file, index);
     EXPECT_EQ("/x/b.ttf", file);
     EXPECT_EQ(5, index);
   }
@@ -95,9 +102,9 @@ TEST(StealthFcFontList, ResolveFontFile)
                        reinterpret_cast<const FcChar8*>("/x/c.ttf"));
     file.clear();
     index = 0;
-    EXPECT_TRUE(StealthResolveFontFile(p.mPattern, true, file, index));
+    StealthDeclaredFontFile(p.mPattern, file, index);
     EXPECT_TRUE(file.empty());
-    EXPECT_FALSE(StealthResolveFontFile(p.mPattern, false, file, index));
+    EXPECT_EQ(0, index);
   }
 }
 
@@ -176,21 +183,42 @@ TEST(StealthFcFontList, TableFaceIndex)
   EXPECT_EQ(0u, StealthTableFaceIndex(nullptr));
 }
 
-TEST(StealthFcFontList, NewUnscaledFont)
+TEST(StealthFcFontList, PreferFileUnscaledFont)
 {
-  std::string empty;
-  RefPtr<mozilla::gfx::UnscaledFontFontconfig> noPath =
-      StealthNewUnscaledFont(empty, 7, nullptr);
-  ASSERT_TRUE(noPath);
-  EXPECT_TRUE(noPath->GetFile().empty());
-  EXPECT_EQ(0u, noPath->GetIndex());
-
-  std::string file = "/x/d.ttc";
-  RefPtr<mozilla::gfx::UnscaledFontFontconfig> withPath =
-      StealthNewUnscaledFont(file, 4, nullptr);
-  ASSERT_TRUE(withPath);
-  EXPECT_EQ("/x/d.ttc", withPath->GetFile());
-  EXPECT_EQ(4u, withPath->GetIndex());
-  // Moved from in this case only.
-  EXPECT_TRUE(file.empty());
+  using mozilla::gfx::UnscaledFontFontconfig;
+  {
+    // Mozilla already built it on the path: kept (and aFile, moved from, is
+    // not read).
+    RefPtr<UnscaledFontFontconfig> font =
+        new UnscaledFontFontconfig(std::string("/x/a.ttf"), 1, nullptr);
+    UnscaledFontFontconfig* before = font;
+    std::string file = "/x/other.ttf";
+    StealthPreferFileUnscaledFont(nullptr, font, file, 2, nullptr);
+    EXPECT_EQ(before, font.get());
+  }
+  {
+    // A page's font: no path, no file. Kept.
+    RefPtr<UnscaledFontFontconfig> font =
+        new UnscaledFontFontconfig(RefPtr<mozilla::gfx::SharedFTFace>());
+    UnscaledFontFontconfig* before = font;
+    std::string file;
+    StealthPreferFileUnscaledFont(nullptr, font, file, 0, nullptr);
+    EXPECT_EQ(before, font.get());
+  }
+  {
+    // A bundled face: no path but the file is known. Replaced by one on the
+    // path, which goes into the entry's cache.
+    ScopedFcPattern p;
+    RefPtr<gfxFontconfigFontEntry> entry =
+        new gfxFontconfigFontEntry("bundled"_ns, p.mPattern);
+    RefPtr<UnscaledFontFontconfig> font =
+        new UnscaledFontFontconfig(RefPtr<mozilla::gfx::SharedFTFace>());
+    std::string file = "/x/d.ttc";
+    StealthPreferFileUnscaledFont(entry, font, file, 4, nullptr);
+    ASSERT_TRUE(font);
+    EXPECT_EQ("/x/d.ttc", font->GetFile());
+    EXPECT_EQ(4u, font->GetIndex());
+    // Moved from in this case only.
+    EXPECT_TRUE(file.empty());
+  }
 }

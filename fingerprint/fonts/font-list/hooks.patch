@@ -261,7 +261,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..c34c2fcae9dacf4a5aa748a3ca514634
    nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(localDir));
    if (NS_FAILED(rv)) {
 diff --git a/gfx/thebes/gfxFcPlatformFontList.cpp b/gfx/thebes/gfxFcPlatformFontList.cpp
-index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4d00205d9 100644
+index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..70a45bb47d3d84b3ca080a8853c5d30b206bac02 100644
 --- a/gfx/thebes/gfxFcPlatformFontList.cpp
 +++ b/gfx/thebes/gfxFcPlatformFontList.cpp
 @@ -5,6 +5,7 @@
@@ -343,7 +343,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
    return table != hb_blob_get_empty() ? table : nullptr;
  }
  
-@@ -1069,22 +1080,18 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
+@@ -1069,6 +1080,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
      FcPatternAddBool(renderPattern, FC_EMBEDDED_BITMAP, FcFalse);
    }
  
@@ -352,39 +352,25 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
    int loadFlags;
    unsigned int synthFlags;
    PrepareFontOptions(renderPattern, &loadFlags, &synthFlags);
- 
-   std::string file;
-   int index = 0;
--  if (!face->GetData()) {
--    const FcChar8* fcFile;
--    if (FcPatternGetString(renderPattern, FC_FILE, 0,
--                           const_cast<FcChar8**>(&fcFile)) != FcResultMatch ||
--        FcPatternGetInteger(renderPattern, FC_INDEX, 0, &index) !=
--            FcResultMatch) {
--      NS_WARNING("No file in Fontconfig pattern for font instance");
--      return nullptr;
--    }
--    file = ToCharPtr(fcFile);
-+  // STEALTH-HOOK(fingerprint/fonts/font-list)
-+  if (!StealthResolveFontFile(renderPattern, !!face->GetData(), file, index)) {
-+    NS_WARNING("No file in Fontconfig pattern for font instance");
-+    return nullptr;
+@@ -1086,6 +1099,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
+     }
+     file = ToCharPtr(fcFile);
    }
++  // STEALTH-HOOK(fingerprint/fonts/font-list)
++  StealthDeclaredFontFile(renderPattern, file, index);
  
    RefPtr<UnscaledFontFontconfig> unscaledFont;
-@@ -1098,9 +1105,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
-     // Here, we use the original mFTFace, not a potential clone with variation
-     // settings applied.
-     auto* ftFace = GetFTFace();
--    unscaledFont = ftFace->GetData() ? new UnscaledFontFontconfig(ftFace)
--                                     : new UnscaledFontFontconfig(
--                                           std::move(file), index, ftFace);
-+    // STEALTH-HOOK(fingerprint/fonts/font-list)
-+    unscaledFont = StealthNewUnscaledFont(file, index, ftFace);
+   {
+@@ -1102,6 +1117,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
+                                      : new UnscaledFontFontconfig(
+                                            std::move(file), index, ftFace);
      mUnscaledFontCache.Add(unscaledFont);
++    // STEALTH-HOOK(fingerprint/fonts/font-list)
++    StealthPreferFileUnscaledFont(this, unscaledFont, file, index, ftFace);
    }
  
-@@ -1720,6 +1726,10 @@ void gfxFcPlatformFontList::AddPatternToFontList(
+   gfxFont* newFont = new gfxFontconfigFont(
+@@ -1720,6 +1737,10 @@ void gfxFcPlatformFontList::AddPatternToFontList(
      }
    }
  
@@ -395,7 +381,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
    // Add pointers to other localized family names. Most fonts
    // only have a single name, so the first call to GetString
    // will usually not match
-@@ -1838,6 +1848,10 @@ nsresult gfxFcPlatformFontList::InitFontListForPlatform() {
+@@ -1838,6 +1859,10 @@ nsresult gfxFcPlatformFontList::InitFontListForPlatform() {
    }
  #endif
  
@@ -406,7 +392,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
    // iterate over available fonts
    FcFontSet* systemFonts = FcConfigGetFonts(nullptr, FcSetSystem);
    AddFontSetFamilies(systemFonts, policy.get(), /* aAppFonts = */ false);
-@@ -1943,6 +1957,10 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
+@@ -1943,6 +1968,10 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
    UpdateSystemFontOptions();
  #endif
  
@@ -417,7 +403,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
  #ifdef MOZ_BUNDLED_FONTS
    if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
      auto timerId = glean::fontlist::bundledfonts_activate.Start();
-@@ -2298,6 +2316,10 @@ gfxFcPlatformFontList::GetFilteredPlatformFontLists() {
+@@ -2298,6 +2327,10 @@ gfxFcPlatformFontList::GetFilteredPlatformFontLists() {
  
  already_AddRefed<gfxFontEntry> gfxFcPlatformFontList::CreateFontEntry(
      fontlist::Face* aFace, const fontlist::Family* aFamily) {
@@ -428,7 +414,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
    nsAutoCString desc(aFace->mDescriptor.AsString(SharedFontList()));
    FcPattern* pattern = FcNameParse((const FcChar8*)desc.get());
    RefPtr fe = MakeRefPtr<gfxFontconfigFontEntry>(desc, pattern);
-@@ -2469,6 +2491,11 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
+@@ -2469,6 +2502,11 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
    nsAutoCString familyName(aFamily);
    ToLowerCase(familyName);
  
@@ -440,7 +426,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
    if (!(aFlags & FindFamiliesFlags::eQuotedFamilyName)) {
      // deprecated generic names are explicitly converted to standard generics
      bool isDeprecatedGeneric = false;
-@@ -2764,7 +2791,8 @@ void gfxFcPlatformFontList::AddGenericFonts(
+@@ -2764,7 +2802,8 @@ void gfxFcPlatformFontList::AddGenericFonts(
    }
  
    // when pref fonts exist, use standard pref font lookup

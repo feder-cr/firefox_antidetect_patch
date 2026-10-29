@@ -40,7 +40,7 @@
  "gfx/thebes/gfxDWriteFonts.cpp": 3,
  "gfx/thebes/gfxFT2FontBase.cpp": 1,
  "gfx/thebes/gfxFT2FontList.cpp": 2,
- "gfx/thebes/gfxFcPlatformFontList.cpp": 20,
+ "gfx/thebes/gfxFcPlatformFontList.cpp": 7,
  "gfx/thebes/gfxFcPlatformFontList.h": 1,
  "gfx/thebes/gfxFontEntry.h": 1,
  "gfx/thebes/gfxFontUtils.cpp": 4,

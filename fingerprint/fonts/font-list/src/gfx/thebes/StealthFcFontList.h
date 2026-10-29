@@ -121,18 +121,22 @@ hb_blob_t* StealthHBFaceTable(gfxFontEntry* aEntry, uint32_t aTableTag);
 // Must run before PrepareFontOptions.
 void StealthDeclareTextOptions(FcPattern* aPattern);
 
-// Asks the PATTERN whether it names a file (FC_FILE and FC_INDEX). On success
-// sets aFile and aIndex and returns true. Otherwise returns aFromData (a data
-// face with no file is fine and leaves aFile empty and aIndex 0; a normal face
-// with no file is the upstream error). aFile and aIndex are touched only on
-// success.
-bool StealthResolveFontFile(FcPattern* aPattern, bool aFromData,
-                            std::string& aFile, int& aIndex);
+// Called in gfxFontconfigFontEntry::CreateFontInstance right after Mozilla's
+// `if (!face->GetData())` block. When that block left aFile empty (a face made
+// from data) and the PATTERN names a file (FC_FILE and FC_INDEX), sets aFile
+// and aIndex from it. Otherwise touches nothing: a face from data with no file
+// keeps the empty name, as upstream.
+void StealthDeclaredFontFile(FcPattern* aPattern, std::string& aFile,
+                             int& aIndex);
 
-// Chooses the UnscaledFont on aFile (a path) rather than on GetData(). aFile is
-// moved from when non-empty.
-already_AddRefed<mozilla::gfx::UnscaledFontFontconfig> StealthNewUnscaledFont(
-    std::string& aFile, int aIndex, mozilla::gfx::SharedFTFace* aFace);
+// Called in the same function right after mUnscaledFontCache.Add. When Mozilla
+// built the path-less UnscaledFont (it chooses on GetData()) but aFile names
+// the file, replaces aFont with one built on the path and adds that to the
+// entry's cache. aFile is moved from then.
+void StealthPreferFileUnscaledFont(
+    gfxFontconfigFontEntry* aEntry,
+    RefPtr<mozilla::gfx::UnscaledFontFontconfig>& aFont, std::string& aFile,
+    int aIndex, mozilla::gfx::SharedFTFace* aFace);
 
 // Bundle-only: builds the shared family list and, eagerly (Linux builds faces
 // eagerly), the faces of every family from the manifest, so no fontconfig
