@@ -83,6 +83,10 @@ python -m pytest -q tools/tests
   le regole e la ricostruzione sul tag.
 - Una build di prova: `gh workflow run release.yml --ref <ramo> -f kind=candidate`
   (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla).
+- **La cache di compilazione appartiene a un ramo.** GitHub dà a una build solo le
+  cache del suo ramo e quelle di `main`. Un ramo nuovo legge la cache di `main`; un
+  ramo che non parte da `main` compila a freddo (ore). Le build di prova si lanciano da
+  `main` o da rami nati da `main`, mai da un ramo isolato.
 - Release e push di `stealth/157` solo dopo averne parlato con Federico.
 
 ## Lavori grandi: struttura a sub-agenti
