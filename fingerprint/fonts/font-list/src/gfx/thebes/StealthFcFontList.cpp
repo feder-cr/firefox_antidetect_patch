@@ -10,6 +10,7 @@
 
 #include <utility>
 
+#include "FontData.h"
 #include "SharedFontList-impl.h"
 #include "StealthBundleFontList.h"
 #include "gfxFcPlatformFontList.h"
@@ -226,8 +227,9 @@ already_AddRefed<gfxFontEntry> StealthCreateBundleFontEntry(
   if (!blob || !blob->Length()) {
     return nullptr;
   }
-  RefPtr<FTUserFontData> ufd = new FTUserFontData(
-      blob->Data(), blob->Length(), FTUserFontData::Prestito::Si);
+  RefPtr<FontData> lent =
+      new FontData(blob->Data(), blob->Length(), FontData::Borrowed::Yes);
+  RefPtr<FTUserFontData> ufd = new FTUserFontData(lent);
   RefPtr<SharedFTFace> face = ufd->CloneFace(aFace->mIndex);
   if (!face) {
     return nullptr;

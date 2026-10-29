@@ -2313,27 +2313,25 @@
   }
  },
  {
-  "file": "gfx/2d/2D.h",
+  "file": "gfx/thebes/FontData.h",
   "category": "other",
   "feature": "font-bundle-borrow",
   "prefs": [],
-  "added": 27,
-  "removed": 2,
-  "hunks": 2,
-  "inline_logic_lines": 3,
+  "added": 10,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 2,
   "hookable": "already-hook",
-  "anchor": "class FTUserFontData (new borrowing constructor, GetData, Length, members mBorrowedData and mBorrowedLength)",
+  "anchor": "class FontData (Borrowed constructor, destructor, member mBorrowed)",
   "evidence": [
-   "+    return mFontData ? mFontData->Data() : mBorrowedData;",
-   "+  FTUserFontData(const uint8_t* aData, uint32_t aLength, Prestito)",
-   "-  uint32_t Length() const { return mFontData ? mFontData->Length() : 0; }"
+   "+  FontData(const uint8_t* aData, uint32_t aLength, Borrowed)",
+   "+    if (!mBorrowed) {  // STEALTH-HOOK(fingerprint/fonts/bundle)",
+   "+  bool const mBorrowed = false;  // STEALTH-HOOK(fingerprint/fonts/bundle)"
   ],
-  "notes": "Category is other rather than spoof: it lends the bundled font bytes (owned by StealthBundleFontList) to each face instead of copying the file per face, and no page-observable value changes. The lifetime rule is an invariant, not enforced here: the lent bytes must outlive every face, which holds only because the bundle cache is immortal (confirmed: gfx/thebes/StealthBundleFontList.cpp:532-534 leaks the list on purpose). The header is widely included but FTUserFontData is inside #ifdef MOZ_ENABLE_FREETYPE (gfx/2d/2D.h:1169-1303), so the change only compiles in on FreeType builds. The 17 comment lines of the block are in Italian, and the enum is named Prestito.",
+  "notes": "Category is other rather than spoof: it lends the bundled font bytes (owned by StealthBundleFontList) to each face instead of copying the file per face, and no page-observable value changes. A borrowed FontData does not free its bytes; they must outlive every face, which holds only because the bundle cache is immortal (StealthBundleFontList leaks the list on purpose). Moved here from FTUserFontData in gfx/2d/2D.h and its CloneFace in gfx/2d/Factory.cpp on 2026-10-29: Firefox 159 removes FTUserFontData, while FontData.h is unchanged from 157 to 159.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "FTUserFontData is inside #ifdef MOZ_ENABLE_FREETYPE, so it is not shared by all platforms; the Italian comment count was wrong (17 lines)."
+   "changed": [],
+   "why": "Written with the move; the bundle path now goes through Mozilla's FTUserFontData(FontData*) and its unchanged CloneFace."
   }
  },
  {
@@ -2378,31 +2376,6 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff; no correction needed."
-  }
- },
- {
-  "file": "gfx/2d/Factory.cpp",
-  "category": "other",
-  "feature": "font-bundle-borrow",
-  "prefs": [],
-  "added": 10,
-  "removed": 3,
-  "hunks": 1,
-  "inline_logic_lines": 5,
-  "hookable": "already-hook",
-  "anchor": "FTUserFontData::CloneFace",
-  "evidence": [
-   "-  if (mFontData) {",
-   "+    } else if (FT_Face ft = Factory::NewFTFaceFromData(",
-   "+      face = MakeAndAddRef<SharedFTFace>(ft, this);"
-  ],
-  "notes": "The borrowed branch creates the FT_Face from the lent bytes, which FreeType keeps a pointer to, so the bytes must outlive the face (guaranteed only by the immortal bundle cache, see 2D.h). The branch (about 5 lines) can move to an own helper. Verified that Factory::NewFTFaceFromData exists at gfx/2d/Factory.cpp:575 in C:\\ff\\source. The function sits inside #ifdef MOZ_ENABLE_FREETYPE (Factory.cpp:117), so it is Linux/Android only.",
-  "verifier": {
-   "changed": [
-    "hookable",
-    "notes"
-   ],
-   "why": "Logic lines are 5 in a single hunk, which meets the already-hook definition (<=5 per hunk); the block is also FreeType-only."
   }
  },
  {

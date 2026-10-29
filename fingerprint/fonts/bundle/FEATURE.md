@@ -12,10 +12,9 @@ TODO: one paragraph, from the notes below.
 
 - `browser/fonts/moz.build` ((top level of browser/fonts/moz.build), already-hook): Replaces the single TwemojiMozilla.ttf install with a FINAL_TARGET_FILES list of 121 quoted entries (bundled Windows core fonts plus bundle-fonts.list and TwemojiMozilla.ttf, which stays in the list). Adds cocoa to the platform condition. The list is hand-maintained here and must stay in sync with the bundle manifest. The comment says macOS also needs --enable-bundled-fonts in its mozconfig. The f
 - `browser/installer/package-manifest.in` ((packaging manifest, fonts entry), already-hook): Packages @RESPATH@/fonts/* on macOS as well (upstream: Windows and GTK only). Packaging condition only; supports the bundled font set on every host.
-- `gfx/2d/2D.h` (class FTUserFontData (new borrowing constructor, GetData, Length, members mBorrowedData and mBorrowedLength), already-hook): Category is other rather than spoof: it lends the bundled font bytes (owned by StealthBundleFontList) to each face instead of copying the file per face, and no page-observable value changes. The lifetime rule is an invariant, not enforced here: the lent bytes must outlive every face, which holds only because the bundle cache is immortal (confirmed: gfx/thebes/StealthBundleFontList.cpp:532-534 leak
-- `gfx/2d/Factory.cpp` (FTUserFontData::CloneFace, already-hook): The borrowed branch creates the FT_Face from the lent bytes, which FreeType keeps a pointer to, so the bytes must outlive the face (guaranteed only by the immortal bundle cache, see 2D.h). The branch (about 5 lines) can move to an own helper. Verified that Factory::NewFTFaceFromData exists at gfx/2d/Factory.cpp:575 in C:\ff\source. The function sits inside #ifdef MOZ_ENABLE_FREETYPE (Factory.cpp:1
 - `gfx/2d/ScaledFontDWrite.cpp` (UnscaledFontDWrite::GetFontDescriptor, already-hook): Returns the declared file path (UTF-16 with NUL terminator, same convention as the Mozilla file-name path) when one was passed to the constructor. Otherwise it falls through to Mozilla's own `if (!mFont) return false;` guard, which is left unchanged. The comment reports 65.9 MB sent to WebRender as bytes instead of a path ([B154]). Category is other, not spoof: the change alters what gfx passes to
 - `gfx/2d/UnscaledFontDWrite.h` (UnscaledFontDWrite constructor and member list (class UnscaledFontDWrite final : public UnscaledFont), already-hook): Adds an optional aFilePath argument with an empty default, so existing callers keep the upstream behaviour. Adds member mPercorsoDichiarato (std::wstring, ours) and the <string> include. Comment cross-references [B154].
+- `gfx/thebes/FontData.h` (class FontData (Borrowed constructor, destructor, member mBorrowed), already-hook): A borrowed FontData does not free its bytes. The bundle path on FreeType builds wraps the bytes lent by StealthBundleFontList in one and hands it to Mozilla's FTUserFontData(FontData*), whose CloneFace opens it as it opens any FontData. The bytes must outlive every face, which holds only because the bundle cache is immortal.
 - `gfx/thebes/gfxDWriteCommon.cpp` (gfxDWriteFontFileStream::GetFileSize; gfxDWriteFontFileStream::ReadFileFragment; gfxDWriteFontFileStream::Bytes and BytesLength (new); gfxDWriteFontFileLoader::CreateCustomFontFile (refactored into static CreateFontFileImpl); gfxDWriteFontFileLoader::CreateBorrowedFontFile (new), hard): Adds a non-owning DirectWrite stream that lends bytes to the immortal bundle cache instead of copying them into a FontData (comment: 106 MB where 35.4 MB is enough for one 35.4 MB .ttc). Hard to hook: the borrowed state lives in private members of Mozilla's gfxDWriteFontFileStream, and the two IDWriteFontFileStream methods that read them are Mozilla code. The CreateCustomFontFile body was also mov
 - `gfx/thebes/gfxDWriteCommon.h` (gfxDWriteFontFileStream (class: new Borrowed constructor, Bytes/BytesLength declarations, mBorrowed/mBorrowedLength members, SizeOfExcludingThis); gfxDWriteFontFileLoader::CreateBorrowedFontFile declaration, already-hook): Declarations for the borrowed stream. SizeOfExcludingThis still reports 0 for a borrowed stream, because the bundle cache reports those bytes. The header comment states the immortal-cache lifetime rule that the code depends on.
 - `gfx/thebes/gfxDWriteFontList.h` (gfxDWriteFontEntry (class members mBundleFaceIndex and mBundleFilePath), already-hook): Two members: mBundleFaceIndex (feature font-ttc-face-index, index inside a .ttc) and mBundleFilePath (feature font-bundle-file-path, the path given to WebRender). Only the path member is in this file's primary feature. Adds the <string> include.
@@ -159,12 +158,19 @@ TODO: one paragraph, from the notes below.
 StealthBundleFontList.h is exported because dom/canvas reads the coverage ladder from it (the alpha-quantisation hook in CanvasRenderingContext2D).
 
 
-## gfx/2d/2D.h: FTUserFontData borrowing constructor (Prestito)
+## gfx/thebes/FontData.h: the Borrowed constructor
 
-Hook: the constructor `FTUserFontData(const uint8_t* aData, uint32_t aLength, Prestito)`
-with the `enum class Prestito { Si }` tag, the changed `GetData()` / `Length()`
-and the members `mBorrowedData` / `mBorrowedLength` (all in class `FTUserFontData`).
-The comment that stood on the constructor in 2D.h, moved here unchanged:
+Hook: `FontData(const uint8_t*, uint32_t, Borrowed)`, the `mBorrowed` member and
+the destructor that frees only what it owns. Until 2026-10-29 the borrow lived
+in `FTUserFontData` (gfx/2d/2D.h, a constructor tagged `Prestito`, members
+`mBorrowedData` / `mBorrowedLength`) with a second branch in its `CloneFace`
+(gfx/2d/Factory.cpp). Firefox 159 removes `FTUserFontData`, and those two
+hooks were the largest conflict of the 157 -> 159 merge (94 of our lines);
+`FontData.h` is unchanged across those releases. Mozilla's `CloneFace` opens
+a FontData with the same `FT_New_Memory_Face` on the same bytes and selects
+the charmap, so the faces are the same.
+
+The comment that stood on the constructor in 2D.h, kept unchanged:
 
 STEALTH: i byte appartengono a QUALCUN ALTRO e non vanno liberati qui.
 
@@ -176,23 +182,10 @@ immortale per costruzione - l'oggetto e' volutamente leaked e non svuota mai
 `mFileCache` - e il valore della mappa e' un `RefPtr`, quindi se la tabella
 hash rialloca a spostarsi e' il puntatore e mai i byte.
 
-Serve un costruttore NUOVO: `FontData` e' il proprietario che chiama
-`free()` sui suoi byte, quindi un puntatore mappato non puo' stare li'
-dentro. I byte prestati restano in `mBorrowedData` / `mBorrowedLength`,
-`mFontData` resta nullo, e `GetData()` / `Length()` rispondono per
-entrambi i casi, cosi' i chiamanti non sanno nulla del prestito.
-`CloneFace` (gfx/2d/Factory.cpp) apre i byte prestati quando manca
-`mFontData`.
-
-## gfx/2d/Factory.cpp: FTUserFontData::CloneFace
-
-Hook: the borrowed branch (`mBorrowedData`, `Factory::NewFTFaceFromData`). The
-one-line comment that stood on it in Factory.cpp, moved here unchanged:
-
-STEALTH: bundle bytes lent by StealthBundleFontList (see 2D.h).
-
-(See the section on gfx/2d/2D.h above: the bytes are lent by the immortal bundle
-cache.)
+`FontData` was the owner that calls `free()` on its bytes, which is why the
+first version needed a second pair of members in `FTUserFontData`; the
+Borrowed constructor marks the bytes as not owned instead, so every caller
+downstream sees an ordinary FontData.
 
 ## gfx/2d/ScaledFontDWrite.cpp: UnscaledFontDWrite::GetFontDescriptor
 
