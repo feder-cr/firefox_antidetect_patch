@@ -31,7 +31,7 @@ def assert_toolchain_is_retail(tree: Path) -> None:
 
 def gates_for(tree: Path) -> list:
     out = [v.assert_juggler_provenance, v.assert_page_surface_is_stock,
-           assert_toolchain_is_retail, v.assert_no_updater, v.check_no_leaks_tree]
+           assert_toolchain_is_retail, v.assert_updater_is_retails, v.check_no_leaks_tree]
     if stock_parity.platform_of(v._juggler_root(tree)).startswith("win"):
         out.append(v.assert_windows_runtime_is_shipped)
     return out

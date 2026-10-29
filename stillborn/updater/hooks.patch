@@ -1,283 +1,101 @@
-diff --git a/build/moz.configure/update-programs.configure b/build/moz.configure/update-programs.configure
-index 3b9d6553f37b754b52dbb7f83855c7fe1cd77169..8e9cd0b7d40a6b1df88da6071333c49e02d37846 100644
---- a/build/moz.configure/update-programs.configure
-+++ b/build/moz.configure/update-programs.configure
-@@ -2,6 +2,7 @@
- # License, v. 2.0. If a copy of the MPL was not distributed with this
- # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+diff --git a/browser/branding/unofficial/pref/firefox-branding.js b/browser/branding/unofficial/pref/firefox-branding.js
+index f22dd0a51ccb367bbbb418d90aba6c8b6dbd7308..93a602ec27a882b2452be870293eb7ecf12f9c1f 100644
+--- a/browser/branding/unofficial/pref/firefox-branding.js
++++ b/browser/branding/unofficial/pref/firefox-branding.js
+@@ -8,24 +8,24 @@ pref("startup.homepage_override_url", "");
+ pref("startup.homepage_welcome_url", "");
+ pref("startup.homepage_welcome_url.additional", "");
+ // The time interval between checks for a new version (in seconds)
+-pref("app.update.interval", 86400); // 24 hours
++pref("app.update.interval", 21600); // 6 hours, the release value  // STEALTH-HOOK(stillborn/updater)
+ // Give the user x seconds to react before showing the big UI. default=24 hours
+-pref("app.update.promptWaitTime", 86400);
++pref("app.update.promptWaitTime", 691200);  // STEALTH-HOOK(stillborn/updater)
+ // URL user can browse to manually if for some reason all update installation
+ // attempts fail.
+-pref("app.update.url.manual", "https://nightly.mozilla.org");
++pref("app.update.url.manual", "https://www.mozilla.org/%LOCALE%/firefox/new?reason=manual-update");  // STEALTH-HOOK(stillborn/updater)
+ // A default value for the "More information about this update" link
+ // supplied in the "An update is available" page of the update wizard.
+-pref("app.update.url.details", "https://nightly.mozilla.org");
++pref("app.update.url.details", "https://www.mozilla.org/%LOCALE%/firefox/notes");  // STEALTH-HOOK(stillborn/updater)
  
-+# STEALTH-HOOK(stillborn/updater): the update machinery is deleted from this file on purpose; the why is in stillborn/updater/FEATURE.md
+ // The number of days a binary is permitted to be old
+ // without checking for an update.  This assumes that
+ // app.update.checkInstallTime is true.
+-pref("app.update.checkInstallTime.days", 2);
++pref("app.update.checkInstallTime.days", 63);  // STEALTH-HOOK(stillborn/updater)
  
- # dmgInstallHelper
- # ==============================================================
-@@ -22,239 +23,6 @@ def debug_dmg_install_helper(enabled):
- set_config("DMG_INSTALL_HELPER_DEBUG", debug_dmg_install_helper)
+ // Give the user x seconds to reboot before showing a badge on the hamburger
+ // button. default=immediately
+-pref("app.update.badgeWaitTime", 0);
++pref("app.update.badgeWaitTime", 345600);  // STEALTH-HOOK(stillborn/updater)
  
+ // Number of usages of the web console.
+ // If this is less than 5, then pasting code into the web console is disabled
+diff --git a/toolkit/mozapps/update/BackgroundUpdate.sys.mjs b/toolkit/mozapps/update/BackgroundUpdate.sys.mjs
+index ff6c58cbe0129b75452a8a2a101c54a8264046fe..c70917fe90b9951555b42b5a9a844ea932b0d4a9 100644
+--- a/toolkit/mozapps/update/BackgroundUpdate.sys.mjs
++++ b/toolkit/mozapps/update/BackgroundUpdate.sys.mjs
+@@ -5,6 +5,7 @@
+ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+ import { EXIT_CODE } from "resource://gre/modules/BackgroundTasksManager.sys.mjs";
+ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
++import * as StealthUpdate from "resource://gre/modules/StealthUpdate.sys.mjs"; // STEALTH-HOOK(stillborn/updater)
  
--# Updater
--# ==============================================================
--@depends(build_project, target)
--def updater_default(build_project, target):
--    if build_project == "tools/update-programs":
--        return True
--    return build_project != "mobile/android" and target.os != "iOS"
--
--
--option(
--    "--enable-updater",
--    default=updater_default,
--    help="{Enable|Disable} building the updater",
--)
--
--set_config("MOZ_UPDATER", True, when="--enable-updater")
--set_define("MOZ_UPDATER", True, when="--enable-updater")
--
--# Updates that do not verify signatures
--# ==============================================================
--
--option(
--    "--enable-unverified-updates",
--    help="Enable application update without verifying MAR or updater binary signatures",
--)
--
--
--@depends("--enable-unverified-updates", "--enable-compile-environment")
--def disable_unverified_updates(unverified_updates, compile_environment):
--    if unverified_updates:
--        if not compile_environment:
--            die("--enable-unverified-updates requires --enable-compile-environment")
--    return not unverified_updates
--
--
--set_define(
--    "MOZ_VERIFY_MAR_SIGNATURE",
--    depends_if(disable_unverified_updates)(lambda _: True),
--)
--set_config(
--    "MOZ_VERIFY_MAR_SIGNATURE",
--    True,
--    depends_if(disable_unverified_updates)(lambda _: True),
--)
--
--set_config(
--    "DISABLE_UPDATER_AUTHENTICODE_CHECK",
--    True,
--    depends_if("--enable-unverified-updates")(lambda _: True),
--)
--
--# Mac elevated updates without production signing
--# ==============================================================
--
--option(
--    "--enable-mac-elevated-updates-with-generic-certs",
--    when=target_is_osx,
--    help="Allow local developer-signed builds to perform elevated updates on macOS",
--)
--
--
--def mac_prod_requirements_string(identifier):
--    return (
--        f'identifier "{identifier}" and anchor apple generic and '
--        "certificate 1[field.1.2.840.113635.100.6.2.6] and "
--        "certificate leaf[field.1.2.840.113635.100.6.1.13] and "
--        'certificate leaf[subject.OU] = "43AQ936H96"'
--    )
--
--
--def mac_relaxed_requirements_string(identifier):
--    return f'identifier "{identifier}" and anchor apple generic'
--
--
--@depends(
--    "--enable-mac-elevated-updates-with-generic-certs",
--    moz_mac_bundle_id,
--    when=target_is_osx,
--)
--def smauthorizedclients_requirements(enabled, bundle_id):
--    if enabled:
--        return mac_relaxed_requirements_string(bundle_id)
--    else:
--        return mac_prod_requirements_string(bundle_id)
--
--
--set_config("MOZ_SMAUTHORIZEDCLIENTS_REQUIREMENTS", smauthorizedclients_requirements)
--
--
--def requirements_string(exec_id, relaxed):
--    if relaxed:
--        return mac_relaxed_requirements_string(exec_id)
--    else:
--        return mac_prod_requirements_string(exec_id)
--
--
--@depends("--enable-mac-elevated-updates-with-generic-certs", when=target_is_osx)
--@imports(_from="xml.sax.saxutils", _import="escape")
--def generate_smprivilegedexec_requirements(relaxed):
--    requirements = ""
--    smprivilegedexecutables_list = [
--        "org.mozilla.dmgInstallHelper",
--        "org.mozilla.updater",
--    ]
--
--    for executable in smprivilegedexecutables_list:
--        requirements += f"<key>{escape(executable)}</key>"
--        requirements += (
--            f"<string>{escape(requirements_string(executable, relaxed))}</string>"
--        )
--
--    return requirements
--
--
--set_config(
--    "MOZ_SMPRIVILEGEDEXECUTABLES_REQUIREMENTS", generate_smprivilegedexec_requirements
--)
--
--# MAR channel ID configuration
--# ==============================================================
--
--option(env="MAR_CHANNEL_ID", nargs=1, help="MAR channel identifier")
--
--set_config(
--    "MAR_CHANNEL_ID",
--    depends_if("MAR_CHANNEL_ID")(lambda channel: channel[0]),
--)
--
--option(
--    env="ACCEPTED_MAR_CHANNEL_IDS", nargs="+", help="Accepted MAR channel identifiers"
--)
--
--set_config(
--    "ACCEPTED_MAR_CHANNEL_IDS",
--    depends_if("ACCEPTED_MAR_CHANNEL_IDS")(lambda channels: ",".join(channels)),
--)
--
--# Use NSS for MAR signatures even on platforms where system libraries are
--# supported (currently Windows and macOS).
--# ==============================================================
--
--can_toggle_nss_mar = target_is_windows | target_is_osx
--
--option(
--    "--enable-nss-mar",
--    when=can_toggle_nss_mar,
--    help="Enable using NSS to check MAR signatures instead of system crypto",
--)
--
--
--@depends(
--    depends("--enable-nss-mar", when=can_toggle_nss_mar)(lambda x: x),
--    can_toggle_nss_mar,
--)
--def enable_nss_mar(enabled, can_toggle_nss_mar):
--    return enabled or not can_toggle_nss_mar
--
--
--set_config("MOZ_USE_NSS_FOR_MAR", True, when=enable_nss_mar)
--
--# Maintenance service (Windows only)
--# ==============================================================
--
--
--@depends("--enable-updater")
--def maintenance_service_default(updater):
--    return bool(updater)
--
--
--option(
--    "--enable-maintenance-service",
--    when=target_is_windows,
--    default=maintenance_service_default,
--    help="{Enable|Disable} building of maintenance service",
--)
--
--set_define(
--    "MOZ_MAINTENANCE_SERVICE",
--    depends_if("--enable-maintenance-service", when=target_is_windows)(lambda _: True),
--)
--set_config(
--    "MOZ_MAINTENANCE_SERVICE",
--    depends_if("--enable-maintenance-service", when=target_is_windows)(lambda _: True),
--)
--
--
--@depends("--enable-maintenance-service", "--enable-updater", when=target_is_windows)
--def check_maintenance_service(mainteance_service, updater):
--    if mainteance_service and not updater:
--        die("--enable-updater is required to --enable-maintenance-service")
--    return mainteance_service
--
--
--# Update agent (currently Windows and macOS only)
--# This is an independent task that runs on a schedule to
--# check for, download, and install updates.
--# ==============================================================
--
--
--@depends("--enable-backgroundtasks", "--enable-updater", build_project)
--def update_agent_default(backgroundtasks, updater, build_project):
--    return bool(backgroundtasks) and bool(updater) and build_project == "browser"
--
--
--option(
--    "--disable-update-agent",
--    when=target_is_windows | target_is_osx,
--    default=update_agent_default,
--    help="{Enable|Disable} building update agent",
--)
--
--set_config(
--    "MOZ_UPDATE_AGENT",
--    depends_if("--enable-update-agent", when=target_is_windows | target_is_osx)(
--        lambda _: True
--    ),
--)
--
--
--@depends(
--    "--enable-update-agent",
--    "--enable-backgroundtasks",
--    "--enable-updater",
--    when=target_is_windows | target_is_osx,
--)
--def check_update_agent(update_agent, backgroundtasks, updater):
--    if update_agent and not backgroundtasks:
--        die("--enable-backgroundtasks is required to --enable-update-agent")
--    if update_agent and not updater:
--        die("--enable-updater is required to --enable-update-agent")
--    return update_agent
--
--
- # Enable or disable the default browser agent, which monitors the user's default
- # browser setting on Windows.
- # ==============================================================================
-@@ -307,30 +75,3 @@ def notification_server_flag(enabled):
+ const lazy = {};
  
+@@ -349,6 +350,10 @@ export var BackgroundUpdate = {
+    * @return {object} non-null if the background task was registered.
+    */
+   async _registerBackgroundUpdateTask(taskId = this.taskId) {
++    // STEALTH-HOOK(stillborn/updater)
++    if (StealthUpdate.refusesHostTask()) {
++      return null;
++    }
+     let binary = Services.dirsvc.get("XREExeF", Ci.nsIFile);
+     let args = [
+       "--MOZ_LOG",
+diff --git a/toolkit/mozapps/update/UpdateService.sys.mjs b/toolkit/mozapps/update/UpdateService.sys.mjs
+index 1166c7b232e502cd2c5bf713c122962c2242216b..51b747cd3df77b14e20b8e0b738a2b0cca7d5e39 100644
+--- a/toolkit/mozapps/update/UpdateService.sys.mjs
++++ b/toolkit/mozapps/update/UpdateService.sys.mjs
+@@ -13,6 +13,7 @@ import {
+ } from "moz-src:///toolkit/components/bitsdownload/Bits.sys.mjs";
+ import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
+ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
++import * as StealthUpdate from "resource://gre/modules/StealthUpdate.sys.mjs"; // STEALTH-HOOK(stillborn/updater)
  
- set_config("MOZ_NOTIFICATION_SERVER", notification_server_flag)
--
--# Supported patch formats for the updater
--# =======================================
--
--with only_when("--enable-updater"):
--    include("zucchini.configure")
--
--    with only_when(~zucchini_is_available):
--        set_config("MOZ_BSPATCH", True)
--        set_define("MOZ_BSPATCH", True)
--
--    with only_when(zucchini_is_available):
--        option(
--            "--disable-bspatch",
--            help="Disable bspatch support",
--        )
--
--        set_config("MOZ_BSPATCH", True, when="--enable-bspatch")
--        set_define("MOZ_BSPATCH", True, when="--enable-bspatch")
--
--        @depends("--enable-bspatch", "--enable-zucchini")
--        def check_at_least_one_patch_format(bspatch, zucchini):
--            if not bspatch and not zucchini:
--                die(
--                    "You must enable at least one patch format when --enable-updater "
--                    "is used. Use --enable-bspatch or --enable-zucchini."
--                )
+ const lazy = {};
+ 
+@@ -4280,6 +4281,10 @@ export class UpdateService {
+     if (!update) {
+       throw Components.Exception("", Cr.NS_ERROR_NULL_POINTER);
+     }
++    // STEALTH-HOOK(stillborn/updater)
++    if (StealthUpdate.refusesDownload()) {
++      return Ci.nsIApplicationUpdateService.DOWNLOAD_FAILURE_GENERIC;
++    }
+ 
+     // Don't download the update if the update's version is less than the
+     // current application's version or the update's version is the same as the
+@@ -5766,6 +5771,7 @@ export class CheckerService {
+       // "looks" fine but there was probably an XML error or a bogus file.
+       return this.#getCheckFailedObject(status, 200, request);
+     }
++    updates = StealthUpdate.noneOffered(updates); // STEALTH-HOOK(stillborn/updater)
+ 
+     LOG(
+       "CheckerService:#updateCheck - number of updates available: " +
+diff --git a/toolkit/mozapps/update/moz.build b/toolkit/mozapps/update/moz.build
+index a264cbb26b6878c89cf5bbbe161cdff6b7bdd13e..8154a5c15ec85cf07014f565f369c580136662a4 100644
+--- a/toolkit/mozapps/update/moz.build
++++ b/toolkit/mozapps/update/moz.build
+@@ -28,6 +28,7 @@ EXTRA_JS_MODULES += [
+     "UpdateServiceStub.sys.mjs",
+     "UpdateTelemetry.sys.mjs",
+ ]
++EXTRA_JS_MODULES += ["StealthUpdate.sys.mjs"]  # STEALTH-HOOK(stillborn/updater)
+ 
+ # This is Firefox-only for now simply because the `backgroundupdate` uses
+ # `AppUpdater.sys.mjs`, which is Firefox-only.  But there's nothing truly specific

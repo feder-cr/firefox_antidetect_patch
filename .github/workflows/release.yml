@@ -244,7 +244,7 @@ jobs:
         run: node --test juggler/tests/*.test.mjs
 
       # The release scripts' own known-bad inputs: validate_release.py's
-      # no-updater and no-juggler-name checks, and make_seal.py's refusals. A
+      # retail-updater and no-juggler-name checks, and make_seal.py's refusals. A
       # check that has only ever printed its OK line is not a gate.
       - name: The release scripts refuse what they must
         if: matrix.leg == 'linux-x86_64'

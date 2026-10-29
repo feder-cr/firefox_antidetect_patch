@@ -416,67 +416,74 @@ def assert_windows_runtime_is_shipped(tree: Path) -> None:
     print("    every imported DLL is shipped or provided by Windows OK")
 
 
-UPDATER_FILES = (
-    "updater.exe", "updater", "updater.ini", "update-settings.ini",
-    "maintenanceservice.exe", "maintenanceservice_installer.exe", "updateagent",
-)
-UPDATER_MODULES = (
-    "UpdateService.sys.mjs", "UpdateListener.sys.mjs", "UpdateServiceStub.sys.mjs",
-    "AppUpdater.sys.mjs", "BackgroundUpdate.sys.mjs",
-)
+#: The retail's update settings: the MAR channel a release accepts.
+RETAIL_MAR_CHANNELS = b"ACCEPTED_MAR_CHANNEL_IDS=firefox-mozilla-release"
+#: The calls that keep an answer of the update server from being acted on, as
+#: UpdateService.sys.mjs carries them (toolkit/mozapps/update/StealthUpdate.sys.mjs).
+UPDATE_REFUSALS = (b"StealthUpdate.noneOffered(", b"StealthUpdate.refusesDownload(")
 
 
-def assert_no_updater(tree: Path) -> None:
-    """No update machinery may be inside a shipped archive.
+def assert_updater_is_retails(tree: Path) -> None:
+    """The update machinery is the retail's, and it never acts on an answer.
 
-    It is not switched off by a pref or by a policy: the build OPTIONS were
-    removed from build/moz.configure/update-programs.configure on 2026-08-31, so
-    MOZ_UPDATER is never set and toolkit/mozapps/update never enters the build.
+    Since 2026-10-30 build/moz.configure/update-programs.configure is Mozilla's
+    file: the updater is compiled and packaged as in a release, and the update
+    check goes out as official Firefox sends it. Three facts make that safe and
+    the same as the retail, and each is a BUILD fact a rebase or a mozconfig can
+    undo in silence, the browser still starting:
 
-    That makes it a BUILD-SYSTEM fact, which is exactly the kind a rebase can
-    undo in silence - one conflict on that file resolved towards upstream and
-    the updater is back, the browser still starts, every JavaScript test still
-    passes, and the only symptom is the badge the owner asked to remove, plus a
-    binary able to overwrite the engine its own seal pins.
+    - the updater binary is in the package (else the build is not the retail's:
+      the check would not even run the same code);
+    - update-settings.ini accepts the retail's MAR channel (Mozilla passes it
+      from its CI environment, we from .mozconfig; without it the file is empty);
+    - UpdateService.sys.mjs carries our refusals, so no offered update is taken
+      and nothing is downloaded: an update would overwrite the engine its seal
+      pins.
 
     Two layouts, the same split the juggler check already handles: the Windows
-    zip packs modules into omni.ja, the Linux tarball carries the loose
-    dist/bin tree.
+    zip packs modules into omni.ja (two of them), the Linux tarball may carry
+    the loose dist/bin tree.
     """
-    import zipfile
-    found: list[str] = []
+    problems: list[str] = []
 
-    for p in tree.rglob("*"):
-        if p.is_file() and p.name in UPDATER_FILES:
-            found.append(str(p.relative_to(tree)))
+    if not any(p.is_file() and p.name in ("updater.exe", "updater")
+               for p in tree.rglob("updater*")):
+        problems.append("no updater binary in the package (MOZ_UPDATER off?)")
 
-    # BOTH scans, always. The first draft did the loose one only when there was
-    # no omni.ja, and looked at the ROOT omni.ja alone - which a real Windows
-    # package immediately falsified: it ships two (omni.ja and
-    # browser/omni.ja), and toolkit/mozapps/update modules can land in either.
-    # A package can also carry an archive and loose modules at once.
+    settings = [p for p in tree.rglob("update-settings.ini") if p.is_file()]
+    if not settings:
+        problems.append("no update-settings.ini")
+    elif not all(RETAIL_MAR_CHANNELS in p.read_bytes() for p in settings):
+        problems.append("update-settings.ini does not accept the retail's MAR "
+                        "channel (MAR_CHANNEL_ID / ACCEPTED_MAR_CHANNEL_IDS in .mozconfig)")
+
+    # BOTH scans, always: a real Windows package ships two archives (omni.ja and
+    # browser/omni.ja), and a package can carry an archive and loose modules at
+    # once.
+    services: list[tuple[str, bytes]] = []
     for omni in sorted(tree.rglob("omni.ja")):
         rel = str(omni.relative_to(tree))
-        import stock_parity  # Mozilla's reader: optimized jars too (see above)
-        for n in stock_parity.open_jar(omni.read_bytes(), rel).entries:
-            if n.rsplit("/", 1)[-1] in UPDATER_MODULES:
-                found.append(rel + "!" + n)
+        import stock_parity  # Mozilla's reader: optimized jars too
+        jar = stock_parity.open_jar(omni.read_bytes(), rel)
+        for n in jar.entries:
+            if n.rsplit("/", 1)[-1] == "UpdateService.sys.mjs":
+                services.append((rel + "!" + n, jar[n].read()))
+    for p in tree.rglob("UpdateService.sys.mjs"):
+        if p.is_file():
+            services.append((str(p.relative_to(tree)), p.read_bytes()))
+    if not services:
+        problems.append("no UpdateService.sys.mjs in the package")
+    for where, body in services:
+        missing = [c.decode() for c in UPDATE_REFUSALS if c not in body]
+        if missing:
+            problems.append(f"{where} lacks {', '.join(missing)}: an offered "
+                            "update would be downloaded and applied")
 
-    for p in tree.rglob("*.sys.mjs"):
-        if p.name in UPDATER_MODULES:
-            found.append(str(p.relative_to(tree)))
-
-    if found:
+    if problems:
         raise ValidationError(
-            "the update machinery is back in this build: "
-            + ", ".join(sorted(found)[:8])
-            + ". It is removed at the BUILD level - build/moz.configure/"
-              "update-programs.configure declares no --enable-updater at all - "
-              "so this means a rebase restored that file, or a mozconfig "
-              "re-added the option. Do not publish it: it brings back the "
-              "'Update available' badge and a binary that can overwrite the "
-              "engine its seal pins.")
-    print("    no updater in the package (files and modules both absent)")
+            "the update machinery is not the retail's with our refusals: "
+            + "; ".join(problems) + ". Do not publish it.")
+    print("    updater as the retail, offered updates refused OK")
 
 
 def _build_id(ini: Path) -> str:
@@ -584,7 +591,7 @@ def validate_linux_tarball(archive: Path) -> None:
         check_no_leaks_tree(td)
         assert_juggler_provenance(td)
         assert_page_surface_is_stock(td)
-        assert_no_updater(td)
+        assert_updater_is_retails(td)
 
         print("  [4/4] smoke (firefox --version)...")
         smoke_linux(td)
@@ -606,7 +613,7 @@ def validate_windows_zip(archive: Path) -> None:
         assert_juggler_provenance(td)
         assert_page_surface_is_stock(td)
         assert_windows_runtime_is_shipped(td)
-        assert_no_updater(td)
+        assert_updater_is_retails(td)
 
         print("  [3/4] no-symlinks check (zip cannot store them, but verify)...")
         for p in td.rglob("*"):
@@ -621,7 +628,7 @@ def validate_windows_zip(archive: Path) -> None:
 
 
 def _selftest() -> int:
-    """Known-bad inputs for assert_no_updater, and the near-misses that must NOT fire.
+    """Known-bad inputs for assert_updater_is_retails, and the near-misses that must NOT fire.
 
     A check that has only ever printed its OK line is not a gate. This one is
     cheap to exercise because it is a pure function of a directory: no archive,
@@ -651,36 +658,54 @@ def _selftest() -> int:
                     zf.writestr(m, "x")
         return d
 
+    refusing = b"x = StealthUpdate.noneOffered(u); if (StealthUpdate.refusesDownload()) {}"
+    settings_ok = b"[Settings]\n" + RETAIL_MAR_CHANNELS + b"\n"
+
+    def updtree(binary="updater.exe", settings=settings_ok, service=refusing,
+                where="omni"):
+        """A package with the update machinery; each argument breaks one fact."""
+        d = tree()
+        if binary:
+            (d / binary).write_bytes(b"x")
+        if settings is not None:
+            (d / "update-settings.ini").write_bytes(settings)
+        if service is not None:
+            member = "modules/UpdateService.sys.mjs"
+            if where == "loose":
+                (d / member).write_bytes(service)
+            else:
+                jar = d / ("browser/omni.ja" if where == "nested" else "omni.ja")
+                jar.parent.mkdir(exist_ok=True)
+                with zipfile.ZipFile(jar, "w") as zf:
+                    zf.writestr(member, service)
+        return d
+
     #: (name, factory, must_raise)
     cases = [
-        ("a clean tree", lambda: tree(), False),
-        ("updater.exe at the root", lambda: tree("updater.exe"), True),
-        ("a bare linux updater", lambda: tree("updater"), True),
-        ("updater.ini", lambda: tree("updater.ini"), True),
-        ("update-settings.ini", lambda: tree("update-settings.ini"), True),
-        ("the maintenance service", lambda: tree("maintenanceservice.exe"), True),
-        ("the loose UpdateListener module",
-         lambda: tree("modules/UpdateListener.sys.mjs"), True),
-        ("UpdateService packed INSIDE omni.ja",
-         lambda: tree(omni_members=("modules/UpdateService.sys.mjs",)), True),
-        # A real Windows package ships two archives, and the first draft of this
-        # check read only the one at the root.
-        ("BackgroundUpdate inside the NESTED browser/omni.ja",
-         lambda: tree(nested_omni=("modules/BackgroundUpdate.sys.mjs",)), True),
-        ("a loose module BESIDE a clean omni.ja",
-         lambda: tree("modules/AppUpdater.sys.mjs",
-                      omni_members=("modules/AppConstants.sys.mjs",)), True),
-        # The omni.ja arm must not be blind to what sits beside it, and the
-        # loose arm must not fire on a build that legitimately has an omni.ja.
-        ("an omni.ja with nothing of ours in it",
-         lambda: tree(omni_members=("modules/AppConstants.sys.mjs",)), False),
-        # Near-misses. A gate that refuses everything is as useless as one that
-        # passes everything.
-        ("a file merely NAMED like an update", lambda: tree("updates.txt"), False),
-        ("a directory called updater", lambda: tree("updater/keep.txt"), False),
+        ("the retail's updater, refusals inside omni.ja", lambda: updtree(), False),
+        ("the linux layout: a bare updater, loose modules",
+         lambda: updtree(binary="updater", where="loose"), False),
+        # A real Windows package ships two archives; the module can be in either.
+        ("UpdateService inside the NESTED browser/omni.ja",
+         lambda: updtree(where="nested"), False),
+        ("a tree with no update machinery at all", lambda: tree(), True),
+        ("no updater binary", lambda: updtree(binary=None), True),
+        ("a file merely NAMED like the updater",
+         lambda: updtree(binary="updater.txt"), True),
+        ("no update-settings.ini", lambda: updtree(settings=None), True),
+        ("update-settings.ini with an empty channel",
+         lambda: updtree(settings=b"[Settings]\nACCEPTED_MAR_CHANNEL_IDS=\n"), True),
+        ("no UpdateService module", lambda: updtree(service=None), True),
+        ("Mozilla's UpdateService, without our refusals",
+         lambda: updtree(service=b"updates = this.#parseUpdates(request);"), True),
+        ("only one of the two refusals",
+         lambda: updtree(service=b"StealthUpdate.noneOffered(u)"), True),
+        ("a loose Mozilla UpdateService BESIDE a refusing omni.ja",
+         lambda: (lambda d: ((d / "modules/UpdateService.sys.mjs").write_bytes(b"x"), d)[1])(
+             updtree()), True),
     ]
 
-    cases = [(name, factory, must_raise, assert_no_updater)
+    cases = [(name, factory, must_raise, assert_updater_is_retails)
              for name, factory, must_raise in cases]
 
     leak = b"built in /home/feder/ff-build\n" * 20
@@ -771,8 +796,9 @@ def _selftest() -> int:
          lambda: omni(juggler, True), False, provenance),
         ("an optimized omni.ja without the Juggler",
          lambda: omni({"modules/AppConstants.sys.mjs": b"x"}, True), True, provenance),
-        ("UpdateService packed inside an OPTIMIZED omni.ja",
-         lambda: omni({"modules/UpdateService.sys.mjs": b"x"}, True), True, assert_no_updater),
+        ("Mozilla's UpdateService packed inside an OPTIMIZED omni.ja",
+         lambda: omni({"modules/UpdateService.sys.mjs": b"x"}, True), True,
+         assert_updater_is_retails),
     ]
 
     bad = 0
@@ -806,7 +832,7 @@ def _selftest() -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--selftest", action="store_true",
-                    help="run the known-bad inputs for the no-updater and the "
+                    help="run the known-bad inputs for the updater and the "
                          "page-surface checks and exit")
     ap.add_argument("tag", nargs="?", help="release tag, e.g. firefox-4 (resolves to release/binary/<tag>/)")
     ap.add_argument("--linux", type=Path, help="explicit path to the Linux tar.gz (overrides tag)")

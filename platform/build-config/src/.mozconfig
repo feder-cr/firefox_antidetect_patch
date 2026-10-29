@@ -191,22 +191,26 @@ ac_add_options --enable-update-channel=release
 # non si carica. Juggler e' compilato dentro e non e' un'estensione, quindi il
 # percorso del prodotto non cambia; cambia per chi carica estensioni proprie.
 
-# L'UPDATER NON ESISTE PIU', e non e' un `--disable-`: le opzioni sono state
-# TOLTE da build/moz.configure/update-programs.configure il 2026-08-31, su
-# richiesta del proprietario ("tutto quello che riguarda aggiornamenti"),
-# proprio perche' non restasse una leva da riaccendere. Due delle sei righe
-# qui sopra - --disable-maintenance-service e --disable-update-agent - oggi
-# non sono nemmeno piu' opzioni valide, e nemmeno --disable-updater lo e'.
+# L'UPDATER E' QUELLO DEL RETAIL (2026-10-30, decisione del proprietario:
+# "come ufficiale, senza installare"). build/moz.configure/update-programs.configure
+# e' di nuovo il file di Mozilla: updater, servizio di manutenzione e update
+# agent si compilano e si impacchettano come nella release win64, e il
+# controllo verso aus5.mozilla.org parte con lo stesso timer e la stessa URL.
+# Cio' che segue la risposta lo rifiuta toolkit/mozapps/update/StealthUpdate.sys.mjs
+# (stillborn/updater): nessun aggiornamento offerto, nessun download, nessuna
+# attivita' pianificata sulla macchina. Dal 2026-08-31 a oggi le opzioni erano
+# TOLTE dal file, e la build non faceva il controllo che il retail fa.
 #
-# Conseguenza dichiarata invece che scoperta dopo: niente badge "Update
-# available", e nessuna richiesta ad aus5.mozilla.org, che il retail invece fa
-# all'avvio. E' una divergenza di RETE accettata con la decisione
-# (27-retail-network-parity.md sezione 2, che diceva il contrario fino a oggi).
+# I canali MAR sono quelli del retail (update-settings.ini della release:
+# ACCEPTED_MAR_CHANNEL_IDS=firefox-mozilla-release); senza, il file uscirebbe
+# vuoto. Mozilla li passa dall'ambiente della sua CI, noi da qui.
+export MAR_CHANNEL_ID=firefox-mozilla-release
+export ACCEPTED_MAR_CHANNEL_IDS=firefox-mozilla-release
 #
-# `app.update.auto=false` RESTA in invisible_core: qui non ha piu' niente da
-# fermare, ma get_default_stealth_prefs serve anche chi guida un Firefox suo,
-# e li' quella pref e' l'unica cosa che impedisca a un binario di aggiornarsi
-# sotto il sigillo che lo pinna.
+# I tempi dell'updater (intervallo, controllo all'avvio per build vecchie,
+# badge, avvisi) stanno nel marchio, e il nostro e' unofficial: le sue righe
+# portano i valori del marchio ufficiale (browser/branding/unofficial/pref/
+# firefox-branding.js, STEALTH-HOOK(stillborn/updater)).
 
 ac_add_options --enable-bootstrap
 

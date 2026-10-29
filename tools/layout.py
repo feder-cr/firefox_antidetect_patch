@@ -38,7 +38,7 @@ FEATURES = {
     "vsdownload-download-watchdog": "platform/build-tools",
     "win-long-build-paths": "platform/build-tools",
     # stillborn
-    "updater-removed": "stillborn/updater",
+    "updater-refuses": "stillborn/updater",
     "pingsender-session-route": "stillborn/telemetry",
     "api-keys-declared": "stillborn/api-keys",
     # network
@@ -158,6 +158,8 @@ OWN_FILES = [
     (r"^toolkit/components/urlformatter/StealthApiKeys\.sys\.", "stillborn/api-keys"),
     (r"^juggler/tests/pingsender_route_lives_in_our_file\.test\.", "stillborn/telemetry"),
     (r"^toolkit/components/telemetry/app/StealthPingsender\.sys\.", "stillborn/telemetry"),
+    (r"^toolkit/mozapps/update/StealthUpdate\.sys\.", "stillborn/updater"),
+    (r"^juggler/tests/updater_refuses_what_follows_the_check\.test\.", "stillborn/updater"),
     (r"^third_party/libwebrtc/modules/desktop_capture/win/StealthWindowInputDesktop\.", "platform/hidden-desktop"),
     (r"^netwerk/protocol/http/StealthInterception\.", "automation/network-interception"),
     (r"^netwerk/dns/StealthDNSDeclaration\.", "network/dns"),

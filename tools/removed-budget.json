@@ -1,8 +1,8 @@
 {
  "README.md": 3,
  "browser/app/profile/firefox.js": 4,
+ "browser/branding/unofficial/pref/firefox-branding.js": 6,
  "browser/installer/package-manifest.in": 1,
- "build/moz.configure/update-programs.configure": 260,
  "chrome/nsChromeRegistry.cpp": 1,
  "devtools/server/actors/thread.js": 1,
  "docshell/base/BrowsingContext.cpp": 4,

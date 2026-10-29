@@ -1,31 +1,92 @@
 {
  "modified": [
-  "build/moz.configure/update-programs.configure"
+  "browser/branding/unofficial/pref/firefox-branding.js",
+  "toolkit/mozapps/update/BackgroundUpdate.sys.mjs",
+  "toolkit/mozapps/update/UpdateService.sys.mjs",
+  "toolkit/mozapps/update/moz.build"
  ],
- "added": {},
+ "added": {
+  "juggler/tests/updater_refuses_what_follows_the_check.test.mjs": "100644",
+  "toolkit/mozapps/update/StealthUpdate.sys.mjs": "100644"
+ },
  "inventory": [
   {
-   "file": "build/moz.configure/update-programs.configure",
+   "file": "browser/branding/unofficial/pref/firefox-branding.js",
    "category": "stillborn",
-   "feature": "updater-removed",
-   "prefs": [],
-   "added": 24,
-   "removed": 260,
-   "hunks": 3,
-   "inline_logic_lines": 0,
-   "hookable": "hard",
-   "anchor": "top-level configure options: updater_default, --enable-updater, --enable-unverified-updates, mac elevated-update requirements, MAR channel IDs, --enable-nss-mar, maintenance service, update agent, zucchini/bspatch block (all deleted)",
-   "evidence": [
-    "-set_config(\"MOZ_UPDATER\", True, when=\"--enable-updater\")",
-    "+# Upstream this file declares the whole application-update machinery. In this"
+   "feature": "updater-refuses",
+   "prefs": [
+    "app.update.interval",
+    "app.update.promptWaitTime",
+    "app.update.url.manual",
+    "app.update.url.details",
+    "app.update.checkInstallTime.days",
+    "app.update.badgeWaitTime"
    ],
-   "notes": "Deletes the upstream update machinery (updater, MAR signature checks and channel IDs, maintenance service, update agent, bspatch). Hookable=hard: nothing is left to hook, and every upstream edit to these lines will conflict on rebase. The header comment says this was done on owner instruction and deliberately NOT as a --disable-updater switch. --enable-update-channel is kept: CONFIRMED, it lives in build/moz.configure/init.configure:1188 (not in this file, untouched). Default browser agent and notification server are kept (diff context). Open question from the first pass now CHECKED: toolkit/moz.build:45-46 builds toolkit/mozapps/update only when CONFIG['MOZ_UPDATER'] (and :48-50 builds mozapps/update/common when MOZ_MAINTENANCE_SERVICE or MOZ_UPDATER), browser/app/moz.build:79 also gates on it, and a grep of build/moz.configure and toolkit/moz.configure finds no other reference to MOZ_UPDATER or the removed options (only zucchini.configure keeps its own MOZ_ZUCCHINI option), so the comment's claim that the update directory is not built is CONFIRMED. Stillborn: this removes Firefox's own updater and its aus5 traffic.",
+   "added": 0,
+   "removed": 0,
+   "hunks": 0,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "app.update.interval, promptWaitTime, url.manual, url.details, checkInstallTime.days, badgeWaitTime lines",
+   "evidence": [],
+   "notes": "The unofficial branding we build with carries Nightly-like update timings; each line holds the official branding's release value, so the update check runs on the retail's cadence (no extra check at startup for a build older than 2 days).",
    "verifier": {
-    "changed": [
-     "evidence",
-     "notes"
-    ],
-    "why": "Evidence line was truncated (not verbatim); verified the open question about toolkit/mozapps/update."
+    "changed": [],
+    "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+   }
+  },
+  {
+   "file": "toolkit/mozapps/update/BackgroundUpdate.sys.mjs",
+   "category": "stillborn",
+   "feature": "updater-refuses",
+   "prefs": [],
+   "added": 0,
+   "removed": 0,
+   "hunks": 0,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "module imports; BackgroundUpdate._registerBackgroundUpdateTask head",
+   "evidence": [],
+   "notes": "The import and refusesHostTask(): Mozilla's checks and the prefs it records run as written, only the Windows scheduled task is not created.",
+   "verifier": {
+    "changed": [],
+    "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+   }
+  },
+  {
+   "file": "toolkit/mozapps/update/UpdateService.sys.mjs",
+   "category": "stillborn",
+   "feature": "updater-refuses",
+   "prefs": [],
+   "added": 0,
+   "removed": 0,
+   "hunks": 0,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "module imports; CheckerService #updateCheck after #parseUpdates; UpdateService #downloadUpdate head",
+   "evidence": [],
+   "notes": "Three hooks: the import of our StealthUpdate.sys.mjs, noneOffered() right after Mozilla parses the server's answer (every consumer then takes the no-update path), refusesDownload() at the one door of every download (backstop).",
+   "verifier": {
+    "changed": [],
+    "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+   }
+  },
+  {
+   "file": "toolkit/mozapps/update/moz.build",
+   "category": "build",
+   "feature": "updater-refuses",
+   "prefs": [],
+   "added": 0,
+   "removed": 0,
+   "hunks": 0,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after EXTRA_JS_MODULES list",
+   "evidence": [],
+   "notes": "Hook registering our StealthUpdate.sys.mjs.",
+   "verifier": {
+    "changed": [],
+    "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
    }
   }
  ]
