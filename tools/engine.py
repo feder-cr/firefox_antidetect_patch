@@ -6,6 +6,9 @@
     python tools/engine.py check     the series' own rules, offline (also in CI)
     python tools/engine.py apply --head <branch>   the series as a branch: tag + one commit per folder
     python tools/engine.py materialize --into <dir> CI: fetch the tag, apply, check out the tree
+    python tools/engine.py drift --to <tag>   our patched Mozilla files that Mozilla changed
+    python tools/engine.py port --to <tag>    every folder merged three-way onto the new tag,
+                                              all conflicts in one run, branch port/<tag>
 
 The Mozilla tag, the source branch and the commit last exported are in UPSTREAM.json;
 --source / --base / --head override them (the source repository defaults to
@@ -46,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import layout  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-INVENTORY = ROOT / "tools" / "inventory-157.json"
+INVENTORY = ROOT / "tools" / "inventory.json"
 UPSTREAM = ROOT / "UPSTREAM.json"
 BUDGET = ROOT / "tools" / "hook-budget.json"
 # The workflows live in the series (the tree's tests read them beside scripts/), and
@@ -98,7 +101,7 @@ def owners(source: Path, base: str, head: str):
     records = {r["file"]: r for r in json.loads(INVENTORY.read_text(encoding="utf-8"))}
     plan = defaultdict(lambda: {"modified": [], "added": []})
     for status, mode, path in changed_files(source, base, head):
-        if status == "M":
+        if status in ("M", "D"):   # D: a Mozilla file we delete is ours to own like any change
             if path not in records:
                 raise SystemExit("modified file %s is not in the inventory: add its record to %s "
                                  "(feature, category, anchor, hookable, notes)" % (path, INVENTORY.name))
@@ -110,7 +113,17 @@ def owners(source: Path, base: str, head: str):
     return plan, records
 
 
+def require_descends(source: Path, base: str, head: str) -> None:
+    """The branch must be built on the tag: a diff between unrelated commits would
+    export Mozilla's own changes as ours."""
+    if subprocess.run(["git", "-C", str(source), "merge-base", "--is-ancestor", base, head],
+                      capture_output=True).returncode:
+        raise SystemExit("%s does not descend from %s: the series is the difference from the tag, "
+                         "so the branch must be built on it (tools/engine.py apply)" % (head, base))
+
+
 def export(source: Path, base: str, head: str) -> None:
+    require_descends(source, base, head)
     plan, records = owners(source, base, head)
     series = sorted(plan, key=layout.folder_sort_key)
     for gone in sorted(set(existing_folders()) - set(series)):
@@ -195,7 +208,19 @@ def apply(source: Path, base: str, branch: str, force: bool) -> str:
     if exists and not force:
         raise SystemExit("%s already exists in %s: pass --force to rebuild it (its commits are lost "
                          "unless exported first)" % (branch, source))
+    layers = build_stack(source, base)
+    parent, tree = layers[-1][1], layers[-1][2]
+    git(source, "update-ref", ref, parent)
+    print("%s: %s on top of %s, %d layers (tree %s)"
+          % (branch, parent[:10], base, len(series_folders()), tree[:12]))
+    return tree
+
+
+def build_stack(source: Path, base: str) -> list:
+    """The series on `base`, as [(folder, commit, tree)] in SERIES order (the first entry
+    is the tag itself, folder None). Writes objects only, moves no ref."""
     parent = git(source, "rev-parse", "%s^{commit}" % base).decode().strip()
+    layers = [(None, parent, git(source, "rev-parse", "%s^{tree}" % parent).decode().strip())]
     # Every layer is dated with the tag's own commit date: the same series on the same
     # tag gives the same commits, byte for byte, on any machine. That makes the commit
     # a seal records (source_commit) reproducible by anyone who has main and the tag,
@@ -221,10 +246,65 @@ def apply(source: Path, base: str, branch: str, force: bool) -> str:
                     env=env)
             tree = git(source, "write-tree", env=env).decode().strip()
             parent = git(source, "commit-tree", tree, "-p", parent, "-m", folder, env=env).decode().strip()
-    git(source, "update-ref", ref, parent)
-    print("%s: %s on top of %s, %d layers (tree %s)"
-          % (branch, parent[:10], base, len(series_folders()), tree[:12]))
-    return tree
+            layers.append((folder, parent, tree))
+    return layers
+
+
+def port(source: Path, old: str, new: str, branch: str, force: bool) -> int:
+    """Moves the series from Mozilla tag `old` to tag `new` in one run, every folder
+    merged three-way, and reports every conflict instead of stopping at the first.
+
+    The series is applied to `old`, where it applies cleanly, giving layers L1..Ln.
+    Then each layer is replayed on `new`: Ni = merge(base L(i-1), ours N(i-1), theirs Li)
+    with `git merge-tree`, so each folder's own change meets what Mozilla changed.
+    A conflicted folder still gets its commit (files with conflict markers) and the
+    run goes on. The result is branch `branch` in the source repository: resolve the
+    markers there, commit, then export. Both tags must be in the source repository
+    (the blobs of `old` are the base of every merge)."""
+    for tag in (old, new):
+        if subprocess.run(["git", "-C", str(source), "rev-parse", "-q", "--verify", "%s^{commit}" % tag],
+                          capture_output=True).returncode:
+            raise SystemExit("%s is not in %s: fetch it first, e.g. git -C %s fetch --depth 1 %s "
+                             "refs/tags/%s:refs/tags/%s" % (tag, source, source, upstream()["mozilla_repository"], tag, tag))
+    ref = "refs/heads/%s" % branch
+    if subprocess.run(["git", "-C", str(source), "rev-parse", "-q", "--verify", ref],
+                      capture_output=True).returncode == 0 and not force:
+        raise SystemExit("%s already exists: pass --force to rebuild it" % branch)
+    stack = build_stack(source, old)
+    current = git(source, "rev-parse", "%s^{commit}" % new).decode().strip()
+    when = git(source, "log", "-1", "--format=%cI", current).decode().strip()
+    env = dict(os.environ, **IDENTITY, GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
+    report = []
+    for (_, base_commit, _), (folder, layer, _) in zip(stack, stack[1:]):
+        done = subprocess.run(["git", "-C", str(source), "merge-tree", "--write-tree", "--name-only",
+                               "--no-messages", "--merge-base=%s" % base_commit, current, layer],
+                              capture_output=True)
+        lines = done.stdout.decode(errors="replace").split("\n")
+        if done.returncode not in (0, 1) or not lines[0].strip():
+            raise SystemExit("merge-tree failed on %s: %s" % (folder, done.stderr.decode(errors="replace")))
+        tree, conflicts = lines[0].strip(), sorted({l for l in lines[1:] if l.strip()})
+        title = folder if not conflicts else "%s (CONFLICT: %s)" % (folder, ", ".join(conflicts))
+        current = git(source, "commit-tree", tree, "-p", current, "-m", title, env=env).decode().strip()
+        report.append((folder, conflicts))
+    git(source, "update-ref", ref, current)
+    bad = [(f, c) for f, c in report if c]
+    for folder, conflicts in bad:
+        print("CONFLICT %s: %s" % (folder, ", ".join(conflicts)))
+    print("%s: %d folders moved from %s to %s, %d clean, %d with conflicts (%d files)"
+          % (branch, len(report), old, new, len(report) - len(bad), len(bad), sum(len(c) for _, c in bad)))
+    return 1 if bad else 0
+
+
+def drift(source: Path, old: str, new: str) -> int:
+    """Which Mozilla files we patch did Mozilla change between the two tags: the files
+    a port has to look at, whether or not they conflict."""
+    ours = sorted(r["file"] for r in json.loads(INVENTORY.read_text(encoding="utf-8")))
+    out = git(source, "diff", "--name-status", "--no-renames", old, new, "--", *ours).decode()
+    rows = [l.split("\t", 1) for l in out.splitlines() if l.strip()]
+    for status, path in rows:
+        print("%s %s" % ({"M": "changed", "D": "DELETED by Mozilla", "A": "added"}.get(status, status), path))
+    print("%d of our %d patched Mozilla files changed between %s and %s" % (len(rows), len(ours), old, new))
+    return 0
 
 
 def materialize(into: Path, branch: str = "engine") -> str:
@@ -258,6 +338,7 @@ def materialize(into: Path, branch: str = "engine") -> str:
 
 
 def verify(source: Path, base: str, head: str) -> int:
+    require_descends(source, base, head)
     with tempfile.TemporaryDirectory() as tmp:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"))
         git(source, "read-tree", base, env=env)
@@ -384,7 +465,9 @@ def status(source: Path, head: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["status", "apply", "materialize", "export", "verify", "check", "shrink-budget"])
+    ap.add_argument("command", choices=["status", "apply", "materialize", "export", "verify", "check",
+                                        "shrink-budget", "drift", "port"])
+    ap.add_argument("--to", help="drift/port: the Mozilla tag to move to (a stable release, never a beta)")
     ap.add_argument("--into", type=Path, default=Path("."), help="materialize: the directory to make the tree")
     ap.add_argument("--source", type=Path, default=Path(os.environ.get("ENGINE_SOURCE", "C:/ff/source")))
     ap.add_argument("--base")
@@ -393,6 +476,12 @@ def main() -> int:
     a = ap.parse_args()
     up = upstream()
     base, head = a.base or up["mozilla_tag"], a.head or up["source_branch"]
+    if a.command in ("drift", "port"):
+        if not a.to:
+            raise SystemExit("%s needs --to <Mozilla tag>" % a.command)
+        if a.command == "drift":
+            return drift(a.source, base, a.to)
+        return port(a.source, base, a.to, a.head if a.head else "port/%s" % a.to, a.force)
     if a.command == "materialize":
         materialize(a.into)
         return 0

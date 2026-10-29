@@ -11,7 +11,7 @@ The layout is one folder per feature, grouped by what the feature does:
 
 GROUP_ORDER is also the order the series is applied in.
 
-FEATURES maps the feature names of the 157 inventory (tools/inventory-157.json, one
+FEATURES maps the feature names of the inventory (tools/inventory.json, one
 record per Mozilla file we modify) to their folder. OWN_FILES maps the files we add
 to Firefox's tree, by path, to the folder that owns them.
 """

@@ -18,7 +18,7 @@ in `UPSTREAM.json` (`exported_tree`). Si modificano a mano soltanto:
 
 - `FEATURE.md` di ogni cartella (cosa fa, perché, test);
 - `tools/layout.py` (in quale cartella va una funzione o un nostro file);
-- `tools/inventory-157.json` (una voce per ogni file Mozilla che tocchiamo);
+- `tools/inventory.json` (una voce per ogni file Mozilla che tocchiamo);
 - `tools/hook-budget.json` (solo verso il basso, vedi sotto);
 - `AGENTS.md`, `tools/`, `.github/`.
 
@@ -36,6 +36,8 @@ python tools/engine.py export   # riscrive la serie dal sorgente
 python tools/engine.py verify   # la ricostruisce sul tag e la confronta: "identical" o rosso
 python tools/engine.py check    # regole della serie, senza Firefox (gira anche in CI)
 python tools/engine.py shrink-budget   # abbassa i tetti dopo aver spostato logica
+python tools/engine.py drift --to <tag>  # quali nostri file Mozilla ha cambiato fino al tag nuovo
+python tools/engine.py port --to <tag>   # tutte le cartelle a tre vie sul tag nuovo, tutti i conflitti in una corsa
 python -m pytest -q tools/tests
 ```
 
@@ -97,5 +99,7 @@ diff. Opus decide solo i casi contesi.
    alla volta, dai file con più righe nostre (`hook-budget.json`).
 3. Poi: la build della release parte dalla serie applicata al tag, non dal ramo.
 4. Nuova versione di Firefox: solo dal tag della release stabile ufficiale, mai da
-   una beta. Si cambia `mozilla_tag`, si prova `apply` (si ferma e nomina la cartella
-   che non si applica) e si risolvono i rifiuti cartella per cartella.
+   una beta. In un clone che ha i due tag: `drift --to <nuovo>` dice quali nostri
+   file Mozilla sono cambiati, `port --to <nuovo>` fa il ramo `port/<nuovo>` con una
+   fusione a tre vie per cartella e l'elenco di tutti i conflitti. Si risolvono i
+   marcatori su quel ramo, si cambia `mozilla_tag` e si esporta.
