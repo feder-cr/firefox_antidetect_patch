@@ -62,18 +62,17 @@ index 0485032ec57bee64f638c89f9314e75696563581..dd58d7429c975fae818c022011f2f8db
    },
  };
 diff --git a/toolkit/components/urlformatter/moz.build b/toolkit/components/urlformatter/moz.build
-index ffc01ed8b6ebf20eab576e8c5928d33934e9e64c..26d6bbb6ff72897840aadba39abd463a4c1674d9 100644
+index ffc01ed8b6ebf20eab576e8c5928d33934e9e64c..1a38f6df3aa7d42983a10c76ceca4123b76abb84 100644
 --- a/toolkit/components/urlformatter/moz.build
 +++ b/toolkit/components/urlformatter/moz.build
-@@ -15,6 +15,8 @@ XPIDL_MODULE = "urlformatter"
- 
+@@ -16,6 +16,7 @@ XPIDL_MODULE = "urlformatter"
  EXTRA_JS_MODULES += [
      "URLFormatter.sys.mjs",
-+    # STEALTH-HOOK(stillborn/api-keys)
-+    "StealthApiKeys.sys.mjs",
  ]
++EXTRA_JS_MODULES += ["StealthApiKeys.sys.mjs"]  # STEALTH-HOOK(stillborn/api-keys)
  
  XPCOM_MANIFESTS += [
+     "components.conf",
 diff --git a/toolkit/components/urlformatter/tests/unit/xpcshell.toml b/toolkit/components/urlformatter/tests/unit/xpcshell.toml
 index 1a2f345622d4b51905ac5ece503176964068faea..088506eb25090fe1a9f38ed69989f32016dbdd06 100644
 --- a/toolkit/components/urlformatter/tests/unit/xpcshell.toml

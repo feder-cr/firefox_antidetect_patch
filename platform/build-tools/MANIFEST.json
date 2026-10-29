@@ -6,6 +6,7 @@
   "third_party/python/vsdownload/vsdownload.py"
  ],
  "added": {
+  "build/stealth_check_build_files.py": "100644",
   "scripts/ci/test_stealth_download_watchdog.py": "100644",
   "third_party/python/vsdownload/stealth_download_watchdog.py": "100644"
  },

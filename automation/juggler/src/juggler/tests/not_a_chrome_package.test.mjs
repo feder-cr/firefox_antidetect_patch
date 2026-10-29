@@ -6,9 +6,9 @@
 // `new Worker("chrome://<name>/...")` returns for a registered name and throws
 // SecurityError at once for an absent one. Until firefox-47 every build
 // registered `juggler` (jar.mn, `% content juggler %content/`), and from
-// 2026-10-06 captcha vendors probed it: a captcha vendor's worker script runs
-// `new Worker("chrome://juggler/content/content/WorkerMain.js")` (another anti-detect Firefox
-// fork, #847), and a solved challenge was refused on our build while retail passed
+// 2026-10-06 the challenge scripts of studied systems probed it: one such worker
+// script runs `new Worker("chrome://juggler/content/content/WorkerMain.js")`
+// (another anti-detect Firefox fork, #847), and a solved challenge was refused on our build while retail passed
 // (invisible_playwright #336). Measured from a page on firefox-46, 2026-10-14:
 // of the 65 chrome packages and resource substitutions the build registers,
 // `juggler` was the one retail does not.

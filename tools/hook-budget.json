@@ -201,7 +201,7 @@
  "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs": 3,
  "toolkit/components/url-classifier/SafeBrowsing.sys.mjs": 2,
  "toolkit/components/urlformatter/URLFormatter.sys.mjs": 9,
- "toolkit/components/urlformatter/moz.build": 2,
+ "toolkit/components/urlformatter/moz.build": 1,
  "toolkit/components/urlformatter/tests/unit/xpcshell.toml": 1,
  "toolkit/components/windowwatcher/moz.build": 2,
  "toolkit/components/windowwatcher/nsWindowWatcher.cpp": 12,
