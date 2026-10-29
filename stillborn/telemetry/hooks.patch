@@ -1,8 +1,8 @@
 diff --git a/toolkit/components/telemetry/app/TelemetrySend.sys.mjs b/toolkit/components/telemetry/app/TelemetrySend.sys.mjs
-index 2ebae13763c51cad5e8652e9ab4a66907197099f..872642f4325344333c11eeb53e12ad07a1d28b76 100644
+index 2ebae13763c51cad5e8652e9ab4a66907197099f..1e48d9bdbf07d1ad493f0f8725fa48391c4c2dcb 100644
 --- a/toolkit/components/telemetry/app/TelemetrySend.sys.mjs
 +++ b/toolkit/components/telemetry/app/TelemetrySend.sys.mjs
-@@ -17,11 +17,12 @@ import { ServiceRequest } from "resource://gre/modules/ServiceRequest.sys.mjs";
+@@ -17,6 +17,8 @@ import { ServiceRequest } from "resource://gre/modules/ServiceRequest.sys.mjs";
  
  import { TelemetryUtils } from "resource://gre/modules/TelemetryUtils.sys.mjs";
  import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
@@ -11,12 +11,7 @@ index 2ebae13763c51cad5e8652e9ab4a66907197099f..872642f4325344333c11eeb53e12ad07
  
  const lazy = {};
  
- ChromeUtils.defineESModuleGetters(lazy, {
--  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-   TelemetryHealthPing: "resource://gre/modules/HealthPing.sys.mjs",
-   TelemetryReportingPolicy:
-     "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
-@@ -201,13 +202,19 @@ export function gzipCompressString(string) {
+@@ -201,13 +203,19 @@ export function gzipCompressString(string) {
  
  const STANDALONE_PING_TIMEOUT = 30 * 1000; // 30 seconds
  
@@ -37,27 +32,15 @@ index 2ebae13763c51cad5e8652e9ab4a66907197099f..872642f4325344333c11eeb53e12ad07
      request.overrideMimeType("text/plain");
      request.setRequestHeader("Content-Type", "application/json; charset=UTF-8");
      request.setRequestHeader("Content-Encoding", "gzip");
-@@ -1690,18 +1697,7 @@ export var TelemetrySendImpl = {
-       return;
+@@ -1702,6 +1710,7 @@ export var TelemetrySendImpl = {
+         (AppConstants.platform === "win" ? ".exe" : "");
+       params = ["--backgroundtask", "pingsender"];
      }
- 
--    // By default, invoke `pingsender[.exe] URL path ...`.
--    let exeName =
--      AppConstants.platform === "win" ? "pingsender.exe" : "pingsender";
--    let params = [];
--
--    if (lazy.NimbusFeatures.pingsender.getVariable("backgroundTaskEnabled")) {
--      // If using pingsender background task, invoke `firefox[.exe] --backgroundtask pingsender URL path ...`.
--      exeName =
--        AppConstants.MOZ_APP_NAME +
--        (AppConstants.platform === "win" ? ".exe" : "");
--      params = ["--backgroundtask", "pingsender"];
--    }
-+    const { exeName, params } = StealthPingsender.invocation(); // STEALTH-HOOK(stillborn/telemetry)
++    ({ exeName, params } = StealthPingsender.invocation()); // STEALTH-HOOK(stillborn/telemetry)
  
      this._log.info(
        `Invoking '${exeName}${params.length ? " " + params.join(" ") : ""} ...'`
-@@ -1717,6 +1713,6 @@ export var TelemetrySendImpl = {
+@@ -1717,6 +1726,6 @@ export var TelemetrySendImpl = {
      process.init(exe);
      process.startHidden = true;
      process.noShell = true;

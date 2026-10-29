@@ -141,32 +141,6 @@ index 442939be588704373bd88a7fe6721f69521bffb2..8643fd3708153a76deb26635645d58b6
    /**
     * Fonts listed in the registry as substitutes but for which no actual
     * font family is found.
-diff --git a/gfx/thebes/gfxFT2FontList.cpp b/gfx/thebes/gfxFT2FontList.cpp
-index d0397ef465f61ca5b86905bcfa7fb61cc825a76f..49ebce15bc5151bdb3d8b4997c2e87181f5076b0 100644
---- a/gfx/thebes/gfxFT2FontList.cpp
-+++ b/gfx/thebes/gfxFT2FontList.cpp
-@@ -446,7 +446,7 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
-   if (NS_SUCCEEDED(rv)) {
-     gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
-     fontlist::FontList* sharedFontList = pfl->SharedFontList();
--    if (!IsUserFont() && mShmemFace) {
-+    if (ShouldPublishCharacterMap()) {
-       mShmemFace->SetCharacterMap(sharedFontList, charmap, mShmemFamily);
-       if (TrySetShmemCharacterMap()) {
-         setCharMap = false;
-@@ -580,7 +580,11 @@ hb_blob_t* FT2FontEntry::GetFontTableInternal(uint32_t aTableTag) {
-     // If there's a cairo font face, we may be able to return a blob
-     // that just wraps a range of the attached user font data
-     if (const auto* data = userFontData->GetData()) {
--      return gfxFontUtils::GetTableFromFontData(data, aTableTag);
-+      uint32_t faceIndex = 0;
-+      if (SharedFTFace* face = mFTFace) {
-+        faceIndex = uint32_t(face->GetFace()->face_index & 0x7FFF);
-+      }
-+      return gfxFontUtils::GetTableFromFontData(data, aTableTag, faceIndex);
-     }
-   }
- 
 diff --git a/gfx/thebes/gfxFcPlatformFontList.h b/gfx/thebes/gfxFcPlatformFontList.h
 index a8f8103d24039560ec5562cb74f6cbcef52edcaa..48e67392f9e4d9bde9cfe6658cb1582b2e5ca7c3 100644
 --- a/gfx/thebes/gfxFcPlatformFontList.h

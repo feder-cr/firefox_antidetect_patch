@@ -44,6 +44,10 @@ export function attachCallbacks(request, callbacks) {
  * engine, with necko, and leaves by the road `sessionRoute()` hands it
  * below.
  *
+ * Called in runPingSender right AFTER Mozilla's own choice (pingsender[.exe],
+ * or the background task when a Nimbus variable says so), which stays as
+ * Mozilla wrote it: this overrides its result.
+ *
  * `params` is a fresh array on every call: the caller appends the ping urls
  * and paths to it.
  *

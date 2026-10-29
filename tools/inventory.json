@@ -2649,28 +2649,6 @@
   }
  },
  {
-  "file": "gfx/thebes/gfxFT2FontList.cpp",
-  "category": "other",
-  "feature": "font-cmap-publish",
-  "prefs": [],
-  "added": 6,
-  "removed": 2,
-  "hunks": 2,
-  "inline_logic_lines": 5,
-  "hookable": "already-hook",
-  "anchor": "FT2FontEntry::ReadCMAP; FT2FontEntry::GetFontTableInternal",
-  "evidence": [
-   "-    if (!IsUserFont() && mShmemFace) {",
-   "+    if (ShouldPublishCharacterMap()) {",
-   "+      if (SharedFTFace* face = mFTFace) {"
-  ],
-  "notes": "ReadCMAP now uses gfxFontEntry::ShouldPublishCharacterMap (see gfxFontEntry.cpp). Second hunk, feature font-ttc-face-index: the face index (face_index & 0x7FFF) is passed to GetTableFromFontData so tables are read from the right face of a .ttc.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
-  }
- },
- {
   "file": "gfx/thebes/gfxFcPlatformFontList.cpp",
   "category": "spoof",
   "feature": "font-list-bundle-only",

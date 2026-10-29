@@ -6,7 +6,6 @@
   "gfx/2d/UnscaledFontDWrite.h",
   "gfx/thebes/FontData.h",
   "gfx/thebes/gfxDWriteFontList.h",
-  "gfx/thebes/gfxFT2FontList.cpp",
   "gfx/thebes/gfxFcPlatformFontList.h",
   "gfx/thebes/gfxFontEntry.cpp",
   "gfx/thebes/gfxFontEntry.h",
@@ -265,28 +264,6 @@
     "+  std::wstring mBundleFilePath;"
    ],
    "notes": "Two members: mBundleFaceIndex (feature font-ttc-face-index, index inside a .ttc) and mBundleFilePath (feature font-bundle-file-path, the path given to WebRender). Only the path member is in this file's primary feature. Adds the <string> include.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
-   }
-  },
-  {
-   "file": "gfx/thebes/gfxFT2FontList.cpp",
-   "category": "other",
-   "feature": "font-cmap-publish",
-   "prefs": [],
-   "added": 6,
-   "removed": 2,
-   "hunks": 2,
-   "inline_logic_lines": 5,
-   "hookable": "already-hook",
-   "anchor": "FT2FontEntry::ReadCMAP; FT2FontEntry::GetFontTableInternal",
-   "evidence": [
-    "-    if (!IsUserFont() && mShmemFace) {",
-    "+    if (ShouldPublishCharacterMap()) {",
-    "+      if (SharedFTFace* face = mFTFace) {"
-   ],
-   "notes": "ReadCMAP now uses gfxFontEntry::ShouldPublishCharacterMap (see gfxFontEntry.cpp). Second hunk, feature font-ttc-face-index: the face index (face_index & 0x7FFF) is passed to GetTableFromFontData so tables are read from the right face of a .ttc.",
    "verifier": {
     "changed": [],
     "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."

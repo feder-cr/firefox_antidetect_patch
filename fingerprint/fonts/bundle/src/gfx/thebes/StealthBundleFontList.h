@@ -232,8 +232,9 @@ class StealthBundleFontList final {
   // one rule, and that rule is WRONG for a bundled face: it is constructed from
   // file data (so IsUserFont() is true) while being one of the list's own faces.
   // The consequence was that no bundled face's cmap ever reached shared memory.
-  // One predicate, four readers: gfxFontEntry::ShouldPublishCharacterMap() is
-  // the hook the backends call and it forwards here.
+  // One predicate, one reader per backend we build (DWrite, Fontconfig,
+  // CoreText): gfxFontEntry::ShouldPublishCharacterMap() is the hook they call
+  // and it forwards here. FT2 (Android only, never built) keeps Mozilla's rule.
   static bool ShouldPublishCharacterMap(const gfxFontEntry& aEntry);
 
   // The shared bytes of a bundle file (aFile is a Face's mDescriptor, i.e. the

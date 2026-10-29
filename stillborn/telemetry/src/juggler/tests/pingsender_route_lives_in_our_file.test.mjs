@@ -24,7 +24,6 @@ test('TelemetrySend.sys.mjs holds only hooks of the pingsender road', () => {
   const text = fs.readFileSync(path.join(APP, 'TelemetrySend.sys.mjs'), 'utf8');
   assert.doesNotMatch(text, /Services\.env/);
   assert.doesNotMatch(text, /TargetRegistry/);
-  assert.doesNotMatch(text, /--backgroundtask/);
   assert.doesNotMatch(text, /\.notificationCallbacks\s*=[^=]/);
   assert.doesNotMatch(text, /function sessionRoute/);
   const named = text.split('\n').filter(l => l.includes('StealthPingsender'));
@@ -32,6 +31,23 @@ test('TelemetrySend.sys.mjs holds only hooks of the pingsender road', () => {
   assert.ok(named.length >= 5, `only ${named.length} lines name StealthPingsender`);
   for (const line of named)
     assert.ok(line.includes(HOOK), `a hook without its marker: ${line}`);
+});
+
+test("Mozilla's choice of the program stays, and ours overrides it after", () => {
+  const text = fs.readFileSync(path.join(APP, 'TelemetrySend.sys.mjs'), 'utf8');
+  // Mozilla's lines, as Mozilla wrote them: a removed line conflicts at a port
+  // like an added one.
+  const nimbus = text.indexOf(
+    'if (lazy.NimbusFeatures.pingsender.getVariable("backgroundTaskEnabled")) {');
+  assert.ok(nimbus > 0, "Mozilla's Nimbus check is gone");
+  assert.match(text, /NimbusFeatures: "resource:\/\/nimbus\/ExperimentAPI\.sys\.mjs"/);
+  assert.match(text, /let exeName =\n\s+AppConstants\.platform === "win" \? "pingsender\.exe" : "pingsender";/);
+  // Ours: after Mozilla's block, before the program is used.
+  const override = text.indexOf(
+    `({ exeName, params } = StealthPingsender.invocation()); // ${HOOK}`);
+  const used = text.indexOf('this._log.info(\n      `Invoking');
+  assert.ok(override > nimbus, "the override must come after Mozilla's choice");
+  assert.ok(used > override, 'the override must come before the program is used');
 });
 
 // Load the own file on stubs: the one import is replaced by a stub object and
