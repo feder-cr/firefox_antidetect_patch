@@ -179,7 +179,7 @@ index b6696c70c4b9065dd04683020010cb8f61e36791..314998e9f5d22704be43b674e672cbe0
        kCTFontUIFontUser, 0.0, nullptr));  // TODO: language
    AutoCFTypeRef<CFStringRef> name(CTFontCopyFamilyName(font));
 diff --git a/gfx/thebes/gfxDWriteFontList.cpp b/gfx/thebes/gfxDWriteFontList.cpp
-index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..b6e1422016247c392611bd7648e84e8c382769dd 100644
+index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..1efea9cbf562226249d5eacfb5925790c1767e3d 100644
 --- a/gfx/thebes/gfxDWriteFontList.cpp
 +++ b/gfx/thebes/gfxDWriteFontList.cpp
 @@ -6,6 +6,7 @@
@@ -385,7 +385,18 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..b6e1422016247c392611bd7648e84e8c
  
        dwFontFace->ReleaseFontTable(context);
      }
-@@ -1680,16 +1745,24 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
+@@ -1659,7 +1724,9 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
+   // We activate bundled fonts if the pref is > 0 (on) or < 0 (auto), only an
+   // explicit value of 0 (off) will disable them.
+   TimeStamp start1 = TimeStamp::Now();
+-  if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
++  if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0 &&
++      StealthBundleFontList::NeedsPlatformBundledCollection(
++          mStealthBundleOnly, XRE_IsParentProcess())) {
+     mBundledFonts = CreateBundledFontsCollection(factory);
+   }
+   TimeStamp end1 = TimeStamp::Now();
+@@ -1680,16 +1747,24 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
        forceClassicFams.Sort();
      }
      nsTArray<fontlist::Family::InitData> families;
@@ -418,7 +429,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..b6e1422016247c392611bd7648e84e8c
      SharedFontList()->SetFamilyNames(families);
      GetPrefsAndStartLoader();
    }
-@@ -1698,8 +1771,29 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
+@@ -1698,8 +1773,29 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
      return;
    }
  
@@ -450,7 +461,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..b6e1422016247c392611bd7648e84e8c
  }
  
  nsresult gfxDWriteFontList::InitFontListForPlatform() {
-@@ -1765,12 +1859,18 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
+@@ -1765,12 +1861,18 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
  
    QueryPerformanceCounter(&t3);  // system font collection
  
@@ -472,7 +483,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..b6e1422016247c392611bd7648e84e8c
      glean::fontlist::dwritefont_init_problem.AccumulateSingleSample(
          uint32_t(errNoFonts));
      return NS_ERROR_FAILURE;
-@@ -1779,14 +1879,23 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
+@@ -1779,14 +1881,23 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
    QueryPerformanceCounter(&t4);  // iterate over system fonts
  
    mOtherFamilyNamesInitialized = true;

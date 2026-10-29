@@ -8,6 +8,8 @@ platform/prefs
 platform/release
 platform/repo
 platform/script-cache
+platform/startup-cache
+platform/untrusted-modules
 stillborn/api-keys
 stillborn/telemetry
 stillborn/updater
@@ -21,7 +23,6 @@ automation/downloads
 automation/element-atoms
 automation/enterprise-policies
 automation/file-chooser
-automation/forced-offline
 automation/hybrid-xrays
 automation/ignore-https-errors
 automation/input

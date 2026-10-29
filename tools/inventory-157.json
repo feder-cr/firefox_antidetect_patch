@@ -1158,7 +1158,7 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 36,
+  "added": 39,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 18,
@@ -2395,7 +2395,7 @@
   "category": "build",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 7,
+  "added": 8,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 0,
@@ -2483,9 +2483,9 @@
   "category": "spoof",
   "feature": "font-list-bundle-only",
   "prefs": [],
-  "added": 161,
-  "removed": 52,
-  "hunks": 13,
+  "added": 164,
+  "removed": 53,
+  "hunks": 14,
   "inline_logic_lines": 75,
   "hookable": "movable",
   "anchor": "gfxDWriteFontEntry::ReadCMAP; gfxDWriteFontEntry::CreateFontInstance; gfxDWriteFontEntry::CreateFontFace; gfxDWriteFontList::CreateFontEntry; gfxDWriteFontList::GetFacesInitDataForFamily; gfxDWriteFontList::ReadFaceNames; gfxDWriteFontList::ReadFaceNamesForFamily; gfxDWriteFontList::InitSharedFontListForPlatform; gfxDWriteFontList::InitFontListForPlatform",
@@ -4318,52 +4318,6 @@
   }
  },
  {
-  "file": "netwerk/protocol/http/nsHttpChannel.cpp",
-  "category": "juggler",
-  "feature": "juggler-forced-offline",
-  "prefs": [],
-  "added": 21,
-  "removed": 15,
-  "hunks": 7,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "nsHttpChannel::OnBeforeConnect; nsHttpChannel::MaybeUseHTTPSRRForUpgrade; nsHttpChannel::ContinueConnect; nsHttpChannel::SpeculativeConnect; nsHttpChannel::OpenCacheEntryInternal; nsHttpChannel::IsForcedOffline (new)",
-  "evidence": [
-   "-  if (bc && bc->Top()->GetForceOffline() &&",
-   "+  if (IsForcedOffline() &&",
-   "+  return false;"
-  ],
-  "notes": "REGRESSION CONFIRMED: IsForcedOffline() (nsHttpChannel.cpp:8523) is a stub that returns false. The five call sites (OnBeforeConnect, MaybeUseHTTPSRRForUpgrade, ContinueConnect via a local, SpeculativeConnect, OpenCacheEntryInternal) no longer read bc->Top()->GetForceOffline(), so a forced-offline BrowsingContext no longer fails HTTP requests. The stub's own comment (reason: BrowsingContext ForceOffline field 'not landed yet') is WRONG for this tree: the field exists in Mozilla 157 itself (docshell/base/BrowsingContext.h:289 FIELD(ForceOffline, bool), accessor :684; webidl dom/chrome-webidl/BrowsingContext.webidl:159) and is still read by dom/base/Navigator.cpp:615 and dom/base/nsGlobalWindowInner.cpp:5188. It is set by juggler/TargetRegistry.js:697 (updateForceOffline), juggler/protocol/BrowserHandler.js:227-228, and also by devtools/server/actors/target-configuration.js:542 and remote/webdriver-bidi/modules/root/emulation.sys.mjs:726, so stock DevTools/BiDi offline emulation is broken too. Fix at the source: drop this whole diff (and the nsHttpChannel.h declaration) so the file equals Mozilla's; nothing here is needed, since the removed code compiled in 157. The comments name a third-party project and a docs path; rewrite or delete.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "regression confirmed and cause corrected: the BrowsingContext ForceOffline field exists in Mozilla 157, so the stub is unnecessary"
-  }
- },
- {
-  "file": "netwerk/protocol/http/nsHttpChannel.h",
-  "category": "juggler",
-  "feature": "juggler-forced-offline",
-  "prefs": [],
-  "added": 4,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "nsHttpChannel class, private helpers (after MaybeStartDNSPrefetch)",
-  "evidence": [
-   "+  bool IsForcedOffline();"
-  ],
-  "notes": "Declaration only. The definition in nsHttpChannel.cpp:8523 is a stub returning false and is a confirmed regression (BrowsingContext ForceOffline exists in 157, docshell/base/BrowsingContext.h:289); both should be reverted to Mozilla. The begin/end banner comments name a third-party project.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "cross-reference to confirmed regression"
-  }
- },
- {
   "file": "netwerk/protocol/http/nsHttpHandler.cpp",
   "category": "spoof",
   "feature": "accept-language-override-list",
@@ -4632,6 +4586,48 @@
    ],
    "why": "evidence line had wrong indentation, now verbatim"
   }
+ },
+ {
+  "file": "startupcache/StartupCache.cpp",
+  "category": "other",
+  "feature": "startup-cache-foreground-writes",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "StartupCache::MaybeWriteOffMainThread",
+  "evidence": [],
+  "notes": "Fix of a 157 priority inversion (commit 044fdc985f): StartupCache writes no longer take nsAutoLowPriorityIO, whose THREAD_MODE_BACKGROUND_BEGIN starved the writer while it held mTableLock and so the main thread in GetBuffer() (7-27 s stalls with eleven browsers). 151 had no lowered priority here."
+ },
+ {
+  "file": "startupcache/StartupCache.h",
+  "category": "other",
+  "feature": "startup-cache-foreground-writes",
+  "prefs": [],
+  "added": 17,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "StartupCache::WritesMayLowerIOPriority (new)",
+  "evidence": [],
+  "notes": "Fix of a 157 priority inversion (commit 044fdc985f): StartupCache writes no longer take nsAutoLowPriorityIO, whose THREAD_MODE_BACKGROUND_BEGIN starved the writer while it held mTableLock and so the main thread in GetBuffer() (7-27 s stalls with eleven browsers). 151 had no lowered priority here."
+ },
+ {
+  "file": "startupcache/test/TestStartupCache.cpp",
+  "category": "other",
+  "feature": "startup-cache-foreground-writes",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "TEST(StartupCache, WritesNeverLowerIOPriority) (new)",
+  "evidence": [],
+  "notes": "Fix of a 157 priority inversion (commit 044fdc985f): StartupCache writes no longer take nsAutoLowPriorityIO, whose THREAD_MODE_BACKGROUND_BEGIN starved the writer while it held mTableLock and so the main thread in GetBuffer() (7-27 s stalls with eleven browsers). 151 had no lowered priority here."
  },
  {
   "file": "third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc",
@@ -4954,6 +4950,48 @@
    ],
    "why": "Verified juggler directory exists."
   }
+ },
+ {
+  "file": "toolkit/xre/dllservices/UntrustedModulesData.cpp",
+  "category": "other",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 44,
+  "removed": 5,
+  "hunks": 3,
+  "inline_logic_lines": 25,
+  "hookable": "movable",
+  "anchor": "ModuleRecord::GetVersionAndVendorInfo; ModuleRecord::IsInDirectoryOf (new); IsOwnUnsignedBinary (new)",
+  "evidence": [],
+  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+ },
+ {
+  "file": "toolkit/xre/dllservices/UntrustedModulesData.h",
+  "category": "other",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 13,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "ModuleRecord::IsInDirectoryOf (new)",
+  "evidence": [],
+  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+ },
+ {
+  "file": "toolkit/xre/dllservices/tests/gtest/moz.build",
+  "category": "other",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "UNIFIED_SOURCES",
+  "evidence": [],
+  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
  },
  {
   "file": "toolkit/xre/nsWindowsWMain.cpp",

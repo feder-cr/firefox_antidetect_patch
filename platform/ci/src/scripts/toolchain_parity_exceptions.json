@@ -1,0 +1,4 @@
+{
+ "_comment": "Compile-time differences from the retail of the same version that are known and not fixed yet. Each says why. toolchain_parity.py fails on an undeclared difference and on a declaration that no longer matches one.",
+ "exceptions": []
+}

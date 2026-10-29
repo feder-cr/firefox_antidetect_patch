@@ -13,12 +13,25 @@ import sys
 from pathlib import Path
 
 import stock_parity
+import toolchain_parity
 import validate_release as v
+
+
+def assert_toolchain_is_retail(tree: Path) -> None:
+    """toolchain_parity.py: compiler versions and code-generation options of
+    the retail of the same version, or a declared reason."""
+    platform, version, undeclared, stale = toolchain_parity.judge(tree)
+    problems = ["%s: %s" % kv for kv in undeclared.items()]
+    problems += ["declared but no longer different: %s" % k for k in stale]
+    if problems:
+        raise v.ValidationError("compiled unlike the retail %s %s: %s"
+                                % (version, platform, "; ".join(problems)))
+    print("    compiled like the retail %s %s, declared exceptions aside" % (version, platform))
 
 
 def gates_for(tree: Path) -> list:
     out = [v.assert_juggler_provenance, v.assert_page_surface_is_stock,
-           v.assert_no_updater, v.check_no_leaks_tree]
+           assert_toolchain_is_retail, v.assert_no_updater, v.check_no_leaks_tree]
     if stock_parity.platform_of(v._juggler_root(tree)).startswith("win"):
         out.append(v.assert_windows_runtime_is_shipped)
     return out

@@ -238,7 +238,7 @@ index b2bb00667a80c64d97a3990781a2c5d05f061d04..f9ca07f491eda077cb7490532d25c466
    UniquePtr<uint8_t[]> GetImageBuffer(
        CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
 diff --git a/dom/html/HTMLCanvasElement.cpp b/dom/html/HTMLCanvasElement.cpp
-index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..92a0b64347e849d1dd2db19bd6a98d2dc08d05ff 100644
+index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..cf6874a0fa716426e9a60f01cf9d99f0df70663b 100644
 --- a/dom/html/HTMLCanvasElement.cpp
 +++ b/dom/html/HTMLCanvasElement.cpp
 @@ -26,6 +26,7 @@
@@ -249,7 +249,7 @@ index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..92a0b64347e849d1dd2db19bd6a98d2d
  #include "mozilla/dom/Document.h"
  #include "mozilla/dom/Event.h"
  #include "mozilla/dom/File.h"
-@@ -1530,10 +1531,44 @@ void HTMLCanvasElement::SetFrameCapture(
+@@ -1530,10 +1531,47 @@ void HTMLCanvasElement::SetFrameCapture(
  
  already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
      gfxAlphaType* const aOutAlphaType, DrawTarget* aTarget) {
@@ -272,8 +272,11 @@ index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..92a0b64347e849d1dd2db19bd6a98d2d
 +  // GPU: the projection is recorded and runs there, where the pixels are
 +  // (RecordedStealthProjectSurface). Reading it back here to project it would
 +  // cost a readback per drawImage that the real browser does not pay.
++  // The test is on the underlying type, as in StealthProjectedSurface: since
++  // 157 a canvas recording's snapshot answers CANVAS_RECORDING to GetType(),
++  // and asking GetType() sent every such drawImage to the readback below.
 +  if (aTarget && aTarget->IsRecording() &&
-+      drawn->GetType() == SurfaceType::RECORDING) {
++      drawn->GetUnderlyingType() == SurfaceType::RECORDING) {
 +    const gfx::StealthCanvasNoise noise = CanvasUtils::StealthNoise(NodePrincipal());
 +    if (!noise) {
 +      return drawn.forget();
@@ -619,7 +622,7 @@ index 4b4c014bbb6f29e089339d000899153cffe3d5eb..3a40c00957b48e55af4dd83e88854595
      "Types.cpp",
  ]
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index 7c699601940c4fb6e1fa32b202fb08bc084cba64..ac69d36fbdb72e80294629277965c6945afcab50 100644
+index 7c699601940c4fb6e1fa32b202fb08bc084cba64..398d6ee920fb25c59e172bdf0cc4409df0728827 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
 @@ -24,6 +24,7 @@ UNIFIED_SOURCES += [
@@ -630,13 +633,14 @@ index 7c699601940c4fb6e1fa32b202fb08bc084cba64..ac69d36fbdb72e80294629277965c694
      "TestSwizzle.cpp",
      "TestTextures.cpp",
      "TestTreeTraversal.cpp",
-@@ -40,6 +41,12 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -40,6 +41,13 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  
 +if CONFIG["OS_TARGET"] == "WINNT":
 +    # gfxDWriteFonts' text quality and ClearType parameters, Windows only.
 +    UNIFIED_SOURCES += [
++        "TestStealthBundledCollection.cpp",
 +        "TestStealthTextQuality.cpp",
 +    ]
 +

@@ -222,6 +222,12 @@ ac_add_options --enable-bootstrap
 # una funzione di stealth, non una soppressione: aggiunge font, non ne toglie.
 ac_add_options --enable-bundled-fonts
 
+# SIMD in the Rust code (text decoding and others), as the retail 157 is built
+# on every platform (its about:buildconfig). Without it every value a page reads
+# is the same and the operations behind them run at another speed.
+# scripts/toolchain_parity.py refuses a build that drops it again.
+ac_add_options --enable-rust-simd
+
 # L'installer NSIS resta fuori: e' un ARTEFATTO separato, non una proprieta' del
 # browser che gira. Il retail lo spedisce, noi spediamo un archivio, e nessuna
 # pagina ne' la rete possono distinguere le due cose. Il js shell (che Mozilla

@@ -104,6 +104,24 @@ class StealthBundleFontList final {
   // cannot quietly reopen them: it has to break this contract first.
   static StealthBundleFontList* Get();
 
+  // Whether this process builds the PLATFORM's own collection of the bundled
+  // font files (DirectWrite's CreateBundledFontsCollection over <GRE>/fonts).
+  //
+  // Under bundle-only a content process never reads it: every path that would
+  // (CreateFontEntry, GetFacesInitDataForFamily, ReadFaceNames,
+  // ReadFaceNamesForFamily) takes the bundle branch first and builds the face
+  // from this list's mapped file, and the font info loader, the one reader of
+  // that collection, runs in the parent only. Upstream the directory holds one
+  // file and the collection costs nothing; here it holds the whole bundle, and
+  // every content process opened its 121 files twice at startup (245 opens per
+  // process against 22 for the retail, measured with Frida on 2026-10-27),
+  // about a second and a half of CPU per launch across the content processes.
+  // Ten launches at once saturated the machine while a page's scripts ran.
+  static bool NeedsPlatformBundledCollection(bool aBundleOnly,
+                                             bool aIsParentProcess) {
+    return !aBundleOnly || aIsParentProcess;
+  }
+
   // The full family list, ready for SharedFontList()->SetFamilyNames().
   const nsTArray<mozilla::fontlist::Family::InitData>& Families() const {
     return mFamilies;

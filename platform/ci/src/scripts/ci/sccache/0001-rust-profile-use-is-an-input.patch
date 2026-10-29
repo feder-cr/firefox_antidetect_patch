@@ -1,0 +1,80 @@
+diff --git a/src/compiler/rust.rs b/src/compiler/rust.rs
+index 21b7e94..a466ce4 100644
+--- a/src/compiler/rust.rs
++++ b/src/compiler/rust.rs
+@@ -160,16 +160,6 @@ pub struct ParsedArguments {
+     crate_types: CrateTypes,
+     /// If dependency info is being emitted, the name of the dep info file.
+     dep_info: Option<PathBuf>,
+-    /// If profile info is being emitted, the path of the profile.
+-    ///
+-    /// This could be filled while `-Cprofile-use` been enabled.
+-    ///
+-    /// We need to add the profile into our outputs to enable distributed compilation.
+-    /// We don't need to track `profile-generate` since it's users work to make sure
+-    /// the `profdata` been generated from profraw files.
+-    ///
+-    /// For more information, see https://doc.rust-lang.org/rustc/profile-guided-optimization.html
+-    profile: Option<PathBuf>,
+     /// If `-Z profile` has been enabled, we will use a GCC-compatible, gcov-based
+     /// coverage implementation.
+     ///
+@@ -1135,7 +1125,6 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
+     let mut static_link_paths: Vec<PathBuf> = vec![];
+     let mut color_mode = ColorMode::Auto;
+     let mut has_json = false;
+-    let mut profile = None;
+     let mut gcno = false;
+     let mut target_json = None;
+ 
+@@ -1196,7 +1185,6 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
+                 match (opt.as_ref(), value) {
+                     ("extra-filename", Some(value)) => extra_filename = Some(value.to_owned()),
+                     ("extra-filename", None) => cannot_cache!("extra-filename"),
+-                    ("profile-use", Some(v)) => profile = Some(v.clone()),
+                     // Incremental compilation makes a mess of sccache's entire world
+                     // view. It produces additional compiler outputs that we don't cache,
+                     // and just letting rustc do its work in incremental mode is likely
+@@ -1315,9 +1303,6 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
+         None
+     };
+ 
+-    // Ignore profile is `link` is not in emit which means we are running `cargo check`.
+-    let profile = if emit.contains("link") { profile } else { None };
+-
+     // Figure out the gcno filename, if producing gcno files with `-Zprofile`.
+     let gcno = if gcno && emit.contains("link") {
+         let mut gcno = crate_name.clone();
+@@ -1365,7 +1350,6 @@ fn parse_arguments(arguments: &[OsString], cwd: &Path) -> CompilerArguments<Pars
+         staticlibs,
+         crate_name,
+         dep_info: dep_info.map(|s| s.into()),
+-        profile: profile.map(|s| s.into()),
+         gcno: gcno.map(|s| s.into()),
+         emit,
+         color_mode,
+@@ -1684,16 +1668,6 @@ where
+         } else {
+             None
+         };
+-        if let Some(profile) = &self.parsed_args.profile {
+-            let p = self.parsed_args.output_dir.join(profile);
+-            outputs.insert(
+-                profile.to_string_lossy().into_owned(),
+-                ArtifactDescriptor {
+-                    path: p,
+-                    optional: true,
+-                },
+-            );
+-        }
+         if let Some(gcno) = &self.parsed_args.gcno {
+             let p = self.parsed_args.output_dir.join(gcno);
+             outputs.insert(
+@@ -3580,7 +3554,6 @@ proc_macro false
+                 emit,
+                 color_mode: ColorMode::Auto,
+                 has_json: false,
+-                profile: None,
+                 gcno: None,
+                 target_json: None,
+             },

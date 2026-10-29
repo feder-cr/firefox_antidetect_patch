@@ -283,18 +283,22 @@ def assert_juggler_provenance(tree: Path) -> None:
 
     if omni.exists():
         layout = "omni.ja"
-        with zipfile.ZipFile(omni) as zf:
-            names = set(zf.namelist())
-            if not any(n.startswith(JUGGLER_DIR_REL + "/") for n in names):
-                raise SystemExit(f"validate_release: omni.ja has no {JUGGLER_DIR_REL}/ - "
-                                 "Playwright cannot drive this build")
-            marked = 0
-            for entry in JUGGLER_ENTRIES:
-                if entry not in names:
-                    raise SystemExit(f"validate_release: juggler entry missing from omni.ja: "
-                                     f"{entry}")
-                if any(m in zf.read(entry) for m in JUGGLER_MARKERS):
-                    marked += 1
+        # Mozilla's reader, not zipfile: a PGO build packs omni.ja in the
+        # optimized layout the retail has (central directory first), which
+        # zipfile refuses with "Bad magic number for central directory".
+        import stock_parity
+        jar = stock_parity.open_jar(omni.read_bytes(), str(omni))
+        names = set(jar.entries)
+        if not any(n.startswith(JUGGLER_DIR_REL + "/") for n in names):
+            raise SystemExit(f"validate_release: omni.ja has no {JUGGLER_DIR_REL}/ - "
+                             "Playwright cannot drive this build")
+        marked = 0
+        for entry in JUGGLER_ENTRIES:
+            if entry not in names:
+                raise SystemExit(f"validate_release: juggler entry missing from omni.ja: "
+                                 f"{entry}")
+            if any(m in jar[entry].read() for m in JUGGLER_MARKERS):
+                marked += 1
     elif (root / JUGGLER_DIR_REL).is_dir():
         layout = "unpacked tree"
         marked = 0
@@ -453,10 +457,10 @@ def assert_no_updater(tree: Path) -> None:
     # A package can also carry an archive and loose modules at once.
     for omni in sorted(tree.rglob("omni.ja")):
         rel = str(omni.relative_to(tree))
-        with zipfile.ZipFile(omni) as zf:
-            for n in zf.namelist():
-                if n.rsplit("/", 1)[-1] in UPDATER_MODULES:
-                    found.append(rel + "!" + n)
+        import stock_parity  # Mozilla's reader: optimized jars too (see above)
+        for n in stock_parity.open_jar(omni.read_bytes(), rel).entries:
+            if n.rsplit("/", 1)[-1] in UPDATER_MODULES:
+                found.append(rel + "!" + n)
 
     for p in tree.rglob("*.sys.mjs"):
         if p.name in UPDATER_MODULES:
@@ -729,6 +733,47 @@ def _selftest() -> int:
     ]
     cases += [(name, factory, must_raise, assert_build_ids_agree)
               for name, factory, must_raise in build_ids]
+
+    # A PGO build packs omni.ja in Mozilla's optimized layout (central directory
+    # first, as the retail's), which zipfile refuses: the first PGO candidate
+    # (run 40446702889) failed here with "Bad magic number for central
+    # directory" on a Juggler that was there.
+    import stock_parity  # noqa: F401  (puts mozpack on the path)
+    from mozpack.mozjar import JarWriter
+
+    def omni(members: dict, optimized: bool):
+        d = tree()
+        if optimized:
+            # A preload list is what makes the layout optimized: a PGO build
+            # passes the jarlog, and the archive opens with the central
+            # directory and the preloaded members first.
+            with JarWriter(file=str(d / "omni.ja")) as jar:
+                for name, body in members.items():
+                    jar.add(name, body)
+                jar.preload(list(members)[:1])
+        else:
+            with zipfile.ZipFile(d / "omni.ja", "w") as zf:
+                for name, body in members.items():
+                    zf.writestr(name, body)
+        return d
+
+    juggler = {e: b"// stealthfox" for e in JUGGLER_ENTRIES}
+
+    def provenance(d):
+        try:
+            assert_juggler_provenance(d)
+        except SystemExit as exc:
+            raise ValidationError(str(exc))
+
+    cases += [
+        ("the Juggler in a plain omni.ja", lambda: omni(juggler, False), False, provenance),
+        ("the Juggler in an OPTIMIZED omni.ja (a PGO build, the retail's layout)",
+         lambda: omni(juggler, True), False, provenance),
+        ("an optimized omni.ja without the Juggler",
+         lambda: omni({"modules/AppConstants.sys.mjs": b"x"}, True), True, provenance),
+        ("UpdateService packed inside an OPTIMIZED omni.ja",
+         lambda: omni({"modules/UpdateService.sys.mjs": b"x"}, True), True, assert_no_updater),
+    ]
 
     bad = 0
     for name, factory, must_raise, check in cases:

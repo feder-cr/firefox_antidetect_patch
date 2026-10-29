@@ -6,7 +6,9 @@
   "gfx/thebes/gfxPlatformFontList.cpp",
   "gfx/thebes/gfxPlatformFontList.h"
  ],
- "added": {},
+ "added": {
+  "gfx/tests/gtest/TestStealthBundledCollection.cpp": "100644"
+ },
  "inventory": [
   {
    "file": "gfx/thebes/CoreTextFontList.cpp",
@@ -35,9 +37,9 @@
    "category": "spoof",
    "feature": "font-list-bundle-only",
    "prefs": [],
-   "added": 161,
-   "removed": 52,
-   "hunks": 13,
+   "added": 164,
+   "removed": 53,
+   "hunks": 14,
    "inline_logic_lines": 75,
    "hookable": "movable",
    "anchor": "gfxDWriteFontEntry::ReadCMAP; gfxDWriteFontEntry::CreateFontInstance; gfxDWriteFontEntry::CreateFontFace; gfxDWriteFontList::CreateFontEntry; gfxDWriteFontList::GetFacesInitDataForFamily; gfxDWriteFontList::ReadFaceNames; gfxDWriteFontList::ReadFaceNamesForFamily; gfxDWriteFontList::InitSharedFontListForPlatform; gfxDWriteFontList::InitFontListForPlatform",

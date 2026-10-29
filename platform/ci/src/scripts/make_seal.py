@@ -172,11 +172,14 @@ def read_archive(archive: Path) -> dict:
         layout = "omni.ja"
         blob = index[omni_name]()
         omni_sha = hashlib.sha256(blob).hexdigest()
-        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
-            inner = set(zf.namelist())
-            marked = sum(1 for e in JUGGLER_ENTRIES
-                         if e in inner and any(mk in zf.read(e) for mk in JUGGLER_MARKERS))
-            juggler_files = sum(1 for n in inner if n.startswith(JUGGLER_DIR_REL + "/"))
+        # Mozilla's reader: a PGO build's omni.ja is in the optimized layout
+        # (central directory first) that zipfile refuses.
+        import stock_parity
+        jar = stock_parity.open_jar(blob, omni_name)
+        inner = set(jar.entries)
+        marked = sum(1 for e in JUGGLER_ENTRIES
+                     if e in inner and any(mk in jar[e].read() for mk in JUGGLER_MARKERS))
+        juggler_files = sum(1 for n in inner if n.startswith(JUGGLER_DIR_REL + "/"))
     else:
         # The Linux archives ship the juggler unpacked and carry no omni.ja at
         # all. Same markers, same four entries, read straight out of the archive.

@@ -49,17 +49,14 @@ jobs:
           - leg: linux-x86_64
             runner: ubuntu-24.04
             kind: linux
-            asset: firefox-157.0.1-stealth-linux-x86_64.tar.gz
             extra: '--full'
           - leg: linux-arm64
             runner: ubuntu-24.04-arm
             kind: linux
-            asset: firefox-157.0.1-stealth-linux-arm64.tar.gz
             extra: ''
           - leg: win-x86_64
             runner: windows-latest
             kind: win
-            asset: firefox-157.0.1-stealth-win-x86_64.zip
             extra: ''
     steps:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
@@ -77,7 +74,7 @@ jobs:
           mkdir -p art
           gh release download "${{ github.event.inputs.release_tag }}" \
             --repo "${{ github.repository }}" \
-            --pattern "${{ matrix.asset }}" \
+            --pattern "firefox-*-stealth-${{ matrix.leg }}.*" \
             --dir art
           ls -la art/
       - name: Set up Python
@@ -95,7 +92,11 @@ jobs:
         run: |
           set -e
           mkdir -p ff
-          A="art/${{ matrix.asset }}"
+          # The one archive of this leg, whatever version it carries: the name is
+          # derived from the tree at build time (scripts/ci/legs.py), not here.
+          set -- art/firefox-*-stealth-${{ matrix.leg }}.*
+          [ "$#" -eq 1 ] && [ -e "$1" ] || { echo "ERROR: expected one firefox-*-stealth-${{ matrix.leg }} archive in art/, found: $*"; exit 1; }
+          A="$1"
           case "${{ matrix.kind }}" in
             win)   python -c "import zipfile; zipfile.ZipFile('$A').extractall('ff')"; EXE="ff/firefox.exe";;
             linux) tar xzf "$A" -C ff; EXE="ff/firefox";;

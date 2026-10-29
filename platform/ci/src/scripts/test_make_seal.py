@@ -90,7 +90,7 @@ def _juggler_files(marked) -> dict:
 
 
 def _archive(path: Path, *, version: str, build_id: str, marked: bool = True,
-             juggler: bool = True, app_ini: bool = True) -> Path:
+             juggler: bool = True, app_ini: bool = True, optimized: bool = False) -> Path:
     """One leg, laid out the way a real asset is: members are TREE-RELATIVE at
     the archive root, not under a `firefox/` wrapper. `_norm` strips a leading
     `./` and nothing else, so a wrapper directory hides every file from every
@@ -107,9 +107,23 @@ def _archive(path: Path, *, version: str, build_id: str, marked: bool = True,
 
     if path.suffix == ".zip":
         omni = io.BytesIO()
-        with zipfile.ZipFile(omni, "w") as z:
-            if juggler:
-                for name, body in _juggler_files(marked).items():
+        members = _juggler_files(marked) if juggler else {}
+        if optimized:
+            # The layout a PGO build packs (the jarlog's preload list puts the
+            # central directory first), which zipfile refuses.
+            import stock_parity  # noqa: F401  (puts mozpack on the path)
+            from mozpack.mozjar import JarWriter
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                jar_path = Path(tmp) / "omni.ja"
+                with JarWriter(file=str(jar_path)) as jar:
+                    for name, body in members.items():
+                        jar.add(name, body)
+                    jar.preload(list(members)[:1])
+                omni.write(jar_path.read_bytes())
+        else:
+            with zipfile.ZipFile(omni, "w") as z:
+                for name, body in members.items():
                     z.writestr(name, body)
         entries["omni.ja"] = omni.getvalue()
         with zipfile.ZipFile(path, "w") as z:
@@ -145,7 +159,8 @@ def _release(d: Path, version: str = "151.0", **overrides) -> Path:
         _archive(d / name, version=v, build_id=f"2026072400{1000 + i}",
                  marked=overrides.get(f"{leg}_marked", True),
                  juggler=overrides.get(f"{leg}_juggler", True),
-                 app_ini=overrides.get(f"{leg}_app_ini", True))
+                 app_ini=overrides.get(f"{leg}_app_ini", True),
+                 optimized=overrides.get(f"{leg}_optimized", False))
     return d
 
 
@@ -189,6 +204,15 @@ def test_a_clean_three_way_set_produces_a_usable_seal(d: Path):
     assert len({r["build_id"] for r in seal["assets"].values()}) == 3
     assert seal["playwright"] == {"min": "1.55.0", "max": "1.61.0"}
     json.dumps(seal)          # it has to survive being written
+
+
+@case
+def test_a_pgo_builds_optimized_omni_ja_is_read(d: Path):
+    """A PGO build packs omni.ja in Mozilla's optimized layout, as the retail
+    does. make_seal read it with zipfile, which refuses that layout, so the
+    first PGO candidate's Juggler would have looked absent (2026-10-27)."""
+    seal, _ = _build(_release(d, **{"win-x86_64_optimized": True}))
+    assert len(seal["assets"]) == 3, sorted(seal["assets"])
 
 
 @case

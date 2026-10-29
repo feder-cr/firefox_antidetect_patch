@@ -38,6 +38,7 @@ jobs:
   publish:
     name: publish-draft-release
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout wrapper (for scripts/gen_release_notes.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -104,12 +105,10 @@ jobs:
           echo "compiled cold: ok to publish"
       - name: Assert all 3 target archives present (no silent partial release)
         run: |
+          # The names the legs build, from the tree (scripts/ci/legs.py), never
+          # written here: a port to a new Firefox changes no name by hand.
+          EXPECTED="$(python3 _src/scripts/ci assets)"
           cd dl
-          EXPECTED="
-          firefox-157.0.1-stealth-linux-x86_64.tar.gz
-          firefox-157.0.1-stealth-linux-arm64.tar.gz
-          firefox-157.0.1-stealth-win-x86_64.zip
-          "
           for a in $EXPECTED; do
             [ -s "$a" ] || { echo "ERROR: missing/empty release asset: $a (a build leg silently dropped out?)"; exit 1; }
           done
@@ -118,7 +117,7 @@ jobs:
         run: |
           cd dl; ls -la
           # explicit glob — never include checksums.txt itself (the `*`-includes-itself trap)
-          sha256sum firefox-157.0.1-stealth-* > checksums.txt
+          sha256sum firefox-*-stealth-* > checksums.txt
           echo "----- checksums.txt -----"; cat checksums.txt
       # The tag, its number for the title and the previous tag for the changelog
       # range are the caller's plan (scripts/release_plan.py), not derived here.
@@ -157,38 +156,22 @@ jobs:
           echo "----- generated body.md -----"; cat body.md
           # publish THIS build's source commit so the next release can diff from it
           cp src-meta/source-commit.txt dl/source-commit.txt
+      # A tag's payload never changes (scripts/ci/payload_guard.py). The shell
+      # this replaced read every `gh release download` failure as "no seal
+      # yet", so a transient GitHub error let a different payload through.
       - name: Refuse a payload change under an existing tag
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           TAG: "${{ inputs.tag }}"
-        run: |
-          set -e
-          # cmp against a file that is not there reports "differs", and this step
-          # would then blame a payload change that never happened while the real
-          # fault is upstream. Name the real fault instead.
-          if [ ! -s dl/seal.json ]; then
-            echo "ERROR: dl/seal.json is missing or empty, so there is nothing to compare"
-            echo "the published seal against and nothing to upload. The 'Generate + gate"
-            echo "seal.json' step must run before this one."
-            exit 1
-          fi
-          if gh release download "$TAG" -R "${{ github.repository }}" \
-               --pattern seal.json --dir published 2>/dev/null; then
-            if ! cmp -s published/seal.json dl/seal.json; then
-              echo "ERROR: $TAG already has a published seal for a DIFFERENT payload."
-              echo "A new payload gets a new tag. Mint firefox-\$((N+1)) from the same artifacts."
-              diff <(python3 -m json.tool published/seal.json) <(python3 -m json.tool dl/seal.json) || true
-              exit 1
-            fi
-            echo "seal identical: metadata-only re-cut, proceeding"
-          else
-            echo "no seal published under $TAG yet (first seal), proceeding"
-          fi
+        run: python3 _src/scripts/ci payload-guard --tag "$TAG" --repo "${{ github.repository }}" --seal dl/seal.json
+      - name: The version the tree builds, for the release's title
+        id: version
+        run: echo "version=$(python3 _src/scripts/ci version)" | tee -a "$GITHUB_OUTPUT"
       - name: Create DRAFT release with all assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ inputs.tag }}
-          name: firefox_antidetect_patch (157.0.1) rev ${{ inputs.num }}
+          name: firefox_antidetect_patch (${{ steps.version.outputs.version }}) rev ${{ inputs.num }}
           draft: true
           prerelease: false
           fail_on_unmatched_files: true

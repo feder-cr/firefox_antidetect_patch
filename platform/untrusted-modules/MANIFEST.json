@@ -1,0 +1,54 @@
+{
+ "modified": [
+  "toolkit/xre/dllservices/UntrustedModulesData.cpp",
+  "toolkit/xre/dllservices/UntrustedModulesData.h",
+  "toolkit/xre/dllservices/tests/gtest/moz.build"
+ ],
+ "added": {
+  "toolkit/xre/dllservices/tests/gtest/TestStealthOwnBinaries.cpp": "100644"
+ },
+ "inventory": [
+  {
+   "file": "toolkit/xre/dllservices/UntrustedModulesData.cpp",
+   "category": "other",
+   "feature": "untrusted-modules-own-binaries",
+   "prefs": [],
+   "added": 44,
+   "removed": 5,
+   "hunks": 3,
+   "inline_logic_lines": 25,
+   "hookable": "movable",
+   "anchor": "ModuleRecord::GetVersionAndVendorInfo; ModuleRecord::IsInDirectoryOf (new); IsOwnUnsignedBinary (new)",
+   "evidence": [],
+   "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+  },
+  {
+   "file": "toolkit/xre/dllservices/UntrustedModulesData.h",
+   "category": "other",
+   "feature": "untrusted-modules-own-binaries",
+   "prefs": [],
+   "added": 13,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "ModuleRecord::IsInDirectoryOf (new)",
+   "evidence": [],
+   "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+  },
+  {
+   "file": "toolkit/xre/dllservices/tests/gtest/moz.build",
+   "category": "other",
+   "feature": "untrusted-modules-own-binaries",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "UNIFIED_SOURCES",
+   "evidence": [],
+   "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+  }
+ ]
+}

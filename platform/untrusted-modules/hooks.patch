@@ -1,0 +1,122 @@
+diff --git a/toolkit/xre/dllservices/UntrustedModulesData.cpp b/toolkit/xre/dllservices/UntrustedModulesData.cpp
+index 50c4897aaf6fc725c378156a00a99e8c5a825385..71cab74d0ef01ee1cbbee091af6cf16c43046c0d 100644
+--- a/toolkit/xre/dllservices/UntrustedModulesData.cpp
++++ b/toolkit/xre/dllservices/UntrustedModulesData.cpp
+@@ -5,6 +5,7 @@
+ #include "UntrustedModulesData.h"
+ 
+ #include <bit>
++#include <iterator>
+ #include <windows.h>
+ 
+ #include "mozilla/CmdLineAndEnvUtils.h"
+@@ -17,6 +18,7 @@
+ #include "ModuleVersionInfo.h"
+ #include "nsCOMPtr.h"
+ #include "nsDebug.h"
++#include "nsUnicharUtils.h"
+ #include "nsXULAppAPI.h"
+ #include "WinUtils.h"
+ 
+@@ -111,23 +113,60 @@ ModuleRecord::ModuleRecord(const nsAString& aResolvedNtPath)
+   mSanitizedDllName = strSanitizedPath;
+ }
+ 
++/* static */
++bool ModuleRecord::IsInDirectoryOf(const nsAString& aDllPath,
++                                   const nsAString& aExePath) {
++  const int32_t slash = aExePath.RFindChar(u'\\');
++  if (slash <= 0) {
++    return false;
++  }
++  const nsDependentSubstring dir = Substring(aExePath, 0, slash + 1);
++  return StringBeginsWith(aDllPath, dir, nsCaseInsensitiveStringComparator);
++}
++
++// STEALTH: one of this build's own binaries - beside firefox.exe and with its
++// version - whose signature lookup can only fall through to the catalog
++// search (see IsInDirectoryOf). Anything else in the directory, such as the
++// signed C++ runtime, keeps the lookup and its classification.
++static bool IsOwnUnsignedBinary(const nsAString& aPath,
++                                const ModuleVersionInfo& aVerInfo) {
++  wchar_t exePath[MAX_PATH * 4];
++  const DWORD exeLen =
++      ::GetModuleFileNameW(nullptr, exePath, std::size(exePath));
++  if (exeLen == 0 || exeLen >= std::size(exePath)) {
++    return false;
++  }
++  const nsDependentString exe(exePath, exeLen);
++  if (!ModuleRecord::IsInDirectoryOf(aPath, exe)) {
++    return false;
++  }
++  ModuleVersionInfo exeVer;
++  return exeVer.GetFromImage(exe) && aVerInfo.mFileVersion.Version64() &&
++         exeVer.mFileVersion.Version64() == aVerInfo.mFileVersion.Version64();
++}
++
+ void ModuleRecord::GetVersionAndVendorInfo(const nsAString& aPath) {
+   RefPtr<DllServices> dllSvc(DllServices::Get());
+ 
++  ModuleVersionInfo verInfo;
++  const bool hasVersion = verInfo.GetFromImage(aPath);
++
+   // WinVerifyTrust is too slow and of limited utility for our purposes, so
+   // we pass SkipTrustVerification here to avoid it.
+   bool hasNestedMicrosoftSignature = false;
+-  UniquePtr<wchar_t[]> signedBy(dllSvc->GetBinaryOrgName(
+-      PromiseFlatString(aPath).get(), &hasNestedMicrosoftSignature,
+-      AuthenticodeFlags::SkipTrustVerification));
++  UniquePtr<wchar_t[]> signedBy(
++      hasVersion && IsOwnUnsignedBinary(aPath, verInfo)
++          ? nullptr
++          : dllSvc->GetBinaryOrgName(PromiseFlatString(aPath).get(),
++                                     &hasNestedMicrosoftSignature,
++                                     AuthenticodeFlags::SkipTrustVerification));
+   if (signedBy) {
+     mVendorInfo = Some(VendorInfo(VendorInfo::Source::Signature,
+                                   nsDependentString(signedBy.get()),
+                                   hasNestedMicrosoftSignature));
+   }
+ 
+-  ModuleVersionInfo verInfo;
+-  if (!verInfo.GetFromImage(aPath)) {
++  if (!hasVersion) {
+     return;
+   }
+ 
+diff --git a/toolkit/xre/dllservices/UntrustedModulesData.h b/toolkit/xre/dllservices/UntrustedModulesData.h
+index 5cbddc374ccafc5546aa2fa56d1c8c5a24fd8f22..2da03d29e89e0e10a0fe6a70b1f8015de6ea6f98 100644
+--- a/toolkit/xre/dllservices/UntrustedModulesData.h
++++ b/toolkit/xre/dllservices/UntrustedModulesData.h
+@@ -88,6 +88,19 @@ class ModuleRecord final {
+   bool IsXUL() const;
+   bool IsTrusted() const;
+ 
++  // STEALTH: whether aDllPath lies in the directory of aExePath (or below),
++  // case-insensitively. GetVersionAndVendorInfo skips the signature lookup for
++  // those modules that also carry firefox.exe's version (this build's own;
++  // the signed C++ runtime beside them keeps it): they carry no Authenticode
++  // signature,
++  // so the lookup always fell through to the catalog search, which hashes the
++  // whole file and walks every system catalog - 1.26 s of CPU per launch in
++  // the "Untrusted Modules" thread, on a 2026-10-27 profile, for an answer
++  // that cannot exist. GetTrust then classifies them as it already did:
++  // FirefoxDirectory (+AndVersion), from their path and version resource.
++  static bool IsInDirectoryOf(const nsAString& aDllPath,
++                              const nsAString& aExePath);
++
+   ModuleRecord(const ModuleRecord&) = delete;
+   ModuleRecord(ModuleRecord&&) = delete;
+ 
+diff --git a/toolkit/xre/dllservices/tests/gtest/moz.build b/toolkit/xre/dllservices/tests/gtest/moz.build
+index 73e3ae21f121e312b703d628a38e49b42553edf0..d5adeb26390e075515347f7e9dbfa60a80594a3b 100644
+--- a/toolkit/xre/dllservices/tests/gtest/moz.build
++++ b/toolkit/xre/dllservices/tests/gtest/moz.build
+@@ -7,6 +7,7 @@ Library("dllservicestest")
+ UNIFIED_SOURCES += [
+     "TestDLLBlocklist.cpp",
+     "TestDLLServices.cpp",
++    "TestStealthOwnBinaries.cpp",
+     "TestUntrustedModules.cpp",
+ ]
+ 
