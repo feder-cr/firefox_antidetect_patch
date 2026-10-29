@@ -3455,28 +3455,6 @@
   }
  },
  {
-  "file": "layout/base/nsLayoutUtils.h",
-  "category": "spoof",
-  "feature": "canvas-as-drawn-readers",
-  "prefs": [],
-  "added": 6,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "nsLayoutUtils::SurfaceFromElement (SurfaceFromElementFlags enum)",
-  "evidence": [
-   "+    SFE_AS_DRAWN = 1 << 9,"
-  ],
-  "notes": "New flag bit 9, which follows SFE_ALLOW_UNCROPPED_UNSCALED = 1 << 8 in the same enum. The comment says the only callers are the browser's own readers (-moz-element, nsDOMWindowUtils): CONFIRMED, callers are layout/painting/nsImageRenderer.cpp (this group) and dom/base/nsDOMWindowUtils.cpp:1539.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Verified the caller claim in the comment."
-  }
- },
- {
   "file": "layout/base/nsPresContext.cpp",
   "category": "spoof",
   "feature": "screen-metrics",

@@ -28,7 +28,7 @@ namespace CanvasUtils {
  * the OffscreenCanvas twin of HTMLCanvasElement::GetSurfaceSnapshot. This is a
  * fact about the callers of today, not something the code enforces: no caller
  * asks for the as-drawn variant here (nsLayoutUtils::SurfaceFromOffscreenCanvas
- * has no equivalent of the SFE_AS_DRAWN check that the HTMLCanvasElement path
+ * has no equivalent of the kStealthSfeAsDrawn check that the HTMLCanvasElement path
  * has), so the day one does, the fix belongs in nsLayoutUtils.
  *
  * The snapshot is the context's, unchanged, for every context type the noise

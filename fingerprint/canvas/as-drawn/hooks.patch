@@ -1,44 +1,43 @@
 diff --git a/layout/base/nsLayoutUtils.cpp b/layout/base/nsLayoutUtils.cpp
-index 4f8d895b37612679b9255ac52a6037400fdc9d19..e2270d7e614763870963147e6b4612348a8d0f67 100644
+index 4f8d895b37612679b9255ac52a6037400fdc9d19..1459519964affbe28fa6384c4859cfbe7e2d9014 100644
 --- a/layout/base/nsLayoutUtils.cpp
 +++ b/layout/base/nsLayoutUtils.cpp
-@@ -7448,7 +7448,10 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
+@@ -18,6 +18,7 @@
+ #include "PseudoStyleType.h"
+ #include "RegionBuilder.h"
+ #include "RetainedDisplayListBuilder.h"
++#include "StealthSurfaceFlags.h"  // STEALTH-HOOK(fingerprint/canvas/as-drawn)
+ #include "TextDrawTarget.h"
+ #include "UnitTransforms.h"
+ #include "ViewportFrame.h"
+@@ -7448,7 +7449,7 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
      pAlphaType =
          nullptr;  // Coersce GetSurfaceSnapshot to give us Opaque/Premult only.
    }
 -  result.mSourceSurface = aElement->GetSurfaceSnapshot(pAlphaType, aTarget);
-+  result.mSourceSurface =
-+      (aSurfaceFlags & SFE_AS_DRAWN)
-+          ? aElement->GetSurfaceSnapshotAsDrawn(pAlphaType, aTarget)
-+          : aElement->GetSurfaceSnapshot(pAlphaType, aTarget);
++  result.mSourceSurface = StealthCanvasSnapshot(aElement, aSurfaceFlags, pAlphaType, aTarget);  // STEALTH-HOOK(fingerprint/canvas/as-drawn)
    if (!result.mSourceSurface) {
      // If the element doesn't have a context then we won't get a snapshot. The
      // canvas spec wants us to not error and just draw nothing, so return an
-diff --git a/layout/base/nsLayoutUtils.h b/layout/base/nsLayoutUtils.h
-index be8109708926064f6da60e7b118f74cfe078f014..6799de0680bd4400c0c8b386beb091bc40bd9410 100644
---- a/layout/base/nsLayoutUtils.h
-+++ b/layout/base/nsLayoutUtils.h
-@@ -2384,6 +2384,8 @@ class nsLayoutUtils {
-     SFE_ORIENTATION_FROM_IMAGE = 1 << 7,
-     /* Caller handles SFER::mCropRect.isSome() */
-     SFE_ALLOW_UNCROPPED_UNSCALED = 1 << 8,
-+    /* STEALTH-HOOK(fingerprint/canvas/as-drawn): canvas as drawn, no noise */
-+    SFE_AS_DRAWN = 1 << 9,
-   };
- 
-   // This function can be called on any thread.
 diff --git a/layout/painting/nsImageRenderer.cpp b/layout/painting/nsImageRenderer.cpp
-index 9f88fe67a35028f70984b83df013548950bdec34..6b09dfd77aa6e716fa204e6c52210650ecab5181 100644
+index 9f88fe67a35028f70984b83df013548950bdec34..9dc100d74217392c25cd7df1c6e2109b409cf3a1 100644
 --- a/layout/painting/nsImageRenderer.cpp
 +++ b/layout/painting/nsImageRenderer.cpp
-@@ -217,7 +217,9 @@ bool nsImageRenderer::PrepareImage() {
+@@ -13,6 +13,7 @@
+ #endif
+ #include "ImageOps.h"
+ #include "ImageRegion.h"
++#include "StealthSurfaceFlags.h"  // STEALTH-HOOK(fingerprint/canvas/as-drawn)
+ #include "gfxContext.h"
+ #include "gfxDrawable.h"
+ #include "mozilla/ISVGDisplayableFrame.h"
+@@ -217,7 +218,8 @@ bool nsImageRenderer::PrepareImage() {
              mForFrame->FirstContinuation(), mImage->AsElement().AsAtom());
      // If the referenced element is an <img>, <canvas>, or <video> element,
      // prefer SurfaceFromElement as it's more reliable.
 -    mImageElementSurface = nsLayoutUtils::SurfaceFromElement(paintElement);
-+    // -moz-element SHOWS the element, like the screen: a canvas as drawn.
 +    mImageElementSurface = nsLayoutUtils::SurfaceFromElement(
-+        paintElement, nsLayoutUtils::SFE_AS_DRAWN);
++        paintElement, kStealthSfeAsDrawn);
  
      if (!mImageElementSurface.GetSourceSurface()) {
        nsIFrame* paintServerFrame =

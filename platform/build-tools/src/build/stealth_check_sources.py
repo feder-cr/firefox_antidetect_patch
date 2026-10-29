@@ -28,6 +28,13 @@ failed on it.
    (mozilla::LOG_INFO on Windows), as its own r_log calls do; a header of
    ours used LOG_INFO at global scope and did not compile on Windows.
 
+4. A flag of ours used in one of Mozilla's flag spaces says which, on the line
+   above it: `// STEALTH-FLAG-SPACE(<Mozilla file>, <prefix>)`. Its bit must
+   be one that no `<prefix>* = 1 << N` of that file takes. Mozilla appends its
+   new flags on the next free bit and a merge does not see two different lines
+   that take the same bit: our explicit-size window flag sat on bit 25 of
+   nsIWebBrowserChrome, which Firefox 159 gives to CHROME_MEDIA_PIP.
+
 These are text checks, not a compiler: they can miss, but what they report
 is wrong.
 
@@ -52,6 +59,7 @@ QUALIFIED = re.compile(r"(?<![\w:])mozilla::([A-Za-z_]\w*)\b(?!::)")
 COMMENTS = re.compile(r"""//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'""", re.S)
 TOKEN = re.compile(r"::|[A-Za-z_]\w*|\S")
 KEYWORDS = {"return", "case", "else", "new", "delete", "throw", "sizeof", "decltype", "operator"}
+FLAG_SPACE = re.compile(r"STEALTH-FLAG-SPACE\(\s*([^,\s]+)\s*,\s*(\w+)\s*\)[^\n]*\n[^\n]*?(\w+)\s*=\s*1u?\s*<<\s*(\d+)")
 
 
 def git(*args):
@@ -165,6 +173,25 @@ def text_problems(rel, text):
     return sorted(set(bad))
 
 
+def flag_problems(rel, text, read):
+    """Rule 4 on one file of ours (raw text); read(path) gives a Mozilla file."""
+    bad = []
+    for path, prefix, name, bit in FLAG_SPACE.findall(text):
+        try:
+            space = strip(read(path))
+        except OSError:
+            bad.append(f"{rel}: {name}: {path} not found")
+            continue
+        taken = {}
+        for n, b in re.findall(r"\b(%s\w*)\s*=\s*1u?\s*<<\s*(\d+)" % re.escape(prefix), space):
+            taken.setdefault(int(b), []).append(n)
+        if not taken:  # a space this cannot read would pass vacuously
+            bad.append(f"{rel}: {name}: no {prefix}* flag read in {path}")
+        elif int(bit) in taken:
+            bad.append(f"{rel}: {name} takes bit {bit}, as {', '.join(taken[int(bit)])} in {path}")
+    return bad
+
+
 def problems(names, headers):
     """names: {name: file of ours}; headers: {path: text}."""
     decl = {}
@@ -194,11 +221,17 @@ def main(argv):
         return 1
     names = qualified_names(files)
     pattern = r"\b(" + "|".join(sorted(names)) + r")\b"
-    hits = [p for p in git("grep", "-lzE", pattern, "--", "*.h").split("\0") if p]
+    hits = [p for p in git("grep", "-lzE", pattern, "--", "*.h").split("\0") if p] if names else []
     headers = {h: open(os.path.join(TREE, h), encoding="utf-8", errors="replace").read() for h in hits}
     bad = problems(names, headers)
+    def read(p):
+        return open(os.path.join(TREE, p), encoding="utf-8", errors="replace").read()
+
     for rel in files:
-        bad += text_problems(rel, open(os.path.join(TREE, rel), encoding="utf-8", errors="replace").read())
+        bad += text_problems(rel, read(rel))
+    marked = argv or [p for p in git("grep", "-lz", "STEALTH-FLAG-SPACE(", "--", "*.h", "*.cpp").split(chr(0)) if p]
+    for rel in marked:
+        bad += flag_problems(rel, read(rel), read)
     for line in bad:
         print(line)
     print(f"{len(files)} Stealth* sources, {len(names)} mozilla:: names, {len(headers)} headers read: {len(bad)} problems")
@@ -222,6 +255,13 @@ def self_test():
     assert text_problems("a.h", hdr) == ["a.h: LOG_INFO outside namespace mozilla"]
     assert text_problems("a.h", "namespace mozilla {\n" + hdr + "}\n") == []
     assert text_problems("a.cpp", hdr) == [], "a .cpp of ours sets its own context"
+    space = {"m.h": "enum {\n  SFE_A = 1 << 0,\n  /* SFE_C = 1 << 31 */\n  SFE_B = 1 << 9,\n};\n"}
+    ours = "// STEALTH-FLAG-SPACE(m.h, SFE_)\nconstexpr uint32_t kOurs = 1u << %d;\n"
+    assert flag_problems("s.h", ours % 31, space.__getitem__) == [], "a commented flag takes no bit"
+    assert flag_problems("s.h", ours % 9, space.__getitem__) == ["s.h: kOurs takes bit 9, as SFE_B in m.h"]
+    space["m.h"] = space["m.h"].replace("/* SFE_C = 1 << 31 */", "SFE_C = 1 << 31,")
+    assert flag_problems("s.h", ours % 31, space.__getitem__), "Mozilla takes our bit at a port"
+    assert flag_problems("s.h", ours % 31, {"m.h": "enum {};"}.__getitem__), "nothing read is a problem"
     print("self-test ok")
 
 

@@ -17,6 +17,7 @@ namespace mozilla {
 // one nsIWebBrowserChrome leaves free; juggler/TargetRegistry.js reads the
 // same value, and juggler/tests/explicit_size_flag_is_free.test.mjs checks
 // that both agree and that no CHROME_* flag uses the bit.
+// STEALTH-FLAG-SPACE(toolkit/components/browser/nsIWebBrowserChrome.idl, CHROME_)
 constexpr uint32_t kJugglerWindowExplicitSize = 1u << 1;
 
 /**
