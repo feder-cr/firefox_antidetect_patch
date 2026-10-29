@@ -1,4 +1,5 @@
 {
+ "mozilla_repository": "https://github.com/mozilla-firefox/firefox",
  "mozilla_tag": "FIREFOX_157_0_1_RELEASE",
  "source_repository": "https://github.com/feder-cr/firefox_antidetect_patch",
  "source_branch": "stealth/157",
