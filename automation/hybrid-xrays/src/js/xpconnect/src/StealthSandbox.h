@@ -54,7 +54,7 @@ inline bool StealthCheckHybridXrays(JSContext* aCx, nsIPrincipal* aPrincipal,
   if (aOptions.hybridXrays &&
       (aPrincipal->IsSystemPrincipal() ||
        mozilla::BasePrincipal::Cast(aPrincipal)
-           ->Is<mozilla::ExpandedPrincipal>() ||
+           ->Is<ExpandedPrincipal>() ||
        aOptions.wantXrays)) {
     JS_ReportErrorASCII(aCx,
                         "hybridXrays needs a content principal and "
