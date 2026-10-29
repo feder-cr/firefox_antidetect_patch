@@ -65,10 +65,10 @@ function stealthDeclaredApiKey(pref) {
 
 // ⛔ STEALTHFOX: dichiarate da invisible_core, non incise nella build.
 // I getter restano pigri: la pref si legge a ogni formatURL, non al caricamento.
-// In fondo a URLFormatter.sys.mjs un Object.assign li scrive SOPRA i tre getter
-// di Mozilla, che restano come Mozilla li ha scritti e leggono voci di
-// AppConstants che non esistono piu' (undefined): non vengono mai chiamati.
-export function stealthApiKeyGetters() {
+// stealthApplyApiKeyGetters, in fondo a URLFormatter.sys.mjs, li scrive SOPRA i
+// tre getter di Mozilla, che restano come Mozilla li ha scritti e leggono voci
+// di AppConstants che non esistono piu' (undefined): non vengono mai chiamati.
+function stealthApiKeyGetters() {
   return {
     MOZILLA_API_KEY: () => stealthDeclaredApiKey(PREF_APIKEY_MOZILLA),
     GOOGLE_LOCATION_SERVICE_API_KEY: () =>
@@ -76,6 +76,10 @@ export function stealthApiKeyGetters() {
     GOOGLE_SAFEBROWSING_API_KEY: () =>
       stealthDeclaredApiKey(PREF_APIKEY_GOOGLE_SAFEBROWSING),
   };
+}
+
+export function stealthApplyApiKeyGetters(aFormatterPrototype) {
+  Object.assign(aFormatterPrototype._defaults, stealthApiKeyGetters());
 }
 
 // ⛔ STEALTHFOX: legge le stesse DICHIARAZIONI dei getter qui sopra, non

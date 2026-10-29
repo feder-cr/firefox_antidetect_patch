@@ -12,7 +12,7 @@ index fd8285620dd9e56deab8f3a80a10cd7f09188a4a..05ae33284e42ad7b3b51da6cd12722c5
      this.readPrefs();
  
 diff --git a/toolkit/components/urlformatter/URLFormatter.sys.mjs b/toolkit/components/urlformatter/URLFormatter.sys.mjs
-index 0485032ec57bee64f638c89f9314e75696563581..c322d6185e4a77f122fe7b4080766a965a7305a8 100644
+index 0485032ec57bee64f638c89f9314e75696563581..c7ab06fc08c4b7124c0b94dce5831f0a56f8b2df 100644
 --- a/toolkit/components/urlformatter/URLFormatter.sys.mjs
 +++ b/toolkit/components/urlformatter/URLFormatter.sys.mjs
 @@ -14,6 +14,11 @@
@@ -21,7 +21,7 @@ index 0485032ec57bee64f638c89f9314e75696563581..c322d6185e4a77f122fe7b4080766a96
  import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 +// STEALTH-HOOK(stillborn/api-keys)
 +import {
-+  stealthApiKeyGetters,
++  stealthApplyApiKeyGetters,
 +  stealthTrimApiKeys,
 +} from "resource://gre/modules/StealthApiKeys.sys.mjs";
  
@@ -41,7 +41,7 @@ index 0485032ec57bee64f638c89f9314e75696563581..c322d6185e4a77f122fe7b4080766a96
  };
 +
 +// STEALTH-HOOK(stillborn/api-keys)
-+Object.assign(nsURLFormatterService.prototype._defaults, stealthApiKeyGetters());
++stealthApplyApiKeyGetters(nsURLFormatterService.prototype);
 diff --git a/toolkit/components/urlformatter/moz.build b/toolkit/components/urlformatter/moz.build
 index ffc01ed8b6ebf20eab576e8c5928d33934e9e64c..1a38f6df3aa7d42983a10c76ceca4123b76abb84 100644
 --- a/toolkit/components/urlformatter/moz.build
