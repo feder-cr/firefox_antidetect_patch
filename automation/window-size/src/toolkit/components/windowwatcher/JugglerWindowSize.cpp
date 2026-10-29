@@ -17,7 +17,7 @@ uint32_t JugglerPopupChromeFlags(const dom::WindowFeatures& aFeatures) {
   // test nsWindowWatcher already uses to decide whether the window gets sized.
   if (nsWindowWatcher::HaveSpecifiedSize(aFeatures)) {
     return nsIWebBrowserChrome::CHROME_MINIMAL_POPUP |
-           nsIWebBrowserChrome::JUGGLER_WINDOW_EXPLICIT_SIZE;
+           kJugglerWindowExplicitSize;
   }
   return nsIWebBrowserChrome::CHROME_MINIMAL_POPUP;
 }

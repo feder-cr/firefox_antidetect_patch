@@ -313,17 +313,17 @@ index a8f8103d24039560ec5562cb74f6cbcef52edcaa..e3b2b10850dfef9047baf4c9ff748c01
    // used for @font-face local system fonts with explicit patterns
    explicit gfxFontconfigFontEntry(const nsACString& aFaceName,
 diff --git a/gfx/thebes/gfxFontEntry.cpp b/gfx/thebes/gfxFontEntry.cpp
-index ec143246d878d9ed5332a43da6acfa69cb28c53b..f8e6379752b9d02730fc25beee865f2a50d3d6a7 100644
+index ec143246d878d9ed5332a43da6acfa69cb28c53b..95390ac69ab657f5a44d40ef94c4a021041891df 100644
 --- a/gfx/thebes/gfxFontEntry.cpp
 +++ b/gfx/thebes/gfxFontEntry.cpp
-@@ -7,6 +7,7 @@
- #include <algorithm>
+@@ -27,6 +27,7 @@
+ #include "mozilla/ProfilerLabels.h"
+ #include "mozilla/StaticPrefs_layout.h"
  
- #include "COLRFonts.h"
 +#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
- #include "ThebesRLBox.h"
- #include "gfxContext.h"
- #include "gfxGraphiteShaper.h"
+ using namespace mozilla;
+ using namespace mozilla::gfx;
+ using namespace mozilla::unicode;
 @@ -154,6 +155,11 @@ void gfxFontEntry::SetSkrifaFont(SkrifaFontRef* aSkrifaFont) {
  }
  #endif

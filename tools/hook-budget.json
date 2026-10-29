@@ -194,7 +194,6 @@
  "third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.cc": 5,
  "third_party/libwebrtc/modules/desktop_capture/win/window_capture_utils.h": 2,
  "third_party/python/vsdownload/vsdownload.py": 3,
- "toolkit/components/browser/nsIWebBrowserChrome.idl": 4,
  "toolkit/components/telemetry/app/TelemetrySend.sys.mjs": 11,
  "toolkit/components/telemetry/moz.build": 2,
  "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs": 3,

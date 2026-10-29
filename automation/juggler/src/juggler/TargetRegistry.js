@@ -15,6 +15,11 @@ const Cr = Components.results;
 const helper = new Helper();
 
 
+// Chrome flag of a popup whose window.open features give a size: the value
+// of kJugglerWindowExplicitSize in toolkit/components/windowwatcher/
+// JugglerWindowSize.h, a bit nsIWebBrowserChrome leaves free
+// (juggler/tests/explicit_size_flag_is_free.test.mjs).
+const JUGGLER_WINDOW_EXPLICIT_SIZE = 1 << 1;
 const IDENTITY_NAME = 'JUGGLER ';
 const HUNDRED_YEARS = 60 * 60 * 24 * 365 * 100;
 
@@ -198,7 +203,7 @@ export class TargetRegistry {
       // window.open features give a size. Such a popup keeps the size the page
       // asked for, as in every Firefox; the context's default viewport is for
       // tabs and for popups that did not name one.
-      const hasExplicitSize = appWindow && (appWindow.chromeFlags & Ci.nsIWebBrowserChrome.JUGGLER_WINDOW_EXPLICIT_SIZE) !== 0;
+      const hasExplicitSize = appWindow && (appWindow.chromeFlags & JUGGLER_WINDOW_EXPLICIT_SIZE) !== 0;
       const openerContext = tab.linkedBrowser.browsingContext.opener;
       let openerTarget;
       if (openerContext) {

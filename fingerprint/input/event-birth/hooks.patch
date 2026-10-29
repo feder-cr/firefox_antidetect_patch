@@ -1,5 +1,5 @@
 diff --git a/dom/base/nsContentUtils.cpp b/dom/base/nsContentUtils.cpp
-index 95d9e4fa4f057480d5757c28739b6881127cff1c..09c76b1a9e50cd1719de0806386fbf89e5ee4c49 100644
+index 95d9e4fa4f057480d5757c28739b6881127cff1c..11d14cfff05f2f1e2279446743d98e400217fdd5 100644
 --- a/dom/base/nsContentUtils.cpp
 +++ b/dom/base/nsContentUtils.cpp
 @@ -28,6 +28,8 @@
@@ -20,15 +20,15 @@ index 95d9e4fa4f057480d5757c28739b6881127cff1c..09c76b1a9e50cd1719de0806386fbf89
    mouseOrPointerEvent.mButtons =
        aMouseEventData.mButtons.WasPassed()
            ? aMouseEventData.mButtons.Value()
-@@ -10523,6 +10527,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
- 
+@@ -10524,6 +10528,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
    mouseOrPointerEvent.mRefPoint = aRefPoint;
    mouseOrPointerEvent.mIgnoreRootScrollFrame = aOptions.mIgnoreRootScrollFrame;
+ 
 +  // STEALTH-HOOK(fingerprint/input/event-birth)
 +  StealthSetInputEventBirth(mouseOrPointerEvent, aMouseEventData.mLatency);
- 
    nsEventStatus status = nsEventStatus_eIgnore;
    if (aOptions.mToWindow) {
+     nsresult rv = aPresShell->HandleEvent(aPresShell->GetRootFrame(),
 diff --git a/dom/base/test/gtest/moz.build b/dom/base/test/gtest/moz.build
 index 6936f4c7d5934511caead1cff46b601d5e23ae63..a930c1437494a2565b24ba77a7e7021cfa5d5800 100644
 --- a/dom/base/test/gtest/moz.build

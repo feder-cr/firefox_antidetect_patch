@@ -1,14 +1,14 @@
 diff --git a/dom/webidl/Window.webidl b/dom/webidl/Window.webidl
-index c4191015847190625f22da9aae85eb79a4016913..fcd7b4f008dacbee3b4b344d86e8042787bd96bb 100644
+index c4191015847190625f22da9aae85eb79a4016913..f5ef619f86a78448a399c3f0e9be537180f8c004 100644
 --- a/dom/webidl/Window.webidl
 +++ b/dom/webidl/Window.webidl
-@@ -396,6 +396,9 @@ dictionary SynthesizeMouseEventData : SynthesizeEventData {
-   short inputSource = 1;
-   // Modifiers pressed, using constants defined as MODIFIER_* in nsIDOMWindowUtils.
-   long modifiers = 0;
-+  // STEALTH-HOOK(fingerprint/input/latency)
-+  unsigned long jugglerEventId = 0;
-+  double latency = 0;
- };
+@@ -383,6 +383,9 @@ dictionary SynthesizeEventData {
  
  // Mozilla-specific stuff
+ dictionary SynthesizeMouseEventData : SynthesizeEventData {
++  // STEALTH-HOOK(fingerprint/input/latency): members are ordered by name, not here.
++  unsigned long jugglerEventId = 0;
++  double latency = 0;
+   // Indicates which mouse button is pressed/released when a mouse event is triggered.
+   long button = 0;
+   // Indicates which mouse buttons are pressed when a mouse event is triggered.

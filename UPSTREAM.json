@@ -2,6 +2,6 @@
  "mozilla_repository": "https://github.com/mozilla-firefox/firefox",
  "mozilla_tag": "FIREFOX_157_0_1_RELEASE",
  "source_branch": "work/157",
- "exported_from": "e0db0c680e17b49562567428ea778699eb9b93bd",
- "exported_tree": "c405072b11030dceedc85d74cdfdf1c6202ecdb5"
+ "exported_from": "1e30f27ed6ff3b189f4724900074c86d2454e802",
+ "exported_tree": "f8df95c504390ce3a0d1deb3f1d796e6da1ac749"
 }
