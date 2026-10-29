@@ -25,6 +25,7 @@ soltanto:
 
 ```
 python tools/engine.py status   # il sorgente si è spostato dall'ultimo export?
+python tools/engine.py apply --head <ramo>   # nel sorgente: il tag + un commit per cartella (la pila a strati)
 python tools/engine.py export   # riscrive la serie dal sorgente
 python tools/engine.py verify   # la ricostruisce sul tag e la confronta: "identical" o rosso
 python tools/engine.py check    # regole della serie, senza Firefox (gira anche in CI)

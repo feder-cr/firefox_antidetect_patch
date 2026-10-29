@@ -161,6 +161,44 @@ def describe(folder: str, manifest: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+IDENTITY = {"GIT_AUTHOR_NAME": "feder-cr", "GIT_COMMITTER_NAME": "feder-cr",
+            "GIT_AUTHOR_EMAIL": "85809106+feder-cr@users.noreply.github.com",
+            "GIT_COMMITTER_EMAIL": "85809106+feder-cr@users.noreply.github.com"}
+
+
+def apply(source: Path, base: str, branch: str, force: bool) -> str:
+    """Builds the engine in the source repository as branch `branch`: the Mozilla tag,
+    then one commit per folder of SERIES, in order. No checkout: the branch is written
+    with git plumbing, so it works in a bare repository and does not touch a worktree.
+    The commit of a folder is titled with the folder, so `git log` is the layer stack."""
+    ref = "refs/heads/%s" % branch
+    exists = subprocess.run(["git", "-C", str(source), "rev-parse", "-q", "--verify", ref],
+                            capture_output=True).returncode == 0
+    if exists and not force:
+        raise SystemExit("%s already exists in %s: pass --force to rebuild it (its commits are lost "
+                         "unless exported first)" % (branch, source))
+    parent = git(source, "rev-parse", "%s^{commit}" % base).decode().strip()
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"), **IDENTITY)
+        git(source, "read-tree", parent, env=env)
+        for folder in series_folders():
+            patch = ROOT / folder / "hooks.patch"
+            if patch.exists():
+                git(source, "apply", "--cached", "--whitespace=nowarn", str(patch), env=env)
+            manifest = json.loads((ROOT / folder / "MANIFEST.json").read_text(encoding="utf-8"))
+            for path, mode in manifest["added"].items():
+                data = (ROOT / folder / "src" / path).read_bytes()
+                sha = git(source, "hash-object", "-w", "--stdin", input_bytes=data).decode().strip()
+                git(source, "update-index", "--add", "--cacheinfo", "%s,%s,%s" % (mode, sha, path),
+                    env=env)
+            tree = git(source, "write-tree", env=env).decode().strip()
+            parent = git(source, "commit-tree", tree, "-p", parent, "-m", folder, env=env).decode().strip()
+    git(source, "update-ref", ref, parent)
+    print("%s: %s on top of %s, %d layers (tree %s)"
+          % (branch, parent[:10], base, len(series_folders()), tree[:12]))
+    return tree
+
+
 def verify(source: Path, base: str, head: str) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"))
@@ -282,13 +320,17 @@ def status(source: Path, head: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["status", "export", "verify", "check", "shrink-budget"])
+    ap.add_argument("command", choices=["status", "apply", "export", "verify", "check", "shrink-budget"])
     ap.add_argument("--source", type=Path, default=Path(os.environ.get("ENGINE_SOURCE", "C:/ff/source")))
     ap.add_argument("--base")
-    ap.add_argument("--head")
+    ap.add_argument("--head", help="the source branch (apply: the branch it creates)")
+    ap.add_argument("--force", action="store_true", help="apply: rebuild an existing branch")
     a = ap.parse_args()
     up = upstream()
     base, head = a.base or up["mozilla_tag"], a.head or up["source_branch"]
+    if a.command == "apply":
+        apply(a.source, base, head, a.force)
+        return 0
     if a.command == "check":
         return check()
     if a.command == "shrink-budget":
