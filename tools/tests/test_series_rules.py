@@ -57,9 +57,69 @@ def test_the_budget_only_goes_down(tmp_path, monkeypatch):
     path = tmp_path / "hook-budget.json"
     path.write_text(json.dumps(budget), encoding="utf-8")
     monkeypatch.setattr(engine, "BUDGET", path)
+    monkeypatch.setattr(engine, "REMOVED_BUDGET", _copy_removed_budget(tmp_path, lambda b: None))
     engine.shrink_budget()
     after = json.loads(path.read_text(encoding="utf-8"))
     assert after["startupcache/StartupCache.h"] == budget["startupcache/StartupCache.h"] - 40
+
+
+# The second budget: Mozilla's lines we remove or rewrite. Such a line conflicts at a
+# port like one we add, and a copy of it moved into a file of ours stops following
+# Mozilla (InitializeFamily's cmap loader, 2026-10-30).
+FILE = "gfx/thebes/gfxPlatformFontList.cpp"
+
+
+def _copy_removed_budget(tmp_path, change):
+    budget = json.loads(engine.REMOVED_BUDGET.read_text(encoding="utf-8"))
+    change(budget)
+    path = tmp_path / "removed-budget.json"
+    path.write_text(json.dumps(budget), encoding="utf-8")
+    return path
+
+
+def test_a_mozilla_file_losing_more_lines_than_its_removed_budget_fails(tmp_path, monkeypatch):
+    def shrink(b):
+        b[FILE] -= 1
+    monkeypatch.setattr(engine, "REMOVED_BUDGET", _copy_removed_budget(tmp_path, shrink))
+    found = engine.problems()
+    assert any(FILE in p and "removed budget is" in p for p in found), found
+
+
+def test_a_file_without_a_removed_budget_may_remove_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine, "REMOVED_BUDGET", _copy_removed_budget(tmp_path, lambda b: b.pop(FILE)))
+    found = engine.problems()
+    assert any(FILE in p and "removed budget is 0" in p for p in found), found
+
+
+def test_a_removed_budget_for_a_file_no_longer_patched_must_go(tmp_path, monkeypatch):
+    path = _copy_removed_budget(tmp_path, lambda b: b.__setitem__("dom/base/Gone.cpp", 3))
+    monkeypatch.setattr(engine, "REMOVED_BUDGET", path)
+    found = engine.problems()
+    assert any("removed-budget.json" in p and "dom/base/Gone.cpp" in p for p in found), found
+
+
+def test_the_removed_budget_only_goes_down_and_drops_files_at_zero(tmp_path, monkeypatch):
+    def loosen(b):
+        b[FILE] += 40
+        b["startupcache/StartupCache.h"] = 7  # patched, removes nothing
+    path = _copy_removed_budget(tmp_path, loosen)
+    monkeypatch.setattr(engine, "REMOVED_BUDGET", path)
+    hook = tmp_path / "hook-budget.json"
+    hook.write_bytes(engine.BUDGET.read_bytes())
+    monkeypatch.setattr(engine, "BUDGET", hook)
+    engine.shrink_budget()
+    after = json.loads(path.read_text(encoding="utf-8"))
+    real = json.loads(engine.REMOVED_BUDGET.read_text(encoding="utf-8"))
+    assert after[FILE] == real[FILE]
+    assert "startupcache/StartupCache.h" not in after
+
+
+def test_lines_are_counted_inside_hunks_only(tmp_path):
+    patch = tmp_path / "hooks.patch"
+    patch.write_bytes(b"diff --git a/x.sql b/x.sql\n--- a/x.sql\n+++ b/x.sql\n"
+                      b"@@ -1,2 +1,2 @@\n--- a comment\n+++ a line\n keep\n")
+    assert engine.removed_lines(patch) == {"x.sql": 1}
+    assert engine.added_lines(patch) == {"x.sql": 1}
 
 
 def test_a_root_workflow_edited_by_hand_fails(tmp_path, monkeypatch):

@@ -125,7 +125,7 @@
  "gfx/thebes/gfxFontUtils.h": 8,
  "gfx/thebes/gfxHarfBuzzShaper.cpp": 1,
  "gfx/thebes/gfxHarfBuzzShaper.h": 10,
- "gfx/thebes/gfxPlatformFontList.cpp": 33,
+ "gfx/thebes/gfxPlatformFontList.cpp": 31,
  "gfx/thebes/gfxPlatformFontList.h": 13,
  "gfx/thebes/gfxPlatformGtk.cpp": 3,
  "gfx/thebes/gfxTextRun.cpp": 2,

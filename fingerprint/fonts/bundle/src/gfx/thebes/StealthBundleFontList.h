@@ -409,6 +409,8 @@ void StealthApplyAlias(bool aBundleOnly, nsACString& aKey);
 // Loads every character map still missing in aFamily when aLoadCmaps.
 // aCreateFontEntry is gfxPlatformFontList::CreateFontEntry bound to the family
 // (that member is protected, so the caller passes it in).
+// Called after InitializeFamily's if/else, with aLoadCmaps only under
+// bundle-only (why: above the definition).
 void StealthLoadMissingCharacterMaps(
     mozilla::fontlist::FontList* aList, mozilla::fontlist::Family* aFamily,
     bool aLoadCmaps,

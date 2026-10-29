@@ -19,7 +19,7 @@ in `UPSTREAM.json` (`exported_tree`). Si modificano a mano soltanto:
 - `FEATURE.md` di ogni cartella (cosa fa, perché, test);
 - `tools/layout.py` (in quale cartella va una funzione o un nostro file);
 - `tools/inventory.json` (una voce per ogni file Mozilla che tocchiamo);
-- `tools/hook-budget.json` (solo verso il basso, vedi sotto);
+- `tools/hook-budget.json` e `tools/removed-budget.json` (solo verso il basso, vedi sotto);
 - `AGENTS.md`, `tools/`, `.github/`.
 
 `hooks.patch`, `src/`, `MANIFEST.json`, `SERIES`, `exported_from`/`exported_tree` e i
@@ -84,6 +84,13 @@ python -m pytest -q tools/tests
 - **Il tetto per file scende soltanto.** `tools/hook-budget.json` dice quante righe
   nostre porta ogni file di Mozilla; `check` fallisce se una cresce. Dopo aver spostato
   logica: `shrink-budget`. Un tetto non si alza mai: si sposta la logica.
+- **Le righe di Mozilla restano come le ha scritte Mozilla.** `tools/removed-budget.json`
+  dice quante righe di Mozilla togliamo o riscriviamo in ogni file (un file assente: 0).
+  Una riga tolta va in conflitto al port come una aggiunta, e se la sua logica finisce
+  copiata in un nostro file smette di seguire Mozilla. Se un blocco di Mozilla non deve
+  girare o va esteso, il blocco resta intatto e il gancio gli sta accanto (esempio:
+  il caricamento delle mappe dei caratteri in `InitializeFamily`). Stesso tetto, solo verso
+  il basso, abbassato da `shrink-budget`.
 - **Un test di comportamento per ogni gancio**: si imposta la pref e si controlla il
   valore che la pagina vede. Il nome del test va in `FEATURE.md` (riga `Test:`).
 - **Ogni falsificazione passa da una pref** `zoom.stealth.*` / `stealthfox.*`; non si

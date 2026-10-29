@@ -451,7 +451,7 @@ index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4
                                           aLanguage, aFamilyList);
      if (!isSystemUi) {
 diff --git a/gfx/thebes/gfxPlatformFontList.cpp b/gfx/thebes/gfxPlatformFontList.cpp
-index cabecffc5c4f9a21f5d069738f82d866c2bcbeb2..59591a6dc74feebc9004f7db0d3d12c6674ce2a7 100644
+index cabecffc5c4f9a21f5d069738f82d866c2bcbeb2..be2bcbc1e9562ed17c35bfc953064cb59688679a 100644
 --- a/gfx/thebes/gfxPlatformFontList.cpp
 +++ b/gfx/thebes/gfxPlatformFontList.cpp
 @@ -7,6 +7,7 @@
@@ -526,44 +526,18 @@ index cabecffc5c4f9a21f5d069738f82d866c2bcbeb2..59591a6dc74feebc9004f7db0d3d12c6
    bool allowHidden = bool(aFlags & FindFamiliesFlags::eSearchHiddenFamilies);
    FontVisibility visibilityLevel =
        aFontVisibilityProvider ? aFontVisibilityProvider->GetFontVisibility()
-@@ -1977,30 +1988,14 @@ bool gfxPlatformFontList::InitializeFamily(fontlist::Family* aFamily,
-     AutoTArray<fontlist::Face::InitData, 16> faceList;
-     GetFacesInitDataForFamily(aFamily, faceList, aLoadCmaps);
-     aFamily->AddFaces(list, faceList);
--  } else {
--    // The family's face list was already initialized, but if aLoadCmaps is
--    // true we also want to eagerly load character maps. This is used when a
--    // child process is doing SearchAllFontsForChar, to have the parent load
--    // all the cmaps at once and reduce IPC traffic (and content-process file
--    // access overhead, which is crippling for DirectWrite on Windows).
--    if (aLoadCmaps) {
--      if (auto* faces = aFamily->Faces(list)) {
--        for (size_t i = 0; i < aFamily->NumFaces(); i++) {
--          auto* face = faces[i].ToPtr<fontlist::Face>(list);
--          if (face && face->mCharacterMap.IsNull()) {
--            // We don't want to cache this font entry, as the parent will most
--            // likely never use it again; it's just to populate the charmap for
--            // the benefit of the child process.
--            RefPtr<gfxFontEntry> fe = CreateFontEntry(face, aFamily);
--            if (fe) {
--              fe->ReadCMAP();
--            }
--          }
--        }
--      }
--    }
+@@ -2001,6 +2012,10 @@ bool gfxPlatformFontList::InitializeFamily(fontlist::Family* aFamily,
+     }
    }
  
-+  // STEALTH-HOOK(fingerprint/fonts/font-list)
-+  StealthLoadMissingCharacterMaps(
-+      list, aFamily, aLoadCmaps, [&](fontlist::Face* aFace) {
-+        return CreateFontEntry(aFace, aFamily);
-+      });
++  StealthLoadMissingCharacterMaps(  // STEALTH-HOOK(fingerprint/fonts/font-list)
++      list, aFamily, aLoadCmaps && mStealthBundleOnly,
++      [&](fontlist::Face* aFace) { return CreateFontEntry(aFace, aFamily); });
 +
    if (aLoadCmaps && aFamily->IsInitialized()) {
      aFamily->SetupFamilyCharMap(list);
    }
-@@ -2219,6 +2214,9 @@ void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap,
+@@ -2219,6 +2234,9 @@ void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap,
  static void GetSystemUIFontFamilies(
      FontVisibilityProvider* aFontVisibilityProvider,
      [[maybe_unused]] nsAtom* aLangGroup, nsTArray<nsCString>& aFamilies) {
@@ -573,7 +547,7 @@ index cabecffc5c4f9a21f5d069738f82d866c2bcbeb2..59591a6dc74feebc9004f7db0d3d12c6
    // TODO: On macOS, use CTCreateUIFontForLanguage or such thing (though the
    // code below ends up using [NSFont systemFontOfSize: 0.0].
    nsFont systemFont;
-@@ -2270,6 +2268,10 @@ void gfxPlatformFontList::ResolveGenericFontNames(
+@@ -2270,6 +2288,10 @@ void gfxPlatformFontList::ResolveGenericFontNames(
      gfxFontUtils::ParseFontList(value, genericFamilies);
    }
  
@@ -584,7 +558,7 @@ index cabecffc5c4f9a21f5d069738f82d866c2bcbeb2..59591a6dc74feebc9004f7db0d3d12c6
    nsAtom* langGroup = GetLangGroupForPrefLang(aPrefLang);
    MOZ_ASSERT(langGroup, "null lang group for pref lang");
  
-@@ -2305,6 +2307,9 @@ void gfxPlatformFontList::ResolveEmojiFontNames(
+@@ -2305,6 +2327,9 @@ void gfxPlatformFontList::ResolveEmojiFontNames(
      gfxFontUtils::ParseFontList(value, genericFamilies);
    }
  

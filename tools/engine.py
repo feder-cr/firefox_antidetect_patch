@@ -29,8 +29,12 @@ verify   rebuilds the tree from the series on top of the tag, in a throwaway git
 check    needs no Firefox: SERIES lists exactly the folders that exist, every folder has
          its MANIFEST and FEATURE.md, every file of ours is listed and present, each
          hooks.patch touches only the Mozilla files its MANIFEST owns, and no Mozilla file
-         carries more of our lines than tools/hook-budget.json allows. The budget only
-         goes down: logic belongs in our own files, Mozilla's files get hooks.
+         carries more of our lines than tools/hook-budget.json allows, nor loses or has
+         rewritten more of its own lines than tools/removed-budget.json allows. Both
+         budgets only go down: logic belongs in our own files, Mozilla's files get hooks,
+         and Mozilla's lines stay as Mozilla wrote them (a removed or rewritten line
+         conflicts at a port like an added one, and a copy of it in a file of ours
+         stops following Mozilla).
 """
 from __future__ import annotations
 
@@ -52,6 +56,7 @@ ROOT = Path(__file__).resolve().parent.parent
 INVENTORY = ROOT / "tools" / "inventory.json"
 UPSTREAM = ROOT / "UPSTREAM.json"
 BUDGET = ROOT / "tools" / "hook-budget.json"
+REMOVED_BUDGET = ROOT / "tools" / "removed-budget.json"
 # The workflows live in the series (the tree's tests read them beside scripts/), and
 # GitHub runs them from this repository's root: export copies them there and check
 # requires the two identical. series.yml is the root's own.
@@ -366,17 +371,30 @@ def verify(source: Path, base: str, head: str) -> int:
 PATCH_FILE = re.compile(r"^diff --git a/(\S+) b/")
 
 
-def added_lines(patch: Path) -> dict:
-    """Mozilla file -> lines we add to it, read from a hooks.patch."""
-    counts, current = {}, None
+def _patch_lines(patch: Path, sign: str) -> dict:
+    # Counted only inside hunks, so the ---/+++ header is never a line, and a line
+    # that itself starts with -- or ++ is.
+    counts, current, in_hunk = {}, None, False
     for line in patch.read_text(encoding="utf-8", errors="replace").splitlines():
         m = PATCH_FILE.match(line)
         if m:
-            current = m.group(1)
+            current, in_hunk = m.group(1), False
             counts[current] = 0
-        elif current and line.startswith("+") and not line.startswith("+++"):
+        elif line.startswith("@@"):
+            in_hunk = True
+        elif current and in_hunk and line.startswith(sign):
             counts[current] += 1
     return counts
+
+
+def added_lines(patch: Path) -> dict:
+    """Mozilla file -> lines we add to it, read from a hooks.patch."""
+    return _patch_lines(patch, "+")
+
+
+def removed_lines(patch: Path) -> dict:
+    """Mozilla file -> lines of Mozilla's we remove or rewrite, read from a hooks.patch."""
+    return _patch_lines(patch, "-")
 
 
 def problems() -> list:
@@ -389,6 +407,7 @@ def problems() -> list:
     if listed != sorted(listed, key=layout.folder_sort_key):
         found.append("SERIES is not in layout.GROUP_ORDER order")
     budget = json.loads(BUDGET.read_text(encoding="utf-8"))
+    removed_budget = json.loads(REMOVED_BUDGET.read_text(encoding="utf-8"))
     seen = {}
     for folder in present:
         d = ROOT / folder
@@ -405,6 +424,7 @@ def problems() -> list:
                 found.append("%s: src/%s is not in its MANIFEST" % (folder, extra))
         patch = d / "hooks.patch"
         touched = added_lines(patch) if patch.exists() else {}
+        removed = removed_lines(patch) if patch.exists() else {}
         if sorted(touched) != sorted(manifest["modified"]):
             found.append("%s: hooks.patch touches %s, MANIFEST owns %s"
                          % (folder, sorted(touched), manifest["modified"]))
@@ -419,8 +439,16 @@ def problems() -> list:
             elif n > allowed:
                 found.append("%s (%s) carries %d of our lines, its budget is %d: move the logic "
                              "into a file of ours and leave a hook" % (path, folder, n, allowed))
+            r, r_allowed = removed.get(path, 0), removed_budget.get(path, 0)
+            if r > r_allowed:
+                found.append("%s (%s) loses or has rewritten %d of Mozilla's lines, its removed "
+                             "budget is %d: leave Mozilla's lines as they are and put the hook "
+                             "beside them" % (path, folder, r, r_allowed))
     for path in sorted(set(budget) - set(seen)):
         found.append("tools/hook-budget.json still lists %s, which no patch touches: remove it" % path)
+    for path in sorted(set(removed_budget) - set(seen)):
+        found.append("tools/removed-budget.json still lists %s, which no patch touches: remove it"
+                     % path)
     series_wf = {p.name: p.read_bytes() for p in WORKFLOWS_SERIES.glob("*.yml")}
     root_wf = {p.name: p.read_bytes() for p in WORKFLOWS_ROOT.glob("*.yml")}
     for name in sorted(set(series_wf) | set(root_wf) - ROOT_ONLY_WORKFLOWS):
@@ -436,20 +464,29 @@ def check() -> int:
         print("FAIL", p)
     if not found:
         total = sum(json.loads(BUDGET.read_text(encoding="utf-8")).values())
-        print("ok: %d folders, %d of our lines in Mozilla files" % (len(series_folders()), total))
+        gone = sum(json.loads(REMOVED_BUDGET.read_text(encoding="utf-8")).values())
+        print("ok: %d folders, %d of our lines in Mozilla files, %d of Mozilla's lines removed "
+              "or rewritten" % (len(series_folders()), total, gone))
     return 1 if found else 0
 
 
 def shrink_budget() -> None:
     """Lowers each budget to the lines the patches carry now. Never raises one."""
     budget = json.loads(BUDGET.read_text(encoding="utf-8"))
+    removed_budget = json.loads(REMOVED_BUDGET.read_text(encoding="utf-8"))
     for folder in existing_folders():
         patch = ROOT / folder / "hooks.patch"
         for path, n in (added_lines(patch) if patch.exists() else {}).items():
             if path in budget and n < budget[path]:
                 print("%s: %d -> %d" % (path, budget[path], n))
                 budget[path] = n
+        for path, n in (removed_lines(patch) if patch.exists() else {}).items():
+            if path in removed_budget and n < removed_budget[path]:
+                print("%s: %d -> %d removed" % (path, removed_budget[path], n))
+                removed_budget[path] = n
     write_json(BUDGET, dict(sorted(budget.items())))
+    # A file that no longer removes anything leaves the removed budget: 0 is the default.
+    write_json(REMOVED_BUDGET, {p: n for p, n in sorted(removed_budget.items()) if n})
 
 
 def status(source: Path, head: str) -> int:

@@ -1154,23 +1154,24 @@ void StealthApplyAlias(bool aBundleOnly, nsACString& aKey) {
   }
 }
 
-// InitializeFamily's eager character-map loader, run after BOTH branches of
-// `if (!aFamily->IsInitialized())`.
+// InitializeFamily's eager character-map loader for the bundle, run under
+// bundle-only after BOTH branches of `if (!aFamily->IsInitialized())`.
 //
-// It used to be the `else` of that branch, i.e. it ran ONLY for a family whose
-// face list already existed, on the assumption that a backend asked with
-// aLoadCmaps=true fills Face::InitData::mCharMap while it enumerates. Our bundle
-// path cannot do that without a SECOND cmap reader of its own, so under
+// Mozilla's own loader is the `else` of that branch, i.e. it runs ONLY for a
+// family whose face list already existed, on the assumption that a backend asked
+// with aLoadCmaps=true fills Face::InitData::mCharMap while it enumerates. Our
+// bundle path cannot do that without a SECOND cmap reader of its own, so under
 // bundle-only a family initialized with aLoadCmaps=true came out with every face
 // map null and stayed that way forever - the eager loader existed and was
 // unreachable on the first call, which is the only call most families ever get.
 //
-// Running it after both branches costs upstream nothing: the loop skips any face
-// that already has a map, so a backend that filled InitData still does the work
-// exactly once. It is used when a child process is doing SearchAllFontsForChar,
-// to have the parent load all the cmaps at once and reduce IPC traffic (and
-// content-process file access overhead, which is crippling for DirectWrite on
-// Windows).
+// Mozilla's `else` stays in gfxPlatformFontList.cpp as Mozilla wrote it (a port
+// takes its changes with no conflict); this loop is the same loop, run after it.
+// For a family that was already initialized Mozilla's loop has filled every map
+// it could, and this one skips any face that already has a map. It is used when
+// a child process is doing SearchAllFontsForChar, to have the parent load all
+// the cmaps at once and reduce IPC traffic (and content-process file access
+// overhead, which is crippling for DirectWrite on Windows).
 //
 // The SetupFamilyCharMap call that follows in InitializeFamily used to carry
 // `&& !mStealthBundleOnly`, and that deroga was CORRECT for as long as no bundled
