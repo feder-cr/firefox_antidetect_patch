@@ -15,19 +15,15 @@ index c5c10b0e20fac2c7771a571ecc6dc092d5d77d8f..4733430c983cd0c46bc41b5698bada57
      const unsigned long CHROME_CENTER_SCREEN          = 1 << 27;
  
 diff --git a/toolkit/components/windowwatcher/moz.build b/toolkit/components/windowwatcher/moz.build
-index 4d1326dbbb1367a7f721cb6e36fec5c34442a223..13de7ee0dbe184de4e32d0d0f93501ee8b0c3ee5 100644
+index 4d1326dbbb1367a7f721cb6e36fec5c34442a223..13fa7db13d634947d4226ebdfa627b80257bd302 100644
 --- a/toolkit/components/windowwatcher/moz.build
 +++ b/toolkit/components/windowwatcher/moz.build
-@@ -25,10 +25,12 @@ EXPORTS += [
- ]
- 
- UNIFIED_SOURCES += [
-+    "JugglerWindowSize.cpp",
-     "nsAutoWindowStateHelper.cpp",
-     "nsDialogParamBlock.cpp",
+@@ -30,6 +30,8 @@ UNIFIED_SOURCES += [
      "nsOpenWindowInfo.cpp",
      "nsWindowWatcher.cpp",
-+    "StealthWindowPlacement.cpp",
  ]
++UNIFIED_SOURCES += ["JugglerWindowSize.cpp"]  # STEALTH-HOOK(automation/window-size)
++UNIFIED_SOURCES += ["StealthWindowPlacement.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/popup-position)
  
  FINAL_LIBRARY = "xul"
+ # For nsJSUtils

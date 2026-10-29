@@ -30,14 +30,14 @@ index 95d9e4fa4f057480d5757c28739b6881127cff1c..09c76b1a9e50cd1719de0806386fbf89
    nsEventStatus status = nsEventStatus_eIgnore;
    if (aOptions.mToWindow) {
 diff --git a/dom/base/test/gtest/moz.build b/dom/base/test/gtest/moz.build
-index 6936f4c7d5934511caead1cff46b601d5e23ae63..3b4c4510422a09b37a173813e89e744532ecc49f 100644
+index 6936f4c7d5934511caead1cff46b601d5e23ae63..a930c1437494a2565b24ba77a7e7021cfa5d5800 100644
 --- a/dom/base/test/gtest/moz.build
 +++ b/dom/base/test/gtest/moz.build
-@@ -8,6 +8,7 @@ UNIFIED_SOURCES += [
-     "TestMimeType.cpp",
-     "TestParser.cpp",
-     "TestScheduler.cpp",
-+    "TestStealthInputEventBirth.cpp",
-     "TestTextDirective.cpp",
+@@ -12,6 +12,7 @@ UNIFIED_SOURCES += [
      "TestXMLSerializerNoBreakLink.cpp",
      "TestXPathGenerator.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthInputEventBirth.cpp"]  # STEALTH-HOOK(fingerprint/input/event-birth)
+ 
+ LOCAL_INCLUDES += ["/dom/base"]
+ 

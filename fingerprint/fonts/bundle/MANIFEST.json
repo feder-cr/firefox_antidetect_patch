@@ -494,17 +494,16 @@
    "category": "build",
    "feature": "font-bundle-files",
    "prefs": [],
-   "added": 11,
+   "added": 4,
    "removed": 0,
-   "hunks": 2,
+   "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "(top level of gfx/thebes/moz.build: EXPORTS += [ ... ] and a new SOURCES += [ ... ] block after UNIFIED_SOURCES)",
+   "anchor": "four include lines after include(\"/ipc/chromium/chromium-config.mozbuild\")",
    "evidence": [
-    "+    \"StealthBundleFontList.h\",",
-    "+    \"StealthBundleFontList.cpp\","
+    "+include(\"StealthBundleFontList.mozbuild\")  # STEALTH-HOOK(fingerprint/fonts/bundle)"
    ],
-   "notes": "Exports StealthBundleFontList.h and StealthDeclarationGate.h, and compiles StealthBundleFontList.cpp and StealthDeclarationGate.cpp as non-unified SOURCES (the comment says short file-static helpers could collide in a unified build). The comment says dom/canvas reads the coverage ladder through the exported header. Those two .cpp/.h files are our own and are not in this diff.",
+   "notes": "One include line per folder of ours (declaration-gate, fonts/bundle, fonts/font-list, fonts/metrics); each StealthX.mozbuild lists that folder's EXPORTS and non-unified SOURCES. Until 2026-10-29 the files were listed in four places of this moz.build, one of them a SOURCES block between two UNIFIED_SOURCES blocks that Firefox 159 merges. The lists mozbuild reads are identical on Windows, Linux and macOS.",
    "verifier": {
     "changed": [],
     "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."

@@ -58,26 +58,26 @@ index 5cbddc374ccafc5546aa2fa56d1c8c5a24fd8f22..1d515205573a08e338367acab05b2993
    ModuleRecord(ModuleRecord&&) = delete;
  
 diff --git a/toolkit/xre/dllservices/moz.build b/toolkit/xre/dllservices/moz.build
-index 5ece47afcc859ac8bc0eb76bef6645eb2f7067e5..54b54cc1f48987c925206c77036b7c8ad54723d0 100644
+index 5ece47afcc859ac8bc0eb76bef6645eb2f7067e5..1c93f2928ceccfeb7bf475f7426e9d84dc10c63d 100644
 --- a/toolkit/xre/dllservices/moz.build
 +++ b/toolkit/xre/dllservices/moz.build
-@@ -24,6 +24,7 @@ DIRS += [
- UNIFIED_SOURCES += [
-     "ModuleEvaluator.cpp",
-     "ModuleVersionInfo.cpp",
-+    "StealthOwnBinaries.cpp",  # STEALTH-HOOK(platform/untrusted-modules)
-     "UntrustedModulesData.cpp",
+@@ -28,6 +28,7 @@ UNIFIED_SOURCES += [
      "UntrustedModulesProcessor.cpp",
      "WinDllServices.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthOwnBinaries.cpp"]  # STEALTH-HOOK(platform/untrusted-modules)
+ 
+ if CONFIG["MOZ_LAUNCHER_PROCESS"]:
+     UNIFIED_SOURCES += [
 diff --git a/toolkit/xre/dllservices/tests/gtest/moz.build b/toolkit/xre/dllservices/tests/gtest/moz.build
-index 73e3ae21f121e312b703d628a38e49b42553edf0..d5adeb26390e075515347f7e9dbfa60a80594a3b 100644
+index 73e3ae21f121e312b703d628a38e49b42553edf0..922046fb1d0d31a344884b4ec1f980a2289edb9e 100644
 --- a/toolkit/xre/dllservices/tests/gtest/moz.build
 +++ b/toolkit/xre/dllservices/tests/gtest/moz.build
-@@ -7,6 +7,7 @@ Library("dllservicestest")
- UNIFIED_SOURCES += [
-     "TestDLLBlocklist.cpp",
+@@ -9,6 +9,7 @@ UNIFIED_SOURCES += [
      "TestDLLServices.cpp",
-+    "TestStealthOwnBinaries.cpp",
      "TestUntrustedModules.cpp",
  ]
++UNIFIED_SOURCES += ["TestStealthOwnBinaries.cpp"]  # STEALTH-HOOK(platform/untrusted-modules)
  
+ LOCAL_INCLUDES += [
+     "/toolkit/components/telemetry/other",

@@ -102,24 +102,24 @@ index 8aa1a50f0c6f7fec1c424ce1df550fcf046e04fc..58edb2dfdb30ca798764cb30a113245c
      nsAutoCString spec;
      uri->GetAsciiSpec(spec);
 diff --git a/netwerk/protocol/res/moz.build b/netwerk/protocol/res/moz.build
-index 99ded3530e154b10e55d4a9dabf656294c243570..6efdcd7970f935816de2dd7246fc6569e64871a5 100644
+index 99ded3530e154b10e55d4a9dabf656294c243570..74ffc48c86851a223e077cefc316b47f18b86731 100644
 --- a/netwerk/protocol/res/moz.build
 +++ b/netwerk/protocol/res/moz.build
-@@ -15,6 +15,7 @@ EXPORTS.mozilla.net += [
-     "MozSrcProtocolHandler.h",
-     "PageThumbProtocolHandler.h",
-     "RemoteStreamGetter.h",
-+    "StealthBranding.h",
-     "SubstitutingJARURI.h",
+@@ -19,6 +19,7 @@ EXPORTS.mozilla.net += [
      "SubstitutingProtocolHandler.h",
      "SubstitutingURL.h",
-@@ -31,6 +32,7 @@ UNIFIED_SOURCES += [
-     "nsResProtocolHandler.cpp",
-     "PageThumbProtocolHandler.cpp",
+ ]
++EXPORTS.mozilla.net += ["StealthBranding.h"]  # STEALTH-HOOK(fingerprint/js-surface/branding)
+ 
+ EXPORTS += [
+     "nsResProtocolHandler.h",
+@@ -33,6 +34,7 @@ UNIFIED_SOURCES += [
      "RemoteStreamGetter.cpp",
-+    "StealthBranding.cpp",
      "SubstitutingProtocolHandler.cpp",
  ]
++UNIFIED_SOURCES += ["StealthBranding.cpp"]  # STEALTH-HOOK(fingerprint/js-surface/branding)
+ 
+ include("/ipc/chromium/chromium-config.mozbuild")
  
 diff --git a/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp b/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
 index 5db7560cf68114646ca2a684cdfed4deb60c0539..7ed334ce3a0da49100cb7b36f2e872e36a439925 100644

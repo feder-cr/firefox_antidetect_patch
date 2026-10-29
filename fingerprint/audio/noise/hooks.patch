@@ -1,15 +1,15 @@
 diff --git a/dom/media/gtest/moz.build b/dom/media/gtest/moz.build
-index b2c26db92af4a1aa8403942c2aa31046d0128704..8aa1786ec9f70d12854fa8087b5e8cd93b45e29a 100644
+index b2c26db92af4a1aa8403942c2aa31046d0128704..ac97d5f6780c5522b299b8a156c19c9fe5a5a71e 100644
 --- a/dom/media/gtest/moz.build
 +++ b/dom/media/gtest/moz.build
-@@ -83,6 +83,7 @@ UNIFIED_SOURCES += [
-     "TestRemoteImageHolder.cpp",
-     "TestRust.cpp",
-     "TestSimpleMap.cpp",
-+    "TestStealthAudioNoise.cpp",  # STEALTH-HOOK(fingerprint/audio/noise)
-     "TestTelemetryProbesReporter.cpp",
-     "TestTimeUnit.cpp",
-     "TestUnboundedMPSCQueue.cpp",
+@@ -99,6 +99,7 @@ UNIFIED_SOURCES += [
+     "TestYUVBufferGenerator.cpp",
+     "YUVBufferGenerator.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthAudioNoise.cpp"]  # STEALTH-HOOK(fingerprint/audio/noise)
+ 
+ if CONFIG["MOZ_WEBRTC"]:
+     LOCAL_INCLUDES += [
 diff --git a/dom/media/webaudio/AnalyserNode.cpp b/dom/media/webaudio/AnalyserNode.cpp
 index 3c80514a1d51c10d677c971647eea6dbcf5d15c4..cb611688dc068cd53e99fb2a674d6c155ef048b4 100644
 --- a/dom/media/webaudio/AnalyserNode.cpp
@@ -85,14 +85,14 @@ index 3fb9120f92a8d853bd10d600b7525ed796962c25..46c3b0ae803f1fb4bf40fe540f4fcd59
    }
  
 diff --git a/dom/media/webaudio/moz.build b/dom/media/webaudio/moz.build
-index 7e43523379904e7a325d0915b752781ded88a4a5..32ac31e9564b2b848c47e77f0648edca6359b402 100644
+index 7e43523379904e7a325d0915b752781ded88a4a5..c53a9fa2916ef8ac76d0ccb9131db0698d78904d 100644
 --- a/dom/media/webaudio/moz.build
 +++ b/dom/media/webaudio/moz.build
-@@ -119,6 +119,7 @@ UNIFIED_SOURCES += [
-     "PannerNode.cpp",
-     "PeriodicWave.cpp",
-     "ScriptProcessorNode.cpp",
-+    "StealthAudioNoise.cpp",  # STEALTH-HOOK(fingerprint/audio/noise)
-     "StereoPannerNode.cpp",
-     "ThreeDPoint.cpp",
+@@ -124,6 +124,7 @@ UNIFIED_SOURCES += [
      "WaveShaperNode.cpp",
+     "WebAudioUtils.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthAudioNoise.cpp"]  # STEALTH-HOOK(fingerprint/audio/noise)
+ 
+ if CONFIG["TARGET_CPU"] == "aarch64" or CONFIG["BUILD_ARM_NEON"]:
+     DEFINES["USE_NEON"] = True

@@ -77,18 +77,17 @@ index c5aefb69c9a2005d1cbb1ac09bd14bd79bbaaa9f..41cba8a16de1cc79ebd70e447d884b2b
    DebugOnly<nsresult> rv =
        nsSynthVoiceRegistry::GetInstance()->IsDefaultVoice(mUri, &isDefault);
 diff --git a/dom/media/webspeech/synth/moz.build b/dom/media/webspeech/synth/moz.build
-index 3f29c33c797c145c56857fc432976c274410344c..cf4624561d9d1637dac195d48c7fa06bc6d1567c 100644
+index 3f29c33c797c145c56857fc432976c274410344c..a167c5bdef1d49f8d523a0e6c3cfb5f37f6e30b2 100644
 --- a/dom/media/webspeech/synth/moz.build
 +++ b/dom/media/webspeech/synth/moz.build
-@@ -29,6 +29,8 @@ UNIFIED_SOURCES += [
-     "SpeechSynthesis.cpp",
+@@ -30,6 +30,7 @@ UNIFIED_SOURCES += [
      "SpeechSynthesisUtterance.cpp",
      "SpeechSynthesisVoice.cpp",
-+    "StealthSpeechVoice.cpp",
-+    "StealthSpeechVoices.cpp",
  ]
++UNIFIED_SOURCES += ["StealthSpeechVoice.cpp", "StealthSpeechVoices.cpp"]  # STEALTH-HOOK(fingerprint/media/speech-voices)
  
  UNIFIED_SOURCES += ["test/nsFakeSynthServices.cpp"]
+ 
 diff --git a/dom/media/webspeech/synth/test/mochitest.toml b/dom/media/webspeech/synth/test/mochitest.toml
 index dc41cec561be938ad44b25a999c8546d4b5d74d6..6ebb07ee2bdff0ec9d70b211e55c8a851acf537d 100644
 --- a/dom/media/webspeech/synth/test/mochitest.toml

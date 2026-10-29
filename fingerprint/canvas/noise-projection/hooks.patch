@@ -143,27 +143,26 @@ index b2bb00667a80c64d97a3990781a2c5d05f061d04..e479ad966692dfe0545779d06fab4754
    mutable Mutex mMutex;
    HTMLCanvasElement* MOZ_NON_OWNING_REF mCanvasElement MOZ_GUARDED_BY(mMutex);
 diff --git a/dom/canvas/moz.build b/dom/canvas/moz.build
-index b5809a1fca1bed238396bfdac6dec054a7a72a4d..e22d90853c9771ec2d40b4cde4ecdf77d012127a 100644
+index b5809a1fca1bed238396bfdac6dec054a7a72a4d..8a18cd7b103b5c6df534789290005c9f6ea9da0a 100644
 --- a/dom/canvas/moz.build
 +++ b/dom/canvas/moz.build
-@@ -107,6 +107,8 @@ SOURCES += [
-     "OffscreenCanvasDisplayHelper.cpp",  # See bug 1745384
+@@ -108,6 +108,7 @@ SOURCES += [
      "OffscreenCanvasRenderingContext2D.cpp",  # See bug 1745384
      "SourceSurfaceWebgl.cpp",
-+    "StealthCanvasNoise.cpp",
-+    "StealthOffscreenSnapshot.cpp",
  ]
++SOURCES += ["StealthCanvasNoise.cpp", "StealthOffscreenSnapshot.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
  
  # WebGL Sources
-@@ -116,6 +118,8 @@ UNIFIED_SOURCES += [
-     "ClientWebGLExtensions.cpp",
-     "HostWebGLContext.cpp",
-     "SanitizeRenderer.cpp",
-+    "StealthWebGLParams.cpp",  # STEALTH-HOOK(fingerprint/webgl/parameters)
-+    "StealthWebGLShaderLanguage.cpp",  # STEALTH-HOOK(fingerprint/webgl/shader-language)
-     "TexUnpackBlob.cpp",
-     "WebGL2Context.cpp",
-     "WebGL2ContextBuffers.cpp",
+ UNIFIED_SOURCES += [
+@@ -164,6 +165,8 @@ UNIFIED_SOURCES += [
+     "WebGLVertexArrayFake.cpp",
+     "WebGLVertexArrayGL.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthWebGLParams.cpp"]  # STEALTH-HOOK(fingerprint/webgl/parameters)
++UNIFIED_SOURCES += ["StealthWebGLShaderLanguage.cpp"]  # STEALTH-HOOK(fingerprint/webgl/shader-language)
+ 
+ SOURCES += [
+     "MurmurHash3.cpp",
 diff --git a/dom/html/HTMLCanvasElement.cpp b/dom/html/HTMLCanvasElement.cpp
 index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..bbf69a423c10964814c1822728fbe9147045c3a7 100644
 --- a/dom/html/HTMLCanvasElement.cpp
@@ -212,17 +211,17 @@ index c8f335c31829a9129cb1f755bb039873562657a0..71a995b6b6f715710712c78f25107618
        MozPromise<RefPtr<gfx::SourceSurface>, nsresult, true>;
  
 diff --git a/dom/html/moz.build b/dom/html/moz.build
-index 0a91baabcbd50ca9c178e4d9fb20560833f9bbb0..92845d769e23fcb579e07c57c00ccf172eaf449d 100644
+index 0a91baabcbd50ca9c178e4d9fb20560833f9bbb0..92d1bc0454b051d6db2d77e806b7f1fd30c172c9 100644
 --- a/dom/html/moz.build
 +++ b/dom/html/moz.build
-@@ -198,6 +198,7 @@ UNIFIED_SOURCES += [
-     "nsHTMLDocument.cpp",
-     "nsIConstraintValidation.cpp",
-     "RadioNodeList.cpp",
-+    "StealthCanvasSnapshot.cpp",
-     "TextControlElement.cpp",
-     "TextControlState.cpp",
+@@ -203,6 +203,7 @@ UNIFIED_SOURCES += [
      "ValidityState.cpp",
+     "VideoDocument.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthCanvasSnapshot.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
+ 
+ include("/ipc/chromium/chromium-config.mozbuild")
+ 
 diff --git a/dom/webgpu/CanvasContext.cpp b/dom/webgpu/CanvasContext.cpp
 index cfe0e7a9e405f6dbbf3b62761cea64dc2c32ef43..96443109047b9494e22c599b7ffeec3ef07fbff3 100644
 --- a/dom/webgpu/CanvasContext.cpp
@@ -355,40 +354,40 @@ index c815cbff1a67ee79f4d37db10bf1b803cd50ae4b..4a851bca31e992d9ad3ca6a95206b99f
    f(ACCESSIBLEID, RecordedAccessibleId);                           \
    f(DESTINATION, RecordedDestination);
 diff --git a/gfx/2d/moz.build b/gfx/2d/moz.build
-index 4b4c014bbb6f29e089339d000899153cffe3d5eb..3a40c00957b48e55af4dd83e88854595bb355e41 100644
+index 4b4c014bbb6f29e089339d000899153cffe3d5eb..2deef793c4f43700b00a3d55faa4e6a1f1bc54db 100644
 --- a/gfx/2d/moz.build
 +++ b/gfx/2d/moz.build
-@@ -56,6 +56,9 @@ EXPORTS.mozilla.gfx += [
-     "SourceSurfaceCairo.h",
-     "SourceSurfaceRawData.h",
-     "StackArray.h",
-+    "StealthCanvasProjection.h",
-+    "StealthGlyphCoverage.h",
-+    "StealthRefuse.h",
-     "Swizzle.h",
-     "Tools.h",
-     "Triangle.h",
-@@ -169,6 +172,8 @@ UNIFIED_SOURCES += [
-     "SourceSurfaceCairo.cpp",
-     "SourceSurfaceRawData.cpp",
-     "SourceSurfaceSkia.cpp",
-+    "StealthCanvasProjection.cpp",
-+    "StealthGlyphCoverage.cpp",
+@@ -62,6 +62,9 @@ EXPORTS.mozilla.gfx += [
+     "Types.h",
+     "UserData.h",
+ ]
++EXPORTS.mozilla.gfx += ["StealthCanvasProjection.h"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
++EXPORTS.mozilla.gfx += ["StealthGlyphCoverage.h"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
++EXPORTS.mozilla.gfx += ["StealthRefuse.h"]  # STEALTH-HOOK(platform/declaration-gate)
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
+     EXPORTS.mozilla.gfx += [
+@@ -172,6 +175,8 @@ UNIFIED_SOURCES += [
      "Swizzle.cpp",
      "Types.cpp",
  ]
++UNIFIED_SOURCES += ["StealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
++UNIFIED_SOURCES += ["StealthGlyphCoverage.cpp"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
+ 
+ SOURCES += [
+     "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index 7c699601940c4fb6e1fa32b202fb08bc084cba64..d8292789a6407f5a3cdaffbeb90882325de85324 100644
+index 7c699601940c4fb6e1fa32b202fb08bc084cba64..af55730e18bc56b23f2f9467526fd7ad27a45ed7 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -24,6 +24,7 @@ UNIFIED_SOURCES += [
-     "TestQcms.cpp",
-     "TestRegion.cpp",
-     "TestSkipChars.cpp",
-+    "TestStealthCanvasProjection.cpp",
-     "TestSwizzle.cpp",
-     "TestTextures.cpp",
-     "TestTreeTraversal.cpp",
+@@ -30,6 +30,7 @@ UNIFIED_SOURCES += [
+     "TestVsync.cpp",
+     "TestYUVtoRGB32.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
+ 
+ SOURCES += [
+     "SwizzleGeneric.cpp",
 @@ -40,6 +41,16 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]

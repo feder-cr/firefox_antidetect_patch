@@ -85,41 +85,42 @@ index 77e11d8302b4cfdeba622f33ad75a87c67ed3610..8a85f8522cdb25296eb66a8bb5d6d688
    // connect-udp.
    return !mUpgradeProtocolCallback && allowedProxyInfo &&
 diff --git a/netwerk/protocol/http/moz.build b/netwerk/protocol/http/moz.build
-index 1b8068f235e421e97fc316f218efc14e551a07a5..0b32b16c09f0ff91937e3a4745d33c10da59b4dc 100644
+index 1b8068f235e421e97fc316f218efc14e551a07a5..fff23c2545fe4cdc13a8ff95dbfddbef0ec6e0db 100644
 --- a/netwerk/protocol/http/moz.build
 +++ b/netwerk/protocol/http/moz.build
-@@ -87,6 +87,7 @@ EXPORTS.mozilla.net += [
- 
+@@ -88,6 +88,7 @@ EXPORTS.mozilla.net += [
  SOURCES += [
      "nsHttpChannelAuthProvider.cpp",  # redefines GetAuthType
-+    "StealthH3Proxy.cpp",  # STEALTH-HOOK(network/socks-udp-h3)
  ]
++SOURCES += ["StealthH3Proxy.cpp"]  # STEALTH-HOOK(network/socks-udp-h3)
  
  UNIFIED_SOURCES += [
-@@ -181,6 +182,7 @@ UNIFIED_SOURCES += [
-     "QuicSocketControl.cpp",
-     "ReplacedHttpResponse.cpp",
-     "SpeculativeTransaction.cpp",
-+    "StealthInterception.cpp",
-     "TlsHandshaker.cpp",
-     "TLSTransportLayer.cpp",
-     "TRRServiceChannel.cpp",
+     "AltDataOutputStreamChild.cpp",
+@@ -190,6 +191,7 @@ UNIFIED_SOURCES += [
+     "WebTransportStreamBase.cpp",
+     "ZeroRttHandle.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthInterception.cpp"]  # STEALTH-HOOK(automation/network-interception)
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+     UNIFIED_SOURCES += [
 diff --git a/netwerk/socket/moz.build b/netwerk/socket/moz.build
-index 97b6d04e2c3d3e689b32daa848b9a7774106f885..b33a509794dcd7724920fa2e7de3885d70c1479c 100644
+index 97b6d04e2c3d3e689b32daa848b9a7774106f885..19c74cefb1f166ab10a1adffaefd00867d404b27 100644
 --- a/netwerk/socket/moz.build
 +++ b/netwerk/socket/moz.build
-@@ -21,12 +21,14 @@ include("/ipc/chromium/chromium-config.mozbuild")
- 
+@@ -22,6 +22,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
  EXPORTS += [
      "nsSocketProviderService.h",
-+    "nsSOCKSUDPIOLayer.h",
  ]
++EXPORTS += ["nsSOCKSUDPIOLayer.h"]  # STEALTH-HOOK(network/socks-udp-h3)
  
  UNIFIED_SOURCES += [
      "nsSocketProviderService.cpp",
-     "nsSOCKSIOLayer.cpp",
+@@ -29,6 +30,7 @@ UNIFIED_SOURCES += [
      "nsSOCKSSocketProvider.cpp",
-+    "nsSOCKSUDPIOLayer.cpp",
      "nsUDPSocketProvider.cpp",
  ]
++UNIFIED_SOURCES += ["nsSOCKSUDPIOLayer.cpp"]  # STEALTH-HOOK(network/socks-udp-h3)
  
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+     XPIDL_SOURCES += [

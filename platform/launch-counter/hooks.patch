@@ -20,17 +20,17 @@ index 4ba67b8927ec1e0d9b49f1bc29401ab8fb08d070..86d68668c75b8d78fc43f12ed10d629d
  
      // check if we're in safe mode
 diff --git a/browser/components/moz.build b/browser/components/moz.build
-index 63cfb33a3b11473e00b8f211e34e8e89ffc25275..b02916f6579802b7e62f10b99e9ea35d25b30581 100644
+index 63cfb33a3b11473e00b8f211e34e8e89ffc25275..8e0938666db7a6677bd9c3835facbdaf45e88fb1 100644
 --- a/browser/components/moz.build
 +++ b/browser/components/moz.build
-@@ -118,6 +118,7 @@ EXTRA_JS_MODULES += [
-     "BrowserContentHandler.sys.mjs",
+@@ -119,6 +119,7 @@ EXTRA_JS_MODULES += [
      "BrowserGlue.sys.mjs",
      "distribution.sys.mjs",
-+    "StealthLaunchCounter.sys.mjs",  # STEALTH-HOOK(platform/launch-counter)
  ]
++EXTRA_JS_MODULES += ["StealthLaunchCounter.sys.mjs"]  # STEALTH-HOOK(platform/launch-counter)
  
  MOZ_SRC_FILES += [
+     "DefaultBrowserCheck.sys.mjs",
 diff --git a/browser/components/tests/unit/xpcshell.toml b/browser/components/tests/unit/xpcshell.toml
 index 7d7592d349cebe89d3458bab1ed8acce19354a72..dae52eb08f120911d19969a9dacece1748635882 100644
 --- a/browser/components/tests/unit/xpcshell.toml

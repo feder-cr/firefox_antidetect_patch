@@ -34,25 +34,25 @@ index d1721d1e7b224b92e8a0bf158c7e9191d68cf80c..dc1e50d7165a5ae8cb55774b679c20da
      return NS_OK;
    }
 diff --git a/intl/locale/moz.build b/intl/locale/moz.build
-index 4d6ff0428de7faaa6f6c6570708f7f5690e0e4df..7e753f0f3582a71e62e63da66b55fcfc1d908718 100644
+index 4d6ff0428de7faaa6f6c6570708f7f5690e0e4df..d26b374eba597ef4982743711ae4bc1ae7fdbcb8 100644
 --- a/intl/locale/moz.build
 +++ b/intl/locale/moz.build
-@@ -39,6 +39,7 @@ EXPORTS.mozilla.intl += [
-     "MozLocaleBindings.h",
+@@ -40,6 +40,7 @@ EXPORTS.mozilla.intl += [
      "OSPreferences.h",
      "Quotes.h",
-+    "StealthSessionPrefs.h",
  ]
++EXPORTS.mozilla.intl += ["StealthSessionPrefs.h"]  # STEALTH-HOOK(fingerprint/locale-time/session-declaration)
  
  UNIFIED_SOURCES += [
-@@ -50,6 +51,7 @@ UNIFIED_SOURCES += [
-     "nsUConvPropertySearch.cpp",
+     "AppCollator.cpp",
+@@ -51,6 +52,7 @@ UNIFIED_SOURCES += [
      "OSPreferences.cpp",
      "Quotes.cpp",
-+    "StealthSessionPrefs.cpp",
  ]
++UNIFIED_SOURCES += ["StealthSessionPrefs.cpp"]  # STEALTH-HOOK(fingerprint/locale-time/session-declaration)
  
  MOZ_SRC_FILES += [
+     "LangPackMatcher.sys.mjs",
 diff --git a/intl/locale/nsLanguageAtomService.cpp b/intl/locale/nsLanguageAtomService.cpp
 index 1761b528e4acb2eecf440a65f67d17175266eeb3..1788700a99e1cba81d1852dd7a05e1e548414d07 100644
 --- a/intl/locale/nsLanguageAtomService.cpp

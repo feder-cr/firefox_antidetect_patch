@@ -1,14 +1,14 @@
 diff --git a/dom/security/moz.build b/dom/security/moz.build
-index a637a9f981e5a7b28bc8c473f11dd6d75bd030ba..8b2a0a1d201e3d20a87b0e00c6bf3c647393fb71 100644
+index a637a9f981e5a7b28bc8c473f11dd6d75bd030ba..c0acd7de22f8b9c965d30f0029b8bd4c8cc0fe35 100644
 --- a/dom/security/moz.build
 +++ b/dom/security/moz.build
-@@ -71,6 +71,7 @@ UNIFIED_SOURCES += [
-     "SecFetch.cpp",
-     "SRICheck.cpp",
+@@ -73,6 +73,7 @@ UNIFIED_SOURCES += [
      "SRIMetadata.cpp",
-+    "StealthBypassCSP.cpp",
      "WAICTUtils.cpp",
  ]
++UNIFIED_SOURCES += ["StealthBypassCSP.cpp"]  # STEALTH-HOOK(automation/bypass-csp)
+ 
+ include("/ipc/chromium/chromium-config.mozbuild")
  
 diff --git a/dom/security/nsCSPUtils.cpp b/dom/security/nsCSPUtils.cpp
 index 11de03cf6eaf8fa6fff602cc12a78acc08f2e25f..e9c92af9bb079c8b5fde621edab09d19141404ae 100644

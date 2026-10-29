@@ -113,15 +113,15 @@ bool OnOneSegment(const uint32_t (&aColours)[9], int64_t aTol) {
       const int64_t v = int64_t((q >> shift) & 0xffu) - int64_t((p >> shift) & 0xffu);
       t += w * v;
     }
-    bool near;
+    bool nearSegment;
     if (t <= 0) {
-      near = Dist2(r, p) <= tol2;
+      nearSegment = Dist2(r, p) <= tol2;
     } else if (t >= len) {
-      near = Dist2(r, q) <= tol2;
+      nearSegment = Dist2(r, q) <= tol2;
     } else {
-      near = Dist2(r, p) * len - t * t <= tol2 * len;
+      nearSegment = Dist2(r, p) * len - t * t <= tol2 * len;
     }
-    if (!near) {
+    if (!nearSegment) {
       return false;
     }
   }

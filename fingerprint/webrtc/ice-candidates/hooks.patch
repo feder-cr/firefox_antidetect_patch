@@ -22,17 +22,17 @@ index 497f18c65c53b2d5ca8971e45ac945e44c3cdb8a..ad71d8aa08cc535fcd1b6ab2ade0bf93
                 __FUNCTION__);
      return;
 diff --git a/dom/media/webrtc/jsapi/moz.build b/dom/media/webrtc/jsapi/moz.build
-index 92c2255785cff1e727e0cff2b9e985e27db27738..a6a81bb2faa481445b887a54c95b87af7eaf2fff 100644
+index 92c2255785cff1e727e0cff2b9e985e27db27738..9012c75c3a4046811a8f93a7b3b6d1fc475364e3 100644
 --- a/dom/media/webrtc/jsapi/moz.build
 +++ b/dom/media/webrtc/jsapi/moz.build
-@@ -46,6 +46,7 @@ UNIFIED_SOURCES += [
-     "RTCStatsIdGenerator.cpp",
-     "RTCStatsReport.cpp",
-     "RTCTransformEventRunnable.cpp",
-+    "StealthIceGathering.cpp",  # STEALTH-HOOK(fingerprint/webrtc/ice-candidates)
+@@ -49,6 +49,7 @@ UNIFIED_SOURCES += [
      "WebrtcGlobalInformation.cpp",
      "WebrtcGlobalStatsHistory.cpp",
  ]
++UNIFIED_SOURCES += ["StealthIceGathering.cpp"]  # STEALTH-HOOK(fingerprint/webrtc/ice-candidates)
+ 
+ EXPORTS.mozilla.dom += [
+     "RTCDataChannel.h",
 diff --git a/dom/media/webrtc/transport/common.build b/dom/media/webrtc/transport/common.build
 index 215d61190dbe192fba09e129e869093ced0eacca..8e0e90f2bf852da389c2e106892935900fa73642 100644
 --- a/dom/media/webrtc/transport/common.build

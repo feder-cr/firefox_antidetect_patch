@@ -1,15 +1,15 @@
 diff --git a/docshell/base/moz.build b/docshell/base/moz.build
-index ed7ab01a1db3777e5e703fea52e80b01c9bc273d..80d9d6a99df7be46211a2392887bc4d5b5920e8e 100644
+index ed7ab01a1db3777e5e703fea52e80b01c9bc273d..4db222ebec9cbf6739d7c317ce67e9967d8e4d54 100644
 --- a/docshell/base/moz.build
 +++ b/docshell/base/moz.build
-@@ -97,6 +97,8 @@ UNIFIED_SOURCES += [
-     "nsRefreshTimer.cpp",
-     "nsWebNavigationInfo.cpp",
+@@ -99,6 +99,8 @@ UNIFIED_SOURCES += [
      "SerializedLoadContext.cpp",
-+    "StealthDocShellAttrs.cpp",
-+    "StealthNavigation.cpp",
      "WindowContext.cpp",
  ]
++UNIFIED_SOURCES += ["StealthDocShellAttrs.cpp"]  # STEALTH-HOOK(automation/docshell-attrs)
++UNIFIED_SOURCES += ["StealthNavigation.cpp"]  # STEALTH-HOOK(automation/navigation)
+ 
+ TEST_DIRS += ["test/gtest"]
  
 diff --git a/docshell/base/nsDocShell.h b/docshell/base/nsDocShell.h
 index 0568cbf7f78bc3711275773037fd5ba254f083e7..71654a6ba6187c5ecb47f643d49410c7917b3722 100644

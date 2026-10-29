@@ -66,25 +66,22 @@ index 2ebae13763c51cad5e8652e9ab4a66907197099f..872642f4325344333c11eeb53e12ad07
    },
  };
 diff --git a/toolkit/components/telemetry/moz.build b/toolkit/components/telemetry/moz.build
-index c92948cad20ebaca9ba8b4d0d599e54c6a812910..a0fd686daad830306887b9766f1c7a76506fb25d 100644
+index c92948cad20ebaca9ba8b4d0d599e54c6a812910..17e5521162c666f13d94cc1ed08162d0cc66b349 100644
 --- a/toolkit/components/telemetry/moz.build
 +++ b/toolkit/components/telemetry/moz.build
-@@ -92,6 +92,7 @@ EXTRA_COMPONENTS += ["TelemetryStartup.manifest"]
- 
- EXTRA_JS_MODULES += [
-     "app/ClientID.sys.mjs",
-+    "app/StealthPingsender.sys.mjs",  # STEALTH-HOOK(stillborn/telemetry)
-     "app/TelemetryArchive.sys.mjs",
-     "app/TelemetryController.sys.mjs",
-     "app/TelemetryControllerBase.sys.mjs",
-@@ -115,6 +116,7 @@ EXTRA_JS_MODULES += [
+@@ -112,10 +112,12 @@ EXTRA_JS_MODULES += [
+     "pings/UntrustedModulesPing.sys.mjs",
+     "TelemetryStartup.sys.mjs",
+ ]
++EXTRA_JS_MODULES += ["app/StealthPingsender.sys.mjs"]  # STEALTH-HOOK(stillborn/telemetry)
  
  EXTRA_JS_MODULES.backgroundtasks += [
      "pings/BackgroundTask_pingsender.sys.mjs",
-+    "pings/StealthPingsenderRoute.sys.mjs",
  ]
++EXTRA_JS_MODULES.backgroundtasks += ["pings/StealthPingsenderRoute.sys.mjs"]  # STEALTH-HOOK(stillborn/telemetry)
  
  if CONFIG["OS_ARCH"] == "WINNT":
+     EXTRA_JS_MODULES += [
 diff --git a/toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs b/toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs
 index 89915ba3c31d2f89867473b808d692b3bcf78864..c6cd6d5e83ba12c3368bc6039ce257a8baba740d 100644
 --- a/toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs

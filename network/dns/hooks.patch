@@ -23,14 +23,14 @@ index c8b6a152ffe5d79723b7cdf89fda18e972a05860..380f4eefe3539c336ad482e608805c14
    //     local network is fine.
    // We should avoid doing DNS when a proxy is in use.
 diff --git a/netwerk/dns/moz.build b/netwerk/dns/moz.build
-index 7e3bff4b50927a6bb7fa8d05e1803c53ad3b4375..ac5641003758687dcb93c8b8258b460de990667d 100644
+index 7e3bff4b50927a6bb7fa8d05e1803c53ad3b4375..64a8af25f69e63be12049ff795805b0b6c0c6985 100644
 --- a/netwerk/dns/moz.build
 +++ b/netwerk/dns/moz.build
-@@ -84,6 +84,7 @@ UNIFIED_SOURCES += [
-     "nsHostRecord.cpp",
-     "nsHostResolver.cpp",
-     "nsIDNService.cpp",
-+    "StealthDNSDeclaration.cpp",
-     "TRR.cpp",
-     "TRRQuery.cpp",
-     "TRRService.cpp",
+@@ -91,6 +91,7 @@ UNIFIED_SOURCES += [
+     "TRRServiceChild.cpp",
+     "TRRServiceParent.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthDNSDeclaration.cpp"]  # STEALTH-HOOK(network/dns)
+ 
+ IPDL_SOURCES = [
+     "PDNSRequest.ipdl",

@@ -23,6 +23,12 @@
 #include "nr_api.h"
 #include "transport_addr.h"
 
+// In namespace mozilla, where this code stood in nr_socket_prsock.cpp: that
+// file undefines nrappkit's LOG_INFO around Mozilla's includes and redefines
+// it to a name that resolves only there (mozilla::LOG_INFO on Windows), as it
+// does for its own r_log calls.
+namespace mozilla {
+
 /* Un pacchetto UDP di ICE puo' uscire DIRETTAMENTE anche dietro un proxy, e
  * chi riceve vede l'indirizzo VERO della macchina.
  *
@@ -104,5 +110,7 @@ inline bool StealthUscitaUdpDirettaVietataLog(const nr_transport_addr* to) {
         to->as_string);
   return true;
 }
+
+}  // namespace mozilla
 
 #endif /* nr_stealth_proxy_udp_h__ */

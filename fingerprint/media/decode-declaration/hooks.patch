@@ -23,25 +23,25 @@ index 74076040c099d4824b6a5828cce639937df224a9..ba8a86c62a81124be804dbae5067d07c
                   MediaCapabilitiesDecodingInfo info;
                   info.mSupported = false;
 diff --git a/dom/media/moz.build b/dom/media/moz.build
-index af9a8c99f02dcd2ea94b067014503121a7344aca..b328582fb3e863435e7db01d7f337f0fa5d95985 100644
+index af9a8c99f02dcd2ea94b067014503121a7344aca..dec9e76391a7e92852d0b9e82f4d637d04507c4f 100644
 --- a/dom/media/moz.build
 +++ b/dom/media/moz.build
-@@ -213,6 +213,7 @@ EXPORTS += [
-     "SeekTarget.h",
-     "SelfRef.h",
-     "SharedBuffer.h",
-+    "StealthMediaDeclaration.h",
-     "TimedPacketizer.h",
-     "TimeUnits.h",
-     "Tracing.h",
-@@ -334,6 +335,7 @@ UNIFIED_SOURCES += [
-     "QueueObject.cpp",
-     "ReaderProxy.cpp",
-     "SeekJob.cpp",
-+    "StealthMediaDeclaration.cpp",
-     "TimeUnits.cpp",
-     "Tracing.cpp",
-     "VideoFrameContainer.cpp",
+@@ -223,6 +223,7 @@ EXPORTS += [
+     "WavDumper.h",
+     "XiphExtradata.h",
+ ]
++EXPORTS += ["StealthMediaDeclaration.h"]  # STEALTH-HOOK(fingerprint/media/decode-declaration)
+ 
+ EXPORTS.mozilla += [
+     "MediaFragmentURIParser.h",
+@@ -345,6 +346,7 @@ UNIFIED_SOURCES += [
+     "VideoUtils.cpp",
+     "XiphExtradata.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthMediaDeclaration.cpp"]  # STEALTH-HOOK(fingerprint/media/decode-declaration)
+ 
+ if CONFIG["OS_TARGET"] == "Linux":
+     UNIFIED_SOURCES += ["UnderrunHandlerLinux.cpp"]
 diff --git a/dom/media/platforms/PDMFactory.cpp b/dom/media/platforms/PDMFactory.cpp
 index a2513637951cca987ee00f2732b1261e90f15db6..0f471541b2985b25b0c0ba845d5e105e8d5851e5 100644
 --- a/dom/media/platforms/PDMFactory.cpp

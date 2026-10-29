@@ -34,17 +34,17 @@ index 5507534c9cc67eec3e8e04bcd14c1644a36ddee2..a67194c5372b8f34b8bbbef90a0f9b4a
  
  RefPtr<FetchServicePromises> ServiceWorkerPrivate::SetupNavigationPreload(
 diff --git a/dom/serviceworkers/moz.build b/dom/serviceworkers/moz.build
-index ced898d0af8b48a5bbd188681a9fdac9b3689310..3227b4e2a2aca9f41b0444f8ff8d0fc9a6dab4be 100644
+index ced898d0af8b48a5bbd188681a9fdac9b3689310..654d928e91984b233ce1f51972082dae21b9da3a 100644
 --- a/dom/serviceworkers/moz.build
 +++ b/dom/serviceworkers/moz.build
-@@ -82,6 +82,7 @@ UNIFIED_SOURCES += [
-     "ServiceWorkerUnregisterJob.cpp",
+@@ -83,6 +83,7 @@ UNIFIED_SOURCES += [
      "ServiceWorkerUpdateJob.cpp",
      "ServiceWorkerUtils.cpp",
-+    "StealthWorkerDeclaration.cpp",  # STEALTH-HOOK(fingerprint/locale-time/workers)
  ]
++UNIFIED_SOURCES += ["StealthWorkerDeclaration.cpp"]  # STEALTH-HOOK(fingerprint/locale-time/workers)
  
  IPDL_SOURCES += [
+     "IPCNavigationPreloadState.ipdlh",
 diff --git a/dom/workers/WorkerPrivate.cpp b/dom/workers/WorkerPrivate.cpp
 index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f489273274acc871 100644
 --- a/dom/workers/WorkerPrivate.cpp
