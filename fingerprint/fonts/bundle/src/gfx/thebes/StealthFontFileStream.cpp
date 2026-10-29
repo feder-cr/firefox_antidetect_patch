@@ -4,8 +4,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // DirectWrite font file streams that borrow their bytes (fingerprint/fonts/
-// bundle). Windows only: it is listed in the Windows SOURCES of moz.build next
-// to gfxDWriteCommon.cpp, whose hooks call into this file. Non-unified.
+// bundle). Windows only: listed in the Windows SOURCES of
+// StealthBundleFontList.mozbuild; gfxDWriteCommon.cpp's hooks call into this
+// file. Non-unified.
 
 #include "StealthFontFileStream.h"
 

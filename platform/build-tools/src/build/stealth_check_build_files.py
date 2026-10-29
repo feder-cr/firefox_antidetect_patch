@@ -15,13 +15,20 @@ names one of our Stealth* files, read once per target (Windows, Linux, macOS)
 with the same reader `mach file-info` uses (EmptyConfig: no objdir needed).
 Each source, export and module it lists must exist in the tree.
 
+And every source of ours (Stealth*.c/cpp/mm, nr_stealth*) must be named by a
+build file or #included by another file. StealthFontFileStream.cpp was split
+out of gfxDWriteCommon.cpp and listed nowhere: Linux does not need it, and the
+Windows link failed on its symbols an hour and a quarter into the build.
+
 Run: python build/stealth_check_build_files.py   (exit 1 on any problem)
      python build/stealth_check_build_files.py <file>...   (only those)
+     python build/stealth_check_build_files.py --self-test
 """
 
 import glob
 import os
 import re
+import subprocess
 import sys
 
 TREE = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -46,6 +53,32 @@ TARGETS = {
 FILE_LISTS = ("SOURCES", "UNIFIED_SOURCES", "EXPORTS", "EXTRA_JS_MODULES", "XPIDL_SOURCES",
               "WEBIDL_FILES", "IPDL_SOURCES", "MOZ_SRC_FILES", "FINAL_TARGET_FILES", "JS_PREFERENCE_PP_FILES")
 OURS = re.compile(r"STEALTH-HOOK|Stealth[A-Z]\w*\.(cpp|h|mm|c|cc|sys\.mjs|js|mozbuild|yaml)")
+OUR_SOURCE = re.compile(r"(^|/)((Test)?Stealth[A-Za-z0-9]*|nr_stealth\w*)\.(c|cc|cpp|mm)$")
+BUILD_FILES = ("*moz.build", "*.mozbuild", "*.build", "*.gyp", "*.gypi")
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", TREE, *args], capture_output=True).stdout.decode("utf-8", "replace")
+
+
+def orphans(sources, build_text, include_text):
+    """The sources no build file names (in either quote) and no #include
+    line pulls in."""
+    out = []
+    for s in sources:
+        b = re.escape(os.path.basename(s))
+        if not re.search(r"""["'/]%s["']""" % b, build_text) and not re.search(r'["/]%s"' % b, include_text):
+            out.append(s)
+    return out
+
+
+def orphan_problems():
+    sources = [p for p in git("ls-files", "-z").split("\0") if OUR_SOURCE.search(p)]
+    names = "|".join(sorted({re.escape(os.path.basename(s)) for s in sources}))
+    build_text = git("grep", "-hE", names, "--", *BUILD_FILES)
+    include_text = git("grep", "-hE", r'#\s*include\s*"[^"]*(%s)"' % names)
+    return [f"{s}: no build file lists it and nothing #includes it"
+            for s in orphans(sources, build_text, include_text)]
 
 
 def our_build_files():
@@ -127,6 +160,8 @@ def main(argv):
     for p in files:
         for target, substs in TARGETS.items():
             problems += check(p, target, substs)
+    if not argv:
+        problems += orphan_problems()
     problems = sorted(set(problems))
     for line in problems:
         print(line)
@@ -134,5 +169,19 @@ def main(argv):
     return 1 if problems else 0
 
 
+def self_test():
+    srcs = ["a/StealthA.cpp", "juggler/StealthB.cpp", "x/nr_stealth_c.cpp", "y/StealthD.cpp", "z/StealthE.cpp"]
+    build = ('SOURCES += ["StealthA.cpp"]\n'
+             "SOURCES += [\n    'StealthB.cpp',\n]\n"
+             '    "x/nr_stealth_c.cpp",\n'
+             "# StealthE.cpp, named in a comment only\n")
+    got = orphans(srcs, build, '#include "y/StealthD.cpp"\n')
+    assert got == ["z/StealthE.cpp"], got
+    print("self-test ok")
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
+        sys.exit(0)
     sys.exit(main(sys.argv[1:]))

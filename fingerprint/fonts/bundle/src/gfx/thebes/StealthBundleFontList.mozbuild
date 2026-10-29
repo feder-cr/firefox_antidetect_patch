@@ -17,4 +17,5 @@ SOURCES += [
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     SOURCES += [
         "StealthDWriteFontList.cpp",
+        "StealthFontFileStream.cpp",
     ]
