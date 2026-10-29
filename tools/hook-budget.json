@@ -129,7 +129,7 @@
  "gfx/thebes/gfxPlatformFontList.h": 13,
  "gfx/thebes/gfxPlatformGtk.cpp": 3,
  "gfx/thebes/gfxTextRun.cpp": 2,
- "gfx/thebes/moz.build": 11,
+ "gfx/thebes/moz.build": 4,
  "intl/locale/LocaleService.cpp": 6,
  "intl/locale/moz.build": 2,
  "intl/locale/nsLanguageAtomService.cpp": 6,

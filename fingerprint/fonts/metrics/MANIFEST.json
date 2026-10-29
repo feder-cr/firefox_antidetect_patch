@@ -14,6 +14,7 @@
   "gfx/tests/gtest/TestStealthTextQuality.cpp": "100644",
   "gfx/thebes/StealthDesignMetrics.cpp": "100644",
   "gfx/thebes/StealthDesignMetrics.h": "100644",
+  "gfx/thebes/StealthDesignMetrics.mozbuild": "100644",
   "gfx/thebes/StealthTextQuality.h": "100644"
  },
  "inventory": [

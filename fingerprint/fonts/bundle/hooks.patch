@@ -463,45 +463,17 @@ index f2c42a498e7fb14187876470ae34d0ef75992c7e..372baabc9e283db10b52a1eb65133a6b
      return nullptr;
    }
 diff --git a/gfx/thebes/moz.build b/gfx/thebes/moz.build
-index a9f68b056300c4b545832f641b2520c50d566628..f1a1bd85a126244ffebbe599493e04a3fa4c5776 100644
+index a9f68b056300c4b545832f641b2520c50d566628..bc9e8fe1a76fef6edb4c4dc551db0c0579a07856 100644
 --- a/gfx/thebes/moz.build
 +++ b/gfx/thebes/moz.build
-@@ -62,6 +62,8 @@ EXPORTS += [
-     "gfxUtils.h",
-     "SharedFontList.h",
-     "SoftwareVsyncSource.h",
-+    "StealthBundleFontList.h",
-+    "StealthDeclarationGate.h",
-     "ThebesRLBoxTypes.h",
-     "VsyncSource.h",
- ]
-@@ -137,6 +139,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
-         "gfxFT2Utils.cpp",
-         "gfxPlatformGtk.cpp",
-         "PrintTargetPDF.cpp",
-+        "StealthFcFontList.cpp",  # STEALTH-HOOK(fingerprint/fonts/font-list)
-     ]
- 
-     if CONFIG["MOZ_X11"]:
-@@ -172,6 +175,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
-         "gfxWindowsSurface.cpp",
-         "PrintTargetPDF.cpp",
-         "PrintTargetWindows.cpp",
-+        "StealthDWriteFontList.cpp",
-     ]
-     UNIFIED_SOURCES += [
-         "gfxDWriteFontList.cpp",
-@@ -234,6 +238,13 @@ UNIFIED_SOURCES += [
-     "VsyncSource.cpp",
+@@ -266,6 +266,10 @@ USE_LIBS += [
  ]
  
-+# Non-unified: file-static helpers with short names.
-+SOURCES += [
-+    "StealthBundleFontList.cpp",
-+    "StealthDeclarationGate.cpp",
-+    "StealthDesignMetrics.cpp",  # STEALTH-HOOK(fingerprint/fonts/metrics)
-+]
-+
- UNIFIED_SOURCES += [
-     "SkMemoryReporter.cpp",
- ]
+ include("/ipc/chromium/chromium-config.mozbuild")
++include("StealthDeclarationGate.mozbuild")  # STEALTH-HOOK(platform/declaration-gate)
++include("StealthBundleFontList.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/bundle)
++include("StealthFcFontList.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/font-list)
++include("StealthDesignMetrics.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/metrics)
+ 
+ FINAL_LIBRARY = "xul"
+ 

@@ -142,6 +142,7 @@
   "browser/fonts/yugothm1_95.ttc": "100644",
   "gfx/thebes/StealthBundleFontList.cpp": "100644",
   "gfx/thebes/StealthBundleFontList.h": "100644",
+  "gfx/thebes/StealthBundleFontList.mozbuild": "100644",
   "gfx/thebes/StealthDWriteFontList.cpp": "100644",
   "gfx/thebes/StealthFontFileStream.cpp": "100644",
   "gfx/thebes/StealthFontFileStream.h": "100644"

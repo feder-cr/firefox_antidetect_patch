@@ -3,7 +3,8 @@
  "added": {
   "gfx/2d/StealthRefuse.h": "100644",
   "gfx/thebes/StealthDeclarationGate.cpp": "100644",
-  "gfx/thebes/StealthDeclarationGate.h": "100644"
+  "gfx/thebes/StealthDeclarationGate.h": "100644",
+  "gfx/thebes/StealthDeclarationGate.mozbuild": "100644"
  },
  "inventory": []
 }
