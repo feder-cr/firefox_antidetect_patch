@@ -127,68 +127,18 @@ Per gli utenti, `firefox-2` (https://github.com/feder-cr/invisible_playwright/re
 | `third_party/libwebrtc/api/location.h` | NUOVO file 352 byte | NUOVO |
 | `dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.c` | NUOVO file 74k byte | NUOVO |
 
-## Workflow per rebase su nuovo Firefox (es. FF152)
+## Aggiornare a una nuova versione di Firefox
 
-Pattern ispirato a Brave's chromium-rebase + Tor Browser ESR-rebase.
-
-### Setup una tantum (già configurato)
-
-```bash
-git config --local rerere.enabled true       # ricorda conflict resolution
-git config --local rerere.autoupdate true    # auto-stage replay
-git remote add upstream https://github.com/mozilla-firefox/firefox.git
-```
-
-### Rebase flow
+Il repository (`main` di feder-cr/firefox_antidetect_patch) contiene solo la serie
+di patch; il port si fa con i suoi strumenti, non con un rebase di questo albero:
 
 ```bash
-# Dal branch stealth/150 corrente
-./scripts/rebase_to.sh FIREFOX_152_0_RELEASE 152
-# → crea stealth/152, fa rebase, ferma su conflicts (rerere replay automatico
-#   dove possibile)
-
-# Loop manuale fino a fine rebase
-git rebase --continue                        # dopo aver risolto ogni conflict
-
-# Una volta completo:
-./scripts/rebase_gate.sh
-# → ./mach build binaries + 4 smoke tests (launch, new_page, mouse, stealth)
-# Tutto verde → tag + push:
-git tag -f stealth-head/v152.0.0 HEAD
-git push origin stealth/152 stealth-base/v152.0.0 stealth-head/v152.0.0
+python tools/engine.py drift --to FIREFOX_<N>_0_RELEASE   # i nostri file Mozilla cambiati
+python tools/engine.py port  --to FIREFOX_<N>_0_RELEASE   # ogni cartella a tre vie, tutti i conflitti
 ```
 
-### Mappa rischio rebase per area
-
-Aree con alta turbolenza upstream → priorità refactor verso pattern
-"hook+file separato" per ridurre conflitti futuri.
-
-| Area patch | File chiave | Turbolenza upstream | Strategia attuale | Da migliorare |
-|---|---|---|---|---|
-| Canvas2D noise | `dom/canvas/CanvasRenderingContext2D.cpp` | ALTA | Inline + pref | Refactor → `dom/canvas/StealthCanvas.{cpp,h}` + 1 hook line |
-| WebGL params | `dom/canvas/WebGLContext.cpp` | MEDIA | Pref-driven inline | OK |
-| WebGL2 ext | `dom/canvas/WebGL2Context*.cpp` | MEDIA | Pref-driven inline | OK |
-| Fonts (DirectWrite) | `gfx/thebes/gfxDWriteFontList.cpp` | BASSA | Inline | OK |
-| Navigator overrides | `dom/base/Navigator.cpp` | MEDIA | Pref-driven inline | OK |
-| Screen | `dom/base/nsScreen.cpp` | BASSA | Pref-driven inline | OK |
-| Audio (sample rate / latency) | `dom/media/webaudio/AudioContext.cpp` | BASSA | Pref-driven inline | OK |
-| Timezone (per-realm) | `js/src/jsdate.cpp` + `docshell/base/BrowsingContext.cpp` | ALTA | BC FIELD pattern | OK (FIELD sopravvive refactor) |
-| WebRTC SOCKS5 + srflx | `dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.c` | MEDIA | File untracked aggiunto al build | OK |
-| Storage quota | `dom/storage/StorageManager.cpp` | BASSA | Pref-driven inline | OK |
-| Speech (voices.list) | `dom/media/webspeech/synth/cocoa/OSXSpeechSynthesizerModule.mm` + win equivalent | BASSA | Pref-driven inline | OK |
-| Devtools stealth | `devtools/server/actors/thread.js` | MEDIA | JS modifica file esistente | Considerare overlay JS |
-| Juggler integration | `juggler/*` | NESSUNA (nostra dir) | File propri | OK |
-
-### Smoke test gate
-
-`./scripts/rebase_gate.sh` esegue (in ordine):
-1. `./mach build binaries`
-2. `test_launch.py` — Firefox launches under Playwright (gap C5 sentinel)
-3. `test_new_page.py` — `ctx.new_page()` non hang (gap C6 sentinel)
-4. `test_mouse.py` — `page.mouse.{move,down,up,click,wheel}` tutti OK
-5. `test_stealth.py` — `navigator.webdriver=false` + pass count on a public bot-detection test page
-
-Tutti i test verdi → branch riproducibile e funzionante.
+Solo dal tag della release stabile, mai da una beta. Il flusso completo è in
+`AGENTS.md` della serie.
 
 ### Patch snapshot per utenti esterni
 

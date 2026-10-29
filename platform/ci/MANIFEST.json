@@ -33,8 +33,6 @@
   "scripts/patch_survival_allow.txt": "100644",
   "scripts/patch_survival_check.sh": "100644",
   "scripts/protocol_drift_check.py": "100644",
-  "scripts/rebase_gate.sh": "100644",
-  "scripts/rebase_to.sh": "100644",
   "scripts/release_gates.py": "100644",
   "scripts/release_plan.py": "100644",
   "scripts/runtime_imports.py": "100644",
