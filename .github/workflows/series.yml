@@ -4,9 +4,9 @@
 name: series
 on:
   push:
-    branches: [engine, main]
+    branches: [main]
   pull_request:
-    branches: [engine, main]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

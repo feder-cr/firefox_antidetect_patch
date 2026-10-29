@@ -1,6 +1,6 @@
 # Il motore come serie di patch
 
-Questo ramo (`engine` di feder-cr/firefox_antidetect_patch, in locale `C:/ff/engine`)
+Questo repository (feder-cr/firefox_antidetect_patch, ramo `main`; in locale `C:/ff/engine`)
 è il nostro Firefox scritto come **differenza da un tag di Mozilla**: una cartella
 per funzione, applicate nell'ordine di `SERIES`. Il tag e il ramo sorgente sono in
 `UPSTREAM.json`.
@@ -76,10 +76,10 @@ python -m pytest -q tools/tests
 
 - Identità: `feder-cr <85809106+feder-cr@users.noreply.github.com>`, già impostata nel
   repo. Mai un'email personale nei commit.
-- Prima di ogni push: `pytest`, `check`, `verify`; poi `git log -p origin/engine..`
+- Prima di ogni push: `pytest`, `check`, `verify`; poi `git log -p origin/main..`
   cercando email e nomi dei sistemi studiati. Questi controlli sono locali e restano
   fuori da GitHub.
-- Push: `git push origin master:engine`. La CI (`.github/workflows/series.yml`) rifà
+- Push: `git push origin master:main`. La CI (`.github/workflows/series.yml`) rifà
   le regole e la ricostruzione sul tag.
 - Una build di prova: `gh workflow run release.yml --ref <ramo> -f kind=candidate`
   (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla).
