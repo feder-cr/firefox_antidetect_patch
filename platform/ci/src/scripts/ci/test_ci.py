@@ -408,7 +408,7 @@ def main() -> int:
                       tree_jobs == {"release.yml:plan", "release.yml:build", "release.yml:report",
                                     "publish.yml:publish", "republish.yml:plan"}
                       and "SOURCE_REF" not in every and "SOURCE_REPO" not in every and "source_ref" not in every
-                      and "series-commit.txt" in every))
+                      and "series-commit.txt" in every and "--series-commit-file" in every))
 
     failures = 0
     for name, ok in cases:

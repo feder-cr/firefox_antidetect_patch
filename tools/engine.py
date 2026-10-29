@@ -155,6 +155,7 @@ def export(source: Path, base: str, head: str) -> None:
         if not feature_md.exists():
             feature_md.write_text(describe(folder, manifest), encoding="utf-8", newline="\n")
     (ROOT / "SERIES").write_text("\n".join(series) + "\n", encoding="utf-8", newline="\n")
+    sync_workflows()
     up = upstream()
     up["exported_from"] = git(source, "rev-parse", head).decode().strip()
     up["exported_tree"] = git(source, "rev-parse", "%s^{tree}" % head).decode().strip()

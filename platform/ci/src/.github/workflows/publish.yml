@@ -133,6 +133,7 @@ jobs:
             --tag "${{ inputs.tag }}" \
             --assets dl \
             --source-commit-file src-meta/source-commit.txt \
+            --series-commit-file src-meta/series-commit.txt \
             --playwright-range _src/browser/config/stealth_playwright_range.txt \
             -o dl/seal.json
           echo "----- seal.json -----"; cat dl/seal.json

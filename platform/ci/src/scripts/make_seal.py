@@ -290,7 +290,7 @@ def read_playwright_range(path: Path | None) -> tuple[str, str]:
     return lo, hi
 
 
-def read_source_commit(path: Path | None) -> str:
+def read_source_commit(path: Path | None, flag: str = "--source-commit-file") -> str:
     """The engine commit the seal records, or "" when none is asked for.
 
     The same silent fallback the Playwright window had: the file was read only
@@ -304,11 +304,11 @@ def read_source_commit(path: Path | None) -> str:
     if path is None:
         return ""
     if not path.is_file():
-        raise SealBuildError(f"--source-commit-file {path} does not exist.")
+        raise SealBuildError(f"{flag} {path} does not exist.")
     commit = path.read_text(encoding="utf-8").strip()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise SealBuildError(
-            f"--source-commit-file {path} holds {commit!r}, not a full 40-hex commit id.")
+            f"{flag} {path} holds {commit!r}, not a full 40-hex commit id.")
     return commit
 
 
@@ -431,6 +431,11 @@ def main(argv=None) -> int:
                     help="a file holding the engine commit this build is of. "
                          "Recorded as the seal's source_commit for BOTH --assets "
                          "and --from-tree; the core's engine-source tests read it.")
+    ap.add_argument("--series-commit-file", type=Path,
+                    help="a file holding the commit of the patch series this build applied "
+                         "(this repository's main). Recorded as series_commit: with the "
+                         "Mozilla tag it rebuilds source_commit (tools/engine.py apply), "
+                         "which lives on no remote.")
     ap.add_argument("--playwright-range", type=Path,
                     help=f"the two-line supported-Playwright window "
                          f"(default: {PW_RANGE_REL} in this tree). No built-in default "
@@ -442,6 +447,7 @@ def main(argv=None) -> int:
     rows: list = []
     try:
         commit = read_source_commit(a.source_commit_file)
+        series = read_source_commit(a.series_commit_file, "--series-commit-file")
         pw_range = a.playwright_range or (REPO_ROOT / PW_RANGE_REL)
         pw_min, pw_max = read_playwright_range(pw_range)
         print(f"playwright window: {pw_min} .. {pw_max}  (from {pw_range})")
@@ -455,6 +461,10 @@ def main(argv=None) -> int:
     except SealBuildError as e:
         print(f"SEAL ERROR: {e}", file=sys.stderr)
         return 1
+    # Only when given: a seal made without it is byte-identical to one made before
+    # the field existed.
+    if series:
+        seal["series_commit"] = series
     dump_canonical(seal, a.out, rows)
     return 0
 

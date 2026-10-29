@@ -405,6 +405,39 @@ def test_the_command_line_records_the_commit_file_in_a_from_tree_seal(d: Path):
 
 
 @case
+def test_the_series_commit_is_recorded_beside_the_engine_commit(d: Path):
+    """The engine commit (tag + series applied) is on no remote; the series commit is
+    what rebuilds it, so the seal carries both."""
+    engine, series = "17140065a1b0477fabecf16f921120176803aa8b", "dc842b5" + "0" * 33
+    f, g = d / "source-commit.txt", d / "series-commit.txt"
+    f.write_bytes((engine + "\n").encode("ascii"))
+    g.write_bytes((series + "\n").encode("ascii"))
+    rng = _range_file(d)
+    out = d / "seal.json"
+    rc = m.main(["--tag", "firefox-51", "--from-tree", str(_unpacked_tree(d)), "--playwright-range",
+                 str(rng), "--source-commit-file", str(f), "--series-commit-file", str(g), "-o", str(out)])
+    seal = json.loads(out.read_bytes())
+    assert rc == 0 and seal["source_commit"] == engine and seal["series_commit"] == series, seal
+
+
+@case
+def test_a_seal_without_a_series_commit_has_no_such_field(d: Path):
+    """Older seals and dev seals stay byte-identical: the field appears only when given."""
+    rc, out = _cli(d, None)
+    assert rc == 0 and "series_commit" not in json.loads(out.read_bytes())
+
+
+@case
+def test_a_series_commit_file_that_is_not_a_commit_is_a_failed_seal(d: Path):
+    g = d / "series-commit.txt"
+    g.write_bytes(b"main\n")
+    rng = _range_file(d)
+    rc = m.main(["--tag", "firefox-51", "--from-tree", str(_unpacked_tree(d)), "--playwright-range",
+                 str(rng), "--series-commit-file", str(g), "-o", str(d / "seal.json")])
+    assert rc == 1
+
+
+@case
 def test_a_commit_file_that_is_named_but_missing_is_a_failed_seal(d: Path):
     """It used to read as no commit at all, and a seal came out without one."""
     rc, out = _cli(d, d / "nowhere.txt")
