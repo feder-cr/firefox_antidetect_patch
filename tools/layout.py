@@ -225,6 +225,7 @@ OWN_FILES = [
     (r"^dom/base/StealthShadowRoot\.", "automation/shadow-root"),
     (r"^intl/locale/StealthSessionPrefs\.", "fingerprint/locale-time/session-declaration"),
     (r"^js/xpconnect/src/StealthSandbox\.", "automation/hybrid-xrays"),
+    (r"^dom/quota/StealthQuotaEstimate\.", "fingerprint/hardware/storage-quota"),
     (r"^dom/media/webaudio/StealthAudioNoise\.", "fingerprint/audio/noise"),
     (r"^dom/media/gtest/TestStealthAudioNoise\.", "fingerprint/audio/noise"),
     (r"^dom/base/StealthWindowGeometry\.", "fingerprint/screen-window/geometry"),

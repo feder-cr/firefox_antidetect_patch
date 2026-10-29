@@ -1952,27 +1952,26 @@
   }
  },
  {
-  "file": "dom/quota/ActorsParent.cpp",
+  "file": "dom/quota/OriginOperations.cpp",
   "category": "spoof",
   "feature": "storage-quota-estimate",
   "prefs": [
    "zoom.stealth.storage.quota_mb"
   ],
-  "added": 36,
-  "removed": 2,
-  "hunks": 4,
-  "inline_logic_lines": 12,
+  "added": 3,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "QuotaManager::GetUsageAndLimitForEstimate",
+  "anchor": "EstimateOp::GetResponse (limit), include block",
   "evidence": [
-   "+  const int32_t stealthQuotaMb =",
-   "+                      ? (uint64_t(stealthQuotaMb) * 1024 * 1024)",
-   "-                               mTemporaryStorageLimit);"
+   "+      StealthEstimateLimit(mUsageAndLimit.second);  // STEALTH-HOOK(fingerprint/hardware/storage-quota)",
+   "+#include \"StealthQuotaEstimate.h\"  // STEALTH-HOOK(fingerprint/hardware/storage-quota)"
   ],
-  "notes": "The same limit expression (stealthOverride ? quota*MiB : fallback) is written twice. A helper in our file would make both sites one line each. A block of about 20 comment lines holds a 2026-08-09 correction and should move out. The pinned value replaces both the locked-origin limit and the group limit.",
+  "notes": "The limit written into the estimate response passes through StealthEstimateLimit (dom/quota/StealthQuotaEstimate.h): the pref in MB when > 0, Mozilla's limit otherwise. Only the reported value changes; eviction keeps Mozilla's limits. Moved here from QuotaManager::GetUsageAndLimitForEstimate in ActorsParent.cpp on 2026-10-29: Firefox 159 rewrites that function, while GetResponse is identical in 157 and 159. From 159 the group scope of the same operation (parent process only) reports the pinned quota too.",
   "verifier": {
    "changed": [],
-   "why": "Checked against the diff; no change needed."
+   "why": "Written with the move; same values as the two returns it replaces."
   }
  },
  {

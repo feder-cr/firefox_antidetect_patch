@@ -81,7 +81,7 @@
  "dom/media/webspeech/synth/SpeechSynthesisVoice.cpp": 12,
  "dom/media/webspeech/synth/moz.build": 2,
  "dom/media/webspeech/synth/test/mochitest.toml": 2,
- "dom/quota/ActorsParent.cpp": 15,
+ "dom/quota/OriginOperations.cpp": 3,
  "dom/security/moz.build": 1,
  "dom/security/nsCSPUtils.cpp": 5,
  "dom/security/nsCSPUtils.h": 3,

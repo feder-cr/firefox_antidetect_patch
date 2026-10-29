@@ -10,11 +10,21 @@ TODO: one paragraph, from the notes below.
 
 ## Hooks in Mozilla files
 
-- `dom/quota/ActorsParent.cpp` (QuotaManager::GetUsageAndLimitForEstimate, already-hook): The same limit expression (stealthOverride ? quota*MiB : fallback) is written twice. A helper in our file would make both sites one line each. The block of about 20 comment lines with a 2026-08-09 correction that stood there moved to the section for dom/quota/ActorsParent.cpp below. The pinned value replaces both the locked-origin limit and the group limit.
+- `dom/quota/OriginOperations.cpp` (EstimateOp::GetResponse, already-hook): the limit written into the estimate response passes through `StealthEstimateLimit` (dom/quota/StealthQuotaEstimate.h). Only the reported value changes; eviction keeps Mozilla's limits.
 
-## dom/quota/ActorsParent.cpp: QuotaManager::GetUsageAndLimitForEstimate
+## Where the hook sits
 
-Comment that stood above the `stealthQuotaMb` / `stealthOverride` lines, moved out of the Mozilla file verbatim:
+Until 2026-10-29 the override sat inside `QuotaManager::GetUsageAndLimitForEstimate`
+(dom/quota/ActorsParent.cpp), threaded through both of its returns. Firefox 159
+rewrites that function, and it was the largest remaining conflict of the
+157 -> 159 merge. `EstimateOp::GetResponse` (dom/quota/OriginOperations.cpp), where
+the answer to the page is written, is identical in 157 and 159, so the hook is
+there now, one call. From 159 the group scope of the same operation (parent
+process only) reports the pinned quota too.
+
+## Why the override exists
+
+Comment that stood above the `stealthQuotaMb` / `stealthOverride` lines in ActorsParent.cpp, kept verbatim:
 
 > Stealth: per-session storage quota override. When zoom.stealth.storage.quota_mb
 > is > 0, navigator.storage.estimate().quota returns exactly that value (in MB).
