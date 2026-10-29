@@ -140,24 +140,6 @@ python tools/engine.py port  --to FIREFOX_<N>_0_RELEASE   # ogni cartella a tre 
 Solo dal tag della release stabile, mai da una beta. Il flusso completo è in
 `AGENTS.md` della serie.
 
-### Patch snapshot per utenti esterni
-
-Il branch è la source of truth. Per chi vuole applicare le modifiche a un
-clone vanilla di mozilla-firefox/firefox (senza usare il fork):
-
-```bash
-# Genera snapshot 0001-*.patch ... 000N-*.patch da current branch
-python scripts/update_patches.py --output ../patches-snapshot/
-
-# Verifica che le patch applicano su mozilla-central pulito
-python scripts/apply_patches.py /path/to/fresh/clone \
-       --patches ../patches-snapshot/ \
-       --base FIREFOX_150_0_1_RELEASE
-```
-
-Lo snapshot è solo un artefatto. Le PR/contributi vanno fatti sul fork
-(`feder-cr/invisible_firefox`), non sullo snapshot.
-
 ## Vedi anche
 
 - Schema completo input/output: `c:/tmp/firefox_stealth_schema.md` (workspace privato)

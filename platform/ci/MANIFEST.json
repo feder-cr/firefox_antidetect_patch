@@ -7,7 +7,6 @@
   ".github/workflows/republish.yml": "100644",
   ".github/workflows/verify-assets.yml": "100644",
   ".github/workflows/verify-hidden-desktop.yml": "100644",
-  "scripts/apply_patches.py": "100644",
   "scripts/check_release_naming.py": "100644",
   "scripts/check_upstream_source.py": "100644",
   "scripts/ci/__init__.py": "100644",
@@ -54,7 +53,6 @@
   "scripts/tests/test_stealth.py": "100644",
   "scripts/toolchain_parity.py": "100644",
   "scripts/toolchain_parity_exceptions.json": "100644",
-  "scripts/update_patches.py": "100644",
   "scripts/upstream_toolchain.py": "100644",
   "scripts/validate_release.py": "100644"
  },
