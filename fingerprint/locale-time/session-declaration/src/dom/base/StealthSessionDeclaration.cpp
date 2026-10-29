@@ -16,7 +16,6 @@
 #include "mozilla/intl/TimeZone.h"
 #include "nsIGlobalObject.h"
 #include "nsPIDOMWindow.h"
-#include "nsRFPService.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
 
@@ -108,20 +107,15 @@ void SetRealmDeclaredLocale(JS::Realm* aRealm, const nsACString& aLanguage) {
   JS::SetRealmLocaleOverride(aRealm, tag.get());
 }
 
-void SetRealmTimeAndLanguage(JS::RealmOptions& aOptions, bool aForceUTC,
-                             bool aLocaleEnUS, const nsACString& aLanguage,
-                             const nsAString& aZone) {
-  if (aForceUTC) {
-    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
-    aOptions.behaviors().setTimeZoneOverride(timeZone.get());
-  } else if (!aZone.IsEmpty()) {
+void SetDeclaredRealmTimeAndLanguage(JS::RealmOptions& aOptions,
+                                     bool aForceUTC, bool aLocaleEnUS,
+                                     const nsACString& aLanguage,
+                                     const nsAString& aZone) {
+  if (!aForceUTC && !aZone.IsEmpty()) {
     aOptions.behaviors().setTimeZoneOverride(
         NS_ConvertUTF16toUTF8(aZone).get());
   }
-  if (aLocaleEnUS) {
-    nsCString locale = nsRFPService::GetSpoofedJSLocale();
-    aOptions.behaviors().setLocaleOverride(locale.get());
-  } else if (!aLanguage.IsEmpty()) {
+  if (!aLocaleEnUS && !aLanguage.IsEmpty()) {
     // The override may be an Accept-Language list ("fr-FR, fr") so that
     // navigator.languages reports the whole desktop-default list; the realm's
     // Intl default locale is a single BCP-47 tag.

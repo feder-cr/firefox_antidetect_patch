@@ -88,36 +88,25 @@ index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f4892732
    RefPtr<WorkerNavigator> nav = globalScope->GetExistingNavigator();
    if (nav) {
 diff --git a/dom/worklet/WorkletGlobalScope.cpp b/dom/worklet/WorkletGlobalScope.cpp
-index c40353f140d091be5e7a4e04a0248daa2326b904..3d903db3c3b272cf626b23b9c0203e18f660a2e6 100644
+index c40353f140d091be5e7a4e04a0248daa2326b904..62390f880c51aae56ccd6e3fcd03af6ad408acb3 100644
 --- a/dom/worklet/WorkletGlobalScope.cpp
 +++ b/dom/worklet/WorkletGlobalScope.cpp
 @@ -7,6 +7,7 @@
  #include "js/RealmOptions.h"
  #include "mozilla/SchedulerGroup.h"
  #include "mozilla/dom/Console.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/workers)
  #include "mozilla/dom/WorkletGlobalScopeBinding.h"
  #include "mozilla/dom/WorkletImpl.h"
  #include "mozilla/dom/WorkletThread.h"
-@@ -130,16 +131,13 @@ void WorkletGlobalScope::Dump(const Optional<nsAString>& aString) const {
- JS::RealmOptions WorkletGlobalScope::CreateRealmOptions() const {
-   JS::RealmOptions options;
- 
--  if (ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC)) {
--    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
--    options.behaviors().setTimeZoneOverride(timeZone.get());
--  }
-+  // STEALTH-HOOK(fingerprint/locale-time/workers)
-+  SetRealmTimeAndLanguage(
+@@ -140,6 +141,10 @@ JS::RealmOptions WorkletGlobalScope::CreateRealmOptions() const {
+     nsCString locale = nsRFPService::GetSpoofedJSLocale();
+     options.behaviors().setLocaleOverride(locale.get());
+   }
++  SetDeclaredRealmTimeAndLanguage(  // STEALTH-HOOK(fingerprint/locale-time/workers)
 +      options, ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
 +      ShouldResistFingerprinting(RFPTarget::JSLocale),
 +      mImpl->LoadInfo().Language(), mImpl->LoadInfo().Timezone());
-   options.creationOptions().setAlwaysUseFdlibm(
-       ShouldResistFingerprinting(RFPTarget::JSMathFdlibm));
--  if (ShouldResistFingerprinting(RFPTarget::JSLocale)) {
--    nsCString locale = nsRFPService::GetSpoofedJSLocale();
--    options.behaviors().setLocaleOverride(locale.get());
--  }
  
    // The SharedArrayBuffer global constructor property should not be present in
    // a fresh global object when shared memory objects aren't allowed (because

@@ -85,16 +85,23 @@ nsCString GetDeclaredRealmLanguage(Document* aDocument);
 nsString GetDeclaredRealmTimezone(Document* aDocument);
 
 /**
- * The time zone and the default Intl locale of a realm the engine creates for
- * web content: resistFingerprinting's spoofed values when it asks for them,
- * else the declared ones, else nothing (Firefox's own). The window, worker and
- * worklet realms all come through here, so the rule exists once. `aLanguage`
- * may be an Accept-Language list: the realm takes its primary tag. Any
- * thread: the caller brings the declared values.
+ * The declared time zone and default Intl locale of a realm the engine creates
+ * for web content. Called right AFTER Mozilla's own code for the same options
+ * (xpc::InitGlobalObjectOptions for the window and worker realms,
+ * WorkletGlobalScope::CreateRealmOptions), which stays as Mozilla wrote it:
+ * when resistFingerprinting asks for its spoofed values (aForceUTC,
+ * aLocaleEnUS) this does nothing and they stay. Otherwise it sets the declared
+ * zone and the PRIMARY TAG of `aLanguage`, which may be an Accept-Language list
+ * ("fr-FR, fr", so navigator.languages reports the whole list) where the
+ * realm's default locale is a single BCP-47 tag. What it adds to Mozilla's:
+ * that tag in the window and worker realms, and both values in a worklet
+ * (Mozilla's worklet code sets only the spoofed ones). Any thread: the caller
+ * brings the declared values.
  */
-void SetRealmTimeAndLanguage(JS::RealmOptions& aOptions, bool aForceUTC,
-                             bool aLocaleEnUS, const nsACString& aLanguage,
-                             const nsAString& aZone);
+void SetDeclaredRealmTimeAndLanguage(JS::RealmOptions& aOptions,
+                                     bool aForceUTC, bool aLocaleEnUS,
+                                     const nsACString& aLanguage,
+                                     const nsAString& aZone);
 
 /**
  * BrowsingContext::Attach: if our `juggler.timezone.override` pref is set and

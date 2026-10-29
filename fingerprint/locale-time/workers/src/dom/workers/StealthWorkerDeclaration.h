@@ -42,8 +42,8 @@ namespace mozilla::dom {
 // as upstream does.
 //
 // The worker's realm is born with the language and the zone its owner
-// declares, through the same SetRealmTimeAndLanguage the window's realm goes
-// through (xpc::InitGlobalObjectOptions, upstream code, unchanged). Upstream's
+// declares, through the same SetDeclaredRealmTimeAndLanguage the window's
+// realm goes through (called at the end of xpc::InitGlobalObjectOptions). Upstream's
 // update path (UpdateLanguageOverrideInternal, UpdateTimezoneOverrideInternal)
 // only runs on a later BrowsingContext change; the session fallback is
 // applied here, at birth, before RuntimeService::GetDefaultJSSettings and the
@@ -74,7 +74,7 @@ inline void DeclareWorkerLanguageAndZone(WorkerLoadInfo& aLoadInfo) {
 // (an Accept-Language list or a single tag), as its primary tag.
 //
 // The override may be an Accept-Language list ("fr-FR, fr"); the realm's Intl
-// default locale is a single BCP-47 tag, as at birth (SetRealmTimeAndLanguage)
+// default locale is a single BCP-47 tag, as at birth (SetDeclaredRealmTimeAndLanguage)
 // and in the window (BrowsingContext::DidSet). Touches only the realm and its
 // arguments.
 inline void SetWorkerRealmLocale(JS::Realm* aRealm,

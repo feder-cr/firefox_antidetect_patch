@@ -149,48 +149,24 @@ index ba2f3c2e6022c7dc4c15b331a3f0ee5eadc6b550..6e36c5d525f87048a25e04cdce94db45
        int32_t offset =
            (prtime.tm_params.tp_gmt_offset + prtime.tm_params.tp_dst_offset) /
 diff --git a/js/xpconnect/src/nsXPConnect.cpp b/js/xpconnect/src/nsXPConnect.cpp
-index e9b93e5e8d2151b63ded2abb6a3a6293df8bb5e2..7f02c6be960a9dc5efa5b355a5b3c8e25d6a7093 100644
+index e9b93e5e8d2151b63ded2abb6a3a6293df8bb5e2..53a3f1b0f9386be2d44e421b42b19f8d42524248 100644
 --- a/js/xpconnect/src/nsXPConnect.cpp
 +++ b/js/xpconnect/src/nsXPConnect.cpp
 @@ -11,6 +11,7 @@
  #include "mozilla/dom/DOMException.h"
  #include "mozilla/dom/Exceptions.h"
  #include "mozilla/dom/Promise.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/timezone)
  #include "mozilla/dom/WorkerCommon.h"
  #include "mozilla/glean/bindings/Glean.h"
  #include "mozilla/glean/bindings/GleanPings.h"
-@@ -33,7 +34,6 @@
- #include "nsIOService.h"
- #include "nsJSEnvironment.h"
- #include "nsJSUtils.h"
--#include "nsRFPService.h"
- #include "nsScriptError.h"
- #include "nsScriptSecurityManager.h"
- #include "nsThreadUtils.h"
-@@ -537,21 +537,11 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
-     aOptions.creationOptions().setSecureContext(aSecureContext);
+@@ -552,6 +553,9 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
+     aOptions.behaviors().setLocaleOverride(
+         PromiseFlatCString(aLanguageOverride).get());
    }
- 
--  if (aForceUTC) {
--    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
--    aOptions.behaviors().setTimeZoneOverride(timeZone.get());
--  } else if (!aTimezoneOverride.IsEmpty()) {
--    aOptions.behaviors().setTimeZoneOverride(
--        NS_ConvertUTF16toUTF8(aTimezoneOverride).get());
--  }
-   aOptions.creationOptions().setAlwaysUseFdlibm(aAlwaysUseFdlibm);
--  if (aLocaleEnUS) {
--    nsCString locale = nsRFPService::GetSpoofedJSLocale();
--    aOptions.behaviors().setLocaleOverride(locale.get());
--  } else if (!aLanguageOverride.IsEmpty()) {
--    aOptions.behaviors().setLocaleOverride(
--        PromiseFlatCString(aLanguageOverride).get());
--  }
-+  // STEALTHFOX (firefox-50): the zone and the default locale, by the rule the
-+  // worker and worklet realms follow too (dom/base/StealthSessionDeclaration).
-+  mozilla::dom::SetRealmTimeAndLanguage(aOptions, aForceUTC, aLocaleEnUS,
-+                                        aLanguageOverride, aTimezoneOverride);
++  // STEALTH-HOOK(fingerprint/locale-time/timezone)
++  mozilla::dom::SetDeclaredRealmTimeAndLanguage(
++      aOptions, aForceUTC, aLocaleEnUS, aLanguageOverride, aTimezoneOverride);
  }
  
  bool InitGlobalObject(JSContext* aJSContext, JS::Handle<JSObject*> aGlobal,
