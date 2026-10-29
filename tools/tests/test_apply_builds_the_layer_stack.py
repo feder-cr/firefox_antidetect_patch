@@ -76,3 +76,24 @@ def test_apply_refuses_to_overwrite_a_branch_without_force(world):
 def test_what_apply_builds_is_what_verify_accepts(world, capsys):
     engine.apply(world, "TAG", "work", force=False)
     assert engine.verify(world, "TAG", "work") == 0
+
+
+def test_materialize_fetches_the_tag_applies_the_series_and_checks_the_tree(world, tmp_path, monkeypatch):
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    into = tmp_path / "runner"
+    head = engine.materialize(into)
+    # the checkout follows the machine's line-ending setting, as actions/checkout does;
+    # what git stores is the series' bytes exactly
+    assert (into / "dom" / "StealthA.cpp").read_bytes().replace(b"\r\n", b"\n") == b"// ours\n"
+    assert run(into, "show", "HEAD:dom/StealthA.cpp") == "// ours"
+    assert head == run(world, "rev-parse", "probe"), "same series + same tag = same commit, anywhere"
+    # a series that no longer gives the declared tree is refused, not built
+    up.write_text(json.dumps({"mozilla_repository": str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": "0" * 40}))
+    with pytest.raises(SystemExit):
+        engine.materialize(tmp_path / "runner2")

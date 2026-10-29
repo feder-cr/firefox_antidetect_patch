@@ -7,10 +7,14 @@ per funzione, applicate nell'ordine di `SERIES`. Il tag e il ramo sorgente sono 
 
 ## Chi è la fonte
 
-Per ora il codice si modifica **nel sorgente**, `C:/ff/source`, sul ramo
-`source_branch` di `UPSTREAM.json`. Questo ramo si **genera** da lì con
-`tools/engine.py export` e si **dimostra** identico con `verify`. Si modificano a mano
-soltanto:
+Su GitHub c'è solo questa serie: nessun ramo contiene l'albero di Firefox. Il codice si
+modifica **nel sorgente locale**, `C:/ff/source`, sul ramo `source_branch` di
+`UPSTREAM.json` (oggi `work/157`, che esiste solo in locale). Se non c'è, o è vecchio,
+lo si ricrea dalla serie: `python tools/engine.py apply --head work/157 --force`, che
+dà sempre lo stesso commit, perché le date sono quelle del tag. La serie si
+**genera** dal ramo con `export` e si **dimostra** identica con `verify`. La CI rifà
+lo stesso percorso, `materialize`: tag di Mozilla, poi serie, poi l'albero dichiarato
+in `UPSTREAM.json` (`exported_tree`). Si modificano a mano soltanto:
 
 - `FEATURE.md` di ogni cartella (cosa fa, perché, test);
 - `tools/layout.py` (in quale cartella va una funzione o un nostro file);
@@ -18,8 +22,10 @@ soltanto:
 - `tools/hook-budget.json` (solo verso il basso, vedi sotto);
 - `AGENTS.md`, `tools/`, `.github/`.
 
-`hooks.patch`, `src/`, `MANIFEST.json`, `SERIES` e `exported_from` li scrive l'export:
-**non si modificano a mano**.
+`hooks.patch`, `src/`, `MANIFEST.json`, `SERIES`, `exported_from`/`exported_tree` e i
+workflow alla radice (`.github/workflows/`, copia di `platform/ci/src/.github/workflows/`
+tranne `series.yml`) li scrive l'export: **non si modificano a mano**. Un workflow si
+cambia nel sorgente, come ogni altro file.
 
 ## Comandi
 
@@ -73,6 +79,8 @@ python -m pytest -q tools/tests
   fuori da GitHub.
 - Push: `git push origin master:engine`. La CI (`.github/workflows/series.yml`) rifà
   le regole e la ricostruzione sul tag.
+- Una build di prova: `gh workflow run release.yml --ref <ramo> -f kind=candidate`
+  (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla).
 - Release e push di `stealth/157` solo dopo averne parlato con Federico.
 
 ## Lavori grandi: struttura a sub-agenti

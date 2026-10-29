@@ -40,9 +40,6 @@ on:
         description: 'invisible_core ref the gate installs (as in release.yml)'
         default: 'main'
 
-env:
-  SOURCE_REPO: feder-cr/firefox_antidetect_patch
-
 jobs:
   # Always a release, so the plan only checks the tag and names what comes out
   # of it (scripts/release_plan.py, the same plan release.yml runs): a bad tag
@@ -54,9 +51,12 @@ jobs:
       num: ${{ steps.plan.outputs.num }}
       prevtag: ${{ steps.plan.outputs.prevtag }}
     steps:
-      - name: Checkout (for scripts/release_plan.py)
+      - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with: { fetch-depth: 1 }
+        with: { path: .series, fetch-depth: 1 }
+      - name: The source tree, the Mozilla tag with our series applied (tools/engine.py)
+        shell: bash
+        run: python3 .series/tools/engine.py materialize --into .
       - name: The plan refuses what it must
         run: python3 scripts/test_release_plan.py
       - name: Plan

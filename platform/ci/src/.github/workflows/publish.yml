@@ -32,7 +32,9 @@ on:
         default: main
 
 env:
-  SOURCE_REPO: feder-cr/firefox_antidetect_patch
+  # The repository of the series: the release notes are the range between the
+  # previous release's series commit and this one.
+  SERIES_REPO: ${{ github.repository }}
 
 jobs:
   publish:
@@ -59,9 +61,12 @@ jobs:
           # tests a pairing no user ever gets, and it bit on firefox-20.
           ref: ${{ inputs.wrapper_ref }}
           fetch-depth: 1
-      - name: Checkout source repo (for scripts/make_seal.py)
+      - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with: { path: _src, fetch-depth: 1 }
+        with: { path: .series, fetch-depth: 1 }
+      - name: The source tree in _src, the Mozilla tag with our series applied (for scripts/make_seal.py)
+        shell: bash
+        run: python3 .series/tools/engine.py materialize --into _src
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: '3.11' }
@@ -138,24 +143,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          CUR="$(cat src-meta/source-commit.txt 2>/dev/null | tr -d '[:space:]')"
-          echo "this build's source commit: ${CUR:-<none>}"
-          # previous release's recorded source commit — gives the changelog range.
-          # Missing (first automated notes / firefox-0) -> notes omit the changelog.
+          CUR="$(cat src-meta/series-commit.txt 2>/dev/null | tr -d '[:space:]')"
+          echo "this build's series commit: ${CUR:-<none>}"
+          # previous release's recorded series commit — gives the changelog range.
+          # Missing (releases built before the series, firefox-0) -> notes omit the changelog.
           PREV=""
           PREVTAG="${{ inputs.prevtag }}"
           if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
-               --pattern source-commit.txt --dir prev 2>/dev/null; then
-            PREV="$(cat prev/source-commit.txt | tr -d '[:space:]')"
-            echo "previous ($PREVTAG) source commit: $PREV"
+               --pattern series-commit.txt --dir prev 2>/dev/null; then
+            PREV="$(cat prev/series-commit.txt | tr -d '[:space:]')"
+            echo "previous ($PREVTAG) series commit: $PREV"
           else
-            echo "no previous source-commit.txt — changelog section omitted this time"
+            echo "no previous series-commit.txt — changelog section omitted this time"
           fi
           python scripts/gen_release_notes.py --tag "${{ inputs.tag }}" \
-            --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SOURCE_REPO }}" > body.md
+            --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SERIES_REPO }}" > body.md
           echo "----- generated body.md -----"; cat body.md
-          # publish THIS build's source commit so the next release can diff from it
+          # publish THIS build's commits so the next release can diff from them
           cp src-meta/source-commit.txt dl/source-commit.txt
+          cp src-meta/series-commit.txt dl/series-commit.txt
       # A tag's payload never changes (scripts/ci/payload_guard.py). The shell
       # this replaced read every `gh release download` failure as "no seal
       # yet", so a transient GitHub error let a different payload through.
@@ -180,6 +186,7 @@ jobs:
             dl/*.zip
             dl/checksums.txt
             dl/source-commit.txt
+            dl/series-commit.txt
             dl/seal.json
           body_path: body.md
         env:

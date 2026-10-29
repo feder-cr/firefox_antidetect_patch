@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# verify-hidden-desktop.yml — re-run the GATE on an EXISTING build run's
+# artifacts, WITHOUT rebuilding Firefox: a test-only fix (e.g. a leg made
+# tolerant of the runner's missing WebGL) is validated against the real
+# binaries in ~10 minutes instead of a rebuild. Si chiamava verify-cloak.yml
+# fino al 2026-09-20; i guard sono quelli del wrapper sul desktop nascosto e il test
+# WebGL del wrapper.
+#
+# It CALLS gate.yml, the same job release.yml and republish.yml call. Until
+# 2026-10-27 it was its own copy, which said "same guard command as
+# release.yml's gate" and was not: it installed the PUBLISHED core and no
+# seal, the pairing gate.yml documents as one no user gets (it broke
+# firefox-20 and firefox-47). One gate, three callers, no copy to drift.
+#
+# Headed-but-hidden; zero proxy / zero secrets.
+#
+# ⛔ Fino al 2026-08-26 questa intestazione diceva "The macOS legs are the only
+# place the cocoa cloak patch actually RUNS". Da quel giorno le gambe mac sono
+# uscite, quindi il cloak cocoa NON viene piu' esercitato da nessuna parte: e'
+# la conseguenza di aver smesso di spedire per mac, detta invece che cancellata.
+# ─────────────────────────────────────────────────────────────────────────────
+name: verify-hidden-desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'build run id whose asset-* artifacts to re-gate (e.g. 27346856197)'
+        required: true
+      wrapper_ref:
+        description: 'invisible_playwright ref to drive the binaries with'
+        default: 'main'
+      core_ref:
+        description: 'invisible_core ref the gate installs (the one the binaries were built for)'
+        default: 'engine/firefox-157'
+
+permissions:
+  contents: read
+  actions: read   # download-artifact needs this to read another run's artifacts
+
+jobs:
+  gate:
+    uses: ./.github/workflows/gate.yml
+    with:
+      build_run_id: ${{ inputs.run_id }}
+      # a re-gate seals locally, as a candidate does (scripts/release_plan.py)
+      seal_tag: local
+      wrapper_ref: ${{ inputs.wrapper_ref }}
+      core_ref: ${{ inputs.core_ref }}

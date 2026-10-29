@@ -60,3 +60,13 @@ def test_the_budget_only_goes_down(tmp_path, monkeypatch):
     engine.shrink_budget()
     after = json.loads(path.read_text(encoding="utf-8"))
     assert after["startupcache/StartupCache.h"] == budget["startupcache/StartupCache.h"] - 40
+
+
+def test_a_root_workflow_edited_by_hand_fails(tmp_path, monkeypatch):
+    root = tmp_path / "wf"
+    root.mkdir()
+    for p in engine.WORKFLOWS_ROOT.glob("*.yml"):
+        (root / p.name).write_bytes(p.read_bytes())
+    (root / "release.yml").write_bytes((root / "release.yml").read_bytes() + b"# by hand\n")
+    monkeypatch.setattr(engine, "WORKFLOWS_ROOT", root)
+    assert any("release.yml differs" in p for p in engine.problems())

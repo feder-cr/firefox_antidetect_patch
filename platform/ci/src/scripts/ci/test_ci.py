@@ -395,6 +395,20 @@ def main() -> int:
                       gt_input["type"] == "boolean" and gt_input["default"] is False and len(gt_step) == 1
                       and gt_step[0]["if"] == "github.event.inputs.gtests == 'true'"
                       and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"]))
+        # The repository holds the patch series only: a job that needs the source makes
+        # it with tools/engine.py materialize (the Mozilla tag + the series), and no
+        # checkout names a branch of Firefox's tree any more.
+        tree_jobs = set()
+        for name in ("release.yml", "publish.yml", "republish.yml"):
+            for job_name, job in yaml.safe_load((wf / name).read_text(encoding="utf-8"))["jobs"].items():
+                if any("engine.py materialize" in s.get("run", "") for s in job.get("steps") or []):
+                    tree_jobs.add("%s:%s" % (name, job_name))
+        every = "\n".join((wf / n).read_text(encoding="utf-8") for n in ("release.yml", "publish.yml", "republish.yml"))
+        cases.append(("source: every job that reads the tree materializes it from the series, none checks out a Firefox branch",
+                      tree_jobs == {"release.yml:plan", "release.yml:build", "release.yml:report",
+                                    "publish.yml:publish", "republish.yml:plan"}
+                      and "SOURCE_REF" not in every and "SOURCE_REPO" not in every and "source_ref" not in every
+                      and "series-commit.txt" in every))
 
     failures = 0
     for name, ok in cases:

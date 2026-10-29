@@ -29,9 +29,6 @@ on:
     tags: ['firefox-*']
   workflow_dispatch:
     inputs:
-      source_ref:
-        description: 'firefox_antidetect_patch ref to build'
-        default: 'stealth/157'
       kind:
         description: >
           candidate: build and gate, publish nothing (no seal, no draft); its
@@ -87,10 +84,11 @@ on:
         description: "gtests=true only: which, as mach gtest takes them (e.g. StartupCache.*:Stealth*); * is all"
         default: '*'
 
-env:
-  SOURCE_REPO: feder-cr/firefox_antidetect_patch
-  SOURCE_REF: ${{ github.event.inputs.source_ref || 'stealth/157' }}
-
+# What gets built: this repository holds the patch series only. Every job that
+# needs the engine's source rebuilds it with tools/engine.py materialize: the
+# Mozilla tag named in UPSTREAM.json, fetched from Mozilla's repository, plus the
+# series applied as one commit per folder (dated like the tag, so the commit is the
+# same on every runner and on any machine that applies the same series).
 jobs:
   # What this run is, decided once and before the builds: a release with a bad
   # tag is refused here in seconds, not at the seal two hours later, and a
@@ -107,9 +105,12 @@ jobs:
       build_date: ${{ steps.build_date.outputs.build_date }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - name: Checkout (for scripts/release_plan.py)
+      - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with: { fetch-depth: 1 }
+        with: { path: .series, fetch-depth: 1 }
+      - name: The source tree, the Mozilla tag with our series applied (tools/engine.py)
+        shell: bash
+        run: python3 .series/tools/engine.py materialize --into .
       - name: The plan refuses what it must
         run: python3 scripts/test_release_plan.py
       - name: Plan
@@ -198,12 +199,15 @@ jobs:
           echo "swap: ${SWAP_MB} MB"
           [ "$SWAP_MB" -ge 32000 ] || { echo "ERROR: only ${SWAP_MB} MB of swap"; exit 1; }
 
-      - name: Checkout patched Firefox source
+      - name: Python for the series tool
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          repository: ${{ env.SOURCE_REPO }}
-          ref: ${{ env.SOURCE_REF }}
-          fetch-depth: 1
+        with: { path: .series, fetch-depth: 1 }
+      - name: The source tree, the Mozilla tag with our series applied (tools/engine.py)
+        shell: bash
+        run: python .series/tools/engine.py materialize --into .
 
       # Cheapest gate in the pipeline, guarding the most expensive failure: the asset
       # basename is hand-written in every matrix entry below and derived independently
@@ -254,11 +258,13 @@ jobs:
           python3 scripts/test_memory_watch.py
           python3 scripts/test_workflow_cache_rules.py
 
-      # Record which firefox_antidetect_patch commit this build came from. The publish
-      # job turns the range previous-release..this commit into the release notes
-      # (scripts/gen_release_notes.py), and re-publishes it as a source-commit.txt
-      # asset so the NEXT release knows where to start the changelog. One leg is
-      # enough — all legs check out the same SOURCE_REF.
+      # Record what this build came from: source-commit.txt is the engine commit (the
+      # tag plus the series applied, reproducible with tools/engine.py apply) that the
+      # seal names; series-commit.txt is the commit of this repository, the series.
+      # The publish job turns previous-release..this series commit into the release
+      # notes (scripts/gen_release_notes.py) and re-publishes both files as assets, so
+      # the NEXT release knows where to start the changelog. One leg is enough: every
+      # leg applies the same series to the same tag.
       #
       # compile-cache.txt rides with it: whether these archives were compiled
       # through the cache (the plan's compile_cache, the same for every leg).
@@ -269,6 +275,7 @@ jobs:
         shell: bash
         run: |
           git rev-parse HEAD > source-commit.txt && cat source-commit.txt
+          git -C .series rev-parse HEAD > series-commit.txt && cat series-commit.txt
           echo "${{ needs.plan.outputs.compile_cache }}" > compile-cache.txt
           echo "compile cache: $(cat compile-cache.txt)"
       - name: Upload source-commit artifact
@@ -278,6 +285,7 @@ jobs:
           name: source-commit
           path: |
             source-commit.txt
+            series-commit.txt
             compile-cache.txt
           if-no-files-found: error
           retention-days: 7
@@ -673,14 +681,14 @@ jobs:
     needs: [plan, build]
     if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
-      - name: Checkout (for scripts/ci)
+      - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          repository: ${{ env.SOURCE_REPO }}
-          ref: ${{ env.SOURCE_REF }}
-          fetch-depth: 1
+        with: { path: .series, fetch-depth: 1 }
+      - name: The source tree, the Mozilla tag with our series applied (tools/engine.py)
+        shell: bash
+        run: python3 .series/tools/engine.py materialize --into .
       - name: The legs' events
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:

@@ -4,6 +4,8 @@
     python tools/engine.py export    write the series from the source tree
     python tools/engine.py verify    rebuild the tree from the series, compare
     python tools/engine.py check     the series' own rules, offline (also in CI)
+    python tools/engine.py apply --head <branch>   the series as a branch: tag + one commit per folder
+    python tools/engine.py materialize --into <dir> CI: fetch the tag, apply, check out the tree
 
 The Mozilla tag, the source branch and the commit last exported are in UPSTREAM.json;
 --source / --base / --head override them (the source repository defaults to
@@ -47,6 +49,12 @@ ROOT = Path(__file__).resolve().parent.parent
 INVENTORY = ROOT / "tools" / "inventory-157.json"
 UPSTREAM = ROOT / "UPSTREAM.json"
 BUDGET = ROOT / "tools" / "hook-budget.json"
+# The workflows live in the series (the tree's tests read them beside scripts/), and
+# GitHub runs them from this repository's root: export copies them there and check
+# requires the two identical. series.yml is the root's own.
+WORKFLOWS_SERIES = ROOT / "platform" / "ci" / "src" / ".github" / "workflows"
+WORKFLOWS_ROOT = ROOT / ".github" / "workflows"
+ROOT_ONLY_WORKFLOWS = {"series.yml"}
 
 
 def git(source: Path, *args: str, env=None, input_bytes=None) -> bytes:
@@ -136,10 +144,20 @@ def export(source: Path, base: str, head: str) -> None:
     (ROOT / "SERIES").write_text("\n".join(series) + "\n", encoding="utf-8", newline="\n")
     up = upstream()
     up["exported_from"] = git(source, "rev-parse", head).decode().strip()
+    up["exported_tree"] = git(source, "rev-parse", "%s^{tree}" % head).decode().strip()
     write_json(UPSTREAM, up)
     print("exported %d folders: %d modified files, %d added files, from %s"
           % (len(series), sum(len(plan[f]["modified"]) for f in series),
              sum(len(plan[f]["added"]) for f in series), up["exported_from"][:10]))
+
+
+def sync_workflows() -> None:
+    WORKFLOWS_ROOT.mkdir(parents=True, exist_ok=True)
+    for old in WORKFLOWS_ROOT.glob("*.yml"):
+        if old.name not in ROOT_ONLY_WORKFLOWS:
+            old.unlink()
+    for wf in WORKFLOWS_SERIES.glob("*.yml"):
+        (WORKFLOWS_ROOT / wf.name).write_bytes(wf.read_bytes())
 
 
 def describe(folder: str, manifest: dict) -> str:
@@ -178,13 +196,23 @@ def apply(source: Path, base: str, branch: str, force: bool) -> str:
         raise SystemExit("%s already exists in %s: pass --force to rebuild it (its commits are lost "
                          "unless exported first)" % (branch, source))
     parent = git(source, "rev-parse", "%s^{commit}" % base).decode().strip()
+    # Every layer is dated with the tag's own commit date: the same series on the same
+    # tag gives the same commits, byte for byte, on any machine. That makes the commit
+    # a seal records (source_commit) reproducible by anyone who has main and the tag,
+    # although it lives on no remote.
+    when = git(source, "log", "-1", "--format=%cI", parent).decode().strip()
     with tempfile.TemporaryDirectory() as tmp:
-        env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"), **IDENTITY)
+        env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"), **IDENTITY,
+                   GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
         git(source, "read-tree", parent, env=env)
         for folder in series_folders():
             patch = ROOT / folder / "hooks.patch"
             if patch.exists():
-                git(source, "apply", "--cached", "--whitespace=nowarn", str(patch), env=env)
+                done = subprocess.run(["git", "-C", str(source), "apply", "--cached", "--whitespace=nowarn",
+                                       str(patch)], capture_output=True, env=env)
+                if done.returncode:
+                    raise SystemExit("%s does not apply on %s:\n%s"
+                                     % (folder, base, done.stderr.decode(errors="replace")))
             manifest = json.loads((ROOT / folder / "MANIFEST.json").read_text(encoding="utf-8"))
             for path, mode in manifest["added"].items():
                 data = (ROOT / folder / "src" / path).read_bytes()
@@ -197,6 +225,36 @@ def apply(source: Path, base: str, branch: str, force: bool) -> str:
     print("%s: %s on top of %s, %d layers (tree %s)"
           % (branch, parent[:10], base, len(series_folders()), tree[:12]))
     return tree
+
+
+def materialize(into: Path, branch: str = "engine") -> str:
+    """For CI: makes `into` the engine's source tree, exactly as a checkout of the old
+    full-tree branch was. Fetches the Mozilla tag one commit deep from Mozilla's
+    repository, applies the series as `branch`, checks it out, and requires the tree to
+    be the one UPSTREAM.json declares. Prints the built commit."""
+    up = upstream()
+    into.mkdir(parents=True, exist_ok=True)
+    if not (into / ".git").exists():
+        git(into, "init", "-q")
+    exclude = into / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    rel = os.path.relpath(ROOT, into).replace("\\", "/")
+    if not rel.startswith(".."):
+        exclude.write_text("/%s/\n" % rel, encoding="utf-8")
+    tag = up["mozilla_tag"]
+    git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
+        "refs/tags/%s:refs/tags/%s" % (tag, tag))
+    tree = apply(into, tag, branch, force=True)
+    expected = up.get("exported_tree")
+    if expected and tree != expected:
+        raise SystemExit("the series applied to %s gives tree %s, UPSTREAM.json declares %s"
+                         % (tag, tree, expected))
+    # The working tree follows the machine's git config (core.autocrlf), exactly as the
+    # actions/checkout this replaces did: the Windows legs build what they built before.
+    git(into, "checkout", "-q", "-f", branch)
+    head = git(into, "rev-parse", "HEAD").decode().strip()
+    print("materialized %s: %s (tree %s)" % (into, head, tree[:12]))
+    return head
 
 
 def verify(source: Path, base: str, head: str) -> int:
@@ -281,6 +339,12 @@ def problems() -> list:
                              "into a file of ours and leave a hook" % (path, folder, n, allowed))
     for path in sorted(set(budget) - set(seen)):
         found.append("tools/hook-budget.json still lists %s, which no patch touches: remove it" % path)
+    series_wf = {p.name: p.read_bytes() for p in WORKFLOWS_SERIES.glob("*.yml")}
+    root_wf = {p.name: p.read_bytes() for p in WORKFLOWS_ROOT.glob("*.yml")}
+    for name in sorted(set(series_wf) | set(root_wf) - ROOT_ONLY_WORKFLOWS):
+        if series_wf.get(name) != root_wf.get(name):
+            found.append(".github/workflows/%s differs from the series' copy (platform/ci/src): "
+                         "edit it in the source, then export" % name)
     return found
 
 
@@ -320,7 +384,8 @@ def status(source: Path, head: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["status", "apply", "export", "verify", "check", "shrink-budget"])
+    ap.add_argument("command", choices=["status", "apply", "materialize", "export", "verify", "check", "shrink-budget"])
+    ap.add_argument("--into", type=Path, default=Path("."), help="materialize: the directory to make the tree")
     ap.add_argument("--source", type=Path, default=Path(os.environ.get("ENGINE_SOURCE", "C:/ff/source")))
     ap.add_argument("--base")
     ap.add_argument("--head", help="the source branch (apply: the branch it creates)")
@@ -328,6 +393,9 @@ def main() -> int:
     a = ap.parse_args()
     up = upstream()
     base, head = a.base or up["mozilla_tag"], a.head or up["source_branch"]
+    if a.command == "materialize":
+        materialize(a.into)
+        return 0
     if a.command == "apply":
         apply(a.source, base, head, a.force)
         return 0
