@@ -1,0 +1,6 @@
+{
+ "mozilla_tag": "FIREFOX_157_0_1_RELEASE",
+ "source_repository": "https://github.com/feder-cr/firefox_antidetect_patch",
+ "source_branch": "stealth/157",
+ "exported_from": "cbbd788a4315d48a4d3dd578ef4f96349d60dc1e"
+}

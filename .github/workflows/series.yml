@@ -1,0 +1,55 @@
+# The engine series on every push: its own rules, then the proof that it rebuilds
+# the engine. No Firefox build here: release.yml on the source branch builds it.
+name: series
+on:
+  push:
+    branches: [engine]
+  pull_request:
+    branches: [engine]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - name: The repo's tests
+        run: python -m pytest -q tools/tests
+      - name: The series' rules (folders, manifests, hook budgets)
+        run: python tools/engine.py check
+
+  rebuilds:
+    # Applies the series to the Mozilla tag in a throwaway index of a bare repository
+    # and compares the tree with the commit it was exported from: identical, or red.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          path: engine
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Fetch the Mozilla tag and the exported commit, one commit deep each
+        run: |
+          tag=$(python -c "import json;print(json.load(open('engine/UPSTREAM.json'))['mozilla_tag'])")
+          head=$(python -c "import json;print(json.load(open('engine/UPSTREAM.json'))['exported_from'])")
+          git init -q --bare source
+          git -C source fetch -q --depth 1 --no-tags "https://github.com/${{ github.repository }}" \
+            "refs/tags/$tag:refs/tags/$tag" "$head"
+          echo "TAG=$tag" >> "$GITHUB_ENV"; echo "HEAD_SHA=$head" >> "$GITHUB_ENV"
+      - name: The series rebuilds the exported commit exactly
+        run: python engine/tools/engine.py verify --source source --base "$TAG" --head "$HEAD_SHA"
+      - name: Has the source branch moved past the export?
+        run: |
+          branch=$(python -c "import json;print(json.load(open('engine/UPSTREAM.json'))['source_branch'])")
+          tip=$(git ls-remote "https://github.com/${{ github.repository }}" "refs/heads/$branch" | cut -f1)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::warning::$branch is at ${tip:0:10}, the series was exported from ${HEAD_SHA:0:10}: run tools/engine.py export, verify, commit"
+          fi
