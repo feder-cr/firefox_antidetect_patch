@@ -39,8 +39,10 @@ export function noneOffered(aUpdates) {
  * Called at the start of UpdateService's #downloadUpdate, the one door every
  * download goes through (a fresh offer, a download resumed from an earlier
  * session, the fallback to a complete update). After noneOffered nothing should
- * reach it; this is the backstop for update state left in the update directory
- * by another build installed at the same path.
+ * reach it; this is the backstop for a download left half done in the update
+ * directory by another build installed at the same path. It covers downloads
+ * only: an update another build already staged there is applied at startup by
+ * the C++ update driver, which never comes through here.
  *
  * @returns {boolean} true: the download is refused
  */

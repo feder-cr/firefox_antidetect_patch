@@ -20,7 +20,9 @@ senza installare").
   answer: `noneOffered()` after Mozilla parses it (every consumer then takes
   Mozilla's own no-update path: no prompt, no badge, no download),
   `refusesDownload()` at the one door of every download (backstop for update
-  state another build left at the same install path), `refusesHostTask()` at
+  a download another build left half done at the same install path; an update
+  it already staged is applied by the C++ driver at startup, not covered),
+  `refusesHostTask()` at
   the only place a browser run registers the Windows "Background Update"
   scheduled task.
 - We build with the unofficial branding, whose update timings are Nightly-like
