@@ -94,8 +94,9 @@
 #include "gfxFcPlatformFontList.h"
 #include "mozilla/AlreadyAddRefed.h"
 
-// Puts the file of a data-font face back into its pattern. Called at the end of
-// the data-font constructor of gfxFontconfigFontEntry.
+// Puts the file of a data-font face back into its pattern. Called by
+// StealthCreateBundleFontEntry right after it builds the entry with the
+// data-font constructor of gfxFontconfigFontEntry, which stays Mozilla's.
 //
 // STEALTH: `aFile`/`aIndex` sono il file da cui quella faccia viene, quando
 // ce n'e' uno. Per un font scaricato da una pagina non c'e' e restano vuoti,

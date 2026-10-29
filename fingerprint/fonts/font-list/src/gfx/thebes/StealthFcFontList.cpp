@@ -259,8 +259,13 @@ already_AddRefed<gfxFontEntry> StealthCreateBundleFontEntry(
   }
   nsAutoCString name(aFamily->DisplayName().AsString(aList));
   RefPtr fe = MakeRefPtr<gfxFontconfigFontEntry>(
-      name, aFace->mWeight, aFace->mWidth, aFace->mStyle, std::move(face),
-      percorso.IsEmpty() ? nullptr : percorso.get(), aFace->mIndex);
+      name, aFace->mWeight, aFace->mWidth, aFace->mStyle, std::move(face));
+  // The data-font constructor builds its pattern with CreatePatternForFace,
+  // which drops the file; it is declared again here, on the entry's own
+  // pattern, before anything reads it.
+  StealthDeclareFontFile(fe->GetPattern(),
+                         percorso.IsEmpty() ? nullptr : percorso.get(),
+                         aFace->mIndex);
   // Wire the entry back to its shared-list face, exactly as the non-stealth
   // path of CreateFontEntry does and as the CoreText bundle-only branch
   // (CoreTextFontList.cpp, CreateFontEntry) does. This branch omitted it -
