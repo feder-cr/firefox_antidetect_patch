@@ -96,5 +96,6 @@ diff. Opus decide solo i casi contesi.
 2. In corso: spostare la logica nei ganci, su un ramo sorgente dedicato, una funzione
    alla volta, dai file con più righe nostre (`hook-budget.json`).
 3. Poi: la build della release parte dalla serie applicata al tag, non dal ramo.
-4. Nuova versione di Firefox: si parte dalla beta. Si cambia `mozilla_tag`, si
-   applica la serie e si risolvono i rifiuti cartella per cartella.
+4. Nuova versione di Firefox: solo dal tag della release stabile ufficiale, mai da
+   una beta. Si cambia `mozilla_tag`, si prova `apply` (si ferma e nomina la cartella
+   che non si applica) e si risolvono i rifiuti cartella per cartella.
