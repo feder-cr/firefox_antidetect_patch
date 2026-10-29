@@ -70,7 +70,6 @@
  "third_party/python/vsdownload/vsdownload.py": 1,
  "toolkit/components/telemetry/app/TelemetrySend.sys.mjs": 15,
  "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs": 1,
- "toolkit/components/urlformatter/URLFormatter.sys.mjs": 17,
  "toolkit/components/windowwatcher/nsWindowWatcher.cpp": 2,
  "toolkit/modules/AppConstants.sys.mjs": 5,
  "toolkit/modules/moz.build": 6,

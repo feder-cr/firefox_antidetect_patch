@@ -65,6 +65,9 @@ function stealthDeclaredApiKey(pref) {
 
 // ⛔ STEALTHFOX: dichiarate da invisible_core, non incise nella build.
 // I getter restano pigri: la pref si legge a ogni formatURL, non al caricamento.
+// In fondo a URLFormatter.sys.mjs un Object.assign li scrive SOPRA i tre getter
+// di Mozilla, che restano come Mozilla li ha scritti e leggono voci di
+// AppConstants che non esistono piu' (undefined): non vengono mai chiamati.
 export function stealthApiKeyGetters() {
   return {
     MOZILLA_API_KEY: () => stealthDeclaredApiKey(PREF_APIKEY_MOZILLA),
@@ -76,7 +79,9 @@ export function stealthApiKeyGetters() {
 }
 
 // ⛔ STEALTHFOX: legge le stesse DICHIARAZIONI dei getter qui sopra, non
-// piu' le costanti di AppConstants. Se leggesse una fonte diversa da quella
+// piu' le costanti di AppConstants. Chiamata in testa a trimSensitiveURLs: il
+// codice di Mozilla che segue resta com'e' e, con quelle costanti undefined,
+// lascia il messaggio intatto. Se leggesse una fonte diversa da quella
 // che ha costruito la URL, questa redazione mancherebbe il bersaglio: e'
 // proprio il difetto delle due fonti di verita', qui in forma di chiave che
 // finisce nei log in chiaro. Passa da leggiChiaveSilenziosa, che NON registra

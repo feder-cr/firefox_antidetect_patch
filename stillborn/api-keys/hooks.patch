@@ -12,7 +12,7 @@ index fd8285620dd9e56deab8f3a80a10cd7f09188a4a..05ae33284e42ad7b3b51da6cd12722c5
      this.readPrefs();
  
 diff --git a/toolkit/components/urlformatter/URLFormatter.sys.mjs b/toolkit/components/urlformatter/URLFormatter.sys.mjs
-index 0485032ec57bee64f638c89f9314e75696563581..dd58d7429c975fae818c022011f2f8dbb510eb76 100644
+index 0485032ec57bee64f638c89f9314e75696563581..c322d6185e4a77f122fe7b4080766a965a7305a8 100644
 --- a/toolkit/components/urlformatter/URLFormatter.sys.mjs
 +++ b/toolkit/components/urlformatter/URLFormatter.sys.mjs
 @@ -14,6 +14,11 @@
@@ -27,40 +27,21 @@ index 0485032ec57bee64f638c89f9314e75696563581..dd58d7429c975fae818c022011f2f8db
  
  const PREF_APP_DISTRIBUTION = "distribution.id";
  const PREF_APP_DISTRIBUTION_VERSION = "distribution.version";
-@@ -121,11 +126,8 @@ nsURLFormatterService.prototype = {
-       return this.OSVersion;
-     },
-     CHANNEL: () => lazy.UpdateUtils.UpdateChannel,
--    MOZILLA_API_KEY: () => AppConstants.MOZ_MOZILLA_API_KEY,
--    GOOGLE_LOCATION_SERVICE_API_KEY: () =>
--      AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY,
--    GOOGLE_SAFEBROWSING_API_KEY: () =>
--      AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY,
-+    // STEALTH-HOOK(stillborn/api-keys)
-+    ...stealthApiKeyGetters(),
-     BING_API_CLIENTID: () => AppConstants.MOZ_BING_API_CLIENTID,
-     BING_API_KEY: () => AppConstants.MOZ_BING_API_KEY,
-     DISTRIBUTION() {
-@@ -179,17 +181,7 @@ nsURLFormatterService.prototype = {
+@@ -178,6 +183,7 @@ nsURLFormatterService.prototype = {
+   },
  
    trimSensitiveURLs: function uf_trimSensitiveURLs(aMsg) {
++    aMsg = stealthTrimApiKeys(aMsg); // STEALTH-HOOK(stillborn/api-keys)
      // Only the google API keys is sensitive for now.
--    aMsg = AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY
--      ? aMsg.replace(
--          RegExp(AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY, "g"),
--          "[trimmed-google-api-key]"
--        )
--      : aMsg;
--    return AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY
--      ? aMsg.replace(
--          RegExp(AppConstants.MOZ_GOOGLE_SAFEBROWSING_API_KEY, "g"),
--          "[trimmed-google-api-key]"
--        )
--      : aMsg;
-+    // STEALTH-HOOK(stillborn/api-keys)
-+    return stealthTrimApiKeys(aMsg);
+     aMsg = AppConstants.MOZ_GOOGLE_LOCATION_SERVICE_API_KEY
+       ? aMsg.replace(
+@@ -193,3 +199,6 @@ nsURLFormatterService.prototype = {
+       : aMsg;
    },
  };
++
++// STEALTH-HOOK(stillborn/api-keys)
++Object.assign(nsURLFormatterService.prototype._defaults, stealthApiKeyGetters());
 diff --git a/toolkit/components/urlformatter/moz.build b/toolkit/components/urlformatter/moz.build
 index ffc01ed8b6ebf20eab576e8c5928d33934e9e64c..1a38f6df3aa7d42983a10c76ceca4123b76abb84 100644
 --- a/toolkit/components/urlformatter/moz.build
