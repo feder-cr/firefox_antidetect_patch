@@ -85,7 +85,7 @@ index b6696c70c4b9065dd04683020010cb8f61e36791..d7fb0423acd95fce1b8536bf367e81c2
        kCTFontUIFontUser, 0.0, nullptr));  // TODO: language
    AutoCFTypeRef<CFStringRef> name(CTFontCopyFamilyName(font));
 diff --git a/gfx/thebes/gfxDWriteFontList.cpp b/gfx/thebes/gfxDWriteFontList.cpp
-index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..4a67026cd681bac0fd925b29f5493935e1109f0b 100644
+index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..c34c2fcae9dacf4a5aa748a3ca514634d5e4d8ed 100644
 --- a/gfx/thebes/gfxDWriteFontList.cpp
 +++ b/gfx/thebes/gfxDWriteFontList.cpp
 @@ -6,6 +6,7 @@
@@ -176,19 +176,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..4a67026cd681bac0fd925b29f5493935
    if (!aFamily->IsInitialized()) {
      if (!InitializeFamily(aFamily)) {
        return;
-@@ -1659,7 +1681,10 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
-   // We activate bundled fonts if the pref is > 0 (on) or < 0 (auto), only an
-   // explicit value of 0 (off) will disable them.
-   TimeStamp start1 = TimeStamp::Now();
--  if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
-+  // STEALTH-HOOK(fingerprint/fonts/font-list)
-+  if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0 &&
-+      StealthBundleFontList::NeedsPlatformBundledCollection(
-+          mStealthBundleOnly, XRE_IsParentProcess())) {
-     mBundledFonts = CreateBundledFontsCollection(factory);
-   }
-   TimeStamp end1 = TimeStamp::Now();
-@@ -1680,9 +1705,13 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
+@@ -1680,9 +1702,13 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
        forceClassicFams.Sort();
      }
      nsTArray<fontlist::Family::InitData> families;
@@ -204,7 +192,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..4a67026cd681bac0fd925b29f5493935
        TimeStamp start2 = TimeStamp::Now();
        AppendFamiliesFromCollection(mBundledFonts, families);
        TimeStamp end2 = TimeStamp::Now();
-@@ -1698,8 +1727,11 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
+@@ -1698,8 +1724,11 @@ void gfxDWriteFontList::InitSharedFontListForPlatform() {
      return;
    }
  
@@ -218,7 +206,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..4a67026cd681bac0fd925b29f5493935
  }
  
  nsresult gfxDWriteFontList::InitFontListForPlatform() {
-@@ -1765,12 +1797,16 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
+@@ -1765,12 +1794,16 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
  
    QueryPerformanceCounter(&t3);  // system font collection
  
@@ -238,7 +226,7 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..4a67026cd681bac0fd925b29f5493935
      glean::fontlist::dwritefont_init_problem.AccumulateSingleSample(
          uint32_t(errNoFonts));
      return NS_ERROR_FAILURE;
-@@ -1779,14 +1815,20 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
+@@ -1779,14 +1812,20 @@ nsresult gfxDWriteFontList::InitFontListForPlatform() {
    QueryPerformanceCounter(&t4);  // iterate over system fonts
  
    mOtherFamilyNamesInitialized = true;
@@ -261,6 +249,17 @@ index 38fd69a3ebdd6ca87627d961c2a951bd9f52c3a6..4a67026cd681bac0fd925b29f5493935
  
    // bug 551313 - DirectWrite creates a Gill Sans family out of
    // poorly named members of the Gill Sans MT family containing
+@@ -2720,6 +2759,10 @@ BundledFontLoader::CreateEnumeratorFromKey(
+ 
+ already_AddRefed<IDWriteFontCollection>
+ gfxDWriteFontList::CreateBundledFontsCollection(IDWriteFactory* aFactory) {
++  if (StealthBundleFontList::SkipsPlatformBundledCollection(  // STEALTH-HOOK(fingerprint/fonts/font-list)
++          SharedFontList() != nullptr, mStealthBundleOnly, XRE_IsParentProcess())) {
++    return nullptr;
++  }
+   nsCOMPtr<nsIFile> localDir;
+   nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(localDir));
+   if (NS_FAILED(rv)) {
 diff --git a/gfx/thebes/gfxFcPlatformFontList.cpp b/gfx/thebes/gfxFcPlatformFontList.cpp
 index e4a99a13e9ea4757f0de6437c6e974e79148aaf8..3eed4e5a667f3a8b26a0b61da0801ae4d00205d9 100644
 --- a/gfx/thebes/gfxFcPlatformFontList.cpp

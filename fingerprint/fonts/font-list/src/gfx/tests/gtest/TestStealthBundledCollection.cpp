@@ -39,6 +39,21 @@ TEST(StealthBundledCollection, WithoutBundleOnlyEveryProcessBuildsItAsUpstream)
   EXPECT_TRUE(StealthBundleFontList::NeedsPlatformBundledCollection(false, true));
 }
 
+// The hook in CreateBundledFontsCollection skips the collection only while the
+// shared list is built; the in-process fallback list builds it as before.
+TEST(StealthBundledCollection, SkippedOnlyForTheSharedListOfAContentProcess)
+{
+  EXPECT_TRUE(StealthBundleFontList::SkipsPlatformBundledCollection(
+      /* aBuildingSharedList */ true, /* aBundleOnly */ true,
+      /* aIsParentProcess */ false));
+  EXPECT_FALSE(StealthBundleFontList::SkipsPlatformBundledCollection(
+      false, true, false));
+  EXPECT_FALSE(
+      StealthBundleFontList::SkipsPlatformBundledCollection(true, true, true));
+  EXPECT_FALSE(
+      StealthBundleFontList::SkipsPlatformBundledCollection(true, false, false));
+}
+
 TEST(StealthBundledCollection, HostSubstitutesApplyAsUpstreamWithoutBundleOnly)
 {
   EXPECT_TRUE(StealthBundleFontList::UsesHostSubstitutes(false));

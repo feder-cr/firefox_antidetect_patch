@@ -137,6 +137,20 @@ class StealthBundleFontList final {
     return !aBundleOnly || aIsParentProcess;
   }
 
+  // The hook at the top of gfxDWriteFontList::CreateBundledFontsCollection:
+  // true makes it return no collection. Only while the SHARED list is built
+  // (aBuildingSharedList), the case NeedsPlatformBundledCollection is about;
+  // the in-process list, the fallback when the shared one fails, builds the
+  // collection as before. The hook sits in that function and not on the `if`
+  // that calls it because Firefox 159 rewrites that `if`'s body and leaves the
+  // function as it is.
+  static bool SkipsPlatformBundledCollection(bool aBuildingSharedList,
+                                             bool aBundleOnly,
+                                             bool aIsParentProcess) {
+    return aBuildingSharedList &&
+           !NeedsPlatformBundledCollection(aBundleOnly, aIsParentProcess);
+  }
+
   // Whether the platform's own substitute tables (the host registry's
   // FontSubstitutes and DirectWrite's hardcoded list) still feed the alias
   // lookup. Under bundle-only, with a manifest that carries aliases, they do
