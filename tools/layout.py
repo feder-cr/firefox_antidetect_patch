@@ -195,7 +195,6 @@ OWN_FILES = [
     (r"^netwerk/base/StealthSocksCredentials\.", "network/socks"),
     (r"^layout/style/StealthMediaFeatures\.", "fingerprint/screen-window/css-media"),
     (r"^js/src/vm/StealthStackFrames\.", "fingerprint/js-surface/stack-frames"),
-    (r"^gfx/thebes/StealthFontFileStream\.", "fingerprint/fonts/bundle"),
     (r"^gfx/2d/StealthRecordedProjection\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/workers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
     (r"^dom/media/webspeech/synth/test/test_stealth_voices\.", "fingerprint/media/speech-voices"),

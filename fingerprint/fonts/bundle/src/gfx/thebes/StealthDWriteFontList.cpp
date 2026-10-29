@@ -101,6 +101,7 @@
 
 #include <string>
 
+#include "FontData.h"
 #include "SharedFontList-impl.h"
 #include "StealthBundleFontList.h"
 #include "gfxDWriteCommon.h"
@@ -134,11 +135,15 @@ already_AddRefed<gfxFontEntry> gfxDWriteFontList::CreateStealthBundleFontEntry(
   if (!blob || !blob->Length()) {
     return nullptr;
   }
+  // The FontData only lends the cache's bytes (it never frees them), and
+  // Mozilla's own CreateCustomFontFile makes the stream that holds it; the
+  // FreeType path in StealthFcFontList.cpp lends them the same way.
+  RefPtr<FontData> lent =
+      new FontData(blob->Data(), blob->Length(), FontData::Borrowed::Yes);
   RefPtr<gfxDWriteFontFileStream> stream;
   RefPtr<IDWriteFontFile> fontFile;
-  HRESULT hr = gfxDWriteFontFileLoader::CreateBorrowedFontFile(
-      blob->Data(), blob->Length(), getter_AddRefs(fontFile),
-      getter_AddRefs(stream));
+  HRESULT hr = gfxDWriteFontFileLoader::CreateCustomFontFile(
+      lent, getter_AddRefs(fontFile), getter_AddRefs(stream));
   if (FAILED(hr)) {
     return nullptr;
   }

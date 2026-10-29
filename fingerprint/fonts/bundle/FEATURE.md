@@ -14,9 +14,7 @@ TODO: one paragraph, from the notes below.
 - `browser/installer/package-manifest.in` ((packaging manifest, fonts entry), already-hook): Packages @RESPATH@/fonts/* on macOS as well (upstream: Windows and GTK only). Packaging condition only; supports the bundled font set on every host.
 - `gfx/2d/ScaledFontDWrite.cpp` (UnscaledFontDWrite::GetFontDescriptor, already-hook): Returns the declared file path (UTF-16 with NUL terminator, same convention as the Mozilla file-name path) when one was passed to the constructor. Otherwise it falls through to Mozilla's own `if (!mFont) return false;` guard, which is left unchanged. The comment reports 65.9 MB sent to WebRender as bytes instead of a path ([B154]). Category is other, not spoof: the change alters what gfx passes to
 - `gfx/2d/UnscaledFontDWrite.h` (UnscaledFontDWrite constructor and member list (class UnscaledFontDWrite final : public UnscaledFont), already-hook): Adds an optional aFilePath argument with an empty default, so existing callers keep the upstream behaviour. Adds member mPercorsoDichiarato (std::wstring, ours) and the <string> include. Comment cross-references [B154].
-- `gfx/thebes/FontData.h` (class FontData (Borrowed constructor, destructor, member mBorrowed), already-hook): A borrowed FontData does not free its bytes. The bundle path on FreeType builds wraps the bytes lent by StealthBundleFontList in one and hands it to Mozilla's FTUserFontData(FontData*), whose CloneFace opens it as it opens any FontData. The bytes must outlive every face, which holds only because the bundle cache is immortal.
-- `gfx/thebes/gfxDWriteCommon.cpp` (gfxDWriteFontFileStream::GetFileSize; gfxDWriteFontFileStream::ReadFileFragment; gfxDWriteFontFileStream::Bytes and BytesLength (new); gfxDWriteFontFileLoader::CreateCustomFontFile (refactored into static CreateFontFileImpl); gfxDWriteFontFileLoader::CreateBorrowedFontFile (new), hard): Adds a non-owning DirectWrite stream that lends bytes to the immortal bundle cache instead of copying them into a FontData (comment: 106 MB where 35.4 MB is enough for one 35.4 MB .ttc). Hard to hook: the borrowed state lives in private members of Mozilla's gfxDWriteFontFileStream, and the two IDWriteFontFileStream methods that read them are Mozilla code. The CreateCustomFontFile body was also mov
-- `gfx/thebes/gfxDWriteCommon.h` (gfxDWriteFontFileStream (class: new Borrowed constructor, Bytes/BytesLength declarations, mBorrowed/mBorrowedLength members, SizeOfExcludingThis); gfxDWriteFontFileLoader::CreateBorrowedFontFile declaration, already-hook): Declarations for the borrowed stream. SizeOfExcludingThis still reports 0 for a borrowed stream, because the bundle cache reports those bytes. The header comment states the immortal-cache lifetime rule that the code depends on.
+- `gfx/thebes/FontData.h` (class FontData (Borrowed constructor, destructor, member mBorrowed), already-hook): A borrowed FontData does not free its bytes. The bundle path wraps the bytes lent by StealthBundleFontList in one: on FreeType builds it goes to Mozilla's FTUserFontData(FontData*), whose CloneFace opens it as it opens any FontData; on Windows to Mozilla's gfxDWriteFontFileLoader::CreateCustomFontFile, whose stream reads it as it reads any FontData. The bytes must outlive every face, which holds only because the bundle cache is immortal.
 - `gfx/thebes/gfxDWriteFontList.h` (gfxDWriteFontEntry (class members mBundleFaceIndex and mBundleFilePath), already-hook): Two members: mBundleFaceIndex (feature font-ttc-face-index, index inside a .ttc) and mBundleFilePath (feature font-bundle-file-path, the path given to WebRender). Only the path member is in this file's primary feature. Adds the <string> include.
 - `gfx/thebes/gfxFT2FontList.cpp` (FT2FontEntry::ReadCMAP; FT2FontEntry::GetFontTableInternal, already-hook): ReadCMAP now uses gfxFontEntry::ShouldPublishCharacterMap (see gfxFontEntry.cpp). Second hunk, feature font-ttc-face-index: the face index (face_index & 0x7FFF) is passed to GetTableFromFontData so tables are read from the right face of a .ttc.
 - `gfx/thebes/gfxFcPlatformFontList.h` (gfxFontconfigFontEntry::gfxFontconfigFontEntry (explicit constructor for data fonts), already-hook): Adds defaulted aFile and aIndex arguments, so upstream data-font callers compile unchanged. The bundle path passes both. Comment cross-references [B154].
@@ -233,21 +231,24 @@ The comment on the member `mPercorsoDichiarato`:
 
 STEALTH: vuoto per ogni font che non sia dei nostri imbarcati.
 
-## gfx/thebes/gfxDWriteCommon.h: gfxDWriteFontFileStream::SizeOfExcludingThis
+## Windows: the DirectWrite stream lends through FontData
 
-Hook: none in code (`SizeOfExcludingThis` still returns 0). Mozilla's comment in
-the header there says "We don't report the size of mData, because the original
-user font entry will account for that."; the sentence we appended to it, moved
-here unchanged:
+Until 2026-10-30 gfxDWriteCommon.cpp and .h carried a second kind of
+`gfxDWriteFontFileStream` that held lent bytes instead of a FontData (a
+`Borrowed` constructor, `Bytes()` / `BytesLength()` in `GetFileSize` and
+`ReadFileFragment`, and `CreateBorrowedFontFile`), and the body of
+`CreateCustomFontFile` with its static stream registry had moved into a file of
+ours: 36 of Mozilla's lines removed or rewritten in one file. It predates the
+Borrowed constructor of FontData. Now `CreateStealthBundleFontEntry`
+(StealthDWriteFontList.cpp) wraps the cache's bytes in a borrowed FontData and
+calls Mozilla's `CreateCustomFontFile`, so both files are Mozilla's again; one
+copy of each file still serves every face.
 
-A borrowed stream owns no bytes either, and
-counting the lender's would double-count them in about:memory: the
-bundle cache is where those bytes belong and where they are reported.
-
-(The Borrowed constructor, `Bytes()` / `BytesLength()` and
-`CreateBorrowedFontFile` carry their comments in gfx/thebes/StealthFontFileStream.cpp;
-the members `mBorrowed` / `mBorrowedLength` are described by the comment on
-`Bytes()` / `BytesLength()` there.)
+`gfxDWriteFontFileStream::SizeOfExcludingThis` reports 0 for every stream
+(Mozilla's comment: "We don't report the size of mData, because the original
+user font entry will account for that"). For a lent FontData that is also
+right: the bundle cache is where those bytes belong and where they are
+reported, and counting them again would double-count them in about:memory.
 
 ## gfx/thebes/gfxDWriteFontList.h: gfxDWriteFontEntry::mBundleFaceIndex and mBundleFilePath
 

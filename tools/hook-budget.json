@@ -108,8 +108,6 @@
  "gfx/tests/gtest/moz.build": 11,
  "gfx/thebes/CoreTextFontList.cpp": 32,
  "gfx/thebes/FontData.h": 10,
- "gfx/thebes/gfxDWriteCommon.cpp": 8,
- "gfx/thebes/gfxDWriteCommon.h": 17,
  "gfx/thebes/gfxDWriteFontList.cpp": 56,
  "gfx/thebes/gfxDWriteFontList.h": 9,
  "gfx/thebes/gfxDWriteFonts.cpp": 11,

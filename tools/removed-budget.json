@@ -36,7 +36,6 @@
  "gfx/2d/UnscaledFontDWrite.h": 2,
  "gfx/thebes/CoreTextFontList.cpp": 1,
  "gfx/thebes/FontData.h": 1,
- "gfx/thebes/gfxDWriteCommon.cpp": 36,
  "gfx/thebes/gfxDWriteFontList.cpp": 13,
  "gfx/thebes/gfxDWriteFonts.cpp": 3,
  "gfx/thebes/gfxFT2FontBase.cpp": 1,
