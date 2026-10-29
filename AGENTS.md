@@ -58,6 +58,29 @@ python -m pytest -q tools/tests
   `// STEALTH-HOOK(<cartella>)`. La logica va in un file nostro (`Stealth*.cpp/.h`
   accanto al gancio), registrato in `layout.OWN_FILES`. Ogni conflitto del passaggio
   151 → 157 (53 file) era logica nostra dentro file di Mozilla.
+- **Dove si mette il gancio.** Git fonde senza conflitto se fra la nostra modifica e
+  quella di Mozilla resta anche una sola riga invariata. Quindi mai dentro una lista
+  di Mozilla né in fondo a un blocco, perché è lì che Mozilla aggiunge a ogni release.
+  Nei `moz.build` la voce va dopo la `]` di chiusura:
+  `VAR += ["StealthX.cpp"]  # STEALTH-HOOK(<cartella>)`, una riga per cartella. Nel
+  codice, meglio una chiamata in testa a una funzione che Mozilla lascia com'è che una
+  condizione dentro un `if` che Mozilla riscrive. La prova è
+  `port --to <tag nuovo>`: ogni conflitto è un gancio da spostare o una riga che
+  Mozilla riscrive davvero.
+- **Niente valori nostri negli spazi numerati di Mozilla** (bit di flag, valori di
+  enum, costanti IDL). Mozilla li assegna alla release dopo e la fusione non lo segnala:
+  in 159 il bit 25 di `nsIWebBrowserChrome`, che era il nostro flag, diventa
+  `CHROME_MEDIA_PIP`. Le nostre costanti stanno nei nostri file, su valori che
+  Mozilla lascia liberi, con un test che lo controlla
+  (`juggler/tests/explicit_size_flag_is_free.test.mjs`).
+- **Prima di ogni build di prova**, nel sorgente: `python build/stealth_check_sources.py`
+  e `python build/stealth_check_build_files.py`. In circa mezzo minuto trovano ciò che
+  la CI trova dopo un'ora:
+  - un nome `mozilla::` che non sta in quel namespace;
+  - una macro degli header di Windows;
+  - un livello di log di nICEr fuori da `namespace mozilla`;
+  - una lista di build non valida;
+  - un nostro sorgente che nessuno compila.
 - **Il tetto per file scende soltanto.** `tools/hook-budget.json` dice quante righe
   nostre porta ogni file di Mozilla; `check` fallisce se una cresce. Dopo aver spostato
   logica: `shrink-budget`. Un tetto non si alza mai: si sposta la logica.
