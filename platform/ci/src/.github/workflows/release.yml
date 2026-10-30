@@ -189,15 +189,41 @@ jobs:
           # passed 14 GB resident (run 40500378511), on a 16 GB runner. 32 GB
           # since the Windows leg's link used 24.4 of those 24 (run
           # 40520853142), with 56 GB of disk still free at its lowest.
+          # Compressed swap in RAM first (2026-10-30). The full-LTO link lives in
+          # swap: in run 40965451707 the Windows link held 14.5 GB resident and
+          # 24 GB in swap and took 78 min, 55 min on 2026-10-28 for the same link,
+          # so the disk under the swap decides. zram (zstd, priority 100) keeps the
+          # pages compressed in memory, and reading one back costs CPU, not disk.
+          # When it is full the kernel goes on to the swap file (priority 10), on
+          # the runner's temporary disk /mnt when it has room, which also leaves /
+          # to the objdir. The binary does not change: only where pages wait.
           sudo swapoff -a
           sudo rm -f /swapfile
-          sudo fallocate -l 32G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile >/dev/null
-          sudo swapon /swapfile
-          SWAP_MB="$(free -m | awk 'NR==3{print $2}')"
-          echo "swap: ${SWAP_MB} MB"
-          [ "$SWAP_MB" -ge 32000 ] || { echo "ERROR: only ${SWAP_MB} MB of swap"; exit 1; }
+          if sudo modprobe zram 2>/dev/null || { sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && sudo modprobe zram; }; then
+            # 28G: the Windows link needs ~26 GB of swap and its pages compress ~4:1
+            # (run 41013087933: link 45 min, against 57 at 16G and 78 on the disk).
+            ZRAM="$(sudo zramctl --find --size 28G --algorithm zstd)"
+            echo 10G | sudo tee "/sys/block/${ZRAM#/dev/}/mem_limit" >/dev/null
+            sudo mkswap "$ZRAM" >/dev/null
+            sudo swapon -p 100 "$ZRAM"
+            sudo sysctl -q vm.page-cluster=0
+            echo "swap: zram $ZRAM, 28G of pages in at most 10 GB of memory, first" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::no zram on this runner: the swap is the disk file alone"
+            echo "swap: NO zram on this runner, the disk file alone" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          SWAPFILE=/swapfile
+          if [ -d /mnt ] && [ "$(df -BG --output=avail /mnt | tail -1 | tr -dc 0-9)" -ge 40 ]; then
+            SWAPFILE=/mnt/swapfile
+          fi
+          sudo fallocate -l 32G "$SWAPFILE"
+          sudo chmod 600 "$SWAPFILE"
+          sudo mkswap "$SWAPFILE" >/dev/null
+          sudo swapon -p 10 "$SWAPFILE"
+          echo "swap file: $SWAPFILE" | tee -a "$GITHUB_STEP_SUMMARY"
+          cat /proc/swaps
+          FILE_MB="$(awk -v f="$SWAPFILE" '$1==f{print int($3/1024)}' /proc/swaps)"
+          [ "${FILE_MB:-0}" -ge 32000 ] || { echo "ERROR: only ${FILE_MB:-0} MB of swap file"; exit 1; }
 
       - name: Python for the series tool
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -513,6 +539,13 @@ jobs:
           if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log & fi
           python3 scripts/ci phase build -- ./mach build --keep-going
           if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
+      - name: Swap - what the build left in zram and in the file
+        if: always()
+        run: |
+          # How much of the link went to zram, how well it compressed, and whether
+          # the file was reached: the numbers that say if the compressed swap paid.
+          cat /proc/swaps
+          sudo zramctl --output-all 2>/dev/null || true
       - name: Upload the logs of a failed build
         if: failure() || cancelled()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

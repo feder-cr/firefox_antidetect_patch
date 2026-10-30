@@ -38,7 +38,8 @@ def main() -> int:
     save = step(text, "Compile cache (candidates only) - save this leg's")
     cond = re.search(r"^\s+if: (.*)$", save, re.M).group(1)
     size = int(re.search(r"SCCACHE_CACHE_SIZE=(\d+)G", text).group(1))
-    swap = int(re.search(r"fallocate -l (\d+)G /swapfile", text).group(1))
+    swap = int(re.search(r"fallocate -l (\d+)G \"\$SWAPFILE\"", text).group(1))
+    swap_step = step(text, "Free disk + 32G swap (Linux runners)")
     cases = [
         ("the Build step has id build", re.search(r"^\s+id: build$", build, re.M) is not None),
         ("the save waits for the Build step to have started",
@@ -49,6 +50,10 @@ def main() -> int:
          LEGS * size <= REPO_LIMIT_GB),
         ("the cache per leg (%d GB) holds a PGO + LTO build" % size, size >= 30),
         ("the swap (%d GB) holds the Windows full-LTO link" % swap, swap >= 32),
+        ("the compressed swap in RAM comes before the file (zram priority 100, file 10)",
+         "swapon -p 100 \"$ZRAM\"" in swap_step and "swapon -p 10 \"$SWAPFILE\"" in swap_step),
+        ("a runner without zram says so instead of building as if it had it",
+         "::warning::no zram" in swap_step),
     ]
     failures = 0
     for name, ok in cases:
