@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: feder-cr/invisible_core
-          ref: 5e0ed383490fabcb21e90a600b1af6c0fc16bb7c
+          ref: e64b20f719a3e751e31af16a0c7d8abb5b9c3349
           path: core
           persist-credentials: false
       - run: pip install -e "./core[dev]"
