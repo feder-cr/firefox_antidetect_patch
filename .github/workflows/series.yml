@@ -37,3 +37,42 @@ jobs:
           python-version: "3.12"
       - name: The Mozilla tag from Mozilla, the series applied, the declared tree
         run: python .series/tools/engine.py materialize --into source
+      # The core's checks that read the engine's source: pref types and readers,
+      # prefs the binary reads, the Juggler contract and protocol, the WebGL
+      # extension order, the font manifest. In the core's own CI they skip, as no
+      # engine tree is there; here they read the tree this commit materializes,
+      # on every push and on every port to a new Firefox tag. A skip fails the
+      # step: it means a check did not read the tree.
+      # The core is pinned by commit, like the actions: a core change cannot turn
+      # this check red with no engine change. A port moves it to the core commit
+      # made for that Firefox (today engine/firefox-159, which carries
+      # STEALTH_FIREFOX_COMMIT and the WebGL lists of 159).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_core
+          ref: 5e0ed383490fabcb21e90a600b1af6c0fc16bb7c
+          path: core
+          persist-credentials: false
+      - run: pip install -e "./core[dev]"
+      - name: The core's checks, against this tree
+        working-directory: core
+        shell: bash
+        env:
+          STEALTH_FIREFOX_SRC: ${{ github.workspace }}/source
+        run: |
+          # The full sha, not HEAD: the core strips "<commit>:" from git grep lines.
+          export STEALTH_FIREFOX_COMMIT="$(git -C "$STEALTH_FIREFOX_SRC" rev-parse HEAD)"
+          python -m pytest -q -rs --junitxml=../core-checks.xml \
+            tests/test_pref_types.py tests/test_prefs_surface.py \
+            tests/test_juggler_contract.py tests/test_juggler_protocol_mirror.py \
+            tests/test_webgl_extensions_follow_the_engine.py
+          python - <<'EOF'
+          import sys, xml.etree.ElementTree as ET
+          suite = ET.parse("../core-checks.xml").getroot().iter("testsuite")
+          counts = [(int(s.get("tests")), int(s.get("skipped"))) for s in suite]
+          tests, skipped = sum(t for t, _ in counts), sum(s for _, s in counts)
+          print("core checks: %d tests, %d skipped" % (tests, skipped))
+          if not tests or skipped:
+              print("::error::a core check skipped or none ran: it did not read this tree")
+              sys.exit(1)
+          EOF
