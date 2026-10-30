@@ -1,5 +1,5 @@
 diff --git a/uriloader/exthandler/moz.build b/uriloader/exthandler/moz.build
-index a88b18c4d436b598d63522526534a0ea7297a7d4..5398103b6aa61d2c23dec3f23e509d91a490cd18 100644
+index a88b18c4d436b598d63522526534a0ea7297a7d4..81587a331a44d33387db633f8cfeb3585e06a51f 100644
 --- a/uriloader/exthandler/moz.build
 +++ b/uriloader/exthandler/moz.build
 @@ -18,6 +18,7 @@ XPIDL_SOURCES += [
@@ -10,11 +10,27 @@ index a88b18c4d436b598d63522526534a0ea7297a7d4..5398103b6aa61d2c23dec3f23e509d91
  
  XPIDL_MODULE = "exthandler"
  
+@@ -60,6 +61,7 @@ UNIFIED_SOURCES += [
+     "nsMIMEInfoImpl.cpp",
+     "nsOSHelperAppServiceChild.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthDownloadIntercept.cpp"]  # STEALTH-HOOK(automation/downloads)
+ 
+ if CONFIG["MOZ_BUILD_APP"] == "browser":
+     DEFINES["MOZ_BUILD_APP_IS_BROWSER"] = True
 diff --git a/uriloader/exthandler/nsExternalHelperAppService.cpp b/uriloader/exthandler/nsExternalHelperAppService.cpp
-index ccebdcc8fee746d1c869f0de5308bf830fba1a04..57b56a8775482586d09730abbf6833748c890cbf 100644
+index ccebdcc8fee746d1c869f0de5308bf830fba1a04..6777f605701621af15bd502d7b9a62df4a0a6351 100644
 --- a/uriloader/exthandler/nsExternalHelperAppService.cpp
 +++ b/uriloader/exthandler/nsExternalHelperAppService.cpp
-@@ -392,6 +392,13 @@ NS_IMETHODIMP nsExternalHelperAppService::GetPreferredDownloadsDirectory(
+@@ -118,6 +118,7 @@
+ #include "mozilla/ClearOnShutdown.h"
+ #include "mozilla/Preferences.h"
+ #include "mozilla/ipc/URIUtils.h"
++#include "StealthDownloadIntercept.h"  // STEALTH-HOOK(automation/downloads)
+ 
+ using namespace mozilla;
+ using namespace mozilla::ipc;
+@@ -392,6 +393,13 @@ NS_IMETHODIMP nsExternalHelperAppService::GetPreferredDownloadsDirectory(
    return NS_OK;
  }
  
@@ -28,22 +44,59 @@ index ccebdcc8fee746d1c869f0de5308bf830fba1a04..57b56a8775482586d09730abbf683374
  /**
   * Obtains the initial directory to save downloads to. (This may differ from the
   * actual download directory if "browser.download.start_downloads_in_tmp_dir" is
+@@ -1753,6 +1761,9 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
+     return NS_OK;
+   }
+ 
++  // STEALTH-HOOK(automation/downloads): the interceptor may own the download.
++  if (StealthDownloadIntercept::Start(this, request)) return NS_OK;
++
+   rv = SetUpTempFile(aChannel);
+   if (NS_FAILED(rv)) {
+     nsresult transferError = rv;
+@@ -2341,6 +2352,7 @@ nsExternalAppHandler::OnSaveComplete(nsIBackgroundFileSaver* aSaver,
+     NotifyTransfer(aStatus);
+   }
+ 
++  StealthDownloadIntercept::Complete(this, aStatus);  // STEALTH-HOOK(automation/downloads)
+   return NS_OK;
+ }
+ 
+@@ -2837,6 +2849,7 @@ NS_IMETHODIMP nsExternalAppHandler::Cancel(nsresult aReason) {
+   // observer of the listener).
+   mDialogProgressListener = nullptr;
+ 
++  StealthDownloadIntercept::Complete(this, aReason);  // STEALTH-HOOK(automation/downloads)
+   return NS_OK;
+ }
+ 
 diff --git a/uriloader/exthandler/nsExternalHelperAppService.h b/uriloader/exthandler/nsExternalHelperAppService.h
-index 477afd0a414b35af6b4acc13fa0321d826ae7d65..fa1d0acb09503ce8ee27a0bf406dd229c0da11d6 100644
+index 477afd0a414b35af6b4acc13fa0321d826ae7d65..132b2bc6117b735373ac371f229c0d2d06498382 100644
 --- a/uriloader/exthandler/nsExternalHelperAppService.h
 +++ b/uriloader/exthandler/nsExternalHelperAppService.h
-@@ -302,6 +302,11 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
+@@ -302,6 +302,12 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
        mozilla::dom::BrowsingContext* aContentContext, bool aForceSave,
        nsIInterfaceRequestor* aWindowContext,
        nsIStreamListener** aStreamListener);
 +
-+  // Stealthfox: Juggler-side download interceptor (set via
-+  // setDownloadInterceptor). When non-null, CreateSaverForTempFile
-+  // consults it to redirect downloads into Playwright's downloadOptions.
++  // Stealthfox: our automation's download interceptor (set via
++  // setDownloadInterceptor). When non-null, StealthDownloadIntercept::Start
++  // asks it to redirect each download into the automation's downloads folder.
 +  nsCOMPtr<nsIDownloadInterceptor> mInterceptor;
++  friend class StealthDownloadIntercept;  // STEALTH-HOOK(automation/downloads)
  };
  
  /**
+@@ -603,6 +609,9 @@ class nsExternalAppHandler final : public nsIStreamListener,
+   nsCOMPtr<nsIRequest> mRequest;
+ 
+   RefPtr<nsExternalHelperAppService> mExtProtSvc;
++
++  friend class StealthDownloadIntercept;  // STEALTH-HOOK(automation/downloads)
++  bool mStealthIntercepted = false;       // STEALTH-HOOK(automation/downloads)
+ };
+ 
+ #endif  // nsExternalHelperAppService_h_
 diff --git a/uriloader/exthandler/nsIExternalHelperAppService.idl b/uriloader/exthandler/nsIExternalHelperAppService.idl
 index f5c40986adad5a9354d1ef1b86e058c83064a7f6..e6bf3f0c324ec219582a03c2ae7485683f7ce5f6 100644
 --- a/uriloader/exthandler/nsIExternalHelperAppService.idl

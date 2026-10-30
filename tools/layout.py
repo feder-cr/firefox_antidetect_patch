@@ -185,6 +185,7 @@ OWN_FILES = [
     (r"^dom/base/StealthInputEventBirth\.", "fingerprint/input/event-birth"),
     (r"^netwerk/base/StealthSocksUdp\.", "network/proxy-udp"),
     (r"^uriloader/exthandler/StealthDownloadInterceptor\.", "automation/downloads"),
+    (r"^uriloader/exthandler/StealthDownloadIntercept\.", "automation/downloads"),
     (r"^toolkit/components/windowwatcher/StealthWindowPlacement\.", "fingerprint/screen-window/popup-position"),
     (r"^toolkit/components/windowwatcher/JugglerWindowSize\.", "automation/window-size"),
     (r"^toolkit/components/telemetry/pings/StealthPingsenderRoute\.sys\.", "stillborn/telemetry"),

@@ -2,11 +2,20 @@
 
 Category: juggler
 Prefs: none read directly
-Test: TODO
+Test: juggler/tests/download_complete_follows_the_idl.test.mjs; end to end in the wrapper (tests/test_download_is_intercepted_e2e.py)
 
 ## What it does
 
-TODO: one paragraph, from the notes below.
+Our automation's download interceptor (Juggler, juggler/TargetRegistry.js) owns
+the downloads its client asked for (Browser.setDownloadOptions). In
+nsExternalAppHandler::OnStartRequest, before SetUpTempFile, StealthDownloadIntercept
+asks it; when it takes the download, the saver writes straight to the file it
+chose, with no nsITransfer and no downloads UI, and exactly one
+onDownloadComplete follows (OnSaveComplete or Cancel; empty error name on
+success). No interceptor, or one that declines or throws: stock Firefox.
+Until 2026-10-30 only the setter existed and nothing read it, so no download
+event ever reached the client. Hook ceilings went up for it then:
+nsExternalHelperAppService.cpp 7 -> 13, .h 5 -> 9, moz.build 1 -> 2.
 
 ## Hooks in Mozilla files
 

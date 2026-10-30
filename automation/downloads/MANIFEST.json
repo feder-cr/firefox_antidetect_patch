@@ -6,6 +6,8 @@
   "uriloader/exthandler/nsIExternalHelperAppService.idl"
  ],
  "added": {
+  "uriloader/exthandler/StealthDownloadIntercept.cpp": "100644",
+  "uriloader/exthandler/StealthDownloadIntercept.h": "100644",
   "uriloader/exthandler/StealthDownloadInterceptor.idl": "100644"
  },
  "inventory": [

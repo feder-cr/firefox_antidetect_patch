@@ -85,19 +85,19 @@ class DownloadInterceptor {
     return true;
   }
 
-  onDownloadComplete(externalAppHandler, canceled, errorName) {
+  // nsIDownloadInterceptor.onDownloadComplete(aHandler, aErrorName): the error
+  // name is empty on success and NS_BINDING_ABORTED for a cancel.
+  onDownloadComplete(externalAppHandler, errorName) {
     const uuid = this._handlerToUuid.get(externalAppHandler);
     if (!uuid)
       return;
     this._handlerToUuid.delete(externalAppHandler);
     this._uuidToHandler.delete(uuid);
-    const downloadInfo = {
-      uuid,
-      error: errorName,
-    };
-    if (canceled === 'NS_BINDING_ABORTED') {
+    const downloadInfo = { uuid };
+    if (errorName === 'NS_BINDING_ABORTED')
       downloadInfo.canceled = true;
-    }
+    else if (errorName)
+      downloadInfo.error = errorName;
     this._registry.emit(TargetRegistry.Events.DownloadFinished, downloadInfo);
   }
 

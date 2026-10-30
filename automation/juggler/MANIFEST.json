@@ -44,6 +44,7 @@
   "juggler/tests/bfcache_reattach.test.mjs": "100644",
   "juggler/tests/caller_world.test.mjs": "100644",
   "juggler/tests/crashed_tab_is_closed.test.mjs": "100644",
+  "juggler/tests/download_complete_follows_the_idl.test.mjs": "100644",
   "juggler/tests/explicit_size_flag_is_free.test.mjs": "100644",
   "juggler/tests/frame_tree.test.mjs": "100644",
   "juggler/tests/input_waits_are_bounded.test.mjs": "100644",
