@@ -1,8 +1,8 @@
 diff --git a/netwerk/protocol/http/nsHttpHandler.cpp b/netwerk/protocol/http/nsHttpHandler.cpp
-index 0699d970c4d1fdeb054474b57bffa4f945196cec..7a7dd6e98f6f8177d6d7ef5cc11681adf5659fa0 100644
+index c35867b90d600ce2259456663894b640453591e0..dd65bca2318a5d2d72b7328f63c9f193db76af2a 100644
 --- a/netwerk/protocol/http/nsHttpHandler.cpp
 +++ b/netwerk/protocol/http/nsHttpHandler.cpp
-@@ -745,6 +745,9 @@ nsresult nsHttpHandler::AddAcceptAndDictionaryHeaders(
+@@ -746,6 +746,9 @@ nsresult nsHttpHandler::AddAcceptAndDictionaryHeaders(
    return rv;
  }
  
@@ -12,7 +12,7 @@ index 0699d970c4d1fdeb054474b57bffa4f945196cec..7a7dd6e98f6f8177d6d7ef5cc11681ad
  nsresult nsHttpHandler::AddStandardRequestHeaders(
      nsHttpRequestHead* request, nsIURI* aURI, bool aIsHTTPS,
      ExtContentPolicyType aContentPolicyType, bool aShouldResistFingerprinting,
-@@ -783,11 +786,16 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
+@@ -784,11 +787,16 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
    if (NS_FAILED(rv)) return rv;
  
    if (!aLanguageOverride.IsEmpty()) {
@@ -33,10 +33,10 @@ index 0699d970c4d1fdeb054474b57bffa4f945196cec..7a7dd6e98f6f8177d6d7ef5cc11681ad
      // Add the "Accept-Language" header.  This header is also exposed to the
      // service worker.
 diff --git a/netwerk/test/browser/browser.toml b/netwerk/test/browser/browser.toml
-index 24097aa6963f92649df8e9a038e25ed3fedcff24..3e91038754c44c385d0364a476ac882e56ce895c 100644
+index 4f7dd3a7a4a5e82b697e98efb416ad378f861050..64e95db92463fc322b0ccae88bd2032f7f17cdf4 100644
 --- a/netwerk/test/browser/browser.toml
 +++ b/netwerk/test/browser/browser.toml
-@@ -230,6 +230,9 @@ skip-if = [
+@@ -227,6 +227,9 @@ skip-if = [
  
  ["browser_speculative_connection_link_header.js"]
  

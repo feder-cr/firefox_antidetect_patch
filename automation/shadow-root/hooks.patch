@@ -1,16 +1,16 @@
 diff --git a/dom/base/Element.cpp b/dom/base/Element.cpp
-index 8a333bb3c32d171d1c5d651f7be46acc3fed461d..5b56f6ffe055e30630d8a337d51f531ca204daa4 100644
+index b0f08fd6241f36b7a499d33613030f27a63aab96..ecfb19362f30f4ea80fe51ea1f45df177b0b2bdb 100644
 --- a/dom/base/Element.cpp
 +++ b/dom/base/Element.cpp
-@@ -207,6 +207,7 @@
+@@ -210,6 +210,7 @@
  #include "nsThreadUtils.h"
  #include "nsWindowSizes.h"
  #include "nsXULElement.h"
 +#include "StealthShadowRoot.h"  // STEALTH-HOOK(automation/shadow-root)
  
  #ifdef DEBUG
- #  include "nsRange.h"
-@@ -1387,14 +1388,15 @@ void Element::SetSlot(const nsAString& aName, ErrorResult& aError) {
+ #  include "mozilla/dom/Range.h"
+@@ -1385,14 +1386,15 @@ void Element::SetSlot(const nsAString& aName, ErrorResult& aError) {
  void Element::GetSlot(nsAString& aName) { GetAttr(nsGkAtoms::slot, aName); }
  
  // https://dom.spec.whatwg.org/#dom-element-shadowroot
@@ -29,10 +29,10 @@ index 8a333bb3c32d171d1c5d651f7be46acc3fed461d..5b56f6ffe055e30630d8a337d51f531c
  
    /**
 diff --git a/dom/base/Element.h b/dom/base/Element.h
-index 6add54272775deac7e144d2b2f4715a26922962e..114d30c5d29cf603e3b349efbf8640fe04d58425 100644
+index d21ad1a44c6b36de916fda72ca928290f60e1fa5..ad8abf78e1e2c73eb79068b210789eba1eeb2607 100644
 --- a/dom/base/Element.h
 +++ b/dom/base/Element.h
-@@ -1795,7 +1795,8 @@ class Element : public FragmentOrElement {
+@@ -1801,7 +1801,8 @@ class Element : public FragmentOrElement {
    void SetSlot(const nsAString& aName, ErrorResult& aError);
    void GetSlot(nsAString& aName);
  
@@ -43,7 +43,7 @@ index 6add54272775deac7e144d2b2f4715a26922962e..114d30c5d29cf603e3b349efbf8640fe
    [[nodiscard]] ShadowRoot* GetShadowRoot() const {
      const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
 diff --git a/dom/webidl/Element.webidl b/dom/webidl/Element.webidl
-index f87c999b86fff5ca0cc05e73e84d658e468a9873..da97ea96743bf300d48cb496b50b62c752932a0a 100644
+index 827724eb7766b964e7053ccc9731ad7cd8f0afd3..89a645535453474476cb0f0d7387afbd8021e368 100644
 --- a/dom/webidl/Element.webidl
 +++ b/dom/webidl/Element.webidl
 @@ -292,7 +292,10 @@ partial interface Element {

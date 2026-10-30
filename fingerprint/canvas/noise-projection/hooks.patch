@@ -45,7 +45,7 @@ index ff8d4fd4c236caede353ccd6d5280982c91b140f..e19e774a92a591a0dc703b2c29dd30c7
  }  // namespace mozilla
  
 diff --git a/dom/canvas/ClientWebGLContext.h b/dom/canvas/ClientWebGLContext.h
-index 6f73f55eefac82b8a5a6e1d200804a3957badab2..9cef3d4e6b971ffeea4e934ca550a9127016e8f1 100644
+index 6996d25296b650e8890abb18269801073b3f6140..9bdd0566324424bc26431e192d82d337ef551356 100644
 --- a/dom/canvas/ClientWebGLContext.h
 +++ b/dom/canvas/ClientWebGLContext.h
 @@ -743,6 +743,8 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
@@ -71,7 +71,7 @@ index 6f73f55eefac82b8a5a6e1d200804a3957badab2..9cef3d4e6b971ffeea4e934ca550a912
    RefPtr<dom::HTMLCanvasElement::SurfaceSnapshotPromise>
    BackBufferSnapshotAsync();
 diff --git a/dom/canvas/OffscreenCanvas.cpp b/dom/canvas/OffscreenCanvas.cpp
-index 34d57935a4b5a6180076cbdc938e40e49e11700f..ac05a1abb6d3e68153563350c5982e9cecfcb022 100644
+index 8250ac8f6d466422b965fe62d4051a30d8efbe03..a052e1ec489a38cf88e4b700c9059504f04caf64 100644
 --- a/dom/canvas/OffscreenCanvas.cpp
 +++ b/dom/canvas/OffscreenCanvas.cpp
 @@ -11,6 +11,7 @@
@@ -82,7 +82,7 @@ index 34d57935a4b5a6180076cbdc938e40e49e11700f..ac05a1abb6d3e68153563350c5982e9c
  #include "WebGLChild.h"
  #include "mozilla/Atomics.h"
  #include "mozilla/CheckedInt.h"
-@@ -593,7 +594,8 @@ already_AddRefed<gfx::SourceSurface> OffscreenCanvas::GetSurfaceSnapshot(
+@@ -594,7 +595,8 @@ already_AddRefed<gfx::SourceSurface> OffscreenCanvas::GetSurfaceSnapshot(
      return nullptr;
    }
  
@@ -93,10 +93,10 @@ index 34d57935a4b5a6180076cbdc938e40e49e11700f..ac05a1abb6d3e68153563350c5982e9c
  
  void OffscreenCanvas::SetWriteOnly(RefPtr<nsIPrincipal>&& aExpandedReader) {
 diff --git a/dom/canvas/OffscreenCanvasDisplayHelper.cpp b/dom/canvas/OffscreenCanvasDisplayHelper.cpp
-index 209d4980bc47f0e030613483d76f7e59f46cf20a..b613d765fc58930af082e0af435b4ac5687a2b9f 100644
+index cc5c8ad787a58f3763a10d029b984ceb3a3f07e0..9cb0bbad450f246ac761151f6b9c6dcf67b98a41 100644
 --- a/dom/canvas/OffscreenCanvasDisplayHelper.cpp
 +++ b/dom/canvas/OffscreenCanvasDisplayHelper.cpp
-@@ -458,6 +458,13 @@ OffscreenCanvasDisplayHelper::TransformSurface(gfx::SourceSurface* aSurface,
+@@ -526,6 +526,13 @@ OffscreenCanvasDisplayHelper::TransformSurface(gfx::SourceSurface* aSurface,
  already_AddRefed<gfx::SourceSurface>
  OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
    MOZ_ASSERT(NS_IsMainThread());
@@ -110,7 +110,7 @@ index 209d4980bc47f0e030613483d76f7e59f46cf20a..b613d765fc58930af082e0af435b4ac5
  
    class SnapshotWorkerRunnable final : public MainThreadWorkerRunnable {
     public:
-@@ -567,7 +574,8 @@ OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
+@@ -632,7 +639,8 @@ OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
  already_AddRefed<layers::Image> OffscreenCanvasDisplayHelper::GetAsImage() {
    MOZ_ASSERT(NS_IsMainThread());
  
@@ -121,10 +121,10 @@ index 209d4980bc47f0e030613483d76f7e59f46cf20a..b613d765fc58930af082e0af435b4ac5
      return nullptr;
    }
 diff --git a/dom/canvas/OffscreenCanvasDisplayHelper.h b/dom/canvas/OffscreenCanvasDisplayHelper.h
-index b2bb00667a80c64d97a3990781a2c5d05f061d04..e479ad966692dfe0545779d06fab47542cc42aaf 100644
+index f7db258e2e1ac8ad40966f0ed3931cc3f189635a..ac9eedb9eb94785e6a07261e47f453c69c0ad45e 100644
 --- a/dom/canvas/OffscreenCanvasDisplayHelper.h
 +++ b/dom/canvas/OffscreenCanvasDisplayHelper.h
-@@ -72,6 +72,8 @@ class OffscreenCanvasDisplayHelper final {
+@@ -79,6 +79,8 @@ class OffscreenCanvasDisplayHelper final {
    bool UsingElementCaptureStream() const;
  
    already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot();
@@ -133,7 +133,7 @@ index b2bb00667a80c64d97a3990781a2c5d05f061d04..e479ad966692dfe0545779d06fab4754
    already_AddRefed<mozilla::layers::Image> GetAsImage();
    UniquePtr<uint8_t[]> GetImageBuffer(
        CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
-@@ -87,6 +89,8 @@ class OffscreenCanvasDisplayHelper final {
+@@ -95,6 +97,8 @@ class OffscreenCanvasDisplayHelper final {
    already_AddRefed<gfx::SourceSurface> TransformSurface(
        gfx::SourceSurface* aSurface, bool aHasAlpha, bool aIsAlphaPremult,
        gl::OriginPos aOriginPos) const;
@@ -164,7 +164,7 @@ index b5809a1fca1bed238396bfdac6dec054a7a72a4d..8a18cd7b103b5c6df534789290005c9f
  SOURCES += [
      "MurmurHash3.cpp",
 diff --git a/dom/html/HTMLCanvasElement.cpp b/dom/html/HTMLCanvasElement.cpp
-index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..bbf69a423c10964814c1822728fbe9147045c3a7 100644
+index e40c9fef90e5a0b4a6df73a5d7a2ed74304ecdaa..faeffb750fb375f95aa1a13de226b28b8a8e1428 100644
 --- a/dom/html/HTMLCanvasElement.cpp
 +++ b/dom/html/HTMLCanvasElement.cpp
 @@ -9,6 +9,7 @@
@@ -175,7 +175,7 @@ index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..bbf69a423c10964814c1822728fbe914
  #include "VRManagerChild.h"
  #include "WindowRenderer.h"
  #include "jsapi.h"
-@@ -1530,10 +1531,17 @@ void HTMLCanvasElement::SetFrameCapture(
+@@ -1560,10 +1561,17 @@ void HTMLCanvasElement::SetFrameCapture(
  
  already_AddRefed<SourceSurface> HTMLCanvasElement::GetSurfaceSnapshot(
      gfxAlphaType* const aOutAlphaType, DrawTarget* aTarget) {
@@ -195,7 +195,7 @@ index 6dd2879509c833f38e4f0af1b5fd38b313ae25bd..bbf69a423c10964814c1822728fbe914
    return nullptr;
  }
 diff --git a/dom/html/HTMLCanvasElement.h b/dom/html/HTMLCanvasElement.h
-index c8f335c31829a9129cb1f755bb039873562657a0..71a995b6b6f715710712c78f25107618fd99e4bb 100644
+index 4280abcde7c0449e3c6ce5ddd5b4e6664dc0c628..7b37a3533dda97cc71b4ffbc06a678825888da29 100644
 --- a/dom/html/HTMLCanvasElement.h
 +++ b/dom/html/HTMLCanvasElement.h
 @@ -225,6 +225,11 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
@@ -247,10 +247,10 @@ index cfe0e7a9e405f6dbbf3b62761cea64dc2c32ef43..96443109047b9494e22c599b7ffeec3e
    RefPtr<gfx::DataSourceSurface> dataSurface = snapshot->GetDataSurface();
  
 diff --git a/gfx/2d/DrawTargetRecording.cpp b/gfx/2d/DrawTargetRecording.cpp
-index d6eb7e92cac0582c42af61b2dc6fc348e7f61370..d7ad079f6371513ae8bcdafdbfff9513db82b54f 100644
+index 1f8ad9ea5b574077c71c84bf21d9f7ef04c90506..a3d5e6b9a867db1ade142d2efc072d5e31ba7045 100644
 --- a/gfx/2d/DrawTargetRecording.cpp
 +++ b/gfx/2d/DrawTargetRecording.cpp
-@@ -96,7 +96,8 @@ class SourceSurfaceRecording final : public SourceSurface {
+@@ -106,7 +106,8 @@ class SourceSurfaceRecording final : public SourceSurface {
    SurfaceFormat GetFormat() const override { return mFormat; }
    already_AddRefed<DataSourceSurface> GetDataSurface() override {
      if (mOriginalSurface) {
@@ -260,7 +260,7 @@ index d6eb7e92cac0582c42af61b2dc6fc348e7f61370..d7ad079f6371513ae8bcdafdbfff9513
      }
  
      return nullptr;
-@@ -111,6 +112,8 @@ class SourceSurfaceRecording final : public SourceSurface {
+@@ -121,6 +122,8 @@ class SourceSurfaceRecording final : public SourceSurface {
    // we need GetDataSurface to work, so we hold the original surface we
    // optimized to return its GetDataSurface.
    RefPtr<SourceSurface> mOriginalSurface;
@@ -269,7 +269,7 @@ index d6eb7e92cac0582c42af61b2dc6fc348e7f61370..d7ad079f6371513ae8bcdafdbfff9513
  };
  
  class GradientStopsRecording : public GradientStops {
-@@ -862,6 +865,14 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
+@@ -869,6 +872,14 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
    return retSurf.forget();
  }
  
@@ -312,7 +312,7 @@ index 557a7493342e27a30a023549e9219094585e40ec..881fe1fe06556fda516586ecce89aa95
  
    already_AddRefed<SourceSurface> SnapshotExternalCanvas(
 diff --git a/gfx/2d/RecordedEvent.h b/gfx/2d/RecordedEvent.h
-index b3049d86f8d315095721f31a991ea584389b5da2..39a7c1f0285d1f0c96d1c987301120b20d79d5b9 100644
+index a3a81b300c734c78b002f66cec48853d3590e6c4..931105de0f818657e2b9a92f8e1fe05e65816536 100644
 --- a/gfx/2d/RecordedEvent.h
 +++ b/gfx/2d/RecordedEvent.h
 @@ -439,6 +439,7 @@ class RecordedEvent {
@@ -324,7 +324,7 @@ index b3049d86f8d315095721f31a991ea584389b5da2..39a7c1f0285d1f0c96d1c987301120b2
      DESTINATION,
      ACCESSIBLEID,
 diff --git a/gfx/2d/RecordedEventImpl.h b/gfx/2d/RecordedEventImpl.h
-index c815cbff1a67ee79f4d37db10bf1b803cd50ae4b..4a851bca31e992d9ad3ca6a95206b99f620fb76f 100644
+index 88ec520156fcf4d84098f546286aeb2ca138729f..a34337b63bed9f5f9365dbba82a6b9a441c603fa 100644
 --- a/gfx/2d/RecordedEventImpl.h
 +++ b/gfx/2d/RecordedEventImpl.h
 @@ -18,6 +18,9 @@
@@ -354,10 +354,10 @@ index c815cbff1a67ee79f4d37db10bf1b803cd50ae4b..4a851bca31e992d9ad3ca6a95206b99f
    f(ACCESSIBLEID, RecordedAccessibleId);                           \
    f(DESTINATION, RecordedDestination);
 diff --git a/gfx/2d/moz.build b/gfx/2d/moz.build
-index 4b4c014bbb6f29e089339d000899153cffe3d5eb..2deef793c4f43700b00a3d55faa4e6a1f1bc54db 100644
+index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f1e7228df 100644
 --- a/gfx/2d/moz.build
 +++ b/gfx/2d/moz.build
-@@ -62,6 +62,9 @@ EXPORTS.mozilla.gfx += [
+@@ -60,6 +60,9 @@ EXPORTS.mozilla.gfx += [
      "Types.h",
      "UserData.h",
  ]
@@ -367,7 +367,7 @@ index 4b4c014bbb6f29e089339d000899153cffe3d5eb..2deef793c4f43700b00a3d55faa4e6a1
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
      EXPORTS.mozilla.gfx += [
-@@ -172,6 +175,8 @@ UNIFIED_SOURCES += [
+@@ -170,6 +173,8 @@ UNIFIED_SOURCES += [
      "Swizzle.cpp",
      "Types.cpp",
  ]
@@ -377,10 +377,10 @@ index 4b4c014bbb6f29e089339d000899153cffe3d5eb..2deef793c4f43700b00a3d55faa4e6a1
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index 7c699601940c4fb6e1fa32b202fb08bc084cba64..af55730e18bc56b23f2f9467526fd7ad27a45ed7 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..8cb4591349dd313c83a214372737c3c48dede697 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -30,6 +30,7 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,7 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
@@ -388,7 +388,7 @@ index 7c699601940c4fb6e1fa32b202fb08bc084cba64..af55730e18bc56b23f2f9467526fd7ad
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -40,6 +41,16 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +43,16 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  

@@ -20,10 +20,10 @@ index 69e3559310e717fa7e6d5e149f43f102e38dc992..ff05c3d5d16455dde9636f3c890449db
  
    RefPtr<StringBlobImpl> blobImpl = StringBlobImpl::Create(utf8Str, u""_ns);
 diff --git a/dom/serializers/nsPlainTextSerializer.cpp b/dom/serializers/nsPlainTextSerializer.cpp
-index af0c003992ff4cd13547c6d3fa70c55a4b6f54cb..d8ed808cb44a4a031c18d1a60103ec006d96c12d 100644
+index 0b4ba7625b6c4d878ade61be1c2f986809969189..1ec5821c63355ebf52c87880aeb78ef8dfb8449e 100644
 --- a/dom/serializers/nsPlainTextSerializer.cpp
 +++ b/dom/serializers/nsPlainTextSerializer.cpp
-@@ -98,8 +98,10 @@ static void DetermineLineBreak(const int32_t aFlags, nsAString& aLineBreak) {
+@@ -99,8 +99,10 @@ static void DetermineLineBreak(const int32_t aFlags, nsAString& aLineBreak) {
      // Unix/DOM
      aLineBreak.AssignLiteral(u"\n");
    } else {

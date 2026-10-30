@@ -1,8 +1,8 @@
 diff --git a/netwerk/base/moz.build b/netwerk/base/moz.build
-index c09cd25f07a2abc251e37a705f5d7ea5636133c8..a51f71bcc0b80af1118740605d3cb1e8135f844a 100644
+index dde0f0da60377e61b8987663f87304ebd63b4958..c98ffb2e7e2692c98ca685ab76ee25782ec1a759 100644
 --- a/netwerk/base/moz.build
 +++ b/netwerk/base/moz.build
-@@ -258,6 +258,8 @@ UNIFIED_SOURCES += [
+@@ -257,6 +257,8 @@ UNIFIED_SOURCES += [
      "TLSServerSocket.cpp",
      "TRRLoadInfo.cpp",
  ]
@@ -61,10 +61,10 @@ index 104a1a6a88e6b34de77c15866bf715f23658f663..6ad5a9d516e1176aa60e55b5014f7ce3
    bool mSOCKS5ProxyRemoteDNS{false};
    bool mProxyOverTLS{true};
 diff --git a/netwerk/test/gtest/moz.build b/netwerk/test/gtest/moz.build
-index 7d9ccf7b0bc24753709c6f5b9557cc3a8350058e..2a50ab4afb8caf64d98593b990349143963e5e87 100644
+index 9673b9265a2de02a81839676e9eb91b1e12e0c44..d0ffc230404748ac5a1b9b89bbd3aa74f9c2ce15 100644
 --- a/netwerk/test/gtest/moz.build
 +++ b/netwerk/test/gtest/moz.build
-@@ -61,6 +61,7 @@ SOURCES += [
+@@ -63,6 +63,7 @@ SOURCES += [
      "TestHappyEyeballsConnectionAttempt.cpp",
      "TestHappyEyeballsNetAddrArray.cpp",
  ]

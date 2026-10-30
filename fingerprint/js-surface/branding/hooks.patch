@@ -67,7 +67,7 @@ index 0eb6421cfc024e377d4e4ce1ad69959a9bab45c5..0c9eaa00f8794f19afb376fec616ef56
    entry->flags = aPackage.flags;
    entry->contentBaseURI = std::move(content);
 diff --git a/netwerk/protocol/res/SubstitutingProtocolHandler.cpp b/netwerk/protocol/res/SubstitutingProtocolHandler.cpp
-index 8aa1a50f0c6f7fec1c424ce1df550fcf046e04fc..58edb2dfdb30ca798764cb30a113245c26dee1e8 100644
+index 0a89a2eb98c19f1c971bf463d90dc51e11d868d7..af61009941046ce29849c902258429706de30eff 100644
 --- a/netwerk/protocol/res/SubstitutingProtocolHandler.cpp
 +++ b/netwerk/protocol/res/SubstitutingProtocolHandler.cpp
 @@ -10,6 +10,7 @@
@@ -122,7 +122,7 @@ index 99ded3530e154b10e55d4a9dabf656294c243570..74ffc48c86851a223e077cefc316b47f
  include("/ipc/chromium/chromium-config.mozbuild")
  
 diff --git a/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp b/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
-index 5db7560cf68114646ca2a684cdfed4deb60c0539..7ed334ce3a0da49100cb7b36f2e872e36a439925 100644
+index ad29a0509d34034e3d752dc05121a5cf817ed6ba..d3525639dd691f13fc089041815d5a2856d4d842 100644
 --- a/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
 +++ b/security/sandbox/linux/broker/SandboxBrokerPolicyFactory.cpp
 @@ -3,6 +3,7 @@
@@ -133,7 +133,7 @@ index 5db7560cf68114646ca2a684cdfed4deb60c0539..7ed334ce3a0da49100cb7b36f2e872e3
  
  #ifdef MOZ_PROFILE_GENERATE
  #  include <string>
-@@ -745,6 +746,15 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
+@@ -746,6 +747,15 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
    AddDynamicPathList(policy, "security.sandbox.content.read_path_whitelist",
                       rdonly);
  

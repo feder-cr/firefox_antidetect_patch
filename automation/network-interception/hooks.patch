@@ -14,10 +14,10 @@ index 3654f3ed20f6b22d36c4238be40417e77e8f6867..4afd7f40c5d32f86c4f0330fca47e637
       * Set the status and reason for the forthcoming synthesized response.
       * Multiple calls overwrite existing values.
 diff --git a/netwerk/protocol/http/InterceptedHttpChannel.cpp b/netwerk/protocol/http/InterceptedHttpChannel.cpp
-index d8c47fb9a4dc7cd529895e64d9b2137cacaedc75..afec165bf42e0fd761c6c7f1852eeb3d42adc147 100644
+index 551ed5ba8e3ac370957ca9f95ae376608d38097f..22b9d40120b51eb994994fb89b24314578a8dc7e 100644
 --- a/netwerk/protocol/http/InterceptedHttpChannel.cpp
 +++ b/netwerk/protocol/http/InterceptedHttpChannel.cpp
-@@ -733,6 +733,10 @@ NS_IMETHODIMP
+@@ -739,6 +739,10 @@ NS_IMETHODIMP
  InterceptedHttpChannel::ResetInterception(bool aBypass) {
    INTERCEPTED_LOG(("InterceptedHttpChannel::ResetInterception [%p] bypass: %s",
                     this, aBypass ? "true" : "false"));

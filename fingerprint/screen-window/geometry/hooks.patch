@@ -1,5 +1,5 @@
 diff --git a/dom/base/nsGlobalWindowOuter.cpp b/dom/base/nsGlobalWindowOuter.cpp
-index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31c32e96dc 100644
+index 59a1a4671078a3fc3491a5200c30d908fd87cbf1..46062b98f6949dd6a7175b2fb48dab07a7a80eb5 100644
 --- a/dom/base/nsGlobalWindowOuter.cpp
 +++ b/dom/base/nsGlobalWindowOuter.cpp
 @@ -35,6 +35,7 @@
@@ -18,7 +18,7 @@ index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31
  #include "mozilla/ThrottledEventQueue.h"
  #include "mozilla/dom/BarProps.h"
  #include "mozilla/dom/DocGroup.h"
-@@ -2075,8 +2077,8 @@ static nsresult CreateNativeGlobalForInner(
+@@ -2095,8 +2097,8 @@ static nsresult CreateNativeGlobalForInner(
        aDocument->ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
        aDocument->ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
        aDocument->ShouldResistFingerprinting(RFPTarget::JSLocale),
@@ -29,7 +29,7 @@ index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31
  
    if (principal->IsSystemPrincipal()) {
      creationOptions.setFreezeBuiltins(true);
-@@ -3529,6 +3531,11 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
+@@ -3554,6 +3556,11 @@ CSSIntSize nsGlobalWindowOuter::GetOuterSize(CallerType aCallerType,
      return {};
    }
  
@@ -41,7 +41,7 @@ index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31
    // Windows showing documents in RDM panes and any subframes within them
    // return the simulated device size.
    if (mDoc) {
-@@ -3590,6 +3597,11 @@ CSSIntPoint nsGlobalWindowOuter::GetScreenXY(CallerType aCallerType,
+@@ -3615,6 +3622,11 @@ CSSIntPoint nsGlobalWindowOuter::GetScreenXY(CallerType aCallerType,
      return CSSIntPoint(0, 0);
    }
  
@@ -53,7 +53,7 @@ index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31
    LayoutDeviceIntPoint windowPos;
    aError = treeOwnerAsWin->GetPosition(&windowPos.x.value, &windowPos.y.value);
  
-@@ -3671,6 +3683,10 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
+@@ -3696,6 +3708,10 @@ float nsGlobalWindowOuter::GetMozInnerScreenXOuter(CallerType aCallerType) {
    }
  
    nsRect r = GetInnerScreenRect();
@@ -64,7 +64,7 @@ index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31
    return nsPresContext::AppUnitsToFloatCSSPixels(r.x);
  }
  
-@@ -3682,6 +3698,10 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
+@@ -3707,6 +3723,10 @@ float nsGlobalWindowOuter::GetMozInnerScreenYOuter(CallerType aCallerType) {
    }
  
    nsRect r = GetInnerScreenRect();
@@ -76,10 +76,10 @@ index 98d6cf28fe13595ce9904b6a2887a57d9f86296f..8c003578978d303497be089569e5af31
  }
  
 diff --git a/dom/base/nsGlobalWindowOuter.h b/dom/base/nsGlobalWindowOuter.h
-index 6958d974b4416151d1327f98d162c32f84e65e8e..11904f9ed543cdab1cca2bf0942a84dca113994a 100644
+index ab838e316e31e0221bf962d5a66fcfe44473de38..77f922d2a143989cf80f814652dd33a054739430 100644
 --- a/dom/base/nsGlobalWindowOuter.h
 +++ b/dom/base/nsGlobalWindowOuter.h
-@@ -790,6 +790,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
+@@ -797,6 +797,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
    mozilla::CSSIntSize GetOuterSize(mozilla::dom::CallerType aCallerType,
                                     mozilla::ErrorResult& aError);
    nsRect GetInnerScreenRect();

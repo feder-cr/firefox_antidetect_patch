@@ -1,5 +1,5 @@
 diff --git a/toolkit/components/windowwatcher/nsWindowWatcher.cpp b/toolkit/components/windowwatcher/nsWindowWatcher.cpp
-index 1a7068e4d6e9d8731be559b05955898f426d76b5..d8105e03dfe142ac58162063191b89280b358d59 100644
+index a1044338912d917f109fb89bda437cece4007e09..a49128e3aff5ea2653f6329e15453bd82782b918 100644
 --- a/toolkit/components/windowwatcher/nsWindowWatcher.cpp
 +++ b/toolkit/components/windowwatcher/nsWindowWatcher.cpp
 @@ -76,6 +76,9 @@
@@ -12,7 +12,7 @@ index 1a7068e4d6e9d8731be559b05955898f426d76b5..d8105e03dfe142ac58162063191b8928
  
  using namespace mozilla;
  using namespace mozilla::dom;
-@@ -1901,7 +1904,8 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForContent(
+@@ -1902,7 +1905,8 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForContent(
      return nsIWebBrowserChrome::CHROME_DOCUMENT_PICTURE_IN_PICTURE_FLAGS;
    }
    *aIsPopupRequested = ShouldOpenPopup(aFeatures);
@@ -22,7 +22,7 @@ index 1a7068e4d6e9d8731be559b05955898f426d76b5..d8105e03dfe142ac58162063191b8928
                              : nsIWebBrowserChrome::CHROME_ALL;
  }
  
-@@ -2320,6 +2324,11 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
+@@ -2322,6 +2326,11 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
      top = *aSizeSpec.mTop;
    }
  
@@ -34,7 +34,7 @@ index 1a7068e4d6e9d8731be559b05955898f426d76b5..d8105e03dfe142ac58162063191b8928
    // Set up width
    if (aSizeSpec.mOuterWidth) {
      width = *aSizeSpec.mOuterWidth;
-@@ -2336,7 +2345,8 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
+@@ -2338,7 +2347,8 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
      height = *aSizeSpec.mInnerHeight;
    }
  

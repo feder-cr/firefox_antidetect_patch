@@ -15,6 +15,6 @@
 # Every port to a new Firefox updates the three lines below.
 # scripts/check_upstream_source.py refuses a version that is not the one this
 # tree builds, and with --online compares the values with that record.
-version=157.0.1
+version=159.0
 repo=https://hg.mozilla.org/releases/mozilla-release
-changeset=737ec77d798755890b062aab541a90d6c75afd19
+changeset=5add844c26613d7e4d84c799d6e23cf987b1240d

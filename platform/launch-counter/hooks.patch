@@ -1,8 +1,8 @@
 diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
-index 4ba67b8927ec1e0d9b49f1bc29401ab8fb08d070..86d68668c75b8d78fc43f12ed10d629dca311e9b 100644
+index 4a292baaec92880c7a17709b207117edec1920c4..fd224f70b3d0de6321ee9ca1a4afb6e009a8f2f8 100644
 --- a/browser/components/BrowserGlue.sys.mjs
 +++ b/browser/components/BrowserGlue.sys.mjs
-@@ -72,6 +72,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
+@@ -73,6 +73,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
    Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
    StartupOSIntegration:
      "moz-src:///browser/components/shell/StartupOSIntegration.sys.mjs",
@@ -20,10 +20,10 @@ index 4ba67b8927ec1e0d9b49f1bc29401ab8fb08d070..86d68668c75b8d78fc43f12ed10d629d
  
      // check if we're in safe mode
 diff --git a/browser/components/moz.build b/browser/components/moz.build
-index 63cfb33a3b11473e00b8f211e34e8e89ffc25275..8e0938666db7a6677bd9c3835facbdaf45e88fb1 100644
+index 9a955225780298c2d7cb1233e36b5b656c5c9050..6dfdcdcdf2db769ff0a26b31f89d1f668dd56c4e 100644
 --- a/browser/components/moz.build
 +++ b/browser/components/moz.build
-@@ -119,6 +119,7 @@ EXTRA_JS_MODULES += [
+@@ -117,6 +117,7 @@ MOZ_SRC_FILES += [
      "BrowserGlue.sys.mjs",
      "distribution.sys.mjs",
  ]

@@ -1,5 +1,5 @@
 diff --git a/dom/workers/WorkerNavigator.cpp b/dom/workers/WorkerNavigator.cpp
-index d9a8eb2c28a2cc585d3e74e9ac1555846da66b81..f9d68a994ff3adc13a2df7da2ab0e09da25bf801 100644
+index 50dbb0847d352e5ba07e01319d0c9013fbfb4bc9..adf701249ce3998229e6292e2a84e955d24d8f07 100644
 --- a/dom/workers/WorkerNavigator.cpp
 +++ b/dom/workers/WorkerNavigator.cpp
 @@ -29,6 +29,7 @@
@@ -10,7 +10,7 @@ index d9a8eb2c28a2cc585d3e74e9ac1555846da66b81..f9d68a994ff3adc13a2df7da2ab0e09d
  
  class JSObject;
  struct JSContext;
-@@ -226,6 +227,12 @@ void WorkerNavigator::GetUserAgent(nsString& aUserAgent, CallerType aCallerType,
+@@ -227,6 +228,12 @@ void WorkerNavigator::GetUserAgent(nsCString& aUserAgent,
  }
  
  uint64_t WorkerNavigator::HardwareConcurrency() const {

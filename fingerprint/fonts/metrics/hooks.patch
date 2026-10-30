@@ -27,7 +27,7 @@ index 85edc26a3f7930ec9ffff752141ffacb881e7e23..6eb0b241ba11e834e3306778ada63aaf
          // k3D_Format should not be mask filtered.
          SkASSERT(SkMask::k3D_Format != unfilteredGlyph->fMaskFormat);
 diff --git a/gfx/thebes/gfxDWriteFonts.cpp b/gfx/thebes/gfxDWriteFonts.cpp
-index 14a4aee18eea4988ef7df14e620555253310dad0..738e5601dd54280ef4f38f5c57c3a5ee664a96aa 100644
+index ce52760aeeed01b32648a6d9164cf9384acf3889..eef93f418127388a6619b476018658c429493254 100644
 --- a/gfx/thebes/gfxDWriteFonts.cpp
 +++ b/gfx/thebes/gfxDWriteFonts.cpp
 @@ -6,6 +6,7 @@
@@ -73,7 +73,7 @@ index 14a4aee18eea4988ef7df14e620555253310dad0..738e5601dd54280ef4f38f5c57c3a5ee
      if (prefInt >= 0 && prefInt <= 100) {
        clearTypeLevel = float(prefInt / 100.0);
 diff --git a/gfx/thebes/gfxFT2FontBase.cpp b/gfx/thebes/gfxFT2FontBase.cpp
-index e7e7abfdc1a1a626c2287805236127f224958626..9a422f227bb5e3b67e6ae2daf08a95a777627c1d 100644
+index 6cf3d24740f15fd830576024f327a94bd8dcac59..900db8dd70b907dda4a91c8f7f086b0c66dbec84 100644
 --- a/gfx/thebes/gfxFT2FontBase.cpp
 +++ b/gfx/thebes/gfxFT2FontBase.cpp
 @@ -21,6 +21,7 @@
@@ -84,7 +84,7 @@ index e7e7abfdc1a1a626c2287805236127f224958626..9a422f227bb5e3b67e6ae2daf08a95a7
  
  #ifndef FT_LOAD_COLOR
  #  define FT_LOAD_COLOR (1L << 20)
-@@ -726,7 +727,8 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
+@@ -723,7 +724,8 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
    // Due to freetype bug 52683 we MUST use the linearHoriAdvance field when
    // dealing with a variation font; also use it for scalable fonts when not
    // applying hinting. Otherwise, prefer hinted width from glyph->advance.x.
@@ -94,7 +94,7 @@ index e7e7abfdc1a1a626c2287805236127f224958626..9a422f227bb5e3b67e6ae2daf08a95a7
      FT_Fixed advance;
      if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
        advance = face.get()->glyph->linearHoriAdvance;
-@@ -827,6 +829,10 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
+@@ -824,6 +826,10 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
  
  bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
                                      bool aTight) {
@@ -106,31 +106,31 @@ index e7e7abfdc1a1a626c2287805236127f224958626..9a422f227bb5e3b67e6ae2daf08a95a7
    const GlyphMetrics metrics = GetCachedGlyphMetrics(aGID, &bounds);
    if (!metrics.HasValidBounds()) {
 diff --git a/gfx/thebes/gfxFont.cpp b/gfx/thebes/gfxFont.cpp
-index 92cc7ffbadbec015f5c0e87e02a3d0db7008a062..abff22482ddd9e191c6cd7337aba954cb70014a2 100644
+index f4a983fcb965b391604f62d37b6ceebb7ee8b3ad..3fb0fcd5f12bf57001e999e7810e961945e11664 100644
 --- a/gfx/thebes/gfxFont.cpp
 +++ b/gfx/thebes/gfxFont.cpp
-@@ -6,6 +6,7 @@
- 
+@@ -7,6 +7,7 @@
  #include "COLRFonts.h"
+ #include "FontPaletteCache.h"
  #include "GreekCasing.h"
 +#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/metrics)
  #include "TextDrawTarget.h"
  #include "ThebesRLBox.h"
  #include "cairo.h"
-@@ -4456,6 +4457,8 @@ void gfxFont::SanitizeMetrics(gfxFont::Metrics* aMetrics,
-     memset(aMetrics, 0, sizeof(gfxFont::Metrics));
+@@ -4456,6 +4457,8 @@ void gfxFont::SanitizeMetrics(bool aIsBadUnderlineFont) {
+     memset(&mMetrics, 0, sizeof(mMetrics));
      return;
    }
 +  // STEALTH-HOOK(fingerprint/fonts/metrics)
-+  StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), aMetrics);
++  StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), &mMetrics);
  
    // If the font entry has ascent/descent/lineGap-override values,
    // replace the metrics from the font with the overrides.
 diff --git a/gfx/thebes/gfxFont.h b/gfx/thebes/gfxFont.h
-index af4852ea8960f3e7ad8f0035ca5e3d9237dba5b3..b1852c6741d406dba611f6d9890cc6cbfc2cdac9 100644
+index 5dff682e0b7d34ab598ccc7d6301e1f97dcfd16e..b27a89a09f06b0f13aa9b60ca32a452083f76f4c 100644
 --- a/gfx/thebes/gfxFont.h
 +++ b/gfx/thebes/gfxFont.h
-@@ -1714,6 +1714,10 @@ class gfxFont {
+@@ -1716,6 +1716,10 @@ class gfxFont {
      return *mVerticalMetrics;
    }
  
@@ -142,7 +142,7 @@ index af4852ea8960f3e7ad8f0035ca5e3d9237dba5b3..b1852c6741d406dba611f6d9890cc6cb
      std::atomic<gfxFloat> mAlphabetic{
          std::numeric_limits<gfxFloat>::quiet_NaN()};
 diff --git a/gfx/thebes/gfxHarfBuzzShaper.cpp b/gfx/thebes/gfxHarfBuzzShaper.cpp
-index a0c4596eb1dca192c89a1404ed45a85adbcc4de1..00a99a76808a671777fec6f0d14ce6fc0ba9628e 100644
+index 6757adf578ef6515f338f44e4b14dc7a20b56966..71c3bde2e94a30d276935b3b1e5fbffccb18615d 100644
 --- a/gfx/thebes/gfxHarfBuzzShaper.cpp
 +++ b/gfx/thebes/gfxHarfBuzzShaper.cpp
 @@ -55,6 +55,7 @@ gfxHarfBuzzShaper::~gfxHarfBuzzShaper() {

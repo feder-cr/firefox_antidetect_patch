@@ -156,7 +156,8 @@ extern "C" void nr_stealth_srflx_rewrite_ip(nr_transport_addr* addr) {
     uint16_t mapped_port = 0;
     if (nr_transport_addr_get_port(addr, &mapped_port) == 0 &&
         mapped_port > 0) {
-      nr_str_port_to_transport_addr(stealth_ip, mapped_port, IPPROTO_UDP, addr);
+      nr_str_port_to_transport_addr(stealth_ip, nullptr, mapped_port,
+                                    IPPROTO_UDP, addr);
     }
   }
 }
@@ -370,8 +371,8 @@ int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
     cand->component    = component;
     cand->stream       = component->stream;
 
-    if ((r = nr_str_port_to_transport_addr(public_ip_buf, srflx_port, IPPROTO_UDP,
-                                           &cand->addr)))
+    if ((r = nr_str_port_to_transport_addr(public_ip_buf, nullptr, srflx_port,
+                                           IPPROTO_UDP, &cand->addr)))
         ABORT(r);
     if (base_addr) {
         if ((r = nr_transport_addr_copy(&cand->base, base_addr)))
@@ -380,8 +381,8 @@ int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,
         /* No real local address available (Fission content process before
          * mStunAddrs IPC arrives). Synthesize a fake LAN base so the
          * candidate has a coherent raddr/rport. */
-        if ((r = nr_str_port_to_transport_addr("192.168.1.1", srflx_port, IPPROTO_UDP,
-                                               &cand->base)))
+        if ((r = nr_str_port_to_transport_addr("192.168.1.1", nullptr, srflx_port,
+                                               IPPROTO_UDP, &cand->base)))
             ABORT(r);
     }
     cand->local_protocol = cand->base.protocol;

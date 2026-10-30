@@ -12,7 +12,7 @@ index d365f7ec1b3dde5ccd81157718e3830ae8e0a21f..8136bafbbfda293c45311174f9bd0f8e
          }
          MutexAutoLock lock(self->mTableLock);
 diff --git a/startupcache/StartupCache.h b/startupcache/StartupCache.h
-index e20b60ceac6389db00547f573b160d419bd50689..765c1505c1b31ff240bb459cdb40e8d57d152632 100644
+index 7feeae10c4cf56bd5ec9755c5d76603691e6c8a2..5f91bcd297be9f342a212b148c4e01f06aa53c3c 100644
 --- a/startupcache/StartupCache.h
 +++ b/startupcache/StartupCache.h
 @@ -158,6 +158,9 @@ class StartupCache : public nsIMemoryReporter {

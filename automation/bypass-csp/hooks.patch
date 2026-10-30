@@ -1,8 +1,8 @@
 diff --git a/dom/security/moz.build b/dom/security/moz.build
-index a637a9f981e5a7b28bc8c473f11dd6d75bd030ba..c0acd7de22f8b9c965d30f0029b8bd4c8cc0fe35 100644
+index faff244f374024a019ebc010b4c59efb4f4d2aa1..c9ff4739f97217dc98f07d0712f9040a1c5c1b5b 100644
 --- a/dom/security/moz.build
 +++ b/dom/security/moz.build
-@@ -73,6 +73,7 @@ UNIFIED_SOURCES += [
+@@ -77,6 +77,7 @@ UNIFIED_SOURCES += [
      "SRIMetadata.cpp",
      "WAICTUtils.cpp",
  ]

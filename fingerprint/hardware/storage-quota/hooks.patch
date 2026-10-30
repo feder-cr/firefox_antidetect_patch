@@ -1,5 +1,5 @@
 diff --git a/dom/quota/OriginOperations.cpp b/dom/quota/OriginOperations.cpp
-index 13e51cbbdd2285c442d1b594ef158a200a1d56d1..bf66d98aa937ef1eccb9781572ae1c5a7f84ebb1 100644
+index 175390050cc8c1b8e2e04f5f7c9c8a5da467f43d..45aea35955fa5e481d242a12c65b015b38351765 100644
 --- a/dom/quota/OriginOperations.cpp
 +++ b/dom/quota/OriginOperations.cpp
 @@ -18,6 +18,7 @@
@@ -10,13 +10,25 @@ index 13e51cbbdd2285c442d1b594ef158a200a1d56d1..bf66d98aa937ef1eccb9781572ae1c5a
  #include "mozilla/Assertions.h"
  #include "mozilla/Atomics.h"
  #include "mozilla/Maybe.h"
-@@ -3834,7 +3835,8 @@ void EstimateOp::GetResponse(RequestResponse& aResponse) {
+@@ -3854,7 +3855,8 @@ void EstimateOp::GetResponse(RequestResponse& aResponse) {
    EstimateResponse estimateResponse;
  
    estimateResponse.usage() = mUsageAndLimit.first;
 -  estimateResponse.limit() = mUsageAndLimit.second;
 +  estimateResponse.limit() =
-+      StealthEstimateLimit(mUsageAndLimit.second);  // STEALTH-HOOK(fingerprint/hardware/storage-quota)
++      StealthEstimateLimit(mUsageAndLimit.second, mScope == Scope::Origin);  // STEALTH-HOOK(fingerprint/hardware/storage-quota)
  
    aResponse = estimateResponse;
  }
+diff --git a/dom/quota/test/gtest/moz.build b/dom/quota/test/gtest/moz.build
+index 344a44804d175409d8bba4e8c9147485fec99de5..8a4dbaee87b1311074a19fc8d8621b120b582529 100644
+--- a/dom/quota/test/gtest/moz.build
++++ b/dom/quota/test/gtest/moz.build
+@@ -49,6 +49,7 @@ UNIFIED_SOURCES = [
+     "TestThreadUtils.cpp",
+     "TestUsageInfo.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthQuotaEstimate.cpp"]  # STEALTH-HOOK(fingerprint/hardware/storage-quota)
+ 
+ IPDL_SOURCES += [
+     "PQuotaTest.ipdl",

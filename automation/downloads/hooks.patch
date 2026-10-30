@@ -1,5 +1,5 @@
 diff --git a/uriloader/exthandler/moz.build b/uriloader/exthandler/moz.build
-index 2b9da3a738f4cad845ee3b560babccfcefe4cc9e..636f9f93c64e942f10e5c536e4e8745150082d00 100644
+index a88b18c4d436b598d63522526534a0ea7297a7d4..5398103b6aa61d2c23dec3f23e509d91a490cd18 100644
 --- a/uriloader/exthandler/moz.build
 +++ b/uriloader/exthandler/moz.build
 @@ -18,6 +18,7 @@ XPIDL_SOURCES += [

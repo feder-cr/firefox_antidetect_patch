@@ -1,5 +1,5 @@
 diff --git a/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp b/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp
-index 497f18c65c53b2d5ca8971e45ac945e44c3cdb8a..ad71d8aa08cc535fcd1b6ab2ade0bf934b7f5506 100644
+index 74ec5d79595fa08a4e1db2e841ff9f5a204999cf..76331f8e3f5f83b14ac4ca72fde58759b3233587 100644
 --- a/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp
 +++ b/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp
 @@ -15,6 +15,7 @@
@@ -10,7 +10,7 @@ index 497f18c65c53b2d5ca8971e45ac945e44c3cdb8a..ad71d8aa08cc535fcd1b6ab2ade0bf93
  #include "base/histogram.h"
  #include "common/browser_logging/CSFLog.h"
  #include "common/time_profiling/timecard.h"
-@@ -4785,7 +4786,9 @@ void PeerConnectionImpl::EnsureIceGathering(bool aDefaultRouteOnly,
+@@ -4792,7 +4793,9 @@ void PeerConnectionImpl::EnsureIceGathering(bool aDefaultRouteOnly,
    // absence of previously provided STUN addresses, StartIceGathering will
    // attempt to gather them (as in non-e10s mode), and this will cause a
    // sandboxing exception in e10s mode.
@@ -22,10 +22,10 @@ index 497f18c65c53b2d5ca8971e45ac945e44c3cdb8a..ad71d8aa08cc535fcd1b6ab2ade0bf93
                 __FUNCTION__);
      return;
 diff --git a/dom/media/webrtc/jsapi/moz.build b/dom/media/webrtc/jsapi/moz.build
-index 92c2255785cff1e727e0cff2b9e985e27db27738..9012c75c3a4046811a8f93a7b3b6d1fc475364e3 100644
+index 37b2fa6fa950ee0e4bf7d3c5b373c780ac4d1d13..c940483bfba85d3931852887f67bd4f9e8d0f174 100644
 --- a/dom/media/webrtc/jsapi/moz.build
 +++ b/dom/media/webrtc/jsapi/moz.build
-@@ -49,6 +49,7 @@ UNIFIED_SOURCES += [
+@@ -50,6 +50,7 @@ UNIFIED_SOURCES += [
      "WebrtcGlobalInformation.cpp",
      "WebrtcGlobalStatsHistory.cpp",
  ]
@@ -46,7 +46,7 @@ index 215d61190dbe192fba09e129e869093ced0eacca..8e0e90f2bf852da389c2e10689293590
      "nricecandidate.cpp",
      "nricectx.cpp",
 diff --git a/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp b/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp
-index b617244f2fd0af51907ab10d4e25291562586350..a82e7803b7464844fbd13cd4b83e9aedb3e4b9b4 100644
+index 4bfd7d62d1f5695638102a22129407cd7a66b4b7..cd0ee90c347d471a25fd3568d65cc61a477398ec 100644
 --- a/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp
 +++ b/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp
 @@ -25,6 +25,9 @@
@@ -60,7 +60,7 @@ index b617244f2fd0af51907ab10d4e25291562586350..a82e7803b7464844fbd13cd4b83e9aed
                "./src/crypto",
                "./src/ice",
 diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp
-index ed7cb55d962d5d48ef4c682294ae5ac24d59aa8e..95fce0b3947e6d07bde6fdc7f3d7bd346e41195f 100644
+index 5f250a5158eb9c55241801e4f08d3fb7bc5a42a7..942e7ef526156c24adf4376b487e76e80d8fff02 100644
 --- a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp
 +++ b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp
 @@ -59,6 +59,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
@@ -71,7 +71,7 @@ index ed7cb55d962d5d48ef4c682294ae5ac24d59aa8e..95fce0b3947e6d07bde6fdc7f3d7bd34
  
  static int next_automatic_preference = 127;
  
-@@ -946,8 +947,10 @@ static void nr_ice_srvrflx_stun_finished_cb(NR_SOCKET sock, int how, void *cb_ar
+@@ -945,8 +946,10 @@ static void nr_ice_srvrflx_stun_finished_cb(NR_SOCKET sock, int how, void *cb_ar
      switch(cand->u.srvrflx.stun->state){
        /* OK, we should have a mapped address */
        case NR_STUN_CLIENT_STATE_DONE:
@@ -83,7 +83,7 @@ index ed7cb55d962d5d48ef4c682294ae5ac24d59aa8e..95fce0b3947e6d07bde6fdc7f3d7bd34
          nr_transport_addr_fmt_addr_string(&cand->addr);
          nr_stun_client_ctx_destroy(&cand->u.srvrflx.stun);
 diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp
-index c8c32914a530237b6c8a8db920b0d4ba00b6660e..5d5a44be0dd2b30892b87ed116c00140e130eb72 100644
+index b1ed4d1144db45380d7eca40ed7381ffc0a99674..fec5ce0f57d9e3f6a673321aaa4e7438657add10 100644
 --- a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp
 +++ b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp
 @@ -45,6 +45,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
@@ -118,7 +118,7 @@ index 4f62d995450d2346dc68623e420eaad8021b1822..d66c2bd24b35959bc5c963f31d0c038e
 +
  #endif
 diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
-index 5f5ed44fc0e32bc3b9d83b2c483596daa252b438..8745fe816262c9ab74c1108bdeeb73c465a4fe7b 100644
+index 04c91642dc06ae1d0f2551bb0fd305e802c3e745..476c99e8d8fc4a720d1efc457e9d3d7bfbb0735f 100644
 --- a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
 +++ b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
 @@ -52,6 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

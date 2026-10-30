@@ -1,5 +1,5 @@
 diff --git a/intl/locale/LocaleService.cpp b/intl/locale/LocaleService.cpp
-index d1721d1e7b224b92e8a0bf158c7e9191d68cf80c..dc1e50d7165a5ae8cb55774b679c20daaccd4292 100644
+index 49a16861cc18b88fdcd67260c62d0e4bed2be43b..71a1f9d3019dd586d0a5fe900dd2ddf48d52f949 100644
 --- a/intl/locale/LocaleService.cpp
 +++ b/intl/locale/LocaleService.cpp
 @@ -15,6 +15,8 @@
@@ -11,7 +11,7 @@ index d1721d1e7b224b92e8a0bf158c7e9191d68cf80c..dc1e50d7165a5ae8cb55774b679c20da
  #include "mozilla/intl/locale_service_glue_generated.h"
  #include "nsContentUtils.h"
  #include "nsDirectoryService.h"
-@@ -498,8 +500,8 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
+@@ -499,8 +501,8 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
    // If the user specified that they want to use OS Regional Preferences
    // locales, try to retrieve them and use.
    if (useOSLocales) {
@@ -22,7 +22,7 @@ index d1721d1e7b224b92e8a0bf158c7e9191d68cf80c..dc1e50d7165a5ae8cb55774b679c20da
        return NS_OK;
      }
  
-@@ -518,8 +520,8 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
+@@ -519,8 +521,8 @@ LocaleService::GetRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
    AutoTArray<nsCString, 10> regionalPrefsLocales;
    LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
  

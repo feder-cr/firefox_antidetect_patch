@@ -1,9 +1,11 @@
 {
  "modified": [
-  "dom/quota/OriginOperations.cpp"
+  "dom/quota/OriginOperations.cpp",
+  "dom/quota/test/gtest/moz.build"
  ],
  "added": {
-  "dom/quota/StealthQuotaEstimate.h": "100644"
+  "dom/quota/StealthQuotaEstimate.h": "100644",
+  "dom/quota/test/gtest/TestStealthQuotaEstimate.cpp": "100644"
  },
  "inventory": [
   {
@@ -27,6 +29,24 @@
    "verifier": {
     "changed": [],
     "why": "Written with the move; same values as the two returns it replaces."
+   }
+  },
+  {
+   "file": "dom/quota/test/gtest/moz.build",
+   "category": "build",
+   "feature": "storage-quota-estimate",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after the UNIFIED_SOURCES list (TestStealthQuotaEstimate.cpp)",
+   "evidence": [],
+   "notes": "One line registering our own gtest in the build.",
+   "verifier": {
+    "changed": [],
+    "why": "Added 2026-10-30 with the 159 port: the estimate limit now depends on the scope (159 adds the group scope), and the gtest pins that contract."
    }
   }
  ]

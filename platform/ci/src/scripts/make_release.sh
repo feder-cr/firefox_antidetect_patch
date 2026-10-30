@@ -36,8 +36,8 @@ OUT="$REPO_ROOT/release-out/$TAG"
 mkdir -p "$OUT"
 rm -f "$OUT"/firefox-*.{zip,tar.gz} "$OUT/checksums.txt"
 
-WIN_ZIP="firefox-157.0.1-stealth-win-x86_64.zip"
-LIN_TGZ="firefox-157.0.1-stealth-linux-x86_64.tar.gz"
+WIN_ZIP="firefox-159.0-stealth-win-x86_64.zip"
+LIN_TGZ="firefox-159.0-stealth-linux-x86_64.tar.gz"
 
 # mach package emits a clean app tree at obj/.../dist/firefox/ (firefox.exe +
 # libs + application.ini + dependentlibs.list, no dev cruft). The release zip

@@ -1,8 +1,8 @@
 diff --git a/dom/base/test/browser.toml b/dom/base/test/browser.toml
-index 2b89ef3e43b07dd4815da47333c443f8380ea6f2..ff1d1d2937ad1f7c15b87a75de63ef22b1f88d43 100644
+index 9ffd6897ad21f3a0ab87c2bddd09a9614d3325d9..2e386c793684827824d25f27c7bc662b6e7c6fd4 100644
 --- a/dom/base/test/browser.toml
 +++ b/dom/base/test/browser.toml
-@@ -294,6 +294,9 @@ skip-if = [
+@@ -319,6 +319,9 @@ skip-if = [
    "true", # Bug 1271028
  ]
  
@@ -13,7 +13,7 @@ index 2b89ef3e43b07dd4815da47333c443f8380ea6f2..ff1d1d2937ad1f7c15b87a75de63ef22
  
  ["browser_timezone_override.js"]
 diff --git a/dom/serviceworkers/ServiceWorkerPrivate.cpp b/dom/serviceworkers/ServiceWorkerPrivate.cpp
-index 5507534c9cc67eec3e8e04bcd14c1644a36ddee2..a67194c5372b8f34b8bbbef90a0f9b4a8c0f17cc 100644
+index cc6ab40b50f278f95aebf38d5b35ac2cc7d40aa3..a0f9dcf3d4d2f3509dbaaa2c98ee401eb582897c 100644
 --- a/dom/serviceworkers/ServiceWorkerPrivate.cpp
 +++ b/dom/serviceworkers/ServiceWorkerPrivate.cpp
 @@ -10,6 +10,7 @@
@@ -24,7 +24,7 @@ index 5507534c9cc67eec3e8e04bcd14c1644a36ddee2..a67194c5372b8f34b8bbbef90a0f9b4a
  #include "js/ErrorReport.h"
  #include "mozIThirdPartyUtil.h"
  #include "mozilla/Assertions.h"
-@@ -1921,6 +1922,8 @@ void ServiceWorkerPrivate::RefreshRemoteWorkerData(
+@@ -1989,6 +1990,8 @@ void ServiceWorkerPrivate::RefreshRemoteWorkerData(
    serviceWorkerData.descriptor() = mInfo->Descriptor().ToIPC();
    serviceWorkerData.registrationDescriptor() =
        aRegistration->Descriptor().ToIPC();
@@ -46,7 +46,7 @@ index ced898d0af8b48a5bbd188681a9fdac9b3689310..654d928e91984b233ce1f51972082dae
  IPDL_SOURCES += [
      "IPCNavigationPreloadState.ipdlh",
 diff --git a/dom/workers/WorkerPrivate.cpp b/dom/workers/WorkerPrivate.cpp
-index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f489273274acc871 100644
+index dc8cf215235fa3866072ffcf62404bb31c304956..a93706a70801f0809555a2cd29c4804e98c6620e 100644
 --- a/dom/workers/WorkerPrivate.cpp
 +++ b/dom/workers/WorkerPrivate.cpp
 @@ -9,6 +9,7 @@
@@ -57,7 +57,7 @@ index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f4892732
  #include "WorkerCSPEventListener.h"
  #include "WorkerDebugger.h"
  #include "WorkerDebuggerManager.h"
-@@ -2972,6 +2973,8 @@ WorkerPrivate::WorkerPrivate(
+@@ -2982,6 +2983,8 @@ WorkerPrivate::WorkerPrivate(
    } else {
      AssertIsOnMainThread();
  
@@ -66,7 +66,7 @@ index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f4892732
      RuntimeService::GetDefaultJSSettings(mJSSettings);
  
      {
-@@ -6350,7 +6353,8 @@ void WorkerPrivate::UpdateLanguageOverrideInternal(
+@@ -6357,7 +6360,8 @@ void WorkerPrivate::UpdateLanguageOverrideInternal(
          if (aLanguageOverride.IsEmpty()) {
            JS::SetRealmLocaleOverride(realm, nullptr);
          } else {
@@ -76,7 +76,7 @@ index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f4892732
          }
        }
      }
-@@ -6396,6 +6400,10 @@ void WorkerPrivate::UpdateTimezoneOverrideInternal(JSContext* aCx,
+@@ -6403,6 +6407,10 @@ void WorkerPrivate::UpdateTimezoneOverrideInternal(JSContext* aCx,
  
  void WorkerPrivate::UpdateLanguagesInternal(
      const nsTArray<nsString>& aLanguages) {
@@ -88,18 +88,18 @@ index 0a8f381e93bec2404789d3f8a6646e43b879e519..b94672f64efc75f4cc9fb2d7f4892732
    RefPtr<WorkerNavigator> nav = globalScope->GetExistingNavigator();
    if (nav) {
 diff --git a/dom/worklet/WorkletGlobalScope.cpp b/dom/worklet/WorkletGlobalScope.cpp
-index c40353f140d091be5e7a4e04a0248daa2326b904..62390f880c51aae56ccd6e3fcd03af6ad408acb3 100644
+index 10c6b713cc1e0f626b47c6b9488d193515ed2384..b7e5c5fec4cb3846a8b066cd6a8d4c5e5c21734c 100644
 --- a/dom/worklet/WorkletGlobalScope.cpp
 +++ b/dom/worklet/WorkletGlobalScope.cpp
-@@ -7,6 +7,7 @@
- #include "js/RealmOptions.h"
+@@ -8,6 +8,7 @@
  #include "mozilla/SchedulerGroup.h"
+ #include "mozilla/dom/BindingUtils.h"
  #include "mozilla/dom/Console.h"
 +#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/workers)
  #include "mozilla/dom/WorkletGlobalScopeBinding.h"
  #include "mozilla/dom/WorkletImpl.h"
  #include "mozilla/dom/WorkletThread.h"
-@@ -140,6 +141,10 @@ JS::RealmOptions WorkletGlobalScope::CreateRealmOptions() const {
+@@ -141,6 +142,10 @@ JS::RealmOptions WorkletGlobalScope::CreateRealmOptions() const {
      nsCString locale = nsRFPService::GetSpoofedJSLocale();
      options.behaviors().setLocaleOverride(locale.get());
    }

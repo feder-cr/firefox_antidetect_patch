@@ -604,7 +604,7 @@ static bool GetStealthBundleVMetrics(gfxFontEntry* aFontEntry,
   }
   // Deliberately NOT gated on IsUserFont(). On Linux the bundle-only branch of
   // gfxFcPlatformFontList::CreateFontEntry loads each face from an in-memory
-  // buffer through FTUserFontData - the same machinery a web font uses - so
+  // buffer through FontData - the same machinery a web font uses - so
   // every bundled face reports IsUserFont() == true. An earlier version of this
   // guard rejected all 72 of them for that reason, on the one platform the
   // metrics exist to correct.

@@ -1,5 +1,5 @@
 diff --git a/dom/media/MediaManager.cpp b/dom/media/MediaManager.cpp
-index beb1d3b8c628075786afa674669cf2c2e69ad402..b471fe03128ac6551caefea3f1ce735c0f6555a8 100644
+index a3d6a13aa50e48125243e7e15c0322e5e97f5937..8d7344de4fb5bb974839c303e0a7e241b1c6b63c 100644
 --- a/dom/media/MediaManager.cpp
 +++ b/dom/media/MediaManager.cpp
 @@ -13,6 +13,8 @@
@@ -11,7 +11,7 @@ index beb1d3b8c628075786afa674669cf2c2e69ad402..b471fe03128ac6551caefea3f1ce735c
  #include "Tracing.h"
  #include "VideoStreamTrack.h"
  #include "VideoUtils.h"
-@@ -2115,7 +2117,9 @@ bool MediaManager::EnumerationParams::RealDeviceRequested() const {
+@@ -2151,7 +2153,9 @@ bool MediaManager::EnumerationParams::RealDeviceRequested() const {
    auto isReal = [](const auto& aDev) { return aDev.mType == DeviceType::Real; };
    return mVideo.map(isReal).valueOr(false) ||
           mAudio.map(isReal).valueOr(false) ||
@@ -22,7 +22,7 @@ index beb1d3b8c628075786afa674669cf2c2e69ad402..b471fe03128ac6551caefea3f1ce735c
  }
  
  MediaSourceEnum MediaManager::EnumerationParams::VideoInputType() const {
-@@ -2225,8 +2229,9 @@ MediaManager::MaybeRequestPermissionAndEnumerateRawDevices(
+@@ -2261,8 +2265,9 @@ MediaManager::MaybeRequestPermissionAndEnumerateRawDevices(
  
    const bool hasVideo = aParams.mVideo.isSome();
    const bool hasAudio = aParams.mAudio.isSome();
@@ -34,7 +34,7 @@ index beb1d3b8c628075786afa674669cf2c2e69ad402..b471fe03128ac6551caefea3f1ce735c
    const bool hasFakeCams = aParams.HasFakeCams();
    const bool hasFakeMics = aParams.HasFakeMics();
    // True if at least one of video input or audio input is a real device
-@@ -2374,7 +2379,9 @@ MediaManager::EnumerateRawDevices(EnumerationParams aParams) {
+@@ -2410,7 +2415,9 @@ MediaManager::EnumerateRawDevices(EnumerationParams aParams) {
                      video->mForcedDeviceName.get());
      devices->AppendElements(std::move(videos));
    }
@@ -45,7 +45,7 @@ index beb1d3b8c628075786afa674669cf2c2e69ad402..b471fe03128ac6551caefea3f1ce735c
      MediaDeviceSet outputs;
      MOZ_ASSERT(realBackend);
      realBackend->EnumerateDevices(MediaSourceEnum::Other,
-@@ -2402,7 +2409,8 @@ MediaManager::EnumerateRawDevices(EnumerationParams aParams) {
+@@ -2438,7 +2445,8 @@ MediaManager::EnumerateRawDevices(EnumerationParams aParams) {
        GetMediaDevices(videoBackend, MediaSourceEnum::Microphone, audios,
                        aParams.mVideo->mForcedMicrophoneName.get());
      }
@@ -55,7 +55,7 @@ index beb1d3b8c628075786afa674669cf2c2e69ad402..b471fe03128ac6551caefea3f1ce735c
        // When using the real backend for video, there could also be
        // speakers to correlate with. There are no fake speakers.
        if (speakers.isSome()) {
-@@ -2438,14 +2446,20 @@ RefPtr<ConstDeviceSetPromise> MediaManager::GetPhysicalDevices() {
+@@ -2474,14 +2482,20 @@ RefPtr<ConstDeviceSetPromise> MediaManager::GetPhysicalDevices() {
            GetCurrentSerialEventTarget(), __func__,
            [self = RefPtr(this), this, promises = mPendingDevicesPromises](
                RefPtr<MediaDeviceSetRefCnt> aDevices) mutable {

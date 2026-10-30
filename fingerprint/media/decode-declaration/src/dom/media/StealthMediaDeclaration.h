@@ -68,9 +68,14 @@ namespace mozilla {
  *     info and calls Supports: KeySystemConfig, MediaKeySystemAccess, GMPParent.
  *   - NOT through MFMediaEngineDecoderModule::SupportsConfig: it asks a
  *     RemoteDecoderModule, not a PDMFactory.
- *   - NOT through PDMFactory::SupportsAsync, which asks each platform module
- *     directly. So the cache-backed MediaCapabilities path (cache pref on)
- *     does not see this declaration; the synchronous path does.
+ *   - Through PDMFactory::SupportsAsync, which asks each platform module
+ *     directly and so carries the same hook at its entry. Since 159 the
+ *     WebRTC branch of MediaCapabilities.decodingInfo asks here
+ *     (WebrtcMediaDataDecoder::Supports -> PDMFactorySupport::IsSupportedAsync),
+ *     and so does the cache-backed path (codec-support cache pref on).
+ *   - NOT through PDMFactory::StrictSupportsAsync (159), which creates a real
+ *     decoder as retail does; its only caller, the non-WebRTC decodingInfo,
+ *     is answered by StealthDeclaredDecodingInfoFor after it.
  *
  * The declaration is consulted BEFORE the EME module, so on a build where EME is
  * present the declared answer wins over the EME answer.

@@ -36,3 +36,15 @@ The declaration moved one layer down, to PDMFactory::Supports, where the key
 is a track mime type and the set is a dozen names Gecko defines itself. See
 dom/media/StealthMediaDeclaration.h. Everything in DecoderTraits.cpp is then
 Gecko's own host-independent logic and needs no help.
+
+Firefox 159 (2026-10-30): the WebRTC branch of MediaCapabilities.decodingInfo
+stopped asking PDMFactory::Supports. It goes WebrtcMediaDataDecoder::Supports ->
+PDMFactorySupport::IsSupportedAsync -> PDMFactory::SupportsAsync, which asks
+each platform module directly, so a page saw the host's real hardware-decode
+bit. SupportsAsync now carries the same hook at its entry as Supports, and the
+hook ceiling of PDMFactory.cpp went from 5 to 9 lines for it: two entries, no
+common callee in Mozilla's code. PDMFactory::StrictSupportsAsync (new in 159)
+keeps no hook: retail creates a real decoder there, and the non-WebRTC
+decodingInfo that calls it is answered by StealthDeclaredDecodingInfoFor
+afterwards. Test: dom/media/gtest/TestStealthMediaDeclaration.cpp (both roads
+give the declared set).

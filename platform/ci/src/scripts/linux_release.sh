@@ -26,7 +26,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$HOME/ff-build/release-$TAG}"
 # dist/bin is the development tree, with the test binaries and the comments the
 # packager strips from the .properties a page can read.
 DIST="$SOURCE_DIR/obj-x86_64-pc-linux-gnu/dist/firefox"
-TARBALL="$OUTPUT_DIR/firefox-157.0.1-stealth-linux-x86_64.tar.gz"
+TARBALL="$OUTPUT_DIR/firefox-159.0-stealth-linux-x86_64.tar.gz"
 
 if [ ! -d "$DIST" ]; then
     echo "ERROR: dist/firefox not found at $DIST: run ./mach package first" >&2

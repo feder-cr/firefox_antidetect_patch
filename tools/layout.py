@@ -230,6 +230,8 @@ OWN_FILES = [
     (r"^dom/quota/StealthQuotaEstimate\.", "fingerprint/hardware/storage-quota"),
     (r"^dom/media/webaudio/StealthAudioNoise\.", "fingerprint/audio/noise"),
     (r"^dom/media/gtest/TestStealthAudioNoise\.", "fingerprint/audio/noise"),
+    (r"^dom/media/gtest/TestStealthMediaDeclaration\.", "fingerprint/media/decode-declaration"),
+    (r"^dom/quota/test/gtest/TestStealthQuotaEstimate\.", "fingerprint/hardware/storage-quota"),
     (r"^dom/base/StealthWindowGeometry\.", "fingerprint/screen-window/geometry"),
     (r"^dom/events/StealthScreenCoords\.", "fingerprint/screen-window/geometry"),
     (r"^dom/media/StealthMediaDeclaration\.", "fingerprint/media/decode-declaration"),

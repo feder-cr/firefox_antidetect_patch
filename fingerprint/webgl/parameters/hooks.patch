@@ -1,5 +1,5 @@
 diff --git a/dom/canvas/ClientWebGLContext.cpp b/dom/canvas/ClientWebGLContext.cpp
-index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70e74f12cb 100644
+index 097d20229785c61c89dc5c7e4c22799c48fb7c12..ca94f8559f74efc498ad5226561c55d9e11b198c 100644
 --- a/dom/canvas/ClientWebGLContext.cpp
 +++ b/dom/canvas/ClientWebGLContext.cpp
 @@ -10,6 +10,8 @@
@@ -75,7 +75,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
  
    const auto& shaderPrecisions = *notLost->info.shaderPrecisions;
    const auto args =
-@@ -5391,6 +5408,8 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
+@@ -5416,6 +5433,8 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
                                            {format, type},
                                            state.mPixelPackState};
    Run<RPROC(ReadPixelsPbo)>(desc, static_cast<uint64_t>(offset));
@@ -84,7 +84,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
  }
  
  void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
-@@ -5438,7 +5457,8 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
+@@ -5463,7 +5482,8 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
                                              *uvec2::From(width, height),
                                              {format, type},
                                              state.mPixelPackState};
@@ -94,7 +94,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
      if (succeeded) {
        CanvasUtils::ImageExtraction extraction =
            ImageExtractionResult(mCanvasElement, mOffscreenCanvas);
-@@ -5474,8 +5494,10 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
+@@ -5499,8 +5519,10 @@ void ClientWebGLContext::ReadPixels(GLint x, GLint y, GLsizei width,
    });
  }
  
@@ -107,7 +107,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
    RefPtr<webgl::NotLostData> notLost(mNotLost);
    if (!notLost) {
      return false;
-@@ -5521,6 +5543,8 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
+@@ -5546,6 +5568,8 @@ bool ClientWebGLContext::DoReadPixels(const webgl::ReadPixelsDesc& desc,
      Memcpy(&destRow, srcRow);
    }
  
@@ -116,7 +116,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
    return true;
  }
  
-@@ -5559,6 +5583,8 @@ ClientWebGLContext::DoReadPixelsAsync() {
+@@ -5584,6 +5608,8 @@ ClientWebGLContext::DoReadPixelsAsync() {
  
    const size_t expectedSize = checkedByteSize.value();
    const auto desc = webgl::ReadPixelsDesc{{0, 0}, size};
@@ -125,7 +125,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
  
    RefPtr<dom::PWebGLChild::ReadPixelsAsyncPromise> ipcPromise =
        child->SendReadPixelsAsync(desc, static_cast<uint64_t>(expectedSize));
-@@ -5570,7 +5596,8 @@ ClientWebGLContext::DoReadPixelsAsync() {
+@@ -5595,7 +5621,8 @@ ClientWebGLContext::DoReadPixelsAsync() {
    ipcPromise->Then(
        GetCurrentSerialEventTarget(), __func__,
        [self = RefPtr{this}, promise, child, desc, size, surfaceFormat,
@@ -135,7 +135,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
          if (!aReply.byteStride || !aReply.shmem) {
            promise->Reject(NS_ERROR_FAILURE, __func__);
            return;
-@@ -5656,7 +5683,10 @@ ClientWebGLContext::DoReadPixelsAsync() {
+@@ -5681,7 +5708,10 @@ ClientWebGLContext::DoReadPixelsAsync() {
                {size.x, size.y}));
          }
  
@@ -147,7 +147,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
        },
  
        [promise](const mozilla::ipc::ResponseRejectReason aReason) {
-@@ -6383,6 +6413,9 @@ bool ClientWebGLContext::IsSupported(const WebGLExtensionID ext,
+@@ -6408,6 +6438,9 @@ bool ClientWebGLContext::IsSupported(const WebGLExtensionID ext,
    if (IsExtensionForbiddenForCaller(ext, callerType)) {
      return false;
    }
@@ -157,7 +157,7 @@ index 67b11d6f2f4fa569575b2aec801ed3c8bd3d1a79..e558dc5112bb6fc9d76f0cf5e1b16d70
  
    const auto& limits = Limits();
    return limits.supportedExtensions[ext];
-@@ -6398,6 +6431,8 @@ void ClientWebGLContext::GetSupportedExtensions(
+@@ -6423,6 +6456,8 @@ void ClientWebGLContext::GetSupportedExtensions(
    }
  
    auto& retarr = retval.SetValue();

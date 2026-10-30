@@ -123,7 +123,7 @@ hb_blob_t* StealthHBFaceTable(gfxFontEntry* aEntry, uint32_t aTableTag);
 void StealthDeclareTextOptions(FcPattern* aPattern);
 
 // Called in gfxFontconfigFontEntry::CreateFontInstance right after Mozilla's
-// `if (!face->GetData())` block. When that block left aFile empty (a face made
+// `if (!face->GetFontData())` block. When that block left aFile empty (a face made
 // from data) and the PATTERN names a file (FC_FILE and FC_INDEX), sets aFile
 // and aIndex from it. Otherwise touches nothing: a face from data with no file
 // keeps the empty name, as upstream.
@@ -131,7 +131,7 @@ void StealthDeclaredFontFile(FcPattern* aPattern, std::string& aFile,
                              int& aIndex);
 
 // Called in the same function right after mUnscaledFontCache.Add. When Mozilla
-// built the path-less UnscaledFont (it chooses on GetData()) but aFile names
+// built the path-less UnscaledFont (it chooses on GetFontData()) but aFile names
 // the file, replaces aFont with one built on the path and adds that to the
 // entry's cache. aFile is moved from then.
 void StealthPreferFileUnscaledFont(

@@ -1,5 +1,5 @@
 diff --git a/docshell/base/moz.build b/docshell/base/moz.build
-index ed7ab01a1db3777e5e703fea52e80b01c9bc273d..4db222ebec9cbf6739d7c317ce67e9967d8e4d54 100644
+index 72a86ad9f248aa366dee072569d35c8509944b84..ad4e0ce200ecc5cf0407de06c5fbf63e2830477e 100644
 --- a/docshell/base/moz.build
 +++ b/docshell/base/moz.build
 @@ -99,6 +99,8 @@ UNIFIED_SOURCES += [
@@ -12,10 +12,10 @@ index ed7ab01a1db3777e5e703fea52e80b01c9bc273d..4db222ebec9cbf6739d7c317ce67e996
  TEST_DIRS += ["test/gtest"]
  
 diff --git a/docshell/base/nsDocShell.h b/docshell/base/nsDocShell.h
-index 0568cbf7f78bc3711275773037fd5ba254f083e7..71654a6ba6187c5ecb47f643d49410c7917b3722 100644
+index 27d9e920d135d8f94971cf303ef7ba3bfe4d512e..8c4740b678c6eb6d898ec061e233540b52c9e674 100644
 --- a/docshell/base/nsDocShell.h
 +++ b/docshell/base/nsDocShell.h
-@@ -1355,6 +1355,10 @@ class nsDocShell final : public nsDocLoader,
+@@ -1359,6 +1359,10 @@ class nsDocShell final : public nsDocLoader,
  
    bool mIsExecutingOnLoadHandler : 1;
  
@@ -27,10 +27,10 @@ index 0568cbf7f78bc3711275773037fd5ba254f083e7..71654a6ba6187c5ecb47f643d49410c7
  
    // There has been an OnStartRequest for a non-about:blank URI
 diff --git a/docshell/base/nsIDocShell.idl b/docshell/base/nsIDocShell.idl
-index 7cbed1af77c94e97f9f5bda8f6c63c54517300bc..c0701a76eb70819dce1c234a18c4f0828a8cc6bc 100644
+index 264a665f8f08dd480b8bb9f1a5969ae55cc4a439..6fbdcc08feee4ff6310d5399c73d1f22292c0b72 100644
 --- a/docshell/base/nsIDocShell.idl
 +++ b/docshell/base/nsIDocShell.idl
-@@ -684,6 +684,10 @@ interface nsIDocShell : nsIDocShellTreeItem
+@@ -685,6 +685,10 @@ interface nsIDocShell : nsIDocShellTreeItem
     */
    void synchronizeLayoutHistoryState();
  

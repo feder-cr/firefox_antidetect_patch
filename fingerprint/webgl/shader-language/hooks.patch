@@ -1,8 +1,8 @@
 diff --git a/dom/canvas/WebGLContext.cpp b/dom/canvas/WebGLContext.cpp
-index 31ee303f13770019357ef400f4f29a9890753beb..86ddd27a79572ea51c4ca0c3577292da6c800c8a 100644
+index ee2efa6b904273b7cc10a1a0c91515a93d9c15f4..a699c076da40b1969fd1e676a6cb5c6304f8a37f 100644
 --- a/dom/canvas/WebGLContext.cpp
 +++ b/dom/canvas/WebGLContext.cpp
-@@ -2771,7 +2771,10 @@ webgl::CompileResult WebGLContext::GetCompileResult(
+@@ -2763,7 +2763,10 @@ webgl::CompileResult WebGLContext::GetCompileResult(
        return;
      }
      // TODO: These could be large and should be made fallible.
@@ -15,10 +15,10 @@ index 31ee303f13770019357ef400f4f29a9890753beb..86ddd27a79572ea51c4ca0c3577292da
      if (!shader.IsCompiled()) return;
      ret.success = true;
 diff --git a/dom/canvas/WebGLContext.h b/dom/canvas/WebGLContext.h
-index fdb14e0157f225ecdac45ab0b8736bec28258fb6..fde41ac51f101052c7964760d6039ab2eb5e6a4a 100644
+index c05f835489beab0ef0ac3d7581223930b5d6cec8..498ea4900e0e2ba23a414794058770c3abbdcf9f 100644
 --- a/dom/canvas/WebGLContext.h
 +++ b/dom/canvas/WebGLContext.h
-@@ -953,8 +953,9 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
+@@ -955,8 +955,9 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
  
    mutable GLenum mWebGLError = 0;
  

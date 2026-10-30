@@ -1,8 +1,8 @@
 diff --git a/.gitignore b/.gitignore
-index 16b65fd201914b391f2febe8a658310329bd2e24..aab879e7669898f577f1b3da8bb02a843598d331 100644
+index dac0fd33ddbb43b4fc9114de5d4138b995441095..a00c91ba898919ade19ed385e4a06175d6c5c826 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -432,3 +432,4 @@ CLAUDE.local.md
+@@ -433,3 +433,4 @@ CLAUDE.local.md
  # Ignore .json.gz (typically profiles) in the root directory
  # lint-ignore-next-line: git-only
  /*.json.gz

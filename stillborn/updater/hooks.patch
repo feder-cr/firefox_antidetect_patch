@@ -57,7 +57,7 @@ index ff6c58cbe0129b75452a8a2a101c54a8264046fe..c70917fe90b9951555b42b5a9a844ea9
      let args = [
        "--MOZ_LOG",
 diff --git a/toolkit/mozapps/update/UpdateService.sys.mjs b/toolkit/mozapps/update/UpdateService.sys.mjs
-index 1166c7b232e502cd2c5bf713c122962c2242216b..51b747cd3df77b14e20b8e0b738a2b0cca7d5e39 100644
+index 164381ebc1073b644ab0a95910e2aab6c397e879..864877cd156e5dd38ba4a2cd7a4181d63aebb917 100644
 --- a/toolkit/mozapps/update/UpdateService.sys.mjs
 +++ b/toolkit/mozapps/update/UpdateService.sys.mjs
 @@ -13,6 +13,7 @@ import {
@@ -79,7 +79,7 @@ index 1166c7b232e502cd2c5bf713c122962c2242216b..51b747cd3df77b14e20b8e0b738a2b0c
  
      // Don't download the update if the update's version is less than the
      // current application's version or the update's version is the same as the
-@@ -5766,6 +5771,7 @@ export class CheckerService {
+@@ -5768,6 +5773,7 @@ export class CheckerService {
        // "looks" fine but there was probably an XML error or a bogus file.
        return this.#getCheckFailedObject(status, 200, request);
      }

@@ -1,5 +1,5 @@
 diff --git a/dom/webidl/Window.webidl b/dom/webidl/Window.webidl
-index c4191015847190625f22da9aae85eb79a4016913..f5ef619f86a78448a399c3f0e9be537180f8c004 100644
+index 36207ca9965b2e5ce7ee74776f84d43a08cbb6d9..6cd349fe9c6f80198c197976ced63bfec6be4626 100644
 --- a/dom/webidl/Window.webidl
 +++ b/dom/webidl/Window.webidl
 @@ -383,6 +383,9 @@ dictionary SynthesizeEventData {

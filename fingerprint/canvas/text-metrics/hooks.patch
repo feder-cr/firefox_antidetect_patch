@@ -1,5 +1,5 @@
 diff --git a/dom/canvas/CanvasRenderingContext2D.cpp b/dom/canvas/CanvasRenderingContext2D.cpp
-index 19c8dc7c46dc15c73e9d4a0268001685a934980b..c8f057fed313ff46db32350a6216ae2e8fe38ed9 100644
+index 2f28cb5686188778c4f836a2a4ac942d7494b1d2..6736527fcf81e64537ab79e6d5fd21e3ce8d2120 100644
 --- a/dom/canvas/CanvasRenderingContext2D.cpp
 +++ b/dom/canvas/CanvasRenderingContext2D.cpp
 @@ -22,6 +22,7 @@
@@ -10,7 +10,7 @@ index 19c8dc7c46dc15c73e9d4a0268001685a934980b..c8f057fed313ff46db32350a6216ae2e
  #include "js/Array.h"  // JS::GetArrayLength
  #include "js/Conversions.h"
  #include "js/HeapAPI.h"
-@@ -2656,7 +2657,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
+@@ -2671,7 +2672,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
      nsICanvasRenderingContextInternal* srcCanvas = canvas->GetCurrentContext();
      if (srcCanvas) {
        // This might not be an Azure canvas!
@@ -20,7 +20,7 @@ index 19c8dc7c46dc15c73e9d4a0268001685a934980b..c8f057fed313ff46db32350a6216ae2e
        if (!srcSurf) {
          aError.ThrowInvalidStateError(
              "CanvasRenderingContext2D.createPattern() failed to snapshot source"
-@@ -2698,7 +2700,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
+@@ -2713,7 +2715,8 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
      nsICanvasRenderingContextInternal* srcCanvas =
          offscreenCanvas->GetContext();
      if (srcCanvas) {
@@ -30,7 +30,7 @@ index 19c8dc7c46dc15c73e9d4a0268001685a934980b..c8f057fed313ff46db32350a6216ae2e
        if (!srcSurf) {
          aError.ThrowInvalidStateError(
              "Passed-in canvas failed to create snapshot");
-@@ -5392,6 +5395,13 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
+@@ -5405,6 +5408,13 @@ UniquePtr<TextMetrics> CanvasRenderingContext2D::DrawOrMeasureText(
          -processor.mBoundingBox.Y() - baselineAnchor;
      double actualBoundingBoxDescent =
          processor.mBoundingBox.YMost() + baselineAnchor;

@@ -1,5 +1,5 @@
 diff --git a/dom/base/nsContentUtils.cpp b/dom/base/nsContentUtils.cpp
-index 95d9e4fa4f057480d5757c28739b6881127cff1c..11d14cfff05f2f1e2279446743d98e400217fdd5 100644
+index 7929fcdeb59c47dbd2bee9e8d8bfd7ef2e8db87b..d4d31b92401859b0116809a43e3b3057eb663afa 100644
 --- a/dom/base/nsContentUtils.cpp
 +++ b/dom/base/nsContentUtils.cpp
 @@ -28,6 +28,8 @@
@@ -11,7 +11,7 @@ index 95d9e4fa4f057480d5757c28739b6881127cff1c..11d14cfff05f2f1e2279446743d98e40
  #include "ThirdPartyUtil.h"
  #include "Units.h"
  #include "chrome/common/ipc_message.h"
-@@ -10495,6 +10497,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
+@@ -10508,6 +10510,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
    mouseOrPointerEvent.mModifiers =
        GetWidgetModifiers(aMouseEventData.mModifiers);
    mouseOrPointerEvent.mButton = aMouseEventData.mButton;
@@ -20,9 +20,9 @@ index 95d9e4fa4f057480d5757c28739b6881127cff1c..11d14cfff05f2f1e2279446743d98e40
    mouseOrPointerEvent.mButtons =
        aMouseEventData.mButtons.WasPassed()
            ? aMouseEventData.mButtons.Value()
-@@ -10524,6 +10528,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
-   mouseOrPointerEvent.mRefPoint = aRefPoint;
-   mouseOrPointerEvent.mIgnoreRootScrollFrame = aOptions.mIgnoreRootScrollFrame;
+@@ -10542,6 +10546,8 @@ Result<bool, nsresult> nsContentUtils::SynthesizeMouseEvent(
+                                           aMouseEventData.mMovementY.Value());
+   }
  
 +  // STEALTH-HOOK(fingerprint/input/event-birth)
 +  StealthSetInputEventBirth(mouseOrPointerEvent, aMouseEventData.mLatency);
@@ -30,10 +30,10 @@ index 95d9e4fa4f057480d5757c28739b6881127cff1c..11d14cfff05f2f1e2279446743d98e40
    if (aOptions.mToWindow) {
      nsresult rv = aPresShell->HandleEvent(aPresShell->GetRootFrame(),
 diff --git a/dom/base/test/gtest/moz.build b/dom/base/test/gtest/moz.build
-index 6936f4c7d5934511caead1cff46b601d5e23ae63..a930c1437494a2565b24ba77a7e7021cfa5d5800 100644
+index aaf31169b44149bd6042cea4eb2e08c87c1378e7..ab32696b38cfff1d394abd62f85407ef79a3f280 100644
 --- a/dom/base/test/gtest/moz.build
 +++ b/dom/base/test/gtest/moz.build
-@@ -12,6 +12,7 @@ UNIFIED_SOURCES += [
+@@ -13,6 +13,7 @@ UNIFIED_SOURCES += [
      "TestXMLSerializerNoBreakLink.cpp",
      "TestXPathGenerator.cpp",
  ]

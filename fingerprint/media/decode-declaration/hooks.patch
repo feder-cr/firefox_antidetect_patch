@@ -1,5 +1,5 @@
 diff --git a/dom/media/mediacapabilities/MediaCapabilities.cpp b/dom/media/mediacapabilities/MediaCapabilities.cpp
-index 74076040c099d4824b6a5828cce639937df224a9..ba8a86c62a81124be804dbae5067d07cee5888a3 100644
+index b25c2e748f7f8f02a14bfb5d476cdc52cbaf3e01..50760af84257372547399b1e773f3f8ee993e069 100644
 --- a/dom/media/mediacapabilities/MediaCapabilities.cpp
 +++ b/dom/media/mediacapabilities/MediaCapabilities.cpp
 @@ -13,6 +13,7 @@
@@ -10,7 +10,7 @@ index 74076040c099d4824b6a5828cce639937df224a9..ba8a86c62a81124be804dbae5067d07c
  #include "VPXDecoder.h"
  #include "WindowRenderer.h"
  #include "mozilla/CheckedInt.h"
-@@ -1159,6 +1160,11 @@ void MediaCapabilities::CreateNonWebRTCDecodingInfo(
+@@ -1213,6 +1214,11 @@ void MediaCapabilities::CreateNonWebRTCDecodingInfo(
                 holder->Complete();
                 nsIGlobalObject* global = holder->GetParentObject();
                 NS_ENSURE_TRUE_VOID(global);
@@ -43,10 +43,10 @@ index af9a8c99f02dcd2ea94b067014503121a7344aca..dec9e76391a7e92852d0b9e82f4d637d
  if CONFIG["OS_TARGET"] == "Linux":
      UNIFIED_SOURCES += ["UnderrunHandlerLinux.cpp"]
 diff --git a/dom/media/platforms/PDMFactory.cpp b/dom/media/platforms/PDMFactory.cpp
-index a2513637951cca987ee00f2732b1261e90f15db6..0f471541b2985b25b0c0ba845d5e105e8d5851e5 100644
+index a886e9fe820e8a554f2492163a268bd36b668cac..ed03b77a283e3fc265a652844438c117c5fcf0cd 100644
 --- a/dom/media/platforms/PDMFactory.cpp
 +++ b/dom/media/platforms/PDMFactory.cpp
-@@ -29,6 +29,7 @@
+@@ -30,6 +30,7 @@
  #include "mozilla/TaskQueue.h"
  #include "mozilla/gfx/gfxVars.h"
  #include "mozilla/ipc/UtilityMediaServiceParent.h"
@@ -54,7 +54,7 @@ index a2513637951cca987ee00f2732b1261e90f15db6..0f471541b2985b25b0c0ba845d5e105e
  #include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
  #include "nsPrintfCString.h"
  
-@@ -469,6 +470,10 @@ DecodeSupportSet PDMFactory::SupportsMimeType(
+@@ -470,6 +471,10 @@ DecodeSupportSet PDMFactory::SupportsMimeType(
  DecodeSupportSet PDMFactory::Supports(
      const SupportDecoderParams& aParams,
      DecoderDoctorDiagnostics* aDiagnostics) const {
@@ -64,4 +64,15 @@ index a2513637951cca987ee00f2732b1261e90f15db6..0f471541b2985b25b0c0ba845d5e105e
 +  }
    if (mEMEPDM) {
      return mEMEPDM->Supports(aParams, aDiagnostics);
+   }
+@@ -487,6 +492,10 @@ DecodeSupportSet PDMFactory::Supports(
+ 
+ RefPtr<PDMSupportsDecoderPromise> PDMFactory::SupportsAsync(
+     const SupportDecoderParams& aParams) const {
++  // STEALTH-HOOK(fingerprint/media/decode-declaration)
++  if (auto declared = StealthDeclaredDecodeSupportSet(aParams.MimeType())) {
++    return PDMSupportsDecoderPromise::CreateAndResolve(*declared, __func__);
++  }
+   if (mEMEPDM) {
+     return mEMEPDM->SupportsAsync(aParams);
    }

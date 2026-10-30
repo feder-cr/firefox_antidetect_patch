@@ -1,8 +1,8 @@
 diff --git a/toolkit/toolkit.mozbuild b/toolkit/toolkit.mozbuild
-index f3c59b08567c9b4ed1b5ccb3eeea845cf7a4808b..94a8c420628fcd61c8045a2d714f00331e798da9 100644
+index c2ac333a4d5dba5f69dcaf1bb57e71e536564f9e..c2b16a4c8aaab51303472061acc39d9b79f94836 100644
 --- a/toolkit/toolkit.mozbuild
 +++ b/toolkit/toolkit.mozbuild
-@@ -152,6 +152,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+@@ -151,6 +151,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
  if CONFIG["ENABLE_WEBDRIVER"]:
      DIRS += [
          "/remote",

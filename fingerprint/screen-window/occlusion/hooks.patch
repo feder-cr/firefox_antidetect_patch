@@ -1,5 +1,5 @@
 diff --git a/widget/gtk/nsWindow.cpp b/widget/gtk/nsWindow.cpp
-index 71d1dd168c5f70ca404334e89d4eec44e44da415..314467d3888002023454f1d241f8604a95878570 100644
+index 8b8fc4480ab2d06d23027f466bbaadced635bdb2..0024d3d48a0826de24f2fd90282a7afa14736adf 100644
 --- a/widget/gtk/nsWindow.cpp
 +++ b/widget/gtk/nsWindow.cpp
 @@ -49,6 +49,7 @@
@@ -10,7 +10,7 @@ index 71d1dd168c5f70ca404334e89d4eec44e44da415..314467d3888002023454f1d241f8604a
  #include "mozilla/SwipeTracker.h"
  #include "mozilla/TextEventDispatcher.h"
  #include "mozilla/TextEvents.h"
-@@ -3547,7 +3548,9 @@ void nsWindow::DispatchPanGesture(PanGestureInput& aPanInput) {
+@@ -3545,7 +3546,9 @@ void nsWindow::DispatchPanGesture(PanGestureInput& aPanInput) {
  
  void nsWindow::OnVisibilityNotifyEvent(GdkVisibilityState aState) {
    LOG("nsWindow::OnVisibilityNotifyEvent [%p] state 0x%x\n", this, aState);

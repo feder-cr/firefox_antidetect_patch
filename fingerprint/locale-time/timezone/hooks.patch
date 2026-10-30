@@ -1,8 +1,8 @@
 diff --git a/docshell/base/BrowsingContext.cpp b/docshell/base/BrowsingContext.cpp
-index fc3768fa48b374f856c0a75166bf3ec728b25bb4..f8c2e0aa83c1b6d9848a7b9d601c884d0d31a32b 100644
+index 0986f712c9246d9dee01a95237eb1b69e4b8349e..b08151fe4426de3821ae468c0c7ab7f3c0f70238 100644
 --- a/docshell/base/BrowsingContext.cpp
 +++ b/docshell/base/BrowsingContext.cpp
-@@ -43,6 +43,7 @@
+@@ -44,6 +44,7 @@
  #include "mozilla/dom/ScriptSettings.h"
  #include "mozilla/dom/SessionStoreChild.h"
  #include "mozilla/dom/SessionStorageManager.h"
@@ -10,7 +10,7 @@ index fc3768fa48b374f856c0a75166bf3ec728b25bb4..f8c2e0aa83c1b6d9848a7b9d601c884d
  #include "mozilla/dom/StructuredCloneTags.h"
  #include "mozilla/dom/UserActivationIPCUtils.h"
  #include "mozilla/dom/WindowBinding.h"
-@@ -1063,6 +1064,8 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
+@@ -1089,6 +1090,8 @@ void BrowsingContext::Attach(bool aFromIPC, ContentParent* aOriginProcess) {
    if (XRE_IsParentProcess()) {
      Canonical()->CanonicalAttach();
    }
@@ -19,7 +19,7 @@ index fc3768fa48b374f856c0a75166bf3ec728b25bb4..f8c2e0aa83c1b6d9848a7b9d601c884d
  }
  
  void BrowsingContext::Detach(bool aFromIPC) {
-@@ -3569,7 +3572,9 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
+@@ -3579,7 +3582,9 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
                               nsCString&& aOldValue) {
    MOZ_ASSERT(IsTop());
  
@@ -30,7 +30,7 @@ index fc3768fa48b374f856c0a75166bf3ec728b25bb4..f8c2e0aa83c1b6d9848a7b9d601c884d
  
    workerinternals::RuntimeService* rts =
        workerinternals::RuntimeService::GetService();
-@@ -3586,8 +3591,8 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
+@@ -3596,8 +3601,8 @@ void BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>,
          if (languageOverride.IsEmpty()) {
            JS::SetRealmLocaleOverride(realm, nullptr);
          } else {
@@ -41,7 +41,7 @@ index fc3768fa48b374f856c0a75166bf3ec728b25bb4..f8c2e0aa83c1b6d9848a7b9d601c884d
          }
  
          if (Navigator* navigator = window->Navigator()) {
-@@ -3902,7 +3907,9 @@ void BrowsingContext::DidSet(FieldIndex<IDX_TimezoneOverride>,
+@@ -3889,7 +3894,9 @@ void BrowsingContext::DidSet(FieldIndex<IDX_TimezoneOverride>,
                               nsString&& aOldValue) {
    MOZ_ASSERT(IsTop());
  
@@ -53,10 +53,10 @@ index fc3768fa48b374f856c0a75166bf3ec728b25bb4..f8c2e0aa83c1b6d9848a7b9d601c884d
    PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
      if (RefPtr<WindowContext> windowContext =
 diff --git a/dom/base/Document.cpp b/dom/base/Document.cpp
-index 5e997a5de5592ab164f61d6ebeb37febd29bbff2..8a5e21215f65e9a24394b7360108571bf1eaa1b7 100644
+index 24fc4978206ae6eba18971f243d680a8b8802e65..de1b18cc1591f0a514b81e2f9bc3a093fb967018 100644
 --- a/dom/base/Document.cpp
 +++ b/dom/base/Document.cpp
-@@ -250,6 +250,7 @@
+@@ -254,6 +254,7 @@
  #include "mozilla/dom/SpeculationRuleSet.h"
  #include "mozilla/dom/SpeculationRules.h"
  #include "mozilla/dom/SpeculationRulesManager.h"
@@ -64,7 +64,7 @@ index 5e997a5de5592ab164f61d6ebeb37febd29bbff2..8a5e21215f65e9a24394b7360108571b
  #include "mozilla/dom/StyleSheetApplicableStateChangeEvent.h"
  #include "mozilla/dom/StyleSheetApplicableStateChangeEventBinding.h"
  #include "mozilla/dom/StyleSheetList.h"
-@@ -4003,6 +4004,11 @@ nsresult Document::InitCSP(nsIChannel* aChannel) {
+@@ -4070,6 +4071,11 @@ nsresult Document::InitCSP(nsIChannel* aChannel) {
      }
    }
  
@@ -76,7 +76,7 @@ index 5e997a5de5592ab164f61d6ebeb37febd29bbff2..8a5e21215f65e9a24394b7360108571b
    nsAutoCString tCspHeaderValue, tCspROHeaderValue;
  
    nsCOMPtr<nsIHttpChannel> httpChannel;
-@@ -4482,11 +4488,11 @@ void Document::SetDocumentURI(nsIURI* aURI) {
+@@ -4597,11 +4603,11 @@ void Document::SetDocumentURI(nsIURI* aURI) {
    }
  }
  
@@ -91,7 +91,7 @@ index 5e997a5de5592ab164f61d6ebeb37febd29bbff2..8a5e21215f65e9a24394b7360108571b
    // "MM/DD/YYYY hh:mm:ss"
    char formatedTime[24];
    if (SprintfLiteral(formatedTime, "%02d/%02d/%04d %02d:%02d:%02d",
-@@ -4504,9 +4510,7 @@ void Document::GetLastModified(nsAString& aLastModified) const {
+@@ -4619,9 +4625,7 @@ void Document::GetLastModified(nsAString& aLastModified) const {
    if (!mLastModified.IsEmpty()) {
      aLastModified.Assign(mLastModified);
    } else {
@@ -102,7 +102,7 @@ index 5e997a5de5592ab164f61d6ebeb37febd29bbff2..8a5e21215f65e9a24394b7360108571b
    }
  }
  
-@@ -12083,9 +12087,7 @@ void Document::RetrieveRelevantHeaders(nsIChannel* aChannel) {
+@@ -12233,9 +12237,7 @@ void Document::RetrieveRelevantHeaders(nsIChannel* aChannel) {
  
    mLastModified.Truncate();
    if (modDate != 0) {

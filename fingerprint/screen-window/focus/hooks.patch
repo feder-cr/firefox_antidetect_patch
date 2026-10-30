@@ -1,5 +1,5 @@
 diff --git a/xpfe/appshell/AppWindow.cpp b/xpfe/appshell/AppWindow.cpp
-index ff293fde9f5a16f063d013e321f9e32eb861b3f5..c5002c8edd1f2fc82775e1a5061fd94ca6d1fd4c 100644
+index 30846e962723cc7103b22531fa72cae88db70a96..a28dfbd33a6b29c328d8cd3b144b78a98d07c739 100644
 --- a/xpfe/appshell/AppWindow.cpp
 +++ b/xpfe/appshell/AppWindow.cpp
 @@ -59,6 +59,7 @@
@@ -10,7 +10,7 @@ index ff293fde9f5a16f063d013e321f9e32eb861b3f5..c5002c8edd1f2fc82775e1a5061fd94c
  #include "mozilla/dom/BarProps.h"
  #include "mozilla/dom/DOMRect.h"
  #include "mozilla/dom/Element.h"
-@@ -2746,6 +2747,13 @@ void AppWindow::WindowActivated() {
+@@ -2756,6 +2757,13 @@ void AppWindow::WindowActivated() {
    if (mDocShell) {
      if (nsCOMPtr<nsPIDOMWindowOuter> window = mDocShell->GetWindow()) {
        if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
@@ -24,7 +24,7 @@ index ff293fde9f5a16f063d013e321f9e32eb861b3f5..c5002c8edd1f2fc82775e1a5061fd94c
          fm->WindowRaised(window, nsFocusManager::GenerateFocusActionId());
        }
      }
-@@ -2757,6 +2765,10 @@ void AppWindow::WindowActivated() {
+@@ -2767,6 +2775,10 @@ void AppWindow::WindowActivated() {
  }
  
  void AppWindow::WindowDeactivated() {

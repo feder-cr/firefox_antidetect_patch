@@ -16,7 +16,13 @@ namespace mozilla::dom::quota {
 // Only the reported value changes: eviction keeps Mozilla's limits.
 // Called by EstimateOp::GetResponse (OriginOperations.cpp), where the answer
 // to the page is written; see fingerprint/hardware/storage-quota/FEATURE.md.
-inline uint64_t StealthEstimateLimit(uint64_t aLimit) {
+// Since 159 GetResponse also answers the group scope (estimateGroupUsage,
+// parent process only, the ServiceWorker quota mitigation): a page never sees
+// it, so it keeps Mozilla's limit and the mitigation decides as in retail.
+inline uint64_t StealthEstimateLimit(uint64_t aLimit, bool aOriginScope) {
+  if (!aOriginScope) {
+    return aLimit;
+  }
   const int32_t mb = StaticPrefs::zoom_stealth_storage_quota_mb();
   return mb > 0 ? uint64_t(mb) * 1024 * 1024 : aLimit;
 }

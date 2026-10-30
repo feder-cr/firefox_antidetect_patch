@@ -1,5 +1,5 @@
 diff --git a/netwerk/protocol/http/AlternateServices.cpp b/netwerk/protocol/http/AlternateServices.cpp
-index 0e4f9086788f8ec408923322e3933cc27d5a2690..3e0f2f2bb3bd480c7810a0ae9f2a162a84f06860 100644
+index 91cc428d47b2e389e6fb0db437db4c5e3d3152b5..f9633dc4cd3d77f7d8410364d06c7c8b00ed13b8 100644
 --- a/netwerk/protocol/http/AlternateServices.cpp
 +++ b/netwerk/protocol/http/AlternateServices.cpp
 @@ -21,6 +21,7 @@
@@ -10,7 +10,7 @@ index 0e4f9086788f8ec408923322e3933cc27d5a2690..3e0f2f2bb3bd480c7810a0ae9f2a162a
  #include "nsThreadUtils.h"
  #include "xpcpublic.h"
  
-@@ -906,7 +907,8 @@ void AltSvcCache::UpdateAltServiceMapping(
+@@ -905,7 +906,8 @@ void AltSvcCache::UpdateAltServiceMapping(
    }
  
    if (map->IsHttp3()) {
@@ -21,7 +21,7 @@ index 0e4f9086788f8ec408923322e3933cc27d5a2690..3e0f2f2bb3bd480c7810a0ae9f2a162a
        LOG(
            ("AltSvcCache::UpdateAltServiceMapping %p map %p ignored h3 because "
 diff --git a/netwerk/protocol/http/DnsAndConnectSocket.cpp b/netwerk/protocol/http/DnsAndConnectSocket.cpp
-index a49e9e63ee02a346f5cb3f46b2c537eec6c7ec5c..273fa4afccd176adf845807902f359c290d65e9e 100644
+index 4d572c6f2a90d42081dc7c2fd171c3e11910e9ac..bb6b68fa2f8dc1ebb6f64fc09e829f1733b3977d 100644
 --- a/netwerk/protocol/http/DnsAndConnectSocket.cpp
 +++ b/netwerk/protocol/http/DnsAndConnectSocket.cpp
 @@ -24,6 +24,7 @@
@@ -60,7 +60,7 @@ index a49e9e63ee02a346f5cb3f46b2c537eec6c7ec5c..273fa4afccd176adf845807902f359c2
  
      if (!proxyTransparent && !proxyInfo->Host().IsEmpty()) {
 diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
-index 77e11d8302b4cfdeba622f33ad75a87c67ed3610..8a85f8522cdb25296eb66a8bb5d6d68831b73779 100644
+index 2d53f5deee9d2dbaf55f6e4fbf4ba4ff2f97f1b8..2a5f70ff54cef474ffd3056f8141a4968142f566 100644
 --- a/netwerk/protocol/http/HttpBaseChannel.cpp
 +++ b/netwerk/protocol/http/HttpBaseChannel.cpp
 @@ -12,6 +12,7 @@
@@ -71,7 +71,7 @@ index 77e11d8302b4cfdeba622f33ad75a87c67ed3610..8a85f8522cdb25296eb66a8bb5d6d688
  #include "mozIRemoteLazyInputStream.h"
  #include "mozIThirdPartyUtil.h"
  #include "mozilla/AntiTrackingUtils.h"
-@@ -6691,10 +6692,8 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
+@@ -6748,10 +6749,8 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
  void HttpBaseChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
  
  bool HttpBaseChannel::Http3Allowed() const {

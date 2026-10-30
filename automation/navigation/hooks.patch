@@ -1,5 +1,5 @@
 diff --git a/docshell/base/CanonicalBrowsingContext.cpp b/docshell/base/CanonicalBrowsingContext.cpp
-index 7d9ac5fbccfd345498c5878019d4702bb27532bd..409bea822367b8c8d07cdb6fb6de01a0e093c7a1 100644
+index 86b2939a83873627e79ec19b87d13008e2e2109d..43a13ea77d87485291dc64c3d915307836fca307 100644
 --- a/docshell/base/CanonicalBrowsingContext.cpp
 +++ b/docshell/base/CanonicalBrowsingContext.cpp
 @@ -9,6 +9,7 @@
@@ -10,7 +10,7 @@ index 7d9ac5fbccfd345498c5878019d4702bb27532bd..409bea822367b8c8d07cdb6fb6de01a0
  #include "mozilla/CheckedInt.h"
  #include "mozilla/Components.h"
  #include "mozilla/ErrorResult.h"
-@@ -1976,6 +1977,8 @@ void CanonicalBrowsingContext::LoadURI(nsIURI* aURI,
+@@ -2200,6 +2201,8 @@ void CanonicalBrowsingContext::LoadURI(nsIURI* aURI,
      (void)SetIsCaptivePortalTab(true);
    }
  
@@ -19,7 +19,7 @@ index 7d9ac5fbccfd345498c5878019d4702bb27532bd..409bea822367b8c8d07cdb6fb6de01a0
    LoadURI(loadState, true);
  }
  
-@@ -2001,6 +2004,8 @@ void CanonicalBrowsingContext::FixupAndLoadURIString(
+@@ -2225,6 +2228,8 @@ void CanonicalBrowsingContext::FixupAndLoadURIString(
      (void)SetIsCaptivePortalTab(true);
    }
  
@@ -29,7 +29,7 @@ index 7d9ac5fbccfd345498c5878019d4702bb27532bd..409bea822367b8c8d07cdb6fb6de01a0
  }
  
 diff --git a/docshell/base/nsDocShell.cpp b/docshell/base/nsDocShell.cpp
-index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a80d859004 100644
+index 9890b717e687329386006642e8c536f4dd094bd9..fbbd86fa8b060636b837b49a2d125aa8fab997bc 100644
 --- a/docshell/base/nsDocShell.cpp
 +++ b/docshell/base/nsDocShell.cpp
 @@ -4,6 +4,8 @@
@@ -41,7 +41,7 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
  #include <algorithm>
  #include "mozilla/CycleCollectedJSContext.h"
  #include "mozilla/dom/HTMLFormElement.h"
-@@ -366,6 +368,9 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
+@@ -365,6 +367,9 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
        mURIResultedInDocument(false),
        mIsBeingDestroyed(false),
        mIsExecutingOnLoadHandler(false),
@@ -51,7 +51,7 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
        mInvisible(false),
        mHasLoadedNonBlankURI(false),
        mHasStartedLoadingOtherThanInitialBlankURI(false),
-@@ -9014,6 +9019,8 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
+@@ -8999,6 +9004,8 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
    attrs.SetFirstPartyDomain(isTopLevelDoc, aLoadState->URI());
  
    nsCOMPtr<nsIRequest> req;
@@ -60,7 +60,7 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
    rv = DoURILoad(aLoadState, aCacheKey, getter_AddRefs(req));
  
    if (NS_SUCCEEDED(rv)) {
-@@ -12136,9 +12143,12 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
+@@ -12113,9 +12120,12 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
        if (!mLoadState->HasSourceElement()) {
          mLoadState->SetSourceElement(mContent->AsElement());
        }
@@ -73,7 +73,7 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
      return NS_OK;
    }
  
-@@ -12147,6 +12157,7 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
+@@ -12124,6 +12134,7 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
      // Don't clear mLoadState, etc. here since this can be called
      // from the OnLinkClickSync() above, and we might be holding
      // the last references to them.
@@ -81,7 +81,7 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
      return NS_OK;
    }
  
-@@ -12157,6 +12168,7 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
+@@ -12134,6 +12145,7 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
    nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
    bool mNoOpenerImplied;
    bool mCancelled = false;
@@ -89,7 +89,7 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
  };
  
  OnLinkClickEvent::OnLinkClickEvent(nsDocShell* aHandler, nsIContent* aContent,
-@@ -12197,6 +12209,7 @@ Result<RefPtr<OnLinkClickEvent>, nsresult> nsDocShell::OnLinkClickWithLoadState(
+@@ -12174,6 +12186,7 @@ Result<RefPtr<OnLinkClickEvent>, nsresult> nsDocShell::OnLinkClickWithLoadState(
    RefPtr<nsIRunnable> runnable = ev;
    nsresult rv = Dispatch(runnable.forget());
    NS_ENSURE_SUCCESS(rv, Err(rv));
@@ -98,10 +98,10 @@ index 48be2ce822c12f18f0b54daaef7009e549beb280..a9a5b44fe5027859e44e72b1a6e365a8
  }
  
 diff --git a/netwerk/base/LoadInfo.cpp b/netwerk/base/LoadInfo.cpp
-index 8296f069eac2665b29aab2bea81c271431df1bcb..de5d497dc9180a32c7208effbf6a12ec67e07ca8 100644
+index 9d64a00363fcfcdd6f2d99c40b085b0651f7b0b7..1ff2a1f606fc9e883f1d2395d4bf4ac2a5bc39bb 100644
 --- a/netwerk/base/LoadInfo.cpp
 +++ b/netwerk/base/LoadInfo.cpp
-@@ -754,7 +754,8 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
+@@ -759,7 +759,8 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
        mInterceptionInfo(rhs.mInterceptionInfo),
        mSchemelessInput(rhs.mSchemelessInput),
        mUserNavigationInvolvement(rhs.mUserNavigationInvolvement),
@@ -111,7 +111,7 @@ index 8296f069eac2665b29aab2bea81c271431df1bcb..de5d497dc9180a32c7208effbf6a12ec
  }
  
  LoadInfo::LoadInfo(
-@@ -2124,4 +2125,16 @@ void LoadInfo::UpdateParentAddressSpaceInfo() {
+@@ -2141,4 +2142,16 @@ void LoadInfo::UpdateParentAddressSpaceInfo() {
    }
  }
  
@@ -129,10 +129,10 @@ index 8296f069eac2665b29aab2bea81c271431df1bcb..de5d497dc9180a32c7208effbf6a12ec
 +
  }  // namespace mozilla::net
 diff --git a/netwerk/base/LoadInfo.h b/netwerk/base/LoadInfo.h
-index 64b79c03e4eb548d53cbc39678db0d6feda7c4c2..c445c186ebe08ba908d80e183672b2b9a1c28a3f 100644
+index a6a44ac715a637ddf1cc5c23ff0dd8440dd45eaf..1fbbf4dd7341f56fcecadf8a6c04de7b5a12f1e5 100644
 --- a/netwerk/base/LoadInfo.h
 +++ b/netwerk/base/LoadInfo.h
-@@ -543,6 +543,8 @@ class LoadInfo final : public nsILoadInfo {
+@@ -519,6 +519,8 @@ class LoadInfo final : public nsILoadInfo {
        dom::UserNavigationInvolvement::None;
  
    bool mSkipHTTPSUpgrade = false;
@@ -142,10 +142,10 @@ index 64b79c03e4eb548d53cbc39678db0d6feda7c4c2..c445c186ebe08ba908d80e183672b2b9
  // This is exposed solely for testing purposes and should not be used outside of
  // LoadInfo
 diff --git a/netwerk/base/TRRLoadInfo.cpp b/netwerk/base/TRRLoadInfo.cpp
-index 312dc82bc38599bab6d789307cc057b5cbb69161..bd5f7f37d5b59a0078d68094e770f829c34e6c8b 100644
+index 0cba54550072adc8a0ad11b1c9a502ff97a7bd7e..d4d68b981a4f9e7e448f56f60983a0a6e0db9de1 100644
 --- a/netwerk/base/TRRLoadInfo.cpp
 +++ b/netwerk/base/TRRLoadInfo.cpp
-@@ -561,5 +561,15 @@ TRRLoadInfo::GetFetchDestination(nsACString& aDestination) {
+@@ -571,5 +571,15 @@ TRRLoadInfo::GetFetchDestination(nsACString& aDestination) {
    return NS_ERROR_NOT_IMPLEMENTED;
  }
  
@@ -162,10 +162,10 @@ index 312dc82bc38599bab6d789307cc057b5cbb69161..bd5f7f37d5b59a0078d68094e770f829
  }  // namespace net
  }  // namespace mozilla
 diff --git a/netwerk/base/nsILoadInfo.idl b/netwerk/base/nsILoadInfo.idl
-index 1830c86aead68d62fc6294fdee3c148f1fbad415..fcb6ce1e05c8a9ba63ae9cff36c5a4a814955884 100644
+index a3e7384515b976681d9e12318cbc1156415a9a50..86327e3e8581acc004f53d5eecb5a45afccf97d2 100644
 --- a/netwerk/base/nsILoadInfo.idl
 +++ b/netwerk/base/nsILoadInfo.idl
-@@ -1712,4 +1712,6 @@ interface nsILoadInfo : nsISupports
+@@ -1748,4 +1748,6 @@ interface nsILoadInfo : nsISupports
        return static_cast<mozilla::dom::UserNavigationInvolvement>(userNavigationInvolvement);
      }
  %}
@@ -173,10 +173,10 @@ index 1830c86aead68d62fc6294fdee3c148f1fbad415..fcb6ce1e05c8a9ba63ae9cff36c5a4a8
 +  [infallible] attribute unsigned long long jugglerLoadIdentifier;
  };
 diff --git a/netwerk/ipc/DocumentLoadListener.cpp b/netwerk/ipc/DocumentLoadListener.cpp
-index 6d94893fb0206f62fe8c07eeda0a7623d56fd7e4..1d09ad75209256fb11e3ba71744dcab834bef82f 100644
+index 10b16322a4a55f7c5d4459489a70347ee1debc4f..fd059098be051b1b1dda0a0d15fedffe108311f7 100644
 --- a/netwerk/ipc/DocumentLoadListener.cpp
 +++ b/netwerk/ipc/DocumentLoadListener.cpp
-@@ -206,6 +206,7 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
+@@ -205,6 +205,7 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
        aLoadState->GetTextDirectiveUserActivation() ||
        aLoadState->HasLoadFlags(nsIWebNavigation::LOAD_FLAGS_FROM_EXTERNAL));
    loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());

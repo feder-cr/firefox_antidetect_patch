@@ -6,7 +6,8 @@
  ],
  "added": {
   "dom/media/StealthMediaDeclaration.cpp": "100644",
-  "dom/media/StealthMediaDeclaration.h": "100644"
+  "dom/media/StealthMediaDeclaration.h": "100644",
+  "dom/media/gtest/TestStealthMediaDeclaration.cpp": "100644"
  },
  "inventory": [
   {

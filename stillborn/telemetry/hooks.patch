@@ -49,10 +49,10 @@ index 2ebae13763c51cad5e8652e9ab4a66907197099f..1e48d9bdbf07d1ad493f0f8725fa4839
    },
  };
 diff --git a/toolkit/components/telemetry/moz.build b/toolkit/components/telemetry/moz.build
-index c92948cad20ebaca9ba8b4d0d599e54c6a812910..17e5521162c666f13d94cc1ed08162d0cc66b349 100644
+index c3eb89d261283faa22884f415aef71b8a65a3b36..cbe13ff8b787b146ea3fe6e922ebdad01ca7e025 100644
 --- a/toolkit/components/telemetry/moz.build
 +++ b/toolkit/components/telemetry/moz.build
-@@ -112,10 +112,12 @@ EXTRA_JS_MODULES += [
+@@ -111,10 +111,12 @@ EXTRA_JS_MODULES += [
      "pings/UntrustedModulesPing.sys.mjs",
      "TelemetryStartup.sys.mjs",
  ]

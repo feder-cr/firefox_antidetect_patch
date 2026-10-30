@@ -51,9 +51,11 @@
   "juggler/tests/not_a_chrome_package.test.mjs": "100644",
   "juggler/tests/request_body_is_always_read.test.mjs": "100644",
   "juggler/tests/response_tells_its_security_and_service_worker.test.mjs": "100644",
+  "juggler/tests/runtime_debugger_module_url.test.mjs": "100644",
   "juggler/tests/runtime_ids_are_unique_per_session.test.mjs": "100644",
   "juggler/tests/shared_cookies_leave_with_their_owner.test.mjs": "100644",
   "juggler/tests/simple_channel.test.mjs": "100644",
+  "juggler/tests/websocket_listener_follows_the_idl.test.mjs": "100644",
   "juggler/tests/worker_debugger_manager_is_a_service.test.mjs": "100644"
  },
  "inventory": [

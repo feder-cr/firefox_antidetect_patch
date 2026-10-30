@@ -1,5 +1,5 @@
 diff --git a/devtools/server/actors/thread.js b/devtools/server/actors/thread.js
-index e0ceee32c625a39d4352f2017d2859dc2f2a0934..a8ae58fccdb091aaabb61abf14e3b4b88134b64e 100644
+index 6363c0c5110d30071e9b18a25e4500dd290570b6..f094e08498f50b329c52a9da8512334925c8d683 100644
 --- a/devtools/server/actors/thread.js
 +++ b/devtools/server/actors/thread.js
 @@ -390,7 +390,8 @@ class ThreadActor extends Actor {
@@ -13,7 +13,7 @@ index e0ceee32c625a39d4352f2017d2859dc2f2a0934..a8ae58fccdb091aaabb61abf14e3b4b8
      }
  
 diff --git a/js/src/debugger/Debugger.cpp b/js/src/debugger/Debugger.cpp
-index 895725a658e94c91412bbb31d5e23fb5733407c7..df0ddae1a3f1bcfada6f3364943677c78f09ac9b 100644
+index 734904920529c1a426772aae5513b37c7d5b76e7..3e85d4ab2d35377aa38c8455b3efcb1556e40483 100644
 --- a/js/src/debugger/Debugger.cpp
 +++ b/js/src/debugger/Debugger.cpp
 @@ -40,6 +40,7 @@
@@ -24,7 +24,7 @@ index 895725a658e94c91412bbb31d5e23fb5733407c7..df0ddae1a3f1bcfada6f3364943677c7
  #include "frontend/CompilationStencil.h"  // for CompilationStencil
  #include "frontend/FrontendContext.h"     // for AutoReportFrontendContext
  #include "frontend/Parser.h"              // for Parser
-@@ -5072,16 +5073,21 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
+@@ -5093,16 +5094,21 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
      return false;
    }
  
@@ -48,7 +48,7 @@ index 895725a658e94c91412bbb31d5e23fb5733407c7..df0ddae1a3f1bcfada6f3364943677c7
  
    // (2)
    if (!debuggees.put(global)) {
-@@ -5103,6 +5109,11 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
+@@ -5124,6 +5130,11 @@ bool Debugger::addDebuggeeGlobal(JSContext* cx, Handle<GlobalObject*> global) {
      }
    });
  
@@ -60,7 +60,7 @@ index 895725a658e94c91412bbb31d5e23fb5733407c7..df0ddae1a3f1bcfada6f3364943677c7
    // (4)
    if (trackingAllocationSites) {
      Debugger::addAllocationsTracking(cx, global);
-@@ -5205,8 +5216,11 @@ void Debugger::removeDebuggeeGlobal(JS::GCContext* gcx, GlobalObject* global,
+@@ -5226,8 +5237,11 @@ void Debugger::removeDebuggeeGlobal(JS::GCContext* gcx, GlobalObject* global,
    // the same zone. If after recomputing the debuggee zone set, this global's
    // zone is not in the set, then we must remove ourselves from the zone's
    // vector of observing debuggers.
@@ -75,10 +75,10 @@ index 895725a658e94c91412bbb31d5e23fb5733407c7..df0ddae1a3f1bcfada6f3364943677c7
    if (debugIter) {
      debugIter->remove();
 diff --git a/js/src/debugger/Debugger.h b/js/src/debugger/Debugger.h
-index bcf6cb8282b5dfae579b882db5a1ea7e7c06b8d7..0620c370fd1295a0031fb72ebefe564156a2a707 100644
+index 50438c8f63bbb278d665ad9d4c9975486a537b05..0606bd9c993df5a05b7896138b5c8a7a38eb9a97 100644
 --- a/js/src/debugger/Debugger.h
 +++ b/js/src/debugger/Debugger.h
-@@ -682,6 +682,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
+@@ -691,6 +691,8 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    using AllocationsLog = js::TraceableFifo<AllocationsLogEntry>;
  
    AllocationsLog allocationsLog;

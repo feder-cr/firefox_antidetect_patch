@@ -38,7 +38,7 @@ index 3b48a7f1e2549f9fa9beed1f3726f4fc3b1fca72..cf9ef2010b32e031265968e1882cb236
    if (ShouldResistFingerprinting(RFPTarget::ScreenAvailRect)) {
      return GetTopWindowInnerRectForRFP();
 diff --git a/layout/base/nsPresContext.cpp b/layout/base/nsPresContext.cpp
-index 06fe27c8d6cd4c1a16822a2e6f39e9d4fd80736e..1eaba7f27e5541d0d35bcbdd71f0eb4316dcfd34 100644
+index 415fe207ad5146470ad2d268400f2f91821bdcce..16628c3fc34a6a27064315f997d99d617e17bc05 100644
 --- a/layout/base/nsPresContext.cpp
 +++ b/layout/base/nsPresContext.cpp
 @@ -7,6 +7,8 @@

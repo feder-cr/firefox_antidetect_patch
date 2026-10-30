@@ -1,8 +1,8 @@
 diff --git a/js/src/debugger/Frame.cpp b/js/src/debugger/Frame.cpp
-index 7385a32755593cee17426331d68ede5ddd17df14..e680574cc2e19614d1b41fea1fdd0772e3625403 100644
+index f02ae572b20867b1c1339a82337e5c9144c57617..dae1a4709bc3763008993762963ab9b84ba6d361 100644
 --- a/js/src/debugger/Frame.cpp
 +++ b/js/src/debugger/Frame.cpp
-@@ -1054,13 +1054,16 @@ static bool EvaluateInEnv(
+@@ -1053,13 +1053,16 @@ static bool EvaluateInEnv(
    AutoSetBypassCSPForDebugger setFlag(cx, evalOptions.bypassCSP());
  
    CompileOptions options(cx);

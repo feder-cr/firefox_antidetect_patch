@@ -1,8 +1,8 @@
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
-index 1391383448bce8b7fa795738bf199cd127a12f5c..4048992df84832c9c79e89526e9411d050728ac4 100644
+index 0f4b2915ad211349c424d1db2bd91c38f140782f..70d06fd1e7f03c978b4157debbf41fab21fb70df 100644
 --- a/browser/app/profile/firefox.js
 +++ b/browser/app/profile/firefox.js
-@@ -1941,9 +1941,9 @@ pref("browser.newtab.preload", true);
+@@ -1954,9 +1954,9 @@ pref("browser.newtab.preload", true);
  // For further detail on the TOU prefs below, see the `preonboarding` feature in
  // FeatureManifest.yaml
  // Version of the TOU that the user last accepted
@@ -14,7 +14,7 @@ index 1391383448bce8b7fa795738bf199cd127a12f5c..4048992df84832c9c79e89526e9411d0
  // Stringified timestamp of when the user first accepted the TOU, only set if
  // they have accepted more than one version.
  pref("termsofuse.firstAcceptedDate", "0");
-@@ -2565,11 +2565,11 @@ pref("media.contextmenu.video-overlay-detection", true);
+@@ -2633,11 +2633,11 @@ pref("media.contextmenu.video-overlay-detection", true);
  
  // Enable Firefox translations powered by the Bergamot translations
  // engine https://browser.mt/.
@@ -29,10 +29,10 @@ index 1391383448bce8b7fa795738bf199cd127a12f5c..4048992df84832c9c79e89526e9411d0
  // Enable the Translations QuickAction in the URL bar.
  pref("browser.translations.quickAction.enabled", true);
 diff --git a/modules/libpref/Preferences.cpp b/modules/libpref/Preferences.cpp
-index aeb7e7bc9ceb56afcdb9962af0a0f1bfafc38c68..04162fcb0bd98c96ba35f3809cbe1c3156582e27 100644
+index deb6f79258a66279f16a97b76a5903ba91bfd631..e7f1b1231841cbbb359ac721afd1229b104f0808 100644
 --- a/modules/libpref/Preferences.cpp
 +++ b/modules/libpref/Preferences.cpp
-@@ -7280,6 +7280,7 @@ static const PrefListEntry sOverrideRestrictionsList[]{
+@@ -7302,6 +7302,7 @@ static const PrefListEntry sOverrideRestrictionsList[]{
  // StaticPrefList) and would normally by blocklisted but we allow them through
  // anyway, so this override list acts as an allowlist
  static const PrefListEntry sDynamicPrefOverrideList[]{
@@ -51,10 +51,10 @@ index c18e30b24e407fe97518150b004b7291de392c2a..d964a823ed12cc9ff84158354f3954aa
 +// STEALTH-HOOK(platform/prefs): our defaults, after all.js so they win.
 +#include init/StealthPrefs.js
 diff --git a/modules/libpref/init/all.js b/modules/libpref/init/all.js
-index d740a8988b276b21b0c2a1782f620042e0542112..fbce4a93c93bbc497003cfc376aa0f1e9801b725 100644
+index 26753001966ab944c524b4ede79d58afe3b4f4de..d87f99ece1b1498df3c133780380e5c8cdc73dca 100644
 --- a/modules/libpref/init/all.js
 +++ b/modules/libpref/init/all.js
-@@ -2695,19 +2695,19 @@ pref("font.size.monospace.x-math", 13);
+@@ -2687,19 +2687,19 @@ pref("font.size.monospace.x-math", 13);
    pref("font.name-list.sans-serif.ar", "sans-serif");
    pref("font.name-list.monospace.ar", "monospace");
    pref("font.name-list.cursive.ar", "cursive");
@@ -77,7 +77,7 @@ index d740a8988b276b21b0c2a1782f620042e0542112..fbce4a93c93bbc497003cfc376aa0f1e
  
    pref("font.name-list.serif.ja", "serif");
    pref("font.name-list.sans-serif.ja", "sans-serif");
-@@ -2744,7 +2744,7 @@ pref("font.size.monospace.x-math", 13);
+@@ -2736,7 +2736,7 @@ pref("font.size.monospace.x-math", 13);
    pref("font.name-list.sans-serif.x-cyrillic", "sans-serif");
    pref("font.name-list.monospace.x-cyrillic", "monospace");
    pref("font.name-list.cursive.x-cyrillic", "cursive");
@@ -86,7 +86,7 @@ index d740a8988b276b21b0c2a1782f620042e0542112..fbce4a93c93bbc497003cfc376aa0f1e
  
    pref("font.name-list.serif.x-devanagari", "serif");
    pref("font.name-list.sans-serif.x-devanagari", "sans-serif");
-@@ -2815,13 +2815,13 @@ pref("font.size.monospace.x-math", 13);
+@@ -2807,13 +2807,13 @@ pref("font.size.monospace.x-math", 13);
    pref("font.name-list.sans-serif.x-unicode", "sans-serif");
    pref("font.name-list.monospace.x-unicode", "monospace");
    pref("font.name-list.cursive.x-unicode", "cursive");
@@ -102,7 +102,7 @@ index d740a8988b276b21b0c2a1782f620042e0542112..fbce4a93c93bbc497003cfc376aa0f1e
  
    pref("font.name-list.serif.zh-CN", "serif");
    pref("font.name-list.sans-serif.zh-CN", "sans-serif");
-@@ -3751,7 +3751,7 @@ pref("toolkit.legacyUserProfileCustomizations.stylesheets", false);
+@@ -3745,7 +3745,7 @@ pref("toolkit.legacyUserProfileCustomizations.stylesheets", false);
    pref("datareporting.policy.minimumPolicyVersion", 1);
    pref("datareporting.policy.minimumPolicyVersion.channel-beta", 2);
    pref("datareporting.policy.firstRunURL", "https://www.mozilla.org/privacy/firefox/");

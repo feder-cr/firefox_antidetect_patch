@@ -1,5 +1,5 @@
 diff --git a/dom/base/moz.build b/dom/base/moz.build
-index 108ccbfc967df85249e32c465db0b874d125daa7..c0928333edd4fb877861675db180871da81593d5 100644
+index f94e5a88fcbd5d22d9cbce9d308c01bfadaa10f3..05224ba537b07c12f3b1b1fe5c1ad98e4509ec78 100644
 --- a/dom/base/moz.build
 +++ b/dom/base/moz.build
 @@ -301,6 +301,7 @@ EXPORTS.mozilla.dom += [
@@ -10,7 +10,7 @@ index 108ccbfc967df85249e32c465db0b874d125daa7..c0928333edd4fb877861675db180871d
  
  if CONFIG["FUZZING"]:
      EXPORTS.mozilla.dom += [
-@@ -519,6 +520,7 @@ UNIFIED_SOURCES += [
+@@ -521,6 +522,7 @@ UNIFIED_SOURCES += [
      "WindowNamedPropertiesHandler.cpp",
      "XPathGenerator.cpp",
  ]

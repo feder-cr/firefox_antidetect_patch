@@ -9,7 +9,7 @@ index 0ebf2de60f2c32f58635deaccae164c0a9b22ed5..8ef5c32c65570c7e9d5715a632202cae
 +
 +include("StealthFonts.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/bundle)
 diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
-index 46725ca0498537098daebed34a5e503306e44882..c92a9b64b2086fe5d96204c3036c39274c4eb398 100644
+index 04bd23515eb4505cee3d9752db6388c4961ec315..401b25b57af4c88827e111bf3042084dcdaed8da 100644
 --- a/browser/installer/package-manifest.in
 +++ b/browser/installer/package-manifest.in
 @@ -50,7 +50,7 @@
@@ -22,7 +22,7 @@ index 46725ca0498537098daebed34a5e503306e44882..c92a9b64b2086fe5d96204c3036c3927
  #endif
  @RESPATH@/hyphenation/*
 diff --git a/gfx/2d/ScaledFontDWrite.cpp b/gfx/2d/ScaledFontDWrite.cpp
-index cab04f04b6da699656bd987bef8700e5b44407ac..858e122b5d47b2ad752aa883d71115cf12532b10 100644
+index 9c934ea5e7593b4595c79d27fafdb6f404699798..764fbd0dbbcc60863388858018167fc138bda942 100644
 --- a/gfx/2d/ScaledFontDWrite.cpp
 +++ b/gfx/2d/ScaledFontDWrite.cpp
 @@ -272,6 +272,14 @@ bool UnscaledFontDWrite::GetFontDescriptor(FontDescriptorOutput aCb,
@@ -41,7 +41,7 @@ index cab04f04b6da699656bd987bef8700e5b44407ac..858e122b5d47b2ad752aa883d71115cf
      return false;
    }
 diff --git a/gfx/2d/UnscaledFontDWrite.h b/gfx/2d/UnscaledFontDWrite.h
-index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..d9f5558406b56f93e0a75b55c4bbe5f6ee200fd7 100644
+index 14fea8ac8725e33901e18ac1b714df2a3ca56f8a..61fba8a3b7ce0f7d263d7e6465f18a926ac7775f 100644
 --- a/gfx/2d/UnscaledFontDWrite.h
 +++ b/gfx/2d/UnscaledFontDWrite.h
 @@ -7,6 +7,7 @@
@@ -52,7 +52,7 @@ index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..d9f5558406b56f93e0a75b55c4bbe5f6
  #include <vector>
  
  #include "2D.h"
-@@ -19,9 +20,11 @@ class ScaledFontDWrite;
+@@ -18,9 +19,11 @@ class ScaledFontDWrite;
  class UnscaledFontDWrite final : public UnscaledFont {
   public:
    MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(UnscaledFontDWrite, override)
@@ -66,7 +66,7 @@ index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..d9f5558406b56f93e0a75b55c4bbe5f6
  
    FontType GetType() const override { return FontType::DWRITE; }
  
-@@ -52,6 +55,8 @@ class UnscaledFontDWrite final : public UnscaledFont {
+@@ -51,6 +54,8 @@ class UnscaledFontDWrite final : public UnscaledFont {
    RefPtr<IDWriteFontFace> mFontFaceBold;
    RefPtr<IDWriteFont> mFont;
    std::vector<WCHAR> mFontFileName;
@@ -74,7 +74,7 @@ index 3528c2bfc8feb1f82ced1490202cbd6180101b6f..d9f5558406b56f93e0a75b55c4bbe5f6
 +  std::wstring mPercorsoDichiarato;
  };
  
- }  // namespace gfx
+ }  // namespace mozilla::gfx
 diff --git a/gfx/thebes/FontData.h b/gfx/thebes/FontData.h
 index d1a4d801b5ceb70defd1df9dea8a939306ddb703..c38bbedf1f3031db56d2fbb85c05170dc32f52cf 100644
 --- a/gfx/thebes/FontData.h
@@ -108,7 +108,7 @@ index d1a4d801b5ceb70defd1df9dea8a939306ddb703..c38bbedf1f3031db56d2fbb85c05170d
  
  #endif  // GFX_FONT_DATA_H
 diff --git a/gfx/thebes/gfxDWriteFontList.h b/gfx/thebes/gfxDWriteFontList.h
-index 442939be588704373bd88a7fe6721f69521bffb2..8643fd3708153a76deb26635645d58b61cc2b12a 100644
+index 93bd8c8d01c3b5c339d6b4ff8e4ae670ceb313dc..42cd2c7fdc2551139aace84982eb996ca969f5d0 100644
 --- a/gfx/thebes/gfxDWriteFontList.h
 +++ b/gfx/thebes/gfxDWriteFontList.h
 @@ -6,6 +6,7 @@
@@ -119,7 +119,7 @@ index 442939be588704373bd88a7fe6721f69521bffb2..8643fd3708153a76deb26635645d58b6
  
  #include "cairo-win32.h"
  #include "dwrite_3.h"
-@@ -237,6 +238,10 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
+@@ -241,6 +242,10 @@ class gfxDWriteFontEntry final : public gfxFontEntry {
  
    DWRITE_FONT_FACE_TYPE mFaceType;
  
@@ -129,8 +129,8 @@ index 442939be588704373bd88a7fe6721f69521bffb2..8643fd3708153a76deb26635645d58b6
 +
    mozilla::Atomic<FontTableCache*> mFontTableCache;
  
-   int8_t mIsCJK;
-@@ -465,6 +470,10 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
+ #if MOZ_FONTATIONS
+@@ -471,6 +476,10 @@ class gfxDWriteFontList final : public gfxPlatformFontList {
        IDWriteFactory* aFactory);
  #endif
  
@@ -142,7 +142,7 @@ index 442939be588704373bd88a7fe6721f69521bffb2..8643fd3708153a76deb26635645d58b6
     * Fonts listed in the registry as substitutes but for which no actual
     * font family is found.
 diff --git a/gfx/thebes/gfxFcPlatformFontList.h b/gfx/thebes/gfxFcPlatformFontList.h
-index a8f8103d24039560ec5562cb74f6cbcef52edcaa..48e67392f9e4d9bde9cfe6658cb1582b2e5ca7c3 100644
+index 28f3feb31c25afb55d431ffed6c0e32d90fd516d..aaf9fe7b75b9064102996a743ed57d7b32648efe 100644
 --- a/gfx/thebes/gfxFcPlatformFontList.h
 +++ b/gfx/thebes/gfxFcPlatformFontList.h
 @@ -67,6 +67,7 @@ struct default_delete<FcObjectSet> {
@@ -151,13 +151,13 @@ index a8f8103d24039560ec5562cb74f6cbcef52edcaa..48e67392f9e4d9bde9cfe6658cb1582b
  class gfxFontconfigFontEntry final : public gfxFT2FontEntryBase {
 +  friend struct StealthFcAccess;  // STEALTH-HOOK(fingerprint/fonts/bundle)
    friend class gfxFcPlatformFontList;
-   using FTUserFontData = mozilla::gfx::FTUserFontData;
  
+  public:
 diff --git a/gfx/thebes/gfxFontEntry.cpp b/gfx/thebes/gfxFontEntry.cpp
-index ec143246d878d9ed5332a43da6acfa69cb28c53b..95390ac69ab657f5a44d40ef94c4a021041891df 100644
+index 8dcb93137d3f70d210cdc921246fdc265fb6133c..650ed36a47dc135e2d7814a9aa212cb5f19453ab 100644
 --- a/gfx/thebes/gfxFontEntry.cpp
 +++ b/gfx/thebes/gfxFontEntry.cpp
-@@ -27,6 +27,7 @@
+@@ -28,6 +28,7 @@
  #include "mozilla/ProfilerLabels.h"
  #include "mozilla/StaticPrefs_layout.h"
  
@@ -165,7 +165,7 @@ index ec143246d878d9ed5332a43da6acfa69cb28c53b..95390ac69ab657f5a44d40ef94c4a021
  using namespace mozilla;
  using namespace mozilla::gfx;
  using namespace mozilla::unicode;
-@@ -154,6 +155,11 @@ void gfxFontEntry::SetSkrifaFont(SkrifaFontRef* aSkrifaFont) {
+@@ -159,6 +160,11 @@ bool gfxFontEntry::SetSkrifaFont(SkrifaFontRef* aSkrifaFont) {
  }
  #endif
  
@@ -178,10 +178,10 @@ index ec143246d878d9ed5332a43da6acfa69cb28c53b..95390ac69ab657f5a44d40ef94c4a021
    auto* pfl = gfxPlatformFontList::PlatformFontList();
    // Hold the platform-fontlist lock so InitFontList() cannot reset
 diff --git a/gfx/thebes/gfxFontEntry.h b/gfx/thebes/gfxFontEntry.h
-index 4696115ed8bd55cf1b9de11b048c6b74ad0d275d..850e57be540903f530ba39debeeb6b9d55d63c40 100644
+index b4bb5867fdf5dd6b25282b73e2d7d54d7e34b8f2..e45eda7041fa352ca181e8a9aa3b9785d081e425 100644
 --- a/gfx/thebes/gfxFontEntry.h
 +++ b/gfx/thebes/gfxFontEntry.h
-@@ -449,7 +449,9 @@ class gfxFontEntry {
+@@ -458,7 +458,9 @@ class gfxFontEntry {
      explicit AutoHBFace(hb_face_t* aFace) : mFace(aFace) {}
      ~AutoHBFace() { hb_face_destroy(mFace); }
  
@@ -192,7 +192,7 @@ index 4696115ed8bd55cf1b9de11b048c6b74ad0d275d..850e57be540903f530ba39debeeb6b9d
  
      // Not default-constructible, not copyable.
      AutoHBFace() = delete;
-@@ -830,6 +832,9 @@ class gfxFontEntry {
+@@ -844,6 +846,9 @@ class gfxFontEntry {
    void InitializeFrom(mozilla::fontlist::Face* aFace,
                        const mozilla::fontlist::Family* aFamily);
  
@@ -288,10 +288,10 @@ index de866d03d3a2be630a2bdab1e83963bf3740779c..343339268c3b90a9af904f305767acc1
      aFontList.AppendElement(kFontTwemojiMozilla);
    }
 diff --git a/gfx/thebes/gfxTextRun.cpp b/gfx/thebes/gfxTextRun.cpp
-index f2c42a498e7fb14187876470ae34d0ef75992c7e..372baabc9e283db10b52a1eb65133a6bf74eeddc 100644
+index 121abbea9808dd46cbbcd67f5783f645a0db4fbb..cb41535c08833514d48c21aa712d986eb86d99a8 100644
 --- a/gfx/thebes/gfxTextRun.cpp
 +++ b/gfx/thebes/gfxTextRun.cpp
-@@ -3107,9 +3107,8 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFallbackFaceForChar(
+@@ -3111,9 +3111,8 @@ already_AddRefed<gfxFont> gfxFontGroup::FindFallbackFaceForChar(
  
    // If async fallback is enabled, and the family isn't fully initialized yet,
    // just start the async cmap loading and return.
@@ -304,10 +304,10 @@ index f2c42a498e7fb14187876470ae34d0ef75992c7e..372baabc9e283db10b52a1eb65133a6b
      return nullptr;
    }
 diff --git a/gfx/thebes/moz.build b/gfx/thebes/moz.build
-index a9f68b056300c4b545832f641b2520c50d566628..bc9e8fe1a76fef6edb4c4dc551db0c0579a07856 100644
+index ab172d9588a03526bb904289ee451ab652dbfdaa..f07fd5d96ae22e8d27a2acf8880881d7f5daf957 100644
 --- a/gfx/thebes/moz.build
 +++ b/gfx/thebes/moz.build
-@@ -266,6 +266,10 @@ USE_LIBS += [
+@@ -243,6 +243,10 @@ USE_LIBS += [
  ]
  
  include("/ipc/chromium/chromium-config.mozbuild")

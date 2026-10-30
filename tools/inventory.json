@@ -1951,6 +1951,24 @@
   }
  },
  {
+  "file": "dom/quota/test/gtest/moz.build",
+  "category": "build",
+  "feature": "storage-quota-estimate",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the UNIFIED_SOURCES list (TestStealthQuotaEstimate.cpp)",
+  "evidence": [],
+  "notes": "One line registering our own gtest in the build.",
+  "verifier": {
+   "changed": [],
+   "why": "Added 2026-10-30 with the 159 port: the estimate limit now depends on the scope (159 adds the group scope), and the gtest pins that contract."
+  }
+ },
+ {
   "file": "dom/security/moz.build",
   "category": "build",
   "feature": "bypass-csp",

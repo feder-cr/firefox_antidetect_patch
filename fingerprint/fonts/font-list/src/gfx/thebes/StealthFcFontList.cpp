@@ -22,7 +22,7 @@
 
 using mozilla::MakeAndAddRef;
 using mozilla::MakeRefPtr;
-using mozilla::gfx::FTUserFontData;
+using mozilla::gfx::Factory;
 using mozilla::gfx::SharedFTFace;
 using mozilla::gfx::UnscaledFontFontconfig;
 namespace fontlist = mozilla::fontlist;
@@ -139,7 +139,7 @@ void StealthDeclaredFontFile(FcPattern* aPattern, std::string& aFile,
   // STEALTH: si chiede al PATTERN se nomina un file, invece di dedurlo dal fatto
   // che la faccia sia stata creata dalla memoria.
   //
-  // La condizione di Mozilla, subito prima, e' `if (!face->GetData())`, cioe'
+  // La condizione di Mozilla, subito prima, e' `if (!face->GetFontData())`, cioe'
   // un PROXY: "creata dalla memoria" sta per "non ha un file". Per le facce del
   // nostro bundle quel proxy e' falso - i byte sono la mappatura DI un file, di
   // cui conosciamo percorso e indice - e la conseguenza era che
@@ -168,7 +168,7 @@ void StealthDeclaredFontFile(FcPattern* aPattern, std::string& aFile,
 void StealthPreferFileUnscaledFont(
     gfxFontconfigFontEntry* aEntry, RefPtr<UnscaledFontFontconfig>& aFont,
     std::string& aFile, int aIndex, SharedFTFace* aFace) {
-  // STEALTH: si sceglie su `file`, non su `GetData()`. E' lo stesso proxy
+  // STEALTH: si sceglie su `file`, non su `GetFontData()`. E' lo stesso proxy
   // corretto in StealthDeclaredFontFile: cio' che decide se un UnscaledFont
   // puo' descriversi con un percorso e' AVERE un percorso, non da dove sono
   // arrivati i byte.
@@ -209,20 +209,20 @@ already_AddRefed<gfxFontEntry> StealthCreateBundleFontEntry(
     fontlist::Face* aFace, const fontlist::Family* aFamily,
     fontlist::FontList* aList) {
   // Instantiate the face straight from its bundle file via FreeType;
-  // CloneFace takes the .ttc face index directly.
+  // NewSharedFTFaceFromData takes the .ttc face index directly.
   const nsCString file(aFace->mDescriptor.AsString(aList));
   // Stealth: UNA mappatura per FILE, prestata a ogni faccia - la stessa cosa
   // che fa Windows, con lo stesso oggetto e la stessa vita.
   //
   // Come si e' arrivati qui, in due passi. Prima FreeType riceveva una copia
-  // `malloc` dell'intero file PER FACCIA, posseduta e liberata da
+  // `malloc` dell'intero file PER FACCIA, posseduta e liberata dalla vecchia
   // FTUserFontData, e invisibile ad about:memory: misurato 2026-08-14 su una
   // pagina che tocca 1, 10, 34 e 68 famiglie, l'heap non classificato del
   // processo di contenuto faceva 0,6, 9,0, 98,7 e 319,9 MB, cioe' ~1,7 volte i
   // byte dei file toccati - che e' il rapporto facce/famiglia (129/68).
   //
-  // Poi (§5.2m) si e' passati al costruttore per PERCORSO, che fa chiamare a
-  // CloneFace `Factory::NewFTFace(path, index)`: niente copia, ma una seconda
+  // Poi (§5.2m) si e' passati al costruttore per PERCORSO, che faceva chiamare
+  // a CloneFace `Factory::NewFTFace(path, index)`: niente copia, ma una seconda
   // implementazione. Windows mappava il file e lo prestava allo stream DWrite,
   // Linux lasciava aprire il file a FreeType: due risposte diverse alla stessa
   // domanda, e due rami di CloneFace che divergono anche in ALTRO - il ramo per
@@ -233,7 +233,8 @@ already_AddRefed<gfxFontEntry> StealthCreateBundleFontEntry(
   // Adesso le due piattaforme fanno la stessa cosa: `GetFaceBlob` mappa il file
   // una volta e lo tiene in una cache immortale, `FT_New_Memory_Face` prende in
   // prestito quei byte senza copiarli (e' il contratto della chiamata), e il
-  // ramo in memoria di CloneFace rimette la selezione della charmap. Le pagine
+  // ramo in memoria (da Firefox 159 `Factory::NewSharedFTFaceFromData`, prima
+  // `FTUserFontData::CloneFace`) rimette la selezione della charmap. Le pagine
   // diventano del FILE su entrambe: condivise dal sistema operativo fra i
   // processi, e sfrattabili invece che swappabili.
   auto* bundle = StealthBundleFontList::Get();
@@ -243,8 +244,8 @@ already_AddRefed<gfxFontEntry> StealthCreateBundleFontEntry(
   }
   RefPtr<FontData> lent =
       new FontData(blob->Data(), blob->Length(), FontData::Borrowed::Yes);
-  RefPtr<FTUserFontData> ufd = new FTUserFontData(lent);
-  RefPtr<SharedFTFace> face = ufd->CloneFace(aFace->mIndex);
+  RefPtr<SharedFTFace> face =
+      Factory::NewSharedFTFaceFromData(lent, aFace->mIndex);
   if (!face) {
     return nullptr;
   }

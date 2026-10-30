@@ -64,7 +64,7 @@ index 1a2f345622d4b51905ac5ece503176964068faea..088506eb25090fe1a9f38ed69989f320
  ["test_urlformatter.js"]
 +["test_stealth_apikeys.js"]
 diff --git a/toolkit/modules/AppConstants.sys.mjs b/toolkit/modules/AppConstants.sys.mjs
-index df764857c89cf0fa70b40abbbc661bd8347e94af..4df8dc1a35b1e3cc04b263cf074178e23b92dde5 100644
+index 9dc427fd61aea11b6839d542af39c4b887b52b6f..a334aa4f35fd73fd720082f41cd5c9e6ee9b67ec 100644
 --- a/toolkit/modules/AppConstants.sys.mjs
 +++ b/toolkit/modules/AppConstants.sys.mjs
 @@ -179,11 +179,7 @@ export var AppConstants = Object.freeze({
@@ -81,7 +81,7 @@ index df764857c89cf0fa70b40abbbc661bd8347e94af..4df8dc1a35b1e3cc04b263cf074178e2
    BROWSER_CHROME_URL: "@BROWSER_CHROME_URL@",
  
 diff --git a/toolkit/modules/moz.build b/toolkit/modules/moz.build
-index 784fcfecb6d8e542c8e9f9f89d41517e4075ea52..96bc86d877d3b226a65b4f95b365bcbb21501941 100644
+index 852e9b0bb590e8376ebda3fd6b49d5c3fa374994..de1207f708232358aa93ed6195150091a6d9cad7 100644
 --- a/toolkit/modules/moz.build
 +++ b/toolkit/modules/moz.build
 @@ -277,10 +277,10 @@ if "Android" != CONFIG["OS_TARGET"]:
