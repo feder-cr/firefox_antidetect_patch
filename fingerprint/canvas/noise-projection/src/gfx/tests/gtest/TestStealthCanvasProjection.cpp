@@ -364,3 +364,91 @@ TEST(StealthCanvasProjection, AConstantChannelStaysConstant)
   }
   EXPECT_GT(moved, 0u);
 }
+
+// StealthCanProjectRecording (gfx/2d/StealthCanvasProjection.cpp) decides
+// whether DrawTargetRecording::StealthProjectedSurface may stand in for a
+// surface. The surfaces a canvas recording hands out are CanvasChild.cpp's
+// SourceSurfaceCanvasRecording: GetType() answers CANVAS_RECORDING and
+// GetUnderlyingType() answers the type of the surface it wraps, RECORDING for
+// a draw target made by Factory::CreateRecordingDrawTarget. The two stand-ins
+// below answer the same way, so no recorder, IPC or GPU is needed to reach
+// the decision.
+//
+// The logic that shipped on 157 tested GetType() == RECORDING. On a canvas
+// recording surface GetType() is CANVAS_RECORDING, so that test refused the
+// very surfaces the projection exists for (the GPU path never ran):
+// ProjectsACanvasRecordingSurface below fails on it and passes on the test
+// of GetUnderlyingType().
+namespace {
+
+class FakeRecordingSurface : public SourceSurface {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(FakeRecordingSurface, override)
+  // aWrapped false: a plain recording surface (GetType() == RECORDING).
+  // aWrapped true: a canvas recording surface, as CanvasChild.cpp makes it,
+  // wrapping a RECORDING surface.
+  explicit FakeRecordingSurface(bool aWrapped) : mWrapped(aWrapped) {}
+  SurfaceType GetType() const override {
+    return mWrapped ? SurfaceType::CANVAS_RECORDING : SurfaceType::RECORDING;
+  }
+  SurfaceType GetUnderlyingType() const override {
+    return SurfaceType::RECORDING;
+  }
+  IntSize GetSize() const override { return IntSize(kW, kH); }
+  SurfaceFormat GetFormat() const override { return SurfaceFormat::B8G8R8A8; }
+  already_AddRefed<DataSourceSurface> GetDataSurface() override {
+    return nullptr;
+  }
+
+ private:
+  bool mWrapped;
+};
+
+// A surface that is no recording at all (the control).
+class FakeDataSurface : public SourceSurface {
+ public:
+  MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(FakeDataSurface, override)
+  SurfaceType GetType() const override { return SurfaceType::DATA; }
+  IntSize GetSize() const override { return IntSize(kW, kH); }
+  SurfaceFormat GetFormat() const override { return SurfaceFormat::B8G8R8A8; }
+  already_AddRefed<DataSourceSurface> GetDataSurface() override {
+    return nullptr;
+  }
+};
+
+}  // namespace
+
+TEST(StealthCanvasProjection, ProjectsACanvasRecordingSurface)
+{
+  RefPtr<SourceSurface> canvasRecording = new FakeRecordingSurface(true);
+  // The shape of the bug: the surface's own type is not RECORDING, what it
+  // wraps is.
+  ASSERT_EQ(SurfaceType::CANVAS_RECORDING, canvasRecording->GetType());
+  ASSERT_EQ(SurfaceType::RECORDING, canvasRecording->GetUnderlyingType());
+  EXPECT_TRUE(StealthCanProjectRecording(
+      canvasRecording, StealthCanvasNoise{kSeed, kTolerance}));
+}
+
+TEST(StealthCanvasProjection, ProjectsAPlainRecordingSurface)
+{
+  RefPtr<SourceSurface> recording = new FakeRecordingSurface(false);
+  EXPECT_TRUE(StealthCanProjectRecording(
+      recording, StealthCanvasNoise{kSeed, kTolerance}));
+}
+
+TEST(StealthCanvasProjection, RefusesWhatIsNotARecording)
+{
+  RefPtr<SourceSurface> data = new FakeDataSurface();
+  ASSERT_EQ(SurfaceType::DATA, data->GetUnderlyingType());
+  EXPECT_FALSE(
+      StealthCanProjectRecording(data, StealthCanvasNoise{kSeed, kTolerance}));
+  EXPECT_FALSE(StealthCanProjectRecording(
+      nullptr, StealthCanvasNoise{kSeed, kTolerance}));
+}
+
+TEST(StealthCanvasProjection, RefusesARecordingWithoutNoise)
+{
+  RefPtr<SourceSurface> canvasRecording = new FakeRecordingSurface(true);
+  EXPECT_FALSE(
+      StealthCanProjectRecording(canvasRecording, StealthCanvasNoise::Off()));
+}
