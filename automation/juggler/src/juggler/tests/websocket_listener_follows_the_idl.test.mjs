@@ -44,9 +44,9 @@ const { Helper } = load('Helper.js', {
 }, ['Helper']);
 
 const { Frame, FrameTree } = load('content/FrameTree.js', {
-  Components: { interfaces: {}, results: {}, utils: {} },
+  // FrameTree.js takes Ci from Components.interfaces, so the stub goes there.
+  Components: { interfaces: { nsIWebSocketChannel: { CLOSE_ABNORMAL: 1006 } }, results: {}, utils: {} },
   Cc: {},
-  Ci: { nsIWebSocketChannel: { CLOSE_ABNORMAL: 1006 } },
   ChromeUtils: { importESModule: () => ({ Helper }), generateQI: () => () => {} },
   Services,
   Runtime: class {},
