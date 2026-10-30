@@ -34,6 +34,7 @@
 #include "nsIMemoryReporter.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsReadableUtils.h"

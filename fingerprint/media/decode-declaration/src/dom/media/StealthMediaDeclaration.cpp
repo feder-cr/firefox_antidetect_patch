@@ -11,6 +11,7 @@
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/MediaCapabilitiesBinding.h"
 #include "mozilla/dom/MediaKeySystemAccess.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsString.h"
 
 namespace mozilla {

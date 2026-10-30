@@ -35,6 +35,12 @@ failed on it.
    that take the same bit: our explicit-size window flag sat on bit 25 of
    nsIWebBrowserChrome, which Firefox 159 gives to CHROME_MEDIA_PIP.
 
+5. A file of ours that splits a string (`.Split(`, `*CharSeparatedTokenizer`)
+   includes nsCharSeparatedTokenizer.h itself. Up to 157 nsString.h brought the
+   splitter in; from 159 nsTSubstring.h only forward-declares it, and three of
+   our files failed with "implicit instantiation of undefined template
+   nsTSubstringSplitter<char>" on every platform.
+
 These are text checks, not a compiler: they can miss, but what they report
 is wrong.
 
@@ -59,6 +65,9 @@ QUALIFIED = re.compile(r"(?<![\w:])mozilla::([A-Za-z_]\w*)\b(?!::)")
 COMMENTS = re.compile(r"""//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'""", re.S)
 TOKEN = re.compile(r"::|[A-Za-z_]\w*|\S")
 KEYWORDS = {"return", "case", "else", "new", "delete", "throw", "sizeof", "decltype", "operator"}
+# What a file of ours uses -> the header that declares it, which it must include
+# itself (rule 5).
+OWN_INCLUDES = [(re.compile(r"\.Split\(|\b\w*CharSeparatedTokenizer\b"), "nsCharSeparatedTokenizer.h")]
 FLAG_SPACE = re.compile(r"STEALTH-FLAG-SPACE\(\s*([^,\s]+)\s*,\s*(\w+)\s*\)[^\n]*\n[^\n]*?(\w+)\s*=\s*1u?\s*<<\s*(\d+)")
 
 
@@ -173,6 +182,15 @@ def text_problems(rel, text):
     return sorted(set(bad))
 
 
+def include_problems(rel, text):
+    """Rule 5 on one file of ours (raw text)."""
+    code = strip(text)
+    return [f"{rel}: uses what {header} declares but does not include it"
+            for use, header in OWN_INCLUDES
+            if use.search(code) and not re.search(
+                r'^[ \t]*#[ \t]*include[ \t]+["<](?:[\w/]*/)?%s[">]' % re.escape(header), text, re.M)]
+
+
 def flag_problems(rel, text, read):
     """Rule 4 on one file of ours (raw text); read(path) gives a Mozilla file."""
     bad = []
@@ -229,6 +247,7 @@ def main(argv):
 
     for rel in files:
         bad += text_problems(rel, read(rel))
+        bad += include_problems(rel, read(rel))
     marked = argv or [p for p in git("grep", "-lz", "STEALTH-FLAG-SPACE(", "--", "*.h", "*.cpp").split(chr(0)) if p]
     for rel in marked:
         bad += flag_problems(rel, read(rel), read)
@@ -262,6 +281,12 @@ def self_test():
     space["m.h"] = space["m.h"].replace("/* SFE_C = 1 << 31 */", "SFE_C = 1 << 31,")
     assert flag_problems("s.h", ours % 31, space.__getitem__), "Mozilla takes our bit at a port"
     assert flag_problems("s.h", ours % 31, {"m.h": "enum {};"}.__getitem__), "nothing read is a problem"
+    split = "void F(const nsCString& s) {\n  for (const auto& t : s.Split(',')) {}\n}\n"
+    assert include_problems("a.cpp", '#include "nsString.h"\n' + split) == [
+        "a.cpp: uses what nsCharSeparatedTokenizer.h declares but does not include it"], "the 159 failure"
+    assert include_problems("a.cpp", '#include "nsCharSeparatedTokenizer.h"\n' + split) == []
+    assert include_problems("a.cpp", "// s.Split(',') would need it\nint x;\n") == [], "a comment uses nothing"
+    assert include_problems("a.cpp", "nsCCharSeparatedTokenizer t(s, ',');\n")
     print("self-test ok")
 
 

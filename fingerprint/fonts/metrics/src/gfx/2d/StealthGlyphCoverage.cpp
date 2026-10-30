@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "mozilla/StaticPrefs_zoom.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
