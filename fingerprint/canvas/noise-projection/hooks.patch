@@ -377,18 +377,19 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..8cb4591349dd313c83a214372737c3c48dede697 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..c5b27ea4e9f8715de71b85281a65bea948eb5710 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -32,6 +32,7 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,8 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
++UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp"]  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +43,16 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +44,16 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  

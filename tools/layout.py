@@ -104,6 +104,8 @@ FEATURES = {
     "media-codecs-declared": "fingerprint/media/decode-declaration",
     "media-enumeration": "fingerprint/media/enumeration",
     "speech-voices-declared": "fingerprint/media/speech-voices",
+    # fingerprint: webgpu
+    "webgpu-adapter-declaration": "fingerprint/webgpu/adapter-declaration",
     # fingerprint: webrtc
     "webrtc-ice-candidates": "fingerprint/webrtc/ice-candidates",
     "webrtc-stealth-bridge": "fingerprint/webrtc/ice-candidates",
@@ -204,6 +206,8 @@ OWN_FILES = [
     (r"^dom/media/webspeech/synth/StealthSpeechVoice\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/webspeech/synth/StealthSpeechVoices\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/StealthMediaEnumeration\.", "fingerprint/media/enumeration"),
+    (r"^dom/webgpu/StealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
+    (r"^gfx/tests/gtest/TestStealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
     (r"^dom/html/StealthCanvasSnapshot\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/canvas/StealthWebGLShaderLanguage\.", "fingerprint/webgl/shader-language"),
     (r"^dom/canvas/StealthCanvasNoise\.", "fingerprint/canvas/noise-projection"),

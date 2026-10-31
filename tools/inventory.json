@@ -5195,5 +5195,69 @@
    "changed": [],
    "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
   }
+ },
+ {
+  "file": "dom/webgpu/Adapter.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.webgpu.adapter",
+   "zoom.stealth.webgpu.features",
+   "zoom.stealth.webgpu.limits"
+  ],
+  "added": 11,
+  "removed": 0,
+  "hunks": 5,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "includes; AdapterInfo::IsFallbackAdapter; a forward declaration of ToJsKey; Adapter::Adapter after the feature loop; Adapter::RequestDevice before wgpu_client_request_device",
+  "evidence": [
+   "+  if (const auto declared = StealthWebGPUDeclaredIsFallback(mParent.get())) {",
+   "+  StealthWebGPUDeclareAdapter(this, aParent, aInfo->id, mFeatures,",
+   "+    StealthWebGPUClampToReal(ffiDesc, *mInfoInner, ToJsKey);"
+  ],
+  "notes": "Calls only: the declared features, limits and fallback answer, and the clamp of what is sent to wgpu, all in dom/webgpu/StealthWebGPUDeclaration.cpp. ToJsKey is Adapter.cpp's own static; it is forward-declared so the declaration is keyed by the names the page reads."
+ },
+ {
+  "file": "dom/webgpu/Instance.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.webgpu.adapter",
+   "zoom.stealth.webgpu.features",
+   "zoom.stealth.webgpu.limits"
+  ],
+  "added": 7,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "includes; Instance::RequestAdapter before and after wgpu_client_request_adapter",
+  "evidence": [
+   "+  if (StealthWebGPUNoAdapter()) {",
+   "+  StealthWebGPUNoteRequest(this, adapter_id, aOptions.mForceFallbackAdapter);"
+  ],
+  "notes": "A declared GPU without Direct3D 12 resolves requestAdapter with null; otherwise the request notes forceFallbackAdapter for the adapter's isFallbackAdapter."
+ },
+ {
+  "file": "dom/webgpu/moz.build",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.webgpu.adapter",
+   "zoom.stealth.webgpu.features",
+   "zoom.stealth.webgpu.limits"
+  ],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after UNIFIED_SOURCES of h_and_cpp",
+  "evidence": [
+   "+EXPORTS.mozilla.webgpu += [\"StealthWebGPUDeclaration.h\"]",
+   "+SOURCES += [\"StealthWebGPUDeclaration.cpp\"]"
+  ],
+  "notes": "Registers our file on lines of its own, outside Mozilla's list; non-unified because it has file-static helpers with short names."
  }
 ]

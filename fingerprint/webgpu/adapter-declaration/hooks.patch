@@ -1,0 +1,91 @@
+diff --git a/dom/webgpu/Adapter.cpp b/dom/webgpu/Adapter.cpp
+index 2814b6354a43690a2550e13a0bc312183609bb97..4cac123a3976b791b462d7e2cb0067df91915036 100644
+--- a/dom/webgpu/Adapter.cpp
++++ b/dom/webgpu/Adapter.cpp
+@@ -11,6 +11,7 @@
+ #include "Instance.h"
+ #include "SupportedFeatures.h"
+ #include "SupportedLimits.h"
++#include "StealthWebGPUDeclaration.h"  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+ #include "ipc/WebGPUChild.h"
+ #include "mozilla/dom/BindingDeclarations.h"
+ #include "mozilla/dom/Promise.h"
+@@ -69,6 +70,10 @@ uint32_t AdapterInfo::SubgroupMaxSize() const {
+ }
+ 
+ bool AdapterInfo::IsFallbackAdapter() const {
++  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++  if (const auto declared = StealthWebGPUDeclaredIsFallback(mParent.get())) {
++    return *declared;
++  }
+   if (GetParentObject()->ShouldResistFingerprinting(
+           RFPTarget::WebGPUIsFallbackAdapter)) {
+     // Always report hardware support for WebGPU.
+@@ -252,6 +257,8 @@ struct FeatureImplementationStatus {
+   }
+ };
+ 
++static std::string_view ToJsKey(const Limit limit);  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++
+ Adapter::Adapter(Instance* const aParent, WebGPUChild* const aChild,
+                  const std::shared_ptr<ffi::WGPUAdapterInformation>& aInfo)
+     : ObjectBase(aChild, aInfo->id, ffi::wgpu_client_drop_adapter),
+@@ -308,6 +315,9 @@ Adapter::Adapter(Instance* const aParent, WebGPUChild* const aChild,
+       // feature.
+     }
+   }
++  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++  StealthWebGPUDeclareAdapter(this, aParent, aInfo->id, mFeatures,
++                              *mLimits->mFfi, ToJsKey);
+   // TODO: Once we implement compat mode (see
+   // <https://bugzilla.mozilla.org/show_bug.cgi?id=1905951>), do not report this
+   // unconditionally.
+@@ -611,6 +621,7 @@ already_AddRefed<dom::Promise> Adapter::RequestDevice(
+     ffiDesc.required_features = featureBits;
+     ffiDesc.required_limits = deviceLimits;
+ 
++    StealthWebGPUClampToReal(ffiDesc, *mInfoInner, ToJsKey);  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+     ffi::WGPUDeviceQueueId ids =
+         ffi::wgpu_client_request_device(GetClient(), GetId(), &ffiDesc);
+ 
+diff --git a/dom/webgpu/Instance.cpp b/dom/webgpu/Instance.cpp
+index d07fa7a9c96565a18f218be8d48438c21afe1a65..26df09d8e792bd041802a1b0d3915298cd00a43c 100644
+--- a/dom/webgpu/Instance.cpp
++++ b/dom/webgpu/Instance.cpp
+@@ -8,6 +8,7 @@
+ #include <string_view>
+ 
+ #include "Adapter.h"
++#include "StealthWebGPUDeclaration.h"  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+ #include "ipc/WebGPUChild.h"
+ #include "ipc/WebGPUTypes.h"
+ #include "js/Value.h"
+@@ -222,9 +223,15 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
+     power_preference = ffi::WGPUPowerPreference_None;
+   }
+ 
++  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++  if (StealthWebGPUNoAdapter()) {
++    promise->MaybeResolve(JS::NullValue());
++    return promise.forget();
++  }
+   RawId adapter_id = ffi::wgpu_client_request_adapter(
+       child->GetClient(), power_preference, aOptions.mForceFallbackAdapter);
+ 
++  StealthWebGPUNoteRequest(this, adapter_id, aOptions.mForceFallbackAdapter);  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+   child->EnqueueRequestAdapterPromise(
+       PendingRequestAdapterPromise{promise, this, adapter_id});
+ 
+diff --git a/dom/webgpu/moz.build b/dom/webgpu/moz.build
+index a0d0ceba2c0d4615e259d7a04bed61adaff26203..1007a9714304e0c383c2b7ba242b4fef1787818f 100644
+--- a/dom/webgpu/moz.build
++++ b/dom/webgpu/moz.build
+@@ -58,6 +58,8 @@ h_and_cpp = [
+ ]
+ EXPORTS.mozilla.webgpu += [x + ".h" for x in h_and_cpp]
+ UNIFIED_SOURCES += [x + ".cpp" for x in h_and_cpp]
++EXPORTS.mozilla.webgpu += ["StealthWebGPUDeclaration.h"]  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++SOURCES += ["StealthWebGPUDeclaration.cpp"]  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+ 
+ IPDL_SOURCES += [
+     "ipc/PWebGPU.ipdl",

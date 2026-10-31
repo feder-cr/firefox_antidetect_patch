@@ -66,4 +66,5 @@ fingerprint/screen-window/popup-position
 fingerprint/screen-window/screen
 fingerprint/webgl/parameters
 fingerprint/webgl/shader-language
+fingerprint/webgpu/adapter-declaration
 fingerprint/webrtc/ice-candidates

@@ -527,6 +527,28 @@
   value: ""
   mirror: always
 
+# The WebGPU adapter a page sees (dom/webgpu/StealthWebGPUDeclaration.h):
+# "d3d12", or "none" for a GPU without Direct3D 12, where requestAdapter()
+# resolves null. Retail's features and limits are constants of Firefox's D3D12
+# backend (the same for an RTX 5080, an Intel iGPU and WARP, measured
+# 2026-10-31), so they are declared once. Empty with the engine on refuses.
+- name: zoom.stealth.webgpu.adapter
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# The adapter's GPUFeatureName strings, one per line.
+- name: zoom.stealth.webgpu.features
+  type: DataMutexString
+  value: ""
+  mirror: always
+
+# Every adapter limit as "jsName=value", one per line.
+- name: zoom.stealth.webgpu.limits
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # zoom.stealth.timezone WAS HERE and is gone. Nothing read it - not one C++,
 # JS or JSM file in the tree - while its own comment said "Single source of
 # truth for StealthFox timezone spoofing. Takes priority over

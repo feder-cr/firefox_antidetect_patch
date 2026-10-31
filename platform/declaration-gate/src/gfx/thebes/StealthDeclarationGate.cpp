@@ -105,6 +105,21 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_media_decoding_info();
          return lock->IsEmpty();
        }},
+      // The WebGPU adapter, added 2026-10-31. Missing, a page would read the
+      // host's adapter: its backend, its features, its limits, and on a
+      // machine with no GPU an isFallbackAdapter of true.
+      {"zoom.stealth.webgpu.adapter", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_webgpu_adapter();
+         return lock->IsEmpty();
+       }},
+      {"zoom.stealth.webgpu.features", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_webgpu_features();
+         return lock->IsEmpty();
+       }},
+      {"zoom.stealth.webgpu.limits", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_webgpu_limits();
+         return lock->IsEmpty();
+       }},
       {"zoom.stealth.text.coverage_ladder", []() -> bool {
          auto lock = StaticPrefs::zoom_stealth_text_coverage_ladder();
          return lock->IsEmpty();
