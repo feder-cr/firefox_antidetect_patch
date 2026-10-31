@@ -34,3 +34,10 @@ from 11 to 12 for the one line that registers this folder's gtest.
 - `dom/webgpu/StealthWebGPUDeclaration.cpp`
 - `dom/webgpu/StealthWebGPUDeclaration.h`
 - `gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp`
+
+External textures (2026-10-31, the host gate): retail Windows exposes GPUDevice.importExternalTexture
+and it works; Linux had no such method, because dom.webgpu.external-texture.enabled defaults to false
+off Windows and macOS, and with the pref on gfxPlatform::InitWebGPUConfig force-disables the feature
+("not supported on this Operating System"). The pref takes Windows' value on its own line in
+StaticPrefList.yaml, and the force-disable is compiled out (one rewritten line each, in
+removed-budget.json); off Windows the import runs on the generic shared-memory buffer path.

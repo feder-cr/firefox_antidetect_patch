@@ -89,3 +89,31 @@ index a0d0ceba2c0d4615e259d7a04bed61adaff26203..1007a9714304e0c383c2b7ba242b4fef
  
  IPDL_SOURCES += [
      "ipc/PWebGPU.ipdl",
+diff --git a/gfx/thebes/gfxPlatform.cpp b/gfx/thebes/gfxPlatform.cpp
+index 9385c82abed17b64c4dd7a45f15d1d0a26cc791c..cd66765ba704935354177cf6d2633d40382e3931 100644
+--- a/gfx/thebes/gfxPlatform.cpp
++++ b/gfx/thebes/gfxPlatform.cpp
+@@ -3238,7 +3238,9 @@ void gfxPlatform::InitWebGPUConfig() {
+     featureExternalTexture.Disable(FeatureStatus::Blocklisted, message.get(),
+                                    failureId);
+   }
+-#if !defined(XP_WIN) && !defined(XP_MACOSX)
++// STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): the engine presents Windows on every OS, where external
++// textures are on; elsewhere they run on the shared-memory buffer path.
++#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0
+   featureExternalTexture.ForceDisable(
+       FeatureStatus::Blocked,
+       "WebGPU external textures are not supported on this Operating System",
+diff --git a/modules/libpref/init/StaticPrefList.yaml b/modules/libpref/init/StaticPrefList.yaml
+index 80be46d83cc04eb081ce58b4e322c8da15143c1c..11c7a6686bb1c6b626bc42379286f93600ec2780 100644
+--- a/modules/libpref/init/StaticPrefList.yaml
++++ b/modules/libpref/init/StaticPrefList.yaml
+@@ -6248,7 +6248,7 @@
+ #if defined(XP_WIN) || defined(XP_MACOSX)
+   value: true
+ #else
+-  value: false
++  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS
+ #endif
+   mirror: once
+ 
