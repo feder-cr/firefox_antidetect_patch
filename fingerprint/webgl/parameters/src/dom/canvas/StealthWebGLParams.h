@@ -33,15 +33,41 @@ class ErrorResult;
 //   zoom.stealth.webgl.float_params  VALUE "x" (a number) or "x:y" (a
 //                                    Float32Array of two);
 //   zoom.stealth.webgl.int2_params   VALUE "x:y" (an Int32Array of two).
-// Checked in that order, before Mozilla's switch, so that the numerics of the
-// host driver (Linux Mesa: MAX_TEXTURE_SIZE and the like) read as the Windows
-// ANGLE values of the declared machine, and the hash of the whole parameter
-// block is the one a Windows machine gives. True when it set aRetval; the
-// caller returns. An entry that does not parse is skipped, as if absent.
+// Checked in that order, so that the numerics of the host driver (Linux Mesa:
+// MAX_TEXTURE_SIZE and the like) read as the Windows ANGLE values of the
+// declared machine, and the hash of the whole parameter block is the one a
+// Windows machine gives. True when it set aRetval. An entry that does not
+// parse is skipped, as if absent.
 bool StealthWebGLParameterOverride(ClientWebGLContext& aCtx, JSContext* aCx,
                                    GLenum aPname,
                                    JS::MutableHandle<JS::Value> aRetval,
                                    ErrorResult& aRv);
+
+// Where the declared answer is applied: on the way OUT of
+// ClientWebGLContext::GetParameter, constructed at its top. Firefox decides
+// first whether the pname exists for this context (WebGL1 or 2) and its
+// enabled extensions, and with what error; only when it answered with a value
+// does a declared entry replace that value. It used to answer BEFORE Firefox,
+// and measured 2026-10-31 against retail 159 a WebGL1 context returned 46 of
+// the declared WebGL2-only pnames (MAX_ARRAY_TEXTURE_LAYERS 2048, MAX_SAMPLES
+// 8, ...) where retail gives null and INVALID_ENUM. Firefox's own validity is
+// kept; only the host's number is not.
+class MOZ_RAII StealthWebGLParameterAnswer final {
+ public:
+  StealthWebGLParameterAnswer(ClientWebGLContext& aCtx, JSContext* aCx,
+                              GLenum aPname,
+                              JS::MutableHandle<JS::Value> aRetval,
+                              ErrorResult& aRv)
+      : mCtx(aCtx), mCx(aCx), mPname(aPname), mRetval(aRetval), mRv(aRv) {}
+  ~StealthWebGLParameterAnswer();
+
+ private:
+  ClientWebGLContext& mCtx;
+  JSContext* const mCx;
+  const GLenum mPname;
+  JS::MutableHandle<JS::Value> mRetval;
+  ErrorResult& mRv;
+};
 
 // gl.RENDERER when zoom.stealth.webgl.renderer is set: the pref, through
 // SanitizeRenderer, as a retail browser does with the real renderer. True and

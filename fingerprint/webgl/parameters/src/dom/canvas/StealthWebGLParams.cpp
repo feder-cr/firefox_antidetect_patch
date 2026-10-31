@@ -81,6 +81,15 @@ std::vector<nsCString> GetStealthExtensionWhitelist(bool aIsWebGL2) {
 
 }  // namespace
 
+StealthWebGLParameterAnswer::~StealthWebGLParameterAnswer() {
+  // Null is Firefox's "no such pname here" (with its error already queued):
+  // that answer is the retail one and stays.
+  if (mRetval.isNull() || mRv.Failed()) {
+    return;
+  }
+  StealthWebGLParameterOverride(mCtx, mCx, mPname, mRetval, mRv);
+}
+
 bool StealthWebGLParameterOverride(ClientWebGLContext& aCtx, JSContext* aCx,
                                    GLenum aPname,
                                    JS::MutableHandle<JS::Value> aRetval,

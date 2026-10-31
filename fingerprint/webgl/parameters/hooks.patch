@@ -1,5 +1,5 @@
 diff --git a/dom/canvas/ClientWebGLContext.cpp b/dom/canvas/ClientWebGLContext.cpp
-index 097d20229785c61c89dc5c7e4c22799c48fb7c12..ca94f8559f74efc498ad5226561c55d9e11b198c 100644
+index 097d20229785c61c89dc5c7e4c22799c48fb7c12..0e847a2f87b61c852c8c7b77136064581d6325b6 100644
 --- a/dom/canvas/ClientWebGLContext.cpp
 +++ b/dom/canvas/ClientWebGLContext.cpp
 @@ -10,6 +10,8 @@
@@ -34,7 +34,7 @@ index 097d20229785c61c89dc5c7e4c22799c48fb7c12..ca94f8559f74efc498ad5226561c55d9
    const auto& limits = Limits();
    const auto& state = State();
 +  // STEALTH-HOOK(fingerprint/webgl/parameters)
-+  if (StealthWebGLParameterOverride(*this, cx, pname, retval, rv)) return;
++  const StealthWebGLParameterAnswer stealthAnswer(*this, cx, pname, retval, rv);
  
    // -
  

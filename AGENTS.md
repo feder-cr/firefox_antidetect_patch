@@ -52,6 +52,24 @@ python -m pytest -q tools/tests
    gancio nuovo è al massimo 5 righe.
 4. Commit qui con lo stesso titolo del commit nel sorgente, poi push di entrambi.
 
+## Le tre regole del prodotto (Federico, 31/10/2026)
+
+1. **Niente dall'host.** Ogni valore che una pagina può leggere viene dall'identità
+   dichiarata o dal codice di Firefox, mai dalla macchina o dal sistema su cui gira il
+   browser. Un valore che nasce dall'host si toglie dove nasce (dichiarato, o calcolato
+   con lo stesso codice su ogni sistema), non si corregge a valle.
+2. **Stesso seed, stessi byte su ogni macchina.** La stessa identità su host diversi
+   (Windows, Linux x86_64, Linux arm64) dà lo stesso risultato: testo, canvas, WebGL,
+   audio, media.
+3. **Il riferimento è Windows retail, e si va solo verso di lui.** Il risultato è uguale,
+   o coerente, con Firefox ufficiale su Windows. Linux si porta verso Windows, mai il
+   contrario: uniformare gli host su qualcosa che nessun Windows vero produce (per
+   esempio FreeType anche su Windows) è vietato.
+
+Le misura il gate host del wrapper (`scripts/ci_host_gate.py`): ogni differenza fra host
+è una fuga, ogni differenza dal retail lo è anche; le sole eccezioni sono rumore, ingressi
+di rete e difetti noti con il lavoro che li chiude.
+
 ## Le regole del codice
 
 - **Logica nei nostri file, ganci nei file di Mozilla.** In un file di Mozilla si
