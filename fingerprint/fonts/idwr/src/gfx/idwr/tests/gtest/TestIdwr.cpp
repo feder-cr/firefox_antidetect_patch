@@ -15,7 +15,7 @@
 
 #include "gtest/gtest.h"
 #include "idwr/idwr.h"
-#include "nsAppDirectoryServiceDefs.h"
+#include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIFile.h"
 #include "nsString.h"
