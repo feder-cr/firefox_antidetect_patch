@@ -153,7 +153,7 @@ static inline int64_t cvtt64(double d) {
         return INT64_MIN;
     return (int64_t)d;
 }
-static void rangecheck_failure(void) { IDWR_FATAL("interp.c:156"); } /* __report_rangecheckfailure */
+static void rangecheck_failure(void) { IDWR_FATAL("interp_loop.c:156"); } /* __report_rangecheckfailure */
 
 #define S8(o) (*(uint8_t *)(st + (o)))
 #define S16(o) (*(uint16_t *)(st + (o)))

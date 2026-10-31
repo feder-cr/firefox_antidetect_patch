@@ -6,7 +6,7 @@ SOURCES += [
     "src/cff/front.c",
     "src/cff/glue.c",
     "src/cff/hint.c",
-    "src/cff/interp.c",
+    "src/cff/interp_loop.c",
     "src/cff/interp_procs.c",
     "src/cff/parse.c",
     "src/cff/path.c",

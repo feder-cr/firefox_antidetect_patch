@@ -6,8 +6,8 @@ origin:
   name: idwr
   description: DirectWrite 10.0.26100.9711 text rasterizer, reimplemented in portable C
   url: https://github.com/feder-cr/invisible_DWriteCore
-  release: 68da2380add549d3e1cc2e18fcd718c348f84493
-  revision: 68da2380add549d3e1cc2e18fcd718c348f84493
+  release: 33a8de72907ff23d2f0838eded04cea63c2d0ecc
+  revision: 33a8de72907ff23d2f0838eded04cea63c2d0ecc
   license: MPL-2.0
 files:
   truetype/fatal.h: d8e3c23903171852ca45f33d26be6cb3e9eac2a2a81bca0e323420b1b65300c6
@@ -79,9 +79,9 @@ files:
   cff/front.h: c79edbc58ab188739eb3bc2bd8ab9ac595d6478e65b702c3c38a7dd6aa80c02c
   cff/glue.c: cfc98bd16a172954c23afc89e55e2a48ece57036a69c08de7a269d4eeef2d92f
   cff/hint.c: 1f279989c0b94ec9b0ee961bd74e28c827e5822c6defee1f50b9b0a9e47f37cd
-  cff/interp.c: 82eba384983381c1f1b95e55a57762954585a8f1d5e67685492ac14f7f8ba85a
-  cff/interp.h: 014673f5c956214274c88c76d13ce1fd59a7aeae68350af7043f29d30b2104d1
-  cff/interp_procs.c: c18d42d7c29f90020dd796162b0f889ce761496840cb27d8a8c3438165cbe76e
+  cff/interp.h: f784500de14655bed50ef26a0c8196fcc7e3ac803084f4f0f2e1f68595d782df
+  cff/interp_loop.c: 25deff98f3968ee0ff6cfa292b21b795324d95b9c3d0850e1fb6f1ea933c05ea
+  cff/interp_procs.c: 09a3cc91332cc47997906f80ecedab7dec1ffdba1ee63d4aa7ffccecdbddeb3a
   cff/parse.c: 195c2e4eda770966652445742f0efae1f25583903146ec59fd67b12ec241e52c
   cff/path.c: 68786e1f8efbd0614c5e125086659aea7d021d3d127e655172b53963b4103ea0
   cff/qreduce.c: 6a01795ac1af9a2ce72aac11891de85540551a532dfe0bbb5911b41ef81e14ba

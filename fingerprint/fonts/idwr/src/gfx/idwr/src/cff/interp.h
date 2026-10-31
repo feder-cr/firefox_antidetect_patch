@@ -1,4 +1,4 @@
-/* Shared by the interp group's files (reimpl/cff/interp.c, interp_procs.c). */
+/* Shared by the interp group's files (reimpl/cff/interp_loop.c, interp_procs.c). */
 #ifndef CFF_INTERP_H
 #define CFF_INTERP_H
 #include "cff_port.h"

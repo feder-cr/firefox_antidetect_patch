@@ -1,5 +1,5 @@
 /* The charstring interpreter's procs (notes/cff.md, group 4 "interp"), everything except
- * Type1InterpretCharString and DoType1InterpretCharString (reimpl/cff/interp.c):
+ * Type1InterpretCharString and DoType1InterpretCharString (reimpl/cff/interp_loop.c):
  *
  *   erectToDev                    0x1800d9118  (point, out, state): the sign/swap fix-up of a device point
  *   erectToDev_CurveTo_FixedFltn  0x1800c7210  -> InternalFixedFltn with a flattening record
