@@ -41,6 +41,7 @@
  "dom/canvas/OffscreenCanvasDisplayHelper.h": 4,
  "dom/canvas/WebGLContext.cpp": 4,
  "dom/canvas/WebGLContext.h": 2,
+ "dom/canvas/WebGLContextValidate.cpp": 2,
  "dom/canvas/WebGLShader.cpp": 2,
  "dom/canvas/WebGLShader.h": 5,
  "dom/canvas/WebGLShaderValidator.cpp": 7,

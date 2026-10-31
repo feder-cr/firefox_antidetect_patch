@@ -1,6 +1,7 @@
 {
  "modified": [
-  "dom/canvas/ClientWebGLContext.cpp"
+  "dom/canvas/ClientWebGLContext.cpp",
+  "dom/canvas/WebGLContextValidate.cpp"
  ],
  "added": {
   "dom/canvas/StealthWebGLParams.cpp": "100644",
@@ -40,6 +41,26 @@
      "notes"
     ],
     "why": "Anchor missed the GetImageBuffer/GetInputStream/GetSurfaceSnapshot hunks; notes corrected on the number of extra reads and on the toDataURL/toBlob hooks."
+   }
+  },
+  {
+   "file": "dom/canvas/WebGLContextValidate.cpp",
+   "category": "spoof",
+   "feature": "webgl-parameters",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "WebGLContext::InitAndValidateGL (the stencil masks' starting values)",
+   "evidence": [
+    "+  mStencilValueMaskFront = mStencilValueMaskBack = mStencilWriteMaskFront = mStencilWriteMaskBack = UINT32_MAX;"
+   ],
+   "notes": "The four stencil masks WebGLContext tracks start at all ones, ANGLE's value on Windows, instead of the driver's (Mesa trims to its stencil bits: 255). Placed after Mozilla's reads and their debug assertions, which stay. What a page sets is unchanged; the driver masks to its own bits either way.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-01."
    }
   }
  ]
