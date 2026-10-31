@@ -5,10 +5,14 @@
  "added": {
   "browser/stealth-minimal/jar.mn": "100644",
   "browser/stealth-minimal/moz.build": "100644",
+  "devtools/stealth-minimal/jar.mn": "100644",
+  "devtools/stealth-minimal/moz.build": "100644",
   "python/mozbuild/mozbuild/frontend/stealth_minimal.py": "100644",
   "toolkit/stealth-minimal/StealthMinimal.sys.mjs": "100644",
   "toolkit/stealth-minimal/components.conf": "100644",
-  "toolkit/stealth-minimal/keep_jar.py": "100644"
+  "toolkit/stealth-minimal/keep_jar.py": "100644",
+  "toolkit/stealth-minimal/kept/jar.mn": "100644",
+  "toolkit/stealth-minimal/kept/moz.build": "100644"
  },
  "inventory": [
   {

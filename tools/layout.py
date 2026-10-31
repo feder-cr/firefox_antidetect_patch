@@ -151,6 +151,8 @@ OWN_FILES = [
     (r"^toolkit/stealth-minimal/(keep_jar\.py|StealthMinimal\.sys\.mjs|components\.conf)$", "minimal/remove"),
     (r"^python/mozbuild/mozbuild/frontend/stealth_minimal\.py$", "minimal/remove"),
     (r"^browser/stealth-minimal/", "minimal/remove"),
+    (r"^devtools/stealth-minimal/", "minimal/remove"),
+    (r"^toolkit/stealth-minimal/kept/", "minimal/remove"),
     (r"^toolkit/stealth-minimal/", "minimal/build"),
     (r"^build/stealth_check_build_files\.", "platform/build-tools"),
     (r"^build/stealth_check_sources\.", "platform/build-tools"),

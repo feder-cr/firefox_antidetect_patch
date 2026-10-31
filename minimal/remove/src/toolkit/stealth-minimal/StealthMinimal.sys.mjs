@@ -15,6 +15,8 @@ const WINDOW_ACTORS = [
   "CaptchaDetectionCommunication",
   "PageExtractor",
   "ReportBrokenSite",
+  "AboutTranslations",
+  "Translations",
   // browser chrome the minimal application has none of
   "AboutCertViewer",
   "AboutHttpsOnlyError",
@@ -35,7 +37,7 @@ const WINDOW_ACTORS = [
   "ViewSourcePage",
 ];
 
-const PROCESS_ACTORS = ["AsyncPrefs", "ContentPrefs"];
+const PROCESS_ACTORS = ["AsyncPrefs", "ContentPrefs", "TranslationsEngine"];
 
 // Names that were not registered: a port that renames an actor shows up here (and in the
 // minimal engine's tests) instead of silently keeping it.

@@ -18,15 +18,22 @@ absolute, and stops on any form it does not know instead of guessing.
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 TOP = Path(__file__).resolve().parents[2]
 TABLE = TOP / "python" / "mozbuild" / "mozbuild" / "frontend" / "stealth_minimal.py"
 # Where the kept entries of each parent directory are built: the jar must land in the
 # same chrome directory as the original (browser/ installs under the browser subdir).
-KEEP_DIR = {"browser/components": "browser/stealth-minimal"}
+KEEP_DIR = {
+    "browser/components": "browser/stealth-minimal",
+    "toolkit/components": "toolkit/stealth-minimal/kept",
+    "devtools": "devtools/stealth-minimal",
+}
 ENTRY = re.compile(r"^(\s*)(\*?\+?\s*)(\S+)(\s+)\((.+)\)\s*$")
 BARE = re.compile(r"^(\s*)(\*?\+?\s*)([\w.\-/@+]+)\s*$")
 HEADER = """# This Source Code Form is subject to the terms of the Mozilla Public
@@ -51,7 +58,13 @@ def dropped() -> dict[str, list[str]]:
 def rewrite(jar: Path) -> list[str]:
     base = jar.parent.relative_to(TOP).as_posix()
     out = [f"# ---- {jar.relative_to(TOP).as_posix()}"]
-    for n, line in enumerate(jar.read_text(encoding="utf-8").splitlines(), 1):
+    lines = jar.read_text(encoding="utf-8").splitlines()
+    if any(l.strip().startswith("[localization]") for l in lines):
+        # Fluent sources go to the localization registry, which no page can read.
+        if any(re.match(r"^[\w.\-/]+\.jar:$", l.strip()) for l in lines):
+            raise SystemExit(f"{jar}: localization mixed with chrome jars, not handled")
+        return [f"# ---- {jar.relative_to(TOP).as_posix()}: localization only, not page-readable, not kept"]
+    for n, line in enumerate(lines, 1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or stripped.startswith("%") or re.match(r"^[\w.\-/]+\.jar:$", stripped):
             # comments, preprocessor directives, registrations, jar headers: as written
@@ -79,8 +92,89 @@ def rewrite(jar: Path) -> list[str]:
             src = f"!/{base}/{src[1:]}"
         else:
             src = f"/{base}/{src[2:] if src.startswith('./') else src}"
+        if "*" in src:
+            out.extend(f"{indent}{star}{d}{sp}({s})" for d, s in expand(jar, n, dest, src))
+            continue
         out.append(f"{indent}{star}{dest}{sp}({src})")
     return out
+
+
+def expand(jar: Path, n: int, dest: str, src: str):
+    """A wildcard source as the entries jar.py would make of it, written out one by one.
+
+    jar.py finds an absolute wildcard's files under the top source directory, then looks
+    each of them up again without the leading "/", that is in the kept jar.mn's own
+    directory, where it is not (python/mozbuild/mozbuild/jar.py, the "*" branch). The
+    destination is jar.py's: the matched path minus the pattern's leading fixed directories.
+    """
+    if src.startswith("!"):
+        raise SystemExit(f"{jar}:{n}: wildcard objdir source, not handled: {src}")
+    parts = src[1:].split("/")
+    fixed = 0
+    while "*" not in parts[fixed]:
+        fixed += 1
+    if any("*" not in p for p in parts[fixed:]):
+        raise SystemExit(f"{jar}:{n}: fixed directory after a wildcard, not handled: {src}")
+    root = TOP.joinpath(*parts[:fixed])
+    # jar.py's FileFinder takes a matched directory as every file below it; pathlib stops at it
+    matched = root.glob("/".join(parts[fixed:]))
+    files = {f for p in matched for f in ([p] if p.is_file() else p.rglob("*")) if f.is_file()}
+    found = sorted(p for p in files if not any(q.startswith(".") for q in p.relative_to(root).parts))
+    if not found:
+        raise SystemExit(f"{jar}:{n}: wildcard matches no file: {src}")
+    for p in found:
+        yield f"{dest.rstrip('/')}/{p.relative_to(root).as_posix()}", f"/{p.relative_to(TOP).as_posix()}"
+
+
+def jarmaker(target: Path, out: Path) -> str | None:
+    """Build a jar.mn into `out`, flat, with Mozilla's own JarMaker the way the build runs it:
+    from an object directory, not the source tree, so a source jar.py cannot find fails here."""
+    code = (
+        "import glob, os, sys\n"
+        "top = sys.argv[1]\n"
+        "for p in ['python/mozbuild', 'python/mach', 'third_party/python/six', 'third_party/python/packaging',"
+        " 'third_party/python/filelock'] + glob.glob(top + '/testing/mozbase/*'):\n"
+        "    sys.path.insert(0, os.path.join(top, p))\n"
+        "import mozbuild.jar\n"
+        "sys.exit(mozbuild.jar.main(['-q', '-f', 'flat', '-t', top, '-s', sys.argv[2], '-d', sys.argv[3], sys.argv[4]]))\n"
+    )
+    with tempfile.TemporaryDirectory() as objdir:
+        run = subprocess.run([sys.executable, "-c", code, str(TOP), str(target.parent), str(out), str(target)],
+                             cwd=objdir, capture_output=True, text=True)
+    if run.returncode:
+        return (run.stderr.strip().splitlines() or ["JarMaker failed"])[-1]
+    return None
+
+
+def built(out: Path) -> tuple[dict[str, str], list[str]]:
+    files = {p.relative_to(out).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in out.rglob("*") if p.is_file() and p.suffix != ".manifest"}
+    registrations = sorted(l for p in out.rglob("*.manifest") for l in p.read_text(encoding="utf-8").splitlines())
+    return files, registrations
+
+
+def parity(parent: str, names: list[str]) -> list[str]:
+    """The kept jar.mn and the original ones it replaces, built: the same files, byte for
+    byte, and the same registrations, or the list of what differs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        original, kept = Path(tmp) / "original", Path(tmp) / "kept"
+        errors = [e for e in (jarmaker(j, original) for j in originals(parent, names)) if e]
+        errors += [e for e in [jarmaker(TOP / KEEP_DIR[parent] / "jar.mn", kept)] if e]
+        if errors:
+            return errors
+        (fa, ra), (fb, rb) = built(original), built(kept)
+    diff = sorted(set(fa) ^ set(fb)) + sorted(f for f in set(fa) & set(fb) if fa[f] != fb[f])
+    return diff[:20] + (["registrations differ"] if ra != rb else [])
+
+
+def originals(parent: str, names: list[str]):
+    for name in names:
+        for jar in sorted((TOP / parent / name).glob("**/jar.mn")):
+            if "/test" in jar.as_posix():
+                continue
+            if any(l.strip().startswith("[localization]") for l in jar.read_text(encoding="utf-8").splitlines()):
+                continue
+            yield jar
 
 
 def render(parent: str, names: list[str]) -> str:
@@ -120,6 +214,18 @@ def main(argv) -> int:
     if stale:
         print("out of date, rerun keep_jar.py: " + ", ".join(stale))
         return 1
+    if check:
+        # What the build will make of them: the files of the original jar.mn files, the same
+        # bytes; and the hand-written jar.mn of this directory builds.
+        broken = [f"{parent}: {d}" for parent, names in dropped().items() if parent in KEEP_DIR
+                  for d in parity(parent, names)]
+        with tempfile.TemporaryDirectory() as tmp:
+            error = jarmaker(Path(__file__).with_name("jar.mn"), Path(tmp))
+        if error:
+            broken.append(f"toolkit/stealth-minimal/jar.mn: {error}")
+        if broken:
+            print("the kept jar.mn files do not build the original chrome files:\n  " + "\n  ".join(broken))
+            return 1
     return 0
 
 
