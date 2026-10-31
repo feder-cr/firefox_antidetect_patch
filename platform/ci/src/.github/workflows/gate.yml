@@ -239,13 +239,22 @@ jobs:
       # repair reinstalls 50.48.0 and the assertion stops the step with that
       # cause; with them the core stays 51.48.0 and the browser launches and
       # evaluates with no prefs passed by hand.
+      #
+      # core_ref also goes in BEFORE the wrapper. A wrapper_ref pinned to the
+      # version core_ref builds - how the next engine's candidates run, before
+      # that core is published - has a pin only core_ref can satisfy: installed
+      # first, it is the installed version and pip takes nothing from the index
+      # (run 41231675778: "No matching distribution found for
+      # invisible-core==54.50.0" on every leg). A pin to another, published
+      # version is fetched as before, and the force-reinstall puts core_ref back.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
         run: |
           export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          CORE_GIT="git+https://github.com/feder-cr/invisible_core@${{ inputs.core_ref }}"
+          python -m pip install --quiet "$CORE_GIT"
           python -m pip install --quiet ".[dev]"
-          python -m pip install --quiet --force-reinstall \
-            "git+https://github.com/feder-cr/invisible_core@${{ inputs.core_ref }}"
+          python -m pip install --quiet --force-reinstall "$CORE_GIT"
           CORE_REF="${{ inputs.core_ref }}" python - <<'PY'
           import json, os, re, subprocess, sys
           from importlib.metadata import distribution, version
