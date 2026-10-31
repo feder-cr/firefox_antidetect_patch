@@ -66,7 +66,7 @@ nsDependentCSubstring Key(const Limit aLimit) {
     STEALTH_KEY(MaxComputeWorkgroupsPerDimension, "maxComputeWorkgroupsPerDimension")
 #undef STEALTH_KEY
   }
-  return "";
+  return nsDependentCSubstring();
 }
 
 // Retail Firefox 159 for Windows, headed, 2026-10-31 (the D3D12 constants).
