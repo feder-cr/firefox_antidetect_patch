@@ -1,0 +1,235 @@
+{
+ "modified": [
+  "third_party/rust/glean-core/.cargo-checksum.json",
+  "third_party/rust/glean-core/Cargo.toml",
+  "third_party/rust/glean-core/src/core/mod.rs",
+  "third_party/rust/glean-core/src/dispatcher/global.rs",
+  "third_party/rust/glean/.cargo-checksum.json",
+  "third_party/rust/glean/Cargo.toml",
+  "third_party/rust/glean/src/lib.rs",
+  "toolkit/components/glean/Cargo.toml",
+  "toolkit/components/glean/api/Cargo.toml",
+  "toolkit/components/glean/api/src/ipc.rs",
+  "toolkit/library/rust/gkrust-features.mozbuild",
+  "toolkit/library/rust/shared/Cargo.toml"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "third_party/rust/glean-core/.cargo-checksum.json",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "the files map",
+   "evidence": [],
+   "notes": "New sha256 of the three glean-core files we edit.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "third_party/rust/glean-core/Cargo.toml",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of [features]",
+   "evidence": [],
+   "notes": "Declares stealth_minimal.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "third_party/rust/glean-core/src/core/mod.rs",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of global_glean()",
+   "evidence": [],
+   "notes": "With stealth_minimal there is never a Glean object, so LTO drops the code that would use one.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "third_party/rust/glean-core/src/dispatcher/global.rs",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 3,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "launch()",
+   "evidence": [],
+   "notes": "With stealth_minimal, launch() drops the task: nothing is queued (the pre-init queue held up to a million tasks).",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "third_party/rust/glean/.cargo-checksum.json",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "the files map",
+   "evidence": [],
+   "notes": "New sha256 of the two glean files we edit; Cargo verifies vendored crates file by file.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "third_party/rust/glean/Cargo.toml",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of [features]",
+   "evidence": [],
+   "notes": "Declares stealth_minimal, forwarded to glean-core.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "third_party/rust/glean/src/lib.rs",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of initialize_internal",
+   "evidence": [],
+   "notes": "With stealth_minimal, Glean is never initialized: no upload manager, no database, no glean.init thread.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "toolkit/components/glean/Cargo.toml",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of [features]",
+   "evidence": [],
+   "notes": "Declares stealth_minimal, forwarded to firefox-on-glean.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "toolkit/components/glean/api/Cargo.toml",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of [features]",
+   "evidence": [],
+   "notes": "Declares stealth_minimal, forwarded to glean.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "toolkit/components/glean/api/src/ipc.rs",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of need_ipc()",
+   "evidence": [],
+   "notes": "With stealth_minimal, child processes do not buffer metrics for the parent either.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "toolkit/library/rust/gkrust-features.mozbuild",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after the glean_with_gecko feature",
+   "evidence": [],
+   "notes": "Turns the Rust feature on when configure sets MOZ_STEALTH_MINIMAL.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  },
+  {
+   "file": "toolkit/library/rust/shared/Cargo.toml",
+   "category": "build",
+   "feature": "glean-removed",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of [features]",
+   "evidence": [],
+   "notes": "Declares stealth_minimal, forwarded to fog_control.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  }
+ ]
+}

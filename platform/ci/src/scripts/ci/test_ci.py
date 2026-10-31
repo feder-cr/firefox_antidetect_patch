@@ -80,8 +80,8 @@ def expected(leg, cache):
     return lines
 
 
-def compose(leg, cache, sccache="/s/sccache"):
-    plan = mozconfig.Plan(cache, sccache, Path("pgo"), fake_pgo)
+def compose(leg, cache, sccache="/s/sccache", flavor="full"):
+    plan = mozconfig.Plan(cache, sccache, Path("pgo"), fake_pgo, flavor)
     return mozconfig.compose(BASE, legs.by_name(leg), plan)
 
 
@@ -120,6 +120,14 @@ def main() -> int:
         "linux-x86_64": "firefox-157.0.1-stealth-linux-x86_64.tar.gz",
         "linux-arm64": "firefox-157.0.1-stealth-linux-arm64.tar.gz",
         "win-x86_64": "firefox-157.0.1-stealth-win-x86_64.zip"}))
+    minimal = {l.leg: l.asset("159.0", "minimal") for l in legs.LEGS}
+    cases.append(("the minimal engine's archives say so, and still end in -<os>-<arch>.<ext>", minimal == {
+        "linux-x86_64": "firefox-159.0-stealth-minimal-linux-x86_64.tar.gz",
+        "linux-arm64": "firefox-159.0-stealth-minimal-linux-arm64.tar.gz",
+        "win-x86_64": "firefox-159.0-stealth-minimal-win-x86_64.zip"}))
+    cases.append(("the matrix of the minimal engine carries its names",
+                  [e["asset"] for e in json.loads(legs.matrix("159.0", "minimal"))["include"]]
+                  == list(minimal.values())))
     inc = json.loads(legs.matrix("157.0.1"))["include"]
     need = {"leg", "runner", "family", "host", "target", "rust_target", "extra_pkgs", "asset"}
     cases.append(("the matrix carries every field release.yml reads",
@@ -129,6 +137,11 @@ def main() -> int:
         for cache in ("gha", "off"):
             got = mozconfig.active(compose(leg, cache))
             cases.append(("the decided flags, %s, compile_cache=%s" % (leg, cache), got == expected(leg, cache)))
+    for leg in ("linux-x86_64", "win-x86_64"):
+        want = expected(leg, "gha")
+        want = want[:-2] + ["ac_add_options --enable-stealth-minimal"] + want[-2:]
+        cases.append(("the minimal engine adds its configure option and nothing else, %s" % leg,
+                      mozconfig.active(compose(leg, "gha", flavor="minimal")) == want))
     text = compose("linux-x86_64", "off")
     cases.append(("sccache lines go case-insensitive, comments stay",
                   "SCCACHE_CACHE_SIZE" not in text and "# sccache is in PATH on both machines" in text))

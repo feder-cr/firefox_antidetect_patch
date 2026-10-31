@@ -52,6 +52,9 @@ LOCAL_SEAL_TAG = "local"
 # What the compile_cache output can say. "gha" is sccache on the GitHub Actions
 # cache; "off" is a cold build. Anything else is refused.
 COMPILE_CACHES = ("gha", "off")
+# The engine flavors (scripts/ci/legs.py). The minimal engine is built as a candidate
+# only: nothing publishes it, and the gates that drive a browser need the Juggler it has not.
+FLAVORS = ("full", "minimal")
 
 
 class PlanError(ValueError):
@@ -59,11 +62,20 @@ class PlanError(ValueError):
 
 
 def plan(event: str, kind: str, release_tag: str, ref_name: str,
-         compile_cache: str = "") -> dict[str, str]:
+         compile_cache: str = "", flavor: str = "") -> dict[str, str]:
     """The outputs of a run, or PlanError.
 
     compile_cache is the run's request: "" takes the kind's default (a
-    candidate uses the cache, a release does not)."""
+    candidate uses the cache, a release does not). flavor "" is full."""
+    flavor = flavor or "full"
+    if flavor not in FLAVORS:
+        raise PlanError(f"flavor must be one of {', '.join(FLAVORS)}, got {flavor!r}")
+    if flavor == "minimal" and (event == "push" or kind == "release"):
+        raise PlanError("the minimal engine is built as a candidate only: nothing publishes it yet")
+    if flavor == "minimal" and compile_cache != "off":
+        raise PlanError(
+            "the minimal engine compiles cold (compile_cache=off): its objects differ from the full "
+            "engine's, and sharing the per-leg cache entries would make the next full build cold")
     if event == "push":
         # a pushed tag is a release by definition, and its name is the tag
         kind, release_tag = "release", ref_name
@@ -82,7 +94,7 @@ def plan(event: str, kind: str, release_tag: str, ref_name: str,
                 f"to publish a candidate's archives later, run republish.yml with its "
                 f"run id.")
         return {"kind": "candidate", "tag": "", "num": "", "prevtag": "",
-                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha"}
+                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha", "flavor": flavor}
     if compile_cache == "gha":
         raise PlanError(
             "a release is compiled from nothing, so it takes no compile cache. "
@@ -94,7 +106,7 @@ def plan(event: str, kind: str, release_tag: str, ref_name: str,
         raise PlanError(f"a release needs a firefox-N tag: {exc}") from None
     return {"kind": "release", "tag": release_tag, "num": str(n),
             "prevtag": f"firefox-{n - 1}" if n > 0 else "", "seal_tag": release_tag,
-            "compile_cache": "off"}
+            "compile_cache": "off", "flavor": flavor}
 
 
 def main(argv=None) -> int:
@@ -104,10 +116,11 @@ def main(argv=None) -> int:
     ap.add_argument("--release-tag", default="")
     ap.add_argument("--ref-name", default="")
     ap.add_argument("--compile-cache", default="")
+    ap.add_argument("--flavor", default="")
     a = ap.parse_args(argv)
     try:
         outputs = plan(a.event, a.kind, a.release_tag.strip(), a.ref_name,
-                       a.compile_cache.strip())
+                       a.compile_cache.strip(), a.flavor.strip())
     except PlanError as exc:
         print(f"PLAN REFUSED: {exc}", file=sys.stderr)
         return 1

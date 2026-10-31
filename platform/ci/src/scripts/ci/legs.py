@@ -10,6 +10,7 @@ wrapper's once already, and every download 404'd while the build was green
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -32,10 +33,13 @@ class Leg:
     target: str = ""
     extra_pkgs: str = ""
 
-    def asset(self, version: str) -> str:
+    def asset(self, version: str, flavor: str = "full") -> str:
         os_name, arch = self.leg.split("-", 1)
         ext = "zip" if self.family == "win" else "tar.gz"
-        return "firefox-%s-stealth-%s-%s.%s" % (version, os_name, arch, ext)
+        # The minimal engine's archives say so before the platform, so every name
+        # still ends in -<os>-<arch>.<ext> as the globs and the seal read it.
+        kind = "minimal-" if flavor == "minimal" else ""
+        return "firefox-%s-stealth-%s%s-%s.%s" % (version, kind, os_name, arch, ext)
 
 
 LEGS = (
@@ -55,11 +59,23 @@ def by_name(name: str) -> Leg:
     raise KeyError("no leg %r (legs: %s)" % (name, ", ".join(l.leg for l in LEGS)))
 
 
+FLAVORS = ("full", "minimal")
+
+
+def flavor() -> str:
+    """The engine this run builds, from STEALTH_FLAVOR: full when unset. minimal is
+    --enable-stealth-minimal (minimal/build in the series)."""
+    value = os.environ.get("STEALTH_FLAVOR", "") or "full"
+    if value not in FLAVORS:
+        raise ValueError("STEALTH_FLAVOR=%r: one of %s" % (value, ", ".join(FLAVORS)))
+    return value
+
+
 def tree_version(path: Path = VERSION_DISPLAY) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
-def matrix(version: str) -> str:
+def matrix(version: str, flavor: str = "full") -> str:
     """The build job's matrix, for `fromJSON` in release.yml."""
-    include = [dict(asdict(leg), asset=leg.asset(version)) for leg in LEGS]
+    include = [dict(asdict(leg), asset=leg.asset(version, flavor)) for leg in LEGS]
     return json.dumps({"include": include}, separators=(",", ":"))

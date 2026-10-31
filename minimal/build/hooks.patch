@@ -1,0 +1,12 @@
+diff --git a/moz.configure b/moz.configure
+index 120f11870852d8db22ec806384332cf92e9ef02f..ea194e9fc7ec350cb1a84a058189570f76258c64 100755
+--- a/moz.configure
++++ b/moz.configure
+@@ -562,6 +562,7 @@ def gtest_in_build(value):
+ set_config("LINK_GTEST_DURING_COMPILE", True, when="--enable-gtest-in-build")
+ 
+ 
++include("build/moz.configure/stealth-minimal.configure")  # STEALTH-HOOK(minimal/build)
+ include(include_project_configure)
+ 
+ 

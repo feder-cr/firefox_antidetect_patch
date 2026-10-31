@@ -24,7 +24,9 @@ refuse, each one a real way to get it wrong, and the runs it must accept:
    11. a release by hand: tag, number, previous tag, the seal under the tag,
        the cache off;
    12. a release by hand that asks for the cache off, which it is anyway;
-   13. a pushed firefox-N tag, whatever the (absent) kind input says.
+   13. a pushed firefox-N tag, whatever the (absent) kind input says;
+   14. a candidate of the minimal engine (a minimal release, or an undeclared
+       flavor, is refused).
 
 Run it directly, like test_make_seal.py: `python3 scripts/test_release_plan.py`.
 """
@@ -51,26 +53,38 @@ REFUSED = [
     ("a release asked for the compile cache",
      ("workflow_dispatch", "release", "firefox-49", "x", "gha")),
     ("an undeclared compile cache", ("workflow_dispatch", "candidate", "", "x", "on")),
+    ("a minimal engine as a release (nothing publishes it)",
+     ("workflow_dispatch", "release", "firefox-49", "x", "", "minimal")),
+    ("a pushed tag that asks for the minimal engine", ("push", "", "", "firefox-50", "", "minimal")),
+    ("an undeclared flavor", ("workflow_dispatch", "candidate", "", "x", "", "tiny")),
+    ("a minimal candidate on the full engine's compile cache",
+     ("workflow_dispatch", "candidate", "", "x", "gha", "minimal")),
+    ("a minimal candidate with the cache left to its default (gha)",
+     ("workflow_dispatch", "candidate", "", "x", "", "minimal")),
 ]
 
 ACCEPTED = [
     ("a candidate", ("workflow_dispatch", "candidate", "", "next/firefox-49"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "gha"}),
+      "compile_cache": "gha", "flavor": "full"}),
     ("a candidate without the cache",
      ("workflow_dispatch", "candidate", "", "next/firefox-49", "off"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "off"}),
+      "compile_cache": "off", "flavor": "full"}),
     ("a release by hand", ("workflow_dispatch", "release", "firefox-49", "next/firefox-49"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "off"}),
+      "seal_tag": "firefox-49", "compile_cache": "off", "flavor": "full"}),
     ("a release by hand asking for no cache",
      ("workflow_dispatch", "release", "firefox-49", "next/firefox-49", "off"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "off"}),
+      "seal_tag": "firefox-49", "compile_cache": "off", "flavor": "full"}),
     ("a pushed tag", ("push", "", "", "firefox-50"),
      {"kind": "release", "tag": "firefox-50", "num": "50", "prevtag": "firefox-49",
-      "seal_tag": "firefox-50", "compile_cache": "off"}),
+      "seal_tag": "firefox-50", "compile_cache": "off", "flavor": "full"}),
+    ("a candidate of the minimal engine, compiled cold",
+     ("workflow_dispatch", "candidate", "", "minimal", "off", "minimal"),
+     {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
+      "compile_cache": "off", "flavor": "minimal"}),
 ]
 
 

@@ -9,6 +9,7 @@ writes the reason it exists into the file as comments, so the final
   symbols    line tables for C, C++ and Rust (crash dumps -> file:line)
   toolchain  the retail's PGO profile and LTO mode for this leg
   platform   target, host, and the Windows C++ runtime
+  flavor     the minimal engine's configure option, nothing for full
   machine    parallelism and objdir of the runner
 
 A layer is a function (leg, plan) -> Layer. The order and the active lines
@@ -32,6 +33,7 @@ class Plan:
     pgo_dir: Path = Path("pgo")
     # upstream_toolchain.pgo(leg, out) -> lines; injected so the tests run offline
     pgo: Callable = None
+    flavor: str = "full"          # full | minimal (legs.flavor)
 
 
 @dataclass
@@ -106,7 +108,18 @@ def machine(leg: Leg, plan: Plan) -> Layer:
         "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-rel"])
 
 
-LAYERS = (cache, symbols, toolchain, platform, machine)
+def flavor(leg: Leg, plan: Plan) -> Layer:
+    lines = ["ac_add_options --enable-stealth-minimal"] if plan.flavor == "minimal" else []
+    return Layer("flavor", (
+        "The engine flavor. full writes nothing here and builds as it always has. "
+        "minimal is our configure option, which leaves out of the build what opening "
+        "a page, reading it and closing it does not need: the automation protocol, "
+        "the remote agent, the crash reporter, background tasks, the notification "
+        "server, parental controls, the Wi-Fi scanner, and Glean's runtime "
+        "(build/moz.configure/stealth-minimal.configure; minimal/ in the series)."), lines)
+
+
+LAYERS = (cache, symbols, toolchain, platform, flavor, machine)
 
 _SCCACHE_ACTIVE = re.compile(r"^[^#]*sccache", re.I)
 

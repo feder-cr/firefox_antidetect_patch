@@ -1,0 +1,82 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# The minimal engine: the same series, built without what opening a page, reading it
+# and closing it does not need. What it leaves out is left out of the build, not
+# switched off at run time. The normal engine never passes this option and builds
+# exactly as before. See minimal/build/FEATURE.md.
+#
+# Included by moz.configure BEFORE the project's configure: imply_option() must
+# reference an option before the option is declared.
+
+option(
+    "--enable-stealth-minimal",
+    help="Build the minimal engine: no automation protocol, no remote agent, no "
+    "crash reporter, no background tasks, no Glean runtime",
+)
+
+set_config("MOZ_STEALTH_MINIMAL", True, when="--enable-stealth-minimal")
+set_define("MOZ_STEALTH_MINIMAL", True, when="--enable-stealth-minimal")
+
+
+# Each of these is a whole component a page can never reach. Implied rather than
+# written in the .mozconfig, so a minimal build cannot forget one.
+imply_option(
+    "--enable-webdriver",
+    False,
+    reason="--enable-stealth-minimal: no remote agent, no Marionette",
+    when="--enable-stealth-minimal",
+)
+imply_option(
+    "--enable-crashreporter",
+    False,
+    reason="--enable-stealth-minimal: no crash reporter",
+    when="--enable-stealth-minimal",
+)
+imply_option(
+    "--enable-backgroundtasks",
+    False,
+    reason="--enable-stealth-minimal: no background task mode",
+    when="--enable-stealth-minimal",
+)
+imply_option(
+    "--enable-parental-controls",
+    False,
+    reason="--enable-stealth-minimal: no parental controls",
+    when="--enable-stealth-minimal",
+)
+
+
+# These two options only exist on some targets; the conditions repeat Mozilla's
+# (notification_server_default in update-programs.configure, necko_wifi_when in
+# toolkit/moz.configure), and a port that changes them shows up as a configure error.
+@depends("--enable-stealth-minimal", target)
+def stealth_minimal_windows(minimal, target):
+    return bool(minimal) and target.os == "WINNT"
+
+
+imply_option(
+    "--enable-notification-server",
+    False,
+    reason="--enable-stealth-minimal: no Windows notification server",
+    when=stealth_minimal_windows,
+)
+
+
+@depends("--enable-stealth-minimal", target)
+def stealth_minimal_wifi(minimal, target):
+    return bool(minimal) and (
+        target.os in ("WINNT", "OSX", "DragonFly", "FreeBSD")
+        or (target.kernel == "Linux" and target.os == "GNU")
+    )
+
+
+imply_option(
+    "--enable-necko-wifi",
+    False,
+    reason="--enable-stealth-minimal: no Wi-Fi scanner (the location comes from the persona)",
+    when=stealth_minimal_wifi,
+)

@@ -73,9 +73,9 @@ def main(argv) -> int:
     args = ap.parse_args(argv)
 
     if args.cmd == "matrix":
-        print(legs.matrix(legs.tree_version()))
+        print(legs.matrix(legs.tree_version(), legs.flavor()))
     elif args.cmd == "assets":
-        print("\n".join(l.asset(legs.tree_version()) for l in legs.LEGS))
+        print("\n".join(l.asset(legs.tree_version(), legs.flavor()) for l in legs.LEGS))
     elif args.cmd == "version":
         print(legs.tree_version())
     elif args.cmd == "payload-guard":
@@ -106,14 +106,15 @@ def main(argv) -> int:
         import sccache_build
         print(sccache_build.build(args.tag, args.patches, args.out))
     elif args.cmd == "asset":
-        print(legs.by_name(args.leg).asset(legs.tree_version()))
+        print(legs.by_name(args.leg).asset(legs.tree_version(), legs.flavor()))
     elif args.cmd == "mozconfig":
         import upstream_toolchain
         path = Path(".mozconfig")
         if not path.is_file():
             print("ERROR: no .mozconfig in the source", file=sys.stderr)
             return 1
-        plan = mozconfig.Plan(args.compile_cache, args.sccache, args.pgo_dir, upstream_toolchain.pgo)
+        plan = mozconfig.Plan(args.compile_cache, args.sccache, args.pgo_dir, upstream_toolchain.pgo,
+                              legs.flavor())
         text = mozconfig.compose(path.read_text(encoding="utf-8"), legs.by_name(args.leg), plan)
         path.write_text(text, encoding="utf-8")
         print("----- final .mozconfig -----")

@@ -67,3 +67,5 @@ fingerprint/screen-window/screen
 fingerprint/webgl/parameters
 fingerprint/webgl/shader-language
 fingerprint/webrtc/ice-candidates
+minimal/build
+minimal/glean

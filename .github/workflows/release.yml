@@ -83,6 +83,15 @@ on:
       gtest_filter:
         description: "gtests=true only: which, as mach gtest takes them (e.g. StartupCache.*:Stealth*); * is all"
         default: '*'
+      flavor:
+        description: >
+          full: the engine as always. minimal: --enable-stealth-minimal (minimal/
+          in the series), a candidate only and compiled cold (compile_cache=off):
+          no Juggler, so the gate and the crash symbols are skipped, and the
+          package gates check what it leaves out instead.
+        type: choice
+        options: [full, minimal]
+        default: full
 
 # What gets built: this repository holds the patch series only. Every job that
 # needs the engine's source rebuilds it with tools/engine.py materialize: the
@@ -102,6 +111,7 @@ jobs:
       prevtag: ${{ steps.plan.outputs.prevtag }}
       seal_tag: ${{ steps.plan.outputs.seal_tag }}
       compile_cache: ${{ steps.plan.outputs.compile_cache }}
+      flavor: ${{ steps.plan.outputs.flavor }}
       build_date: ${{ steps.build_date.outputs.build_date }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -122,11 +132,12 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           # A pushed tag has no inputs: empty, and the plan makes it a cold release.
           COMPILE_CACHE: ${{ inputs.compile_cache }}
+          FLAVOR: ${{ inputs.flavor }}
         run: |
           set -e
           python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
             --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
-            --compile-cache "$COMPILE_CACHE" > plan.txt
+            --compile-cache "$COMPILE_CACHE" --flavor "$FLAVOR" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every
@@ -140,6 +151,8 @@ jobs:
       # names derived from the version the tree builds (never written here).
       - name: The legs and their asset names
         id: matrix
+        env:
+          STEALTH_FLAVOR: ${{ steps.plan.outputs.flavor }}
         run: |
           python3 scripts/ci/test_ci.py
           echo "matrix=$(python3 scripts/ci matrix)" | tee -a "$GITHUB_OUTPUT"
@@ -153,6 +166,9 @@ jobs:
       MOZ_BUILD_DATE: ${{ needs.plan.outputs.build_date }}
       # Every event scripts/ci/phase.py records is this leg's.
       CI_LEG: ${{ matrix.leg }}
+      # full or minimal (scripts/ci/legs.py): the .mozconfig, the asset names and
+      # the package gates read it.
+      STEALTH_FLAVOR: ${{ needs.plan.outputs.flavor }}
     strategy:
       fail-fast: false
       # The legs are data in scripts/ci/legs.py (runner, host, target, asset
@@ -263,7 +279,7 @@ jobs:
       # from: never a chrome package, which a page probes by name, and every
       # resource URL a file the build installs (invisible_playwright #336).
       - name: Juggler's tests without a browser
-        if: matrix.leg == 'linux-x86_64'
+        if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.flavor == 'full'
         shell: bash
         # The files, expanded by the shell: from Node 21 the arguments of
         # --test are file patterns, and a directory is loaded as a module.
@@ -642,6 +658,8 @@ jobs:
       # separate artifact, never part of the asset (gate.yml and publish.yml take
       # asset-* only).
       - name: Crash symbols (never shipped)
+        # The minimal engine has no crash reporter, so no symbols archive.
+        if: needs.plan.outputs.flavor == 'full'
         # A ceiling of its own: in run 40593659072 this step recompiled Rust
         # (621 crates, 35 minutes against 2 the run before) and nothing bounded
         # it below the job's 350.
@@ -658,6 +676,7 @@ jobs:
           mv obj-rel/dist/*.crashreporter-symbols.zip symbols/
           ls -la symbols/
       - name: The crash symbols describe the shipped binaries
+        if: needs.plan.outputs.flavor == 'full'
         # Run 40593659072 uploaded symbols for a xul.dll it did not ship: its
         # symbols step relinked xul after the package was made, and the archive
         # named 3E2BB500 for a binary that shipped as 030D79D8. Nothing said so;
@@ -665,6 +684,7 @@ jobs:
         shell: bash
         run: python3 scripts/ci symbols-match --package "out/${{ matrix.asset }}" --symbols symbols/*.zip
       - name: Upload crash symbols
+        if: needs.plan.outputs.flavor == 'full'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: symbols-${{ matrix.leg }}
@@ -734,6 +754,8 @@ jobs:
   # and republish.yml calls the same two.
   gate:
     needs: [plan, build]
+    # The gate drives the browser through Juggler, which the minimal engine has not.
+    if: needs.plan.outputs.flavor == 'full'
     permissions: { actions: read, contents: read }
     uses: ./.github/workflows/gate.yml
     with:

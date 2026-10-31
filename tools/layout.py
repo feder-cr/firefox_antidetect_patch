@@ -7,6 +7,7 @@ The layout is one folder per feature, grouped by what the feature does:
     network/      proxies, SOCKS, DNS
     automation/   what the Juggler protocol needs from Gecko
     fingerprint/  what a page can observe, one folder per surface
+    minimal/      what the minimal engine (--enable-stealth-minimal) leaves out of the build
     port/         fixes tied to one Firefox version, each with its reason to expire
 
 GROUP_ORDER is also the order the series is applied in.
@@ -19,9 +20,12 @@ from __future__ import annotations
 
 import re
 
-GROUP_ORDER = ["platform", "stillborn", "network", "automation", "fingerprint", "port"]
+GROUP_ORDER = ["platform", "stillborn", "network", "automation", "fingerprint", "minimal", "port"]
 
 FEATURES = {
+    # minimal
+    "stealth-minimal-configure": "minimal/build",
+    "glean-removed": "minimal/glean",
     # platform
     "release-output-ignore": "platform/repo",
     "agent-instructions-fork": "platform/repo",
@@ -142,6 +146,7 @@ FEATURES = {
 
 # Files we add to Firefox's tree, first match wins.
 OWN_FILES = [
+    (r"^build/moz\.configure/stealth-minimal\.configure$", "minimal/build"),
     (r"^build/stealth_check_build_files\.", "platform/build-tools"),
     (r"^build/stealth_check_sources\.", "platform/build-tools"),
     (r"^modules/libpref/test/test_stealth_prefs_declared_once\.", "platform/prefs"),

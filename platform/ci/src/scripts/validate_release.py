@@ -324,6 +324,67 @@ def assert_juggler_provenance(tree: Path) -> None:
           f"{layout} layout)")
 
 
+def flavor() -> str:
+    """The engine flavor the CI builds (STEALTH_FLAVOR): full unless it says minimal."""
+    value = os.environ.get("STEALTH_FLAVOR", "") or "full"
+    if value not in ("full", "minimal"):
+        raise ValidationError(f"STEALTH_FLAVOR={value!r}: full or minimal")
+    return value
+
+
+# What --enable-stealth-minimal leaves out of the build (minimal/build in the series):
+# omni.ja prefixes and files at the root that must NOT be there.
+MINIMAL_ABSENT_ENTRIES = ("modules/juggler/", "chrome/remote/", "modules/backgroundtasks/")
+MINIMAL_ABSENT_FILES = ("crashreporter", "crashreporter.exe", "crashhelper", "crashhelper.exe",
+                        "minidump-analyzer", "minidump-analyzer.exe", "notification-helper.exe",
+                        "notificationserver.dll", "pingsender", "pingsender.exe")
+# Strings only Glean's initialization uses (the glean.init thread, its upload metrics):
+# with Glean removed at the source, LTO leaves them out of the library.
+GLEAN_RUNTIME_MARKERS = (b"glean.init", b"glean.upload")
+
+
+def assert_minimal_leaves_out(tree: Path) -> None:
+    """The minimal engine carries none of the components it leaves out. Glean's
+    runtime is reported, not refused, until a first minimal build has measured it."""
+    root = _juggler_root(tree)
+    present = [f for f in MINIMAL_ABSENT_FILES if (root / f).exists()]
+    omni = root / "omni.ja"
+    if omni.exists():
+        import stock_parity
+        names = stock_parity.open_jar(omni.read_bytes(), str(omni)).entries
+        present += [p for p in MINIMAL_ABSENT_ENTRIES if any(n.startswith(p) for n in names)]
+    elif (root / "modules" / "juggler").is_dir():
+        present.append("modules/juggler/")
+    if present:
+        raise ValidationError(f"the minimal engine still carries: {', '.join(present)}")
+    for lib in ("xul.dll", "libxul.so"):
+        if (root / lib).exists():
+            data = (root / lib).read_bytes()
+            found = [m.decode() for m in GLEAN_RUNTIME_MARKERS if m in data]
+            print(f"    Glean runtime markers in {lib}: {found or 'none'} (reported, not refused yet)")
+    print("    minimal engine leaves out " + ", ".join(MINIMAL_ABSENT_ENTRIES + ("crash reporter",)))
+
+
+def assert_engine_contents(tree: Path) -> None:
+    """Full: the juggler is there and marked. Minimal: what it leaves out is gone."""
+    if flavor() == "minimal":
+        assert_minimal_leaves_out(tree)
+    else:
+        assert_juggler_provenance(tree)
+
+
+def assert_page_surface_for_flavor(tree: Path) -> None:
+    """Full: the page surface is the retail's, refused otherwise. Minimal: the same
+    judgement, printed in full and not refused, until its differences are declared."""
+    if flavor() != "minimal":
+        assert_page_surface_is_stock(tree)
+        return
+    try:
+        assert_page_surface_is_stock(tree)
+    except ValidationError as exc:
+        print(f"    MINIMAL page surface, reported not refused: {exc}")
+
+
 def declared_branding() -> Path:
     """The branding archive invisible_core declares by default, asked of the
     installed core the way a launch asks it - a profile translated to prefs -
@@ -589,8 +650,8 @@ def validate_linux_tarball(archive: Path) -> None:
         assert_build_ids_agree(td)
         print("  [3/4] path-leak check, every file and nested member...")
         check_no_leaks_tree(td)
-        assert_juggler_provenance(td)
-        assert_page_surface_is_stock(td)
+        assert_engine_contents(td)
+        assert_page_surface_for_flavor(td)
         assert_updater_is_retails(td)
 
         print("  [4/4] smoke (firefox --version)...")
@@ -610,8 +671,8 @@ def validate_windows_zip(archive: Path) -> None:
         assert_build_ids_agree(td)
         print("  [2/4] path-leak check, every file and nested member...")
         check_no_leaks_tree(td)
-        assert_juggler_provenance(td)
-        assert_page_surface_is_stock(td)
+        assert_engine_contents(td)
+        assert_page_surface_for_flavor(td)
         assert_windows_runtime_is_shipped(td)
         assert_updater_is_retails(td)
 
@@ -799,6 +860,28 @@ def _selftest() -> int:
         ("Mozilla's UpdateService packed inside an OPTIMIZED omni.ja",
          lambda: omni({"modules/UpdateService.sys.mjs": b"x"}, True), True,
          assert_updater_is_retails),
+    ]
+
+    def minimal(d):
+        os.environ["STEALTH_FLAVOR"] = "minimal"
+        try:
+            assert_engine_contents(d)
+        finally:
+            os.environ.pop("STEALTH_FLAVOR", None)
+
+    def with_root_file(name):
+        d = omni({"modules/AppConstants.sys.mjs": b"x"}, True)
+        (d / name).write_bytes(b"x")
+        return d
+
+    cases += [
+        ("a minimal engine without Juggler, remote agent or crash reporter",
+         lambda: omni({"modules/AppConstants.sys.mjs": b"x"}, True), False, minimal),
+        ("a minimal engine that still packs the Juggler", lambda: omni(juggler, True), True, minimal),
+        ("a minimal engine that still packs the remote agent",
+         lambda: omni({"chrome/remote/content/components/RemoteAgent.sys.mjs": b"x"}, True), True, minimal),
+        ("a minimal engine that still ships the crash reporter",
+         lambda: with_root_file("crashreporter.exe"), True, minimal),
     ]
 
     bad = 0
