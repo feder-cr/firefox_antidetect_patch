@@ -166,3 +166,16 @@ index 097d20229785c61c89dc5c7e4c22799c48fb7c12..0e847a2f87b61c852c8c7b7713606458
    for (const auto i : MakeEnumeratedRange(WebGLExtensionID::Max)) {
      if (!IsSupported(i, callerType)) continue;
  
+diff --git a/dom/canvas/WebGLContextValidate.cpp b/dom/canvas/WebGLContextValidate.cpp
+index 2d8a66a1f8cddcbb238c7ee83da65089f03f625c..cb500b09cf76a27fd6a000f26b9025a77537c624 100644
+--- a/dom/canvas/WebGLContextValidate.cpp
++++ b/dom/canvas/WebGLContextValidate.cpp
+@@ -312,6 +312,8 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
+                          mStencilWriteMaskFront);
+   AssertUintParamCorrect(gl, LOCAL_GL_STENCIL_BACK_WRITEMASK,
+                          mStencilWriteMaskBack);
++  // STEALTH-HOOK(fingerprint/webgl/parameters): the masks start at all ones as under ANGLE, not at the driver's stencil bits (Mesa: 255)
++  mStencilValueMaskFront = mStencilValueMaskBack = mStencilWriteMaskFront = mStencilWriteMaskBack = UINT32_MAX;
+ 
+   // Bindings, etc.
+ 
