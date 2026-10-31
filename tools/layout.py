@@ -26,6 +26,7 @@ FEATURES = {
     # minimal
     "stealth-minimal-configure": "minimal/build",
     "glean-removed": "minimal/glean",
+    "minimal-remove": "minimal/remove",
     # platform
     "release-output-ignore": "platform/repo",
     "agent-instructions-fork": "platform/repo",
@@ -147,6 +148,9 @@ FEATURES = {
 # Files we add to Firefox's tree, first match wins.
 OWN_FILES = [
     (r"^build/moz\.configure/stealth-minimal\.configure$", "minimal/build"),
+    (r"^toolkit/stealth-minimal/(keep_jar\.py|StealthMinimal\.sys\.mjs|components\.conf)$", "minimal/remove"),
+    (r"^python/mozbuild/mozbuild/frontend/stealth_minimal\.py$", "minimal/remove"),
+    (r"^browser/stealth-minimal/", "minimal/remove"),
     (r"^toolkit/stealth-minimal/", "minimal/build"),
     (r"^build/stealth_check_build_files\.", "platform/build-tools"),
     (r"^build/stealth_check_sources\.", "platform/build-tools"),

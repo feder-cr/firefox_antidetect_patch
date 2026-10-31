@@ -1,7 +1,6 @@
 {
  "modified": [
-  "moz.configure",
-  "toolkit/moz.build"
+  "moz.configure"
  ],
  "added": {
   "build/moz.configure/stealth-minimal.configure": "100644",
@@ -22,24 +21,6 @@
    "anchor": "before include(include_project_configure)",
    "evidence": [],
    "notes": "Includes our stealth-minimal.configure before the project's configure, so its imply_option() calls precede the options they imply.",
-   "verifier": {
-    "changed": [],
-    "why": "Written with the hook, 2026-10-31."
-   }
-  },
-  {
-   "file": "toolkit/moz.build",
-   "category": "build",
-   "feature": "stealth-minimal-configure",
-   "prefs": [],
-   "added": 2,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "after DIRS += [\"xre\"]",
-   "evidence": [],
-   "notes": "With MOZ_STEALTH_MINIMAL, builds toolkit/stealth-minimal: the page-readable files and the package name the minimal engine would otherwise lose.",
    "verifier": {
     "changed": [],
     "why": "Written with the hook, 2026-10-31."

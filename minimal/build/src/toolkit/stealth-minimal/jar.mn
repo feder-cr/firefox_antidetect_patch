@@ -14,3 +14,6 @@ toolkit.jar:
 
 remote.jar:
 % content remote %content/
+# The packager drops the registration of a jar with no file: the smallest of retail's
+# remote.jar files keeps it, at its path and with its bytes (no page can read the package).
+  content/shared/UUID.sys.mjs (/remote/shared/UUID.sys.mjs)

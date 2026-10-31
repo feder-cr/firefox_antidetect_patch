@@ -155,6 +155,13 @@ def main() -> int:
     cases.append(("compile_cache=gha without the sccache path is refused", gha_without_path()))
     cases.append(("every layer writes its reason",
                   all(("# [%s] " % f.__name__) in text for f in mozconfig.LAYERS)))
+    # The minimal engine: every directory it drops is listed by its parent, and the chrome
+    # files those directories install are kept, from an up-to-date generated jar.mn.
+    import subprocess
+    keep = HERE.parent.parent / "toolkit" / "stealth-minimal" / "keep_jar.py"
+    run = subprocess.run([sys.executable, str(keep), "--check"], capture_output=True, text=True)
+    cases.append(("the minimal engine's drop list and kept jar.mn match the tree: %s"
+                  % (run.stdout + run.stderr).strip()[:200], run.returncode == 0))
 
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)

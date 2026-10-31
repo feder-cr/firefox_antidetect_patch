@@ -1,0 +1,33 @@
+{
+ "modified": [
+  "python/mozbuild/mozbuild/frontend/reader.py"
+ ],
+ "added": {
+  "browser/stealth-minimal/jar.mn": "100644",
+  "browser/stealth-minimal/moz.build": "100644",
+  "python/mozbuild/mozbuild/frontend/stealth_minimal.py": "100644",
+  "toolkit/stealth-minimal/StealthMinimal.sys.mjs": "100644",
+  "toolkit/stealth-minimal/components.conf": "100644",
+  "toolkit/stealth-minimal/keep_jar.py": "100644"
+ },
+ "inventory": [
+  {
+   "file": "python/mozbuild/mozbuild/frontend/reader.py",
+   "category": "build",
+   "feature": "minimal-remove",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "_read_mozbuild, before the main context is yielded",
+   "evidence": [],
+   "notes": "With MOZ_STEALTH_MINIMAL, prunes each moz.build's DIRS (mozbuild/frontend/stealth_minimal.py) before the backend reads them: no moz.build of Mozilla's is touched.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-10-31."
+   }
+  }
+ ]
+}

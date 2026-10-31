@@ -64,6 +64,24 @@ imply_option(
     reason="--enable-stealth-minimal: no Windows notification server",
     when=stealth_minimal_windows,
 )
+imply_option(
+    "--enable-bits-download",
+    False,
+    reason="--enable-stealth-minimal: no BITS downloads (updates)",
+    when=stealth_minimal_windows,
+)
+imply_option(
+    "--enable-maintenance-service",
+    False,
+    reason="--enable-stealth-minimal: no maintenance service",
+    when=stealth_minimal_windows,
+)
+imply_option(
+    "--enable-push-notification-helper",
+    False,
+    reason="--enable-stealth-minimal: no push notification helper",
+    when=stealth_minimal_windows,
+)
 
 
 @depends("--enable-stealth-minimal", target)

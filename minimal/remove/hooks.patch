@@ -1,0 +1,15 @@
+diff --git a/python/mozbuild/mozbuild/frontend/reader.py b/python/mozbuild/mozbuild/frontend/reader.py
+index 189f53b0fb7ca6bdf3f43881e3d09cde1bf4ac9c..b1d3f0581995ed29da4a9ba216b326b1474e2472 100644
+--- a/python/mozbuild/mozbuild/frontend/reader.py
++++ b/python/mozbuild/mozbuild/frontend/reader.py
+@@ -1222,6 +1222,10 @@ class BuildReader:
+         self._execution_time += time.monotonic() - time_start
+         self._file_count += len(context.all_paths)
+ 
++        if context.config.substs.get("MOZ_STEALTH_MINIMAL"):  # STEALTH-HOOK(minimal/remove)
++            from mozbuild.frontend.stealth_minimal import prune
++
++            prune(context)
+         # Yield main context before doing any processing. This gives immediate
+         # consumers an opportunity to change state before our remaining
+         # processing is performed.

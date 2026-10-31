@@ -69,3 +69,4 @@ fingerprint/webgl/shader-language
 fingerprint/webrtc/ice-candidates
 minimal/build
 minimal/glean
+minimal/remove
