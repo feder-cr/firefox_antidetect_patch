@@ -9,9 +9,10 @@ per funzione, applicate nell'ordine di `SERIES`. Il tag e il ramo sorgente sono 
 
 Su GitHub c'è solo questa serie: nessun ramo contiene l'albero di Firefox. Il codice si
 modifica **nel sorgente locale**, `C:/ff/source`, sul ramo `source_branch` di
-`UPSTREAM.json` (oggi `work/157`, che esiste solo in locale). Se non c'è, o è vecchio,
-lo si ricrea dalla serie: `python tools/engine.py apply --head work/157 --force`, che
-dà sempre lo stesso commit, perché le date sono quelle del tag. La serie si
+`UPSTREAM.json` (oggi `port/159-from-d28c866`, che esiste solo in locale; serve un
+clone che abbia il tag `mozilla_tag`). Se non c'è, o è vecchio, lo si ricrea dalla
+serie: `python tools/engine.py apply --head port/159-from-d28c866 --force`, che dà
+sempre lo stesso commit, perché le date sono quelle del tag. La serie si
 **genera** dal ramo con `export` e si **dimostra** identica con `verify`. La CI rifà
 lo stesso percorso, `materialize`: tag di Mozilla, poi serie, poi l'albero dichiarato
 in `UPSTREAM.json` (`exported_tree`). Si modificano a mano soltanto:
@@ -117,7 +118,7 @@ python -m pytest -q tools/tests
   cache del suo ramo e quelle di `main`. Un ramo nuovo legge la cache di `main`; un
   ramo che non parte da `main` compila a freddo (ore). Le build di prova si lanciano da
   `main` o da rami nati da `main`, mai da un ramo isolato.
-- Release e push di `stealth/157` solo dopo averne parlato con Federico.
+- Release e push del motore solo dopo averne parlato con Federico.
 
 ## Lavori grandi: struttura a sub-agenti
 
@@ -128,12 +129,14 @@ diff. Opus decide solo i casi contesi.
 
 ## Dove siamo
 
-1. Fatto: la serie riproduce `stealth/157` identica, ricostruita e controllata in CI.
-2. In corso: spostare la logica nei ganci, su un ramo sorgente dedicato, una funzione
+1. Fatto: la serie riproduce l'albero dichiarato in `UPSTREAM.json`, ricostruita e
+   controllata in CI. Oggi è Firefox 159.0, la release firefox-54.
+2. Fatto: la build della release parte dalla serie applicata al tag (`materialize`).
+3. In corso: spostare la logica nei ganci, su un ramo sorgente dedicato, una funzione
    alla volta, dai file con più righe nostre (`hook-budget.json`).
-3. Poi: la build della release parte dalla serie applicata al tag, non dal ramo.
 4. Nuova versione di Firefox: solo dal tag della release stabile ufficiale, mai da
    una beta. In un clone che ha i due tag: `drift --to <nuovo>` dice quali nostri
    file Mozilla sono cambiati, `port --to <nuovo>` fa il ramo `port/<nuovo>` con una
    fusione a tre vie per cartella e l'elenco di tutti i conflitti. Si risolvono i
-   marcatori su quel ramo, si cambia `mozilla_tag` e si esporta.
+   marcatori su quel ramo, si cambia `mozilla_tag` e si esporta. Fatto così il
+   passaggio 157 → 159 (firefox-54).
