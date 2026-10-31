@@ -8,6 +8,7 @@
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
+#include "nsICancelable.h"
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
 #include "nsILoadInfo.h"
