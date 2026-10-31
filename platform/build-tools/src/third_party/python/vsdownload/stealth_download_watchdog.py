@@ -17,7 +17,17 @@
 # runs as a script (its `__main__` block, socket.setdefaulttimeout(15)); it is
 # NOT set when the module is imported, as taskcluster/scripts/misc/get_vs.py
 # does, so on Windows through get_vs.py there is no time limit at all.
+#
+# It runs in a worker of vsdownload's multiprocessing.Pool, so whatever it
+# raises is pickled back to the parent. urllib's ContentTooShortError and
+# HTTPError cannot be unpickled (their __init__ takes arguments the unpickler
+# does not pass): the pool's result thread died on one and task.get() waited
+# for ever. Run 41205185526: a CDN edge served the same SDK cab cut at 6 MiB
+# five times, and the Windows leg idled until the 300-minute timeout. Such an
+# error comes back as an OSError with the same text, so the build fails in
+# seconds instead.
 
+import pickle
 import signal
 import urllib.request
 
@@ -27,7 +37,8 @@ def stealth_urlretrieve(payload, destname, fileid, timeout=120):
     limit of `timeout` seconds where SIGALRM exists.
 
     Raises TimeoutError on overrun (an OSError, so the caller's `except
-    Exception` retry loop handles it). `payload` is the dict, not the url: the
+    Exception` retry loop handles it), and an error that would not survive the
+    trip back from the pool's worker as an OSError with its type and text. `payload` is the dict, not the url: the
     key is read after the alarm is armed, as before, so a missing "url" fails the
     same way and the alarm is still cancelled in `finally`.
     """
@@ -41,6 +52,12 @@ def stealth_urlretrieve(payload, destname, fileid, timeout=120):
         signal.alarm(timeout)
     try:
         urllib.request.urlretrieve(payload["url"], destname)
+    except Exception as e:
+        try:
+            pickle.loads(pickle.dumps(e))
+        except Exception:
+            raise OSError("%s: %s" % (type(e).__name__, e)) from None
+        raise
     finally:
         if have_alarm:
             signal.alarm(0)
