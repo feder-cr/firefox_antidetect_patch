@@ -104,6 +104,8 @@ FEATURES = {
     "media-codecs-declared": "fingerprint/media/decode-declaration",
     "media-enumeration": "fingerprint/media/enumeration",
     "speech-voices-declared": "fingerprint/media/speech-voices",
+    # fingerprint: the text engine of every OS (phase 4)
+    "idwr-text-engine": "fingerprint/fonts/idwr",
     # fingerprint: webgpu
     "webgpu-adapter-declaration": "fingerprint/webgpu/adapter-declaration",
     # fingerprint: webrtc
@@ -207,6 +209,7 @@ OWN_FILES = [
     (r"^dom/media/webspeech/synth/StealthSpeechVoices\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/StealthMediaEnumeration\.", "fingerprint/media/enumeration"),
     (r"^dom/webgpu/StealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
+    (r"^gfx/idwr/", "fingerprint/fonts/idwr"),
     (r"^gfx/tests/gtest/TestStealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
     (r"^dom/html/StealthCanvasSnapshot\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/canvas/StealthWebGLShaderLanguage\.", "fingerprint/webgl/shader-language"),

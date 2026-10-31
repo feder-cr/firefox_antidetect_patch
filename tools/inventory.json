@@ -5259,5 +5259,21 @@
    "+SOURCES += [\"StealthWebGPUDeclaration.cpp\"]"
   ],
   "notes": "Registers our file on lines of its own, outside Mozilla's list; non-unified because it has file-static helpers with short names."
+ },
+ {
+  "file": "gfx/moz.build",
+  "category": "build",
+  "feature": "idwr-text-engine",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "before TEST_DIRS",
+  "evidence": [
+   "+DIRS += [\"idwr\"]  # STEALTH-HOOK(fingerprint/fonts/idwr)"
+  ],
+  "notes": "Builds gfx/idwr (invisible_DWriteCore's DirectWrite rasterizer) into libxul, on a line of its own outside Mozilla's DIRS list."
  }
 ]

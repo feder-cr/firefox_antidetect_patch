@@ -108,6 +108,7 @@
  "gfx/2d/ScaledFontDWrite.cpp": 8,
  "gfx/2d/UnscaledFontDWrite.h": 7,
  "gfx/2d/moz.build": 5,
+ "gfx/moz.build": 2,
  "gfx/skia/skia/src/core/SkScalerContext.cpp": 10,
  "gfx/tests/gtest/moz.build": 12,
  "gfx/thebes/CoreTextFontList.cpp": 32,

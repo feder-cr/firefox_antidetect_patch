@@ -1,0 +1,13 @@
+diff --git a/gfx/moz.build b/gfx/moz.build
+index 55c3763d982c05c3a92c3769b19bbe6e59ca4b53..31322425c191773f156492981658cc8beb53db11 100644
+--- a/gfx/moz.build
++++ b/gfx/moz.build
+@@ -43,6 +43,8 @@ if CONFIG["MOZ_FONTATIONS"]:
+         "fontations_glue",
+     ]
+ 
++DIRS += ["idwr"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
++
+ TEST_DIRS += ["tests/gtest"]
+ 
+ if CONFIG["FUZZING_INTERFACES"]:
