@@ -1,5 +1,5 @@
 diff --git a/dom/webgpu/Adapter.cpp b/dom/webgpu/Adapter.cpp
-index 2814b6354a43690a2550e13a0bc312183609bb97..4cac123a3976b791b462d7e2cb0067df91915036 100644
+index 2814b6354a43690a2550e13a0bc312183609bb97..aab5b2f63e68094308a883911c75fd65757c018b 100644
 --- a/dom/webgpu/Adapter.cpp
 +++ b/dom/webgpu/Adapter.cpp
 @@ -11,6 +11,7 @@
@@ -36,7 +36,7 @@ index 2814b6354a43690a2550e13a0bc312183609bb97..4cac123a3976b791b462d7e2cb0067df
    }
 +  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
 +  StealthWebGPUDeclareAdapter(this, aParent, aInfo->id, mFeatures,
-+                              *mLimits->mFfi, ToJsKey);
++                              *mLimits->mFfi, StealthAdaptLimitKey<ToJsKey>);
    // TODO: Once we implement compat mode (see
    // <https://bugzilla.mozilla.org/show_bug.cgi?id=1905951>), do not report this
    // unconditionally.
@@ -44,7 +44,7 @@ index 2814b6354a43690a2550e13a0bc312183609bb97..4cac123a3976b791b462d7e2cb0067df
      ffiDesc.required_features = featureBits;
      ffiDesc.required_limits = deviceLimits;
  
-+    StealthWebGPUClampToReal(ffiDesc, *mInfoInner, ToJsKey);  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++    StealthWebGPUClampToReal(ffiDesc, *mInfoInner, StealthAdaptLimitKey<ToJsKey>);  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
      ffi::WGPUDeviceQueueId ids =
          ffi::wgpu_client_request_device(GetClient(), GetId(), &ffiDesc);
  

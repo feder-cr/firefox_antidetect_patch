@@ -36,8 +36,6 @@
 // clamped to what the host adapter supports (StealthWebGPUClampToReal), so a
 // page asking for a declared maximum the host lacks still gets a device.
 
-#include <string_view>
-
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
@@ -61,8 +59,20 @@ struct WGPULimits;
 }  // namespace ffi
 
 // Adapter.cpp's own JS name of a limit ("maxBindGroups"), passed in so the
-// declaration is keyed by the very names the page reads.
-using StealthLimitKey = std::string_view (*)(Limit);
+// declaration is keyed by the very names the page reads. Not a
+// std::string_view: <string_view> is not one of the system headers the build
+// wraps in default visibility, and hashing one from here declared
+// std::_Hash_bytes hidden, which LTO then applied to every caller in libxul.
+using StealthLimitKey = nsDependentCSubstring (*)(Limit);
+
+// The key, from a function that answers any contiguous string (ToJsKey answers
+// a std::string_view). Instantiated where that type is known, so this header
+// does not need it.
+template <auto KeyFn>
+auto StealthAdaptLimitKey(const Limit aLimit) {
+  const auto key = KeyFn(aLimit);
+  return nsDependentCSubstring(key.data(), key.size());
+}
 
 // Instance::RequestAdapter, after Firefox's own validation: true when the
 // declared GPU has no WebGPU adapter, and the promise resolves null.

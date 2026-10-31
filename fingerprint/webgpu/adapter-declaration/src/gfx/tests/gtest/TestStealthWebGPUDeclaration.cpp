@@ -8,8 +8,6 @@
 // have, must be refused: anything it did not set would keep the host's value,
 // which is the leak the declaration exists against.
 
-#include <string_view>
-
 #include "gtest/gtest.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/webgpu/StealthWebGPUDeclaration.h"
@@ -24,11 +22,11 @@ namespace {
 
 // The JS names, as Adapter.cpp's ToJsKey gives them. The test only needs a
 // key per limit; using the real names keeps the specs readable.
-std::string_view Key(const Limit aLimit) {
+nsDependentCSubstring Key(const Limit aLimit) {
   switch (aLimit) {
 #define STEALTH_KEY(X, S) \
   case Limit::X: \
-    return S;
+    return nsDependentCSubstring(S, sizeof(S) - 1);
     STEALTH_KEY(MaxTextureDimension1D, "maxTextureDimension1D")
     STEALTH_KEY(MaxTextureDimension2D, "maxTextureDimension2D")
     STEALTH_KEY(MaxTextureDimension3D, "maxTextureDimension3D")
