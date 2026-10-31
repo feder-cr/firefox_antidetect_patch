@@ -142,6 +142,9 @@ jobs:
         id: matrix
         run: |
           python3 scripts/ci/test_ci.py
+          # The SDK downloader's hook: run 41205185526 idled 5 hours on a
+          # download error the pool could not carry back.
+          python3 scripts/ci/test_stealth_download_watchdog.py
           echo "matrix=$(python3 scripts/ci matrix)" | tee -a "$GITHUB_OUTPUT"
 
   build:

@@ -2,7 +2,7 @@
 
 Category: build, port-fix
 Prefs: none read directly
-Test: TODO
+Test: scripts/ci/test_stealth_download_watchdog.py (the SDK download hook; run by the plan job of release.yml)
 
 ## What it does
 

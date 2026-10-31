@@ -3,12 +3,15 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import inspect
+import multiprocessing
 import os
+import pickle
 import signal
 import sys
 import time
 import types
 import unittest
+import urllib.error
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 VSDIR = os.path.join(ROOT, "third_party", "python", "vsdownload")
@@ -21,6 +24,16 @@ HAVE_ALARM = hasattr(signal, "SIGALRM")
 
 def _sentinel(signum, frame):
     pass
+
+
+def _cut_short(url, dest):
+    raise urllib.error.ContentTooShortError(
+        "retrieval incomplete: got only 6291456 out of 15860356 bytes", b"")
+
+
+def _download_in_worker():
+    m.urllib.request.urlretrieve = _cut_short
+    m.stealth_urlretrieve({"url": "u"}, "d", "pkg/file.cab")
 
 
 class WatchdogTest(unittest.TestCase):
@@ -75,6 +88,40 @@ class WatchdogTest(unittest.TestCase):
         self.assertEqual(calls, [("u", "d")])
         default = inspect.signature(m.stealth_urlretrieve).parameters["timeout"].default
         self.assertEqual(default, 120)
+
+    def test_an_unpicklable_error_comes_back_as_an_oserror(self):
+        errors = (
+            urllib.error.ContentTooShortError("retrieval incomplete", b""),
+            urllib.error.HTTPError("u", 503, "Service Unavailable", {}, None),
+        )
+        for error in errors:
+            def fail(url, dest, error=error):
+                raise error
+            m.urllib.request.urlretrieve = fail
+            with self.assertRaises(OSError) as cm:
+                m.stealth_urlretrieve({"url": "u"}, "d", "f")
+            self.assertIs(type(cm.exception), OSError)
+            self.assertTrue(str(cm.exception).startswith(type(error).__name__ + ": "))
+            self.assertEqual(str(pickle.loads(pickle.dumps(cm.exception))), str(cm.exception))
+            if HAVE_ALARM:
+                self._assert_clean()
+
+    def test_a_picklable_error_keeps_its_type(self):
+        def reset(url, dest):
+            raise ConnectionResetError(104, "Connection reset by peer")
+        m.urllib.request.urlretrieve = reset
+        with self.assertRaises(ConnectionResetError):
+            m.stealth_urlretrieve({"url": "u"}, "d", "f")
+
+    def test_a_failed_download_does_not_hang_the_pool(self):
+        # vsdownload.downloadPackages: apply_async, then task.get(). Before the
+        # fix the result thread died unpickling the error and get() never returned.
+        with multiprocessing.Pool(1) as pool:
+            task = pool.apply_async(_download_in_worker)
+            with self.assertRaises(OSError) as cm:
+                task.get(timeout=60)
+        self.assertTrue(str(cm.exception).startswith("ContentTooShortError: "))
+        self.assertIn("got only 6291456 out of 15860356 bytes", str(cm.exception))
 
     def test_hook_presence_guard(self):
         with open(os.path.join(VSDIR, "vsdownload.py"), encoding="utf-8") as f:
