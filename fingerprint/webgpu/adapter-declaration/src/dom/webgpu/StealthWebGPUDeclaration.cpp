@@ -20,6 +20,7 @@
 #include "mozilla/gfx/StealthRefuse.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsReadableUtils.h"
 #include "nsString.h"
 #include "SupportedFeatures.h"
 #include "SupportedLimits.h"
@@ -131,9 +132,9 @@ bool StealthParseWebGPULimits(const nsACString& aSpec, StealthLimitKey aKey,
                               ffi::WGPULimits& aOut) {
   // Every limit Firefox has must be declared exactly once: a limit left out
   // would keep the host's value, which is the leak this exists against.
-  std::unordered_map<std::string_view, Limit> byKey;
+  nsTArray<Limit> undeclared;
   for (const auto limit : MakeInclusiveEnumeratedRange(Limit::_LAST)) {
-    byKey[aKey(limit)] = limit;
+    undeclared.AppendElement(limit);
   }
   size_t seen = 0;
   for (const nsACString& line : aSpec.Split('\n')) {
@@ -144,22 +145,25 @@ bool StealthParseWebGPULimits(const nsACString& aSpec, StealthLimitKey aKey,
     if (eq <= 0) {
       return false;
     }
-    const nsAutoCString name(Substring(line, 0, eq));
-    const auto it = byKey.find(std::string_view(name.get(), name.Length()));
-    if (it == byKey.end()) {
+    const nsDependentCSubstring name(line, 0, eq);
+    const auto it =
+        std::find_if(undeclared.begin(), undeclared.end(),
+                     [&](const Limit aLimit) { return aKey(aLimit) == name; });
+    if (it == undeclared.end()) {
       return false;
     }
+    const Limit limit = *it;
     nsresult rv;
     const uint64_t value =
         nsAutoCString(Substring(line, eq + 1)).ToUnsignedInteger64(&rv);
     if (NS_FAILED(rv)) {
       return false;
     }
-    SetLimit(&aOut, it->second, value);
-    byKey.erase(it);
+    SetLimit(&aOut, limit, value);
+    undeclared.RemoveElement(limit);
     seen++;
   }
-  return seen > 0 && byKey.empty();
+  return seen > 0 && undeclared.IsEmpty();
 }
 
 bool StealthWebGPUDeclareAdapter(Adapter* aAdapter, const Instance* aInstance,
@@ -215,7 +219,7 @@ void StealthWebGPUClampToReal(ffi::WGPUFfiDeviceDescriptor& aDesc,
   for (const auto limit : MakeInclusiveEnumeratedRange(Limit::_LAST)) {
     const uint64_t asked = GetLimit(aDesc.required_limits, limit);
     const uint64_t real = GetLimit(aReal.limits, limit);
-    const bool isMax = aKey(limit).substr(0, 3) == "max";
+    const bool isMax = StringBeginsWith(aKey(limit), "max"_ns);
     SetLimit(&aDesc.required_limits, limit,
              isMax ? std::min(asked, real) : std::max(asked, real));
   }

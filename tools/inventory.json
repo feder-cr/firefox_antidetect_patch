@@ -5275,5 +5275,41 @@
    "+DIRS += [\"idwr\"]  # STEALTH-HOOK(fingerprint/fonts/idwr)"
   ],
   "notes": "Builds gfx/idwr (invisible_DWriteCore's DirectWrite rasterizer) into libxul, on a line of its own outside Mozilla's DIRS list."
+ },
+ {
+  "file": "gfx/thebes/gfxPlatform.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "dom.webgpu.external-texture.enabled"
+  ],
+  "added": 3,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "gfxPlatform::InitWebGPUConfig, the WEBGPU_EXTERNAL_TEXTURE force-disable",
+  "evidence": [
+   "+#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0"
+  ],
+  "notes": "The force-disable of WebGPU external textures off Windows and macOS is compiled out: the engine presents Windows on every OS, where the feature is on, and the import runs on the shared-memory buffer path."
+ },
+ {
+  "file": "modules/libpref/init/StaticPrefList.yaml",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "dom.webgpu.external-texture.enabled"
+  ],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
+  "evidence": [
+   "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
+  ],
+  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
  }
 ]
