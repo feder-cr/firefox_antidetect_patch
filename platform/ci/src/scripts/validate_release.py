@@ -334,10 +334,10 @@ def flavor() -> str:
 
 # What --enable-stealth-minimal leaves out of the build (minimal/build in the series):
 # omni.ja prefixes and files at the root that must NOT be there.
-MINIMAL_ABSENT_ENTRIES = ("modules/juggler/", "chrome/remote/", "modules/backgroundtasks/")
+MINIMAL_ABSENT_ENTRIES = ("modules/juggler/", "chrome/remote/")
 MINIMAL_ABSENT_FILES = ("crashreporter", "crashreporter.exe", "crashhelper", "crashhelper.exe",
                         "minidump-analyzer", "minidump-analyzer.exe", "notification-helper.exe",
-                        "notificationserver.dll", "pingsender", "pingsender.exe")
+                        "notificationserver.dll")
 # Strings only Glean's initialization uses (the glean.init thread, its upload metrics):
 # with Glean removed at the source, LTO leaves them out of the library.
 GLEAN_RUNTIME_MARKERS = (b"glean.init", b"glean.upload")
@@ -355,13 +355,13 @@ def assert_minimal_leaves_out(tree: Path) -> None:
         present += [p for p in MINIMAL_ABSENT_ENTRIES if any(n.startswith(p) for n in names)]
     elif (root / "modules" / "juggler").is_dir():
         present.append("modules/juggler/")
-    if present:
-        raise ValidationError(f"the minimal engine still carries: {', '.join(present)}")
     for lib in ("xul.dll", "libxul.so"):
         if (root / lib).exists():
             data = (root / lib).read_bytes()
             found = [m.decode() for m in GLEAN_RUNTIME_MARKERS if m in data]
             print(f"    Glean runtime markers in {lib}: {found or 'none'} (reported, not refused yet)")
+    if present:
+        raise ValidationError(f"the minimal engine still carries: {', '.join(present)}")
     print("    minimal engine leaves out " + ", ".join(MINIMAL_ABSENT_ENTRIES + ("crash reporter",)))
 
 

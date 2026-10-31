@@ -147,6 +147,7 @@ FEATURES = {
 # Files we add to Firefox's tree, first match wins.
 OWN_FILES = [
     (r"^build/moz\.configure/stealth-minimal\.configure$", "minimal/build"),
+    (r"^toolkit/stealth-minimal/", "minimal/build"),
     (r"^build/stealth_check_build_files\.", "platform/build-tools"),
     (r"^build/stealth_check_sources\.", "platform/build-tools"),
     (r"^modules/libpref/test/test_stealth_prefs_declared_once\.", "platform/prefs"),

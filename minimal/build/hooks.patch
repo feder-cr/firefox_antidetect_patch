@@ -10,3 +10,16 @@ index 120f11870852d8db22ec806384332cf92e9ef02f..ea194e9fc7ec350cb1a84a058189570f
  include(include_project_configure)
  
  
+diff --git a/toolkit/moz.build b/toolkit/moz.build
+index a7d7361df4cff67c548bb3f99a25bdd7ef285769..439f0b0b294e44ae768b1f3cd2117c2bc8d8c3a4 100644
+--- a/toolkit/moz.build
++++ b/toolkit/moz.build
+@@ -55,6 +55,8 @@ if CONFIG["MOZ_MAINTENANCE_SERVICE"]:
+     DIRS += ["components/maintenanceservice"]
+ 
+ DIRS += ["xre"]
++if CONFIG["MOZ_STEALTH_MINIMAL"]:  # STEALTH-HOOK(minimal/build)
++    DIRS += ["stealth-minimal"]
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
+     DIRS += ["mozapps/handling"]

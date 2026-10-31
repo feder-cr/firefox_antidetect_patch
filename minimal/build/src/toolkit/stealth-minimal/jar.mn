@@ -1,0 +1,16 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# What the minimal engine leaves out of the build but a page can still read or probe
+# (stock_parity on the first minimal build): about:crashes' files in the content-accessible
+# chrome://global/content/, the same bytes as retail, and the name of the remote agent's
+# package, which a page can probe without being able to read it.
+
+toolkit.jar:
+  content/global/crashes.html            (/toolkit/crashreporter/content/crashes.html)
+  content/global/crashes.js               (/toolkit/crashreporter/content/crashes.js)
+  content/global/crashes.css              (/toolkit/crashreporter/content/crashes.css)
+
+remote.jar:
+% content remote %content/

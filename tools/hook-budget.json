@@ -215,6 +215,7 @@
  "toolkit/library/rust/shared/Cargo.toml": 1,
  "toolkit/modules/AppConstants.sys.mjs": 1,
  "toolkit/modules/moz.build": 7,
+ "toolkit/moz.build": 2,
  "toolkit/mozapps/update/BackgroundUpdate.sys.mjs": 5,
  "toolkit/mozapps/update/UpdateService.sys.mjs": 6,
  "toolkit/mozapps/update/moz.build": 1,
