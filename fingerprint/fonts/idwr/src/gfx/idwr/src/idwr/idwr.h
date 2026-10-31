@@ -26,6 +26,10 @@
 #define IDWR_API __attribute__((visibility("default")))
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct idwr_font idwr_font;
 
 /* DWRITE_FONT_FACE_TYPE values */
@@ -528,5 +532,9 @@ IDWR_API void idwr_color_run_enum_destroy(idwr_color_run_enum *e);
 
 /* Font fallback (DirectWrite's system fallback over a font set given as data) */
 #include "idwr_fallback.h"
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

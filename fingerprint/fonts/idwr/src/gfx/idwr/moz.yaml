@@ -6,8 +6,8 @@ origin:
   name: idwr
   description: DirectWrite 10.0.26100.9711 text rasterizer, reimplemented in portable C
   url: https://github.com/feder-cr/invisible_DWriteCore
-  release: a5f4a07c0bfb6e9fa536a0321e1b9e67f562824a
-  revision: a5f4a07c0bfb6e9fa536a0321e1b9e67f562824a
+  release: 68da2380add549d3e1cc2e18fcd718c348f84493
+  revision: 68da2380add549d3e1cc2e18fcd718c348f84493
   license: MPL-2.0
 files:
   truetype/fatal.h: d8e3c23903171852ca45f33d26be6cb3e9eac2a2a81bca0e323420b1b65300c6
@@ -54,7 +54,7 @@ files:
   idwr/fullwidth_tables.h: e4c8358847ccc38a14311e92308a090cf6e44beca86ab2007cfc58bec0729c59
   idwr/gdimetrics.c: 10dbcff3ab2f05f439c9a860b9c465a3cf7251d1c539d316ae7e301c67090f8d
   idwr/glyphrun.c: 9c9174d6f5ff8a30ca67454ed55bbc7b2f8710d1a0d77e38f361543f1be9d347
-  idwr/idwr.h: e34f7a44455dbba21343395f40e329cbc334efed7b483bf9204f6bb64d0ab514
+  idwr/idwr.h: 0e42fce16df8ca36c0c4263c10565e52285fa4888a433716b4cc29285bf0a42b
   idwr/idwr_fallback.h: e89dd094fce46914b33575e4236cc552ad32b2edadb8bb04d87a98b6750d54ad
   idwr/idwr_internal.h: 28bb21a19de0bd5f23feafdc00f38e470ecc47f9ef5f3d99df5b578859dee6ed
   idwr/idwr_math.c: 83c6685aa289d4d4d45732d6ac81576f849dac97185e9944a16dda1000b89724
@@ -86,3 +86,4 @@ files:
   cff/path.c: 68786e1f8efbd0614c5e125086659aea7d021d3d127e655172b53963b4103ea0
   cff/qreduce.c: 6a01795ac1af9a2ce72aac11891de85540551a532dfe0bbb5911b41ef81e14ba
   cff/setup.c: 0b8b1bdd25f21e1c44d97d2903c1bae3b0475adf70cb8b48caffc5ac5317d1fc
+  gecko_golden/IdwrGolden.inc: 604b02ac8317ecea1d699748c56b6922e58b8565e1ee975d9fccafe526f983f1

@@ -23,6 +23,7 @@
   "gfx/idwr/src/cff/path.c": "100644",
   "gfx/idwr/src/cff/qreduce.c": "100644",
   "gfx/idwr/src/cff/setup.c": "100644",
+  "gfx/idwr/src/gecko_golden/IdwrGolden.inc": "100644",
   "gfx/idwr/src/idwr/cffraster.c": "100644",
   "gfx/idwr/src/idwr/cffraster.h": "100644",
   "gfx/idwr/src/idwr/color.c": "100644",
@@ -82,7 +83,9 @@
   "gfx/idwr/src/truetype/scan_measure.c": "100644",
   "gfx/idwr/src/truetype/scan_setup.c": "100644",
   "gfx/idwr/src/truetype/scan_spline.c": "100644",
-  "gfx/idwr/src/truetype/tt_state.h": "100644"
+  "gfx/idwr/src/truetype/tt_state.h": "100644",
+  "gfx/idwr/tests/gtest/TestIdwr.cpp": "100644",
+  "gfx/idwr/tests/gtest/moz.build": "100644"
  },
  "inventory": [
   {

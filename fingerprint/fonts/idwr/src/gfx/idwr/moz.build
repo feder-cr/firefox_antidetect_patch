@@ -35,3 +35,5 @@ if CONFIG["TARGET_CPU"] in ("x86_64", "aarch64"):
         CFLAGS += ["-Wno-unused-parameter"]
 
     FINAL_LIBRARY = "xul"
+
+    TEST_DIRS += ["tests/gtest"]
