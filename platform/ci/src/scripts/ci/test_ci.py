@@ -395,6 +395,23 @@ def main() -> int:
                       gt_input["type"] == "boolean" and gt_input["default"] is False and len(gt_step) == 1
                       and gt_step[0]["if"] == "github.event.inputs.gtests == 'true'"
                       and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"]))
+        # A cross-compiled leg's runner cannot execute what it builds (run 41232307511:
+        # "Exec format error" on firefox.exe): its gtests are built there and run by a
+        # job on the target's OS, which downloads exactly that leg's dist/bin.
+        cross = [leg for leg in legs.LEGS if leg.target]
+        jobs = doc["jobs"]
+        runners = {"x86_64-pc-windows-msvc": "windows-latest"}
+        cross_ok = bool(cross)
+        for leg in cross:
+            ran = [j for j in jobs.values()
+                   if j.get("runs-on") == runners.get(leg.target)
+                   and any(st.get("with", {}).get("name") == "gtest-bin-%s" % leg.leg for st in j.get("steps", []))
+                   and any("-unittest" in st.get("run", "") for st in j.get("steps", []))]
+            cross_ok = cross_ok and len(ran) == 1 and ran[0].get("if") == "github.event.inputs.gtests == 'true'"
+        kept = steps.get("Keep the cross-compiled gtests for the target's OS", {})
+        cross_ok = (cross_ok and "matrix.target" in gt_step[0]["run"] and "recurse_gtest" in gt_step[0]["run"]
+                    and kept.get("with", {}).get("name") == "gtest-bin-${{ matrix.leg }}")
+        cases.append(("gtests: a cross-compiled leg's run on its target's OS (run 41232307511)", cross_ok))
         # The repository holds the patch series only: a job that needs the source makes
         # it with tools/engine.py materialize (the Mozilla tag + the series), and no
         # checkout names a branch of Firefox's tree any more.

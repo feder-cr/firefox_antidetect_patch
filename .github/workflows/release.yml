@@ -687,13 +687,28 @@ jobs:
         env:
           GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter || '*' }}
         run: |
+          # A cross-compiled leg builds its gtest libxul here and cannot run it:
+          # this runner does not execute the target's binaries (run 41232307511,
+          # "Exec format error" on firefox.exe). Its dist/bin goes to the
+          # gtest-cross job, which runs the tests on the target's OS.
+          if [ -n "${{ matrix.target }}" ]; then
+            python3 scripts/ci phase gtest -- ./mach build recurse_gtest
+            tar -C obj-rel/dist -chf gtest-bin.tar bin
           # The Linux runners have no display, and some gtests open windows.
-          if [ "$RUNNER_OS" = "Linux" ]; then
+          elif [ "$RUNNER_OS" = "Linux" ]; then
             sudo apt-get install -y xvfb >/dev/null
             python3 scripts/ci phase gtest -- xvfb-run -a ./mach gtest "$GTEST_FILTER_INPUT"
           else
             python3 scripts/ci phase gtest -- ./mach gtest "$GTEST_FILTER_INPUT"
           fi
+      - name: Keep the cross-compiled gtests for the target's OS
+        if: github.event.inputs.gtests == 'true' && matrix.target != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gtest-bin-${{ matrix.leg }}
+          path: gtest-bin.tar
+          if-no-files-found: error
+          retention-days: 3
 
       # This leg's events for the run's summary (the report job): always, a
       # failed or cancelled leg's most of all.
@@ -709,6 +724,33 @@ jobs:
             inputwatch*
           if-no-files-found: ignore
           retention-days: 14
+
+  # The cross-compiled leg's gtests, run where its binary runs. Its build job
+  # compiled them on Linux; here they run as `mach gtest` runs them on Windows:
+  # firefox.exe -unittest from dist/bin, with MOZ_RUN_GTEST and the filter.
+  gtest-cross:
+    name: gtest-win-x86_64
+    needs: build
+    if: github.event.inputs.gtests == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: The leg's dist/bin with its gtest libxul
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gtest-bin-win-x86_64
+          path: gtest-run
+      - name: Engine gtests (gtests=true only)
+        shell: bash
+        env:
+          GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
+          MOZ_RUN_GTEST: 'True'
+          MOZ_WEBRENDER: '0'
+        run: |
+          cd gtest-run
+          tar -xf gtest-bin.tar
+          export MOZ_XRE_DIR="$(cygpath -w "$PWD/bin")"
+          ./bin/firefox.exe -unittest --gtest_death_test_style=threadsafe --wait-for-browser
 
   # One table for the whole run, on its summary page: leg x phase, result,
   # time, memory peak, compile cache hits (scripts/ci/report.py). Always,
