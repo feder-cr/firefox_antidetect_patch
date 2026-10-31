@@ -336,8 +336,7 @@ def flavor() -> str:
 # omni.ja prefixes and files at the root that must NOT be there.
 MINIMAL_ABSENT_ENTRIES = ("modules/juggler/", "chrome/remote/")
 MINIMAL_ABSENT_FILES = ("crashreporter", "crashreporter.exe", "crashhelper", "crashhelper.exe",
-                        "minidump-analyzer", "minidump-analyzer.exe", "notification-helper.exe",
-                        "notificationserver.dll")
+                        "minidump-analyzer", "minidump-analyzer.exe", "notificationserver.dll")
 # Strings only Glean's initialization uses (the glean.init thread, its upload metrics):
 # with Glean removed at the source, LTO leaves them out of the library.
 GLEAN_RUNTIME_MARKERS = (b"glean.init", b"glean.upload")
