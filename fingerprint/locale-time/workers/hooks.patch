@@ -111,14 +111,14 @@ index 10c6b713cc1e0f626b47c6b9488d193515ed2384..b7e5c5fec4cb3846a8b066cd6a8d4c5e
    // The SharedArrayBuffer global constructor property should not be present in
    // a fresh global object when shared memory objects aren't allowed (because
 diff --git a/dom/worklet/WorkletImpl.cpp b/dom/worklet/WorkletImpl.cpp
-index 1d3fc2a703a55e3c5390e79e93eb1ebc34217500..cd96fc78771b96877971e26484067abf2c5be1d6 100644
+index 1d3fc2a703a55e3c5390e79e93eb1ebc34217500..5ab73e5561c49db34ccb613eba7a815b0f6a465b 100644
 --- a/dom/worklet/WorkletImpl.cpp
 +++ b/dom/worklet/WorkletImpl.cpp
 @@ -13,10 +13,13 @@
  #include "mozilla/dom/PolicyContainer.h"
  #include "mozilla/dom/RegisterWorkletBindings.h"
  #include "mozilla/dom/ScriptSettings.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/workers)
  #include "mozilla/dom/WorkletBinding.h"
  #include "mozilla/dom/WorkletGlobalScope.h"
  #include "mozilla/dom/worklet/WorkletModuleLoader.h"

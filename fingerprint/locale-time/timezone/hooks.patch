@@ -53,14 +53,14 @@ index 0986f712c9246d9dee01a95237eb1b69e4b8349e..b08151fe4426de3821ae468c0c7ab7f3
    PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
      if (RefPtr<WindowContext> windowContext =
 diff --git a/dom/base/Document.cpp b/dom/base/Document.cpp
-index 24fc4978206ae6eba18971f243d680a8b8802e65..de1b18cc1591f0a514b81e2f9bc3a093fb967018 100644
+index 24fc4978206ae6eba18971f243d680a8b8802e65..7f837e10da5eaa7671299303a6367d976ee7c98b 100644
 --- a/dom/base/Document.cpp
 +++ b/dom/base/Document.cpp
 @@ -254,6 +254,7 @@
  #include "mozilla/dom/SpeculationRuleSet.h"
  #include "mozilla/dom/SpeculationRules.h"
  #include "mozilla/dom/SpeculationRulesManager.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/timezone)
  #include "mozilla/dom/StyleSheetApplicableStateChangeEvent.h"
  #include "mozilla/dom/StyleSheetApplicableStateChangeEventBinding.h"
  #include "mozilla/dom/StyleSheetList.h"
@@ -114,14 +114,14 @@ index 24fc4978206ae6eba18971f243d680a8b8802e65..de1b18cc1591f0a514b81e2f9bc3a093
  }
  
 diff --git a/dom/xslt/xslt/txEXSLTFunctions.cpp b/dom/xslt/xslt/txEXSLTFunctions.cpp
-index ba2f3c2e6022c7dc4c15b331a3f0ee5eadc6b550..6e36c5d525f87048a25e04cdce94db45c30dc546 100644
+index ba2f3c2e6022c7dc4c15b331a3f0ee5eadc6b550..327c8a96609820c287d383fee6d8208827c40842 100644
 --- a/dom/xslt/xslt/txEXSLTFunctions.cpp
 +++ b/dom/xslt/xslt/txEXSLTFunctions.cpp
 @@ -8,6 +8,7 @@
  #include "mozilla/MacroArgs.h"
  #include "mozilla/MacroForEach.h"
  #include "mozilla/dom/DocumentFragmentBinding.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/timezone)
  #include "nsAtom.h"
  #include "nsComponentManagerUtils.h"
  #include "nsContentCreatorFunctions.h"
@@ -142,8 +142,8 @@ index ba2f3c2e6022c7dc4c15b331a3f0ee5eadc6b550..6e36c5d525f87048a25e04cdce94db45
                      PR_USEC_PER_SEC
                : PR_Now();
 -      PR_ExplodeTime(time, timezone, &prtime);
-+      // STEALTHFOX (firefox-50): the page's local time, the declared zone's
-+      // (ExplodeLocalTime), not the C runtime's ([B339]).
++      // STEALTH-HOOK(fingerprint/locale-time/timezone): the page's local time,
++      // the declared zone's (ExplodeLocalTime), not the C runtime's ([B339]).
 +      ExplodeLocalTime(time, sourceDoc, &prtime);
  
        int32_t offset =

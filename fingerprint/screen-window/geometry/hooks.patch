@@ -1,12 +1,12 @@
 diff --git a/dom/base/nsGlobalWindowOuter.cpp b/dom/base/nsGlobalWindowOuter.cpp
-index 59a1a4671078a3fc3491a5200c30d908fd87cbf1..46062b98f6949dd6a7175b2fb48dab07a7a80eb5 100644
+index 59a1a4671078a3fc3491a5200c30d908fd87cbf1..8a79f95c282ccbe123a3245509a2934a9f742c90 100644
 --- a/dom/base/nsGlobalWindowOuter.cpp
 +++ b/dom/base/nsGlobalWindowOuter.cpp
 @@ -35,6 +35,7 @@
  #include "mozilla/dom/MaybeCrossOriginObject.h"
  #include "mozilla/dom/Performance.h"
  #include "mozilla/dom/ProxyHandlerUtils.h"
-+#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/screen-window/geometry)
++#include "mozilla/dom/StealthSessionDeclaration.h"  // STEALTH-HOOK(fingerprint/locale-time/session-declaration)
  #include "mozilla/dom/Storage.h"
  #include "mozilla/dom/StorageEvent.h"
  #include "mozilla/dom/StorageEventBinding.h"
@@ -24,7 +24,7 @@ index 59a1a4671078a3fc3491a5200c30d908fd87cbf1..46062b98f6949dd6a7175b2fb48dab07
        aDocument->ShouldResistFingerprinting(RFPTarget::JSLocale),
 -      aDocument->GetBrowsingContext()->Top()->GetLanguageOverride(),
 -      aDocument->GetBrowsingContext()->Top()->GetTimezoneOverride());
-+      // STEALTH-HOOK(fingerprint/screen-window/geometry)
++      // STEALTH-HOOK(fingerprint/locale-time/session-declaration)
 +      GetDeclaredRealmLanguage(aDocument), GetDeclaredRealmTimezone(aDocument));
  
    if (principal->IsSystemPrincipal()) {
