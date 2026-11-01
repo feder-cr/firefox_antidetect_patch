@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: zoom.stealth.webgpu.adapter, zoom.stealth.webgpu.features, zoom.stealth.webgpu.limits, zoom.stealth.fpp.hw_seed (the software adapter on Windows)
-Test: gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp (StealthWebGPUDeclaration.*; StealthWebGPUAdapter.*, Windows only: on the GPU-less CI runner the compositor search finds nothing and the adapter must be WARP, engine off keeps null, a found adapter is left alone). Host gate: navigator.gpu.requestAdapter() non-null with info.isFallbackAdapter false on the GPU-less Windows runner. Linux x86_64: StealthWebGPUBundledVulkan.* (the loader's name leads to our lavapipe, the adapter is ours at 128 bits and has every declared limit, no host libvulkan is mapped); scripts/ci/test_ci.py (the workflow builds and ships it, the library check).
+Test: gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp (StealthWebGPUDeclaration.*; StealthWebGPUAdapter.*, Windows only: on the GPU-less CI runner the compositor search finds nothing and the adapter must be WARP, engine off keeps null, a found adapter is left alone). Host gate: navigator.gpu.requestAdapter() non-null with info.isFallbackAdapter false on the GPU-less Windows runner. Linux x86_64: StealthWebGPUBundledVulkan.* (the loader's name leads to our lavapipe, the adapter is ours at 128 bits and has every declared limit, no host libvulkan is mapped); scripts/ci/test_ci.py (the workflow builds and ships it, the library check). StealthWebGPUInstanceEnv.TheHostsVariablesDoNotReachTheInstance (Windows only): the wgpu instance flags with the host's WGPU_* variables set equal stock's with none set when the engine is on, and stock still reads them.
 
 ## What it does
 
@@ -46,6 +46,8 @@ the loader's SONAME and exports `vkGetInstanceProcAddr`, and
 wgpu opens "libvulkan.so.1" by name. Fail closed: a host loader mapped first, a
 missing file or a name that leads elsewhere turn WebGPU off. x86_64 only: arm64
 ships without it and WebGPU answers null there.
+
+The WebGPU server's wgpu instance does not read the host's environment: `wgpu_server_new` reads seven `WGPU_*` variables into its instance flags (`InstanceFlags::with_env()`), the only environment read reachable in a release build; with the engine on the flags are the ones built with no variable set (`gfx/wgpu_bindings/src/stealth_webgpu_env.rs`). Both `server.rs` hooks declare their path module in the block they run in, so the file keeps two lines.
 
 ## Hooks in Mozilla files
 

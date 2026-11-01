@@ -12,7 +12,8 @@
   "dom/webgpu/StealthWebGPUDeclaration.cpp": "100644",
   "dom/webgpu/StealthWebGPUDeclaration.h": "100644",
   "gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp": "100644",
-  "gfx/wgpu_bindings/src/stealth_webgpu_adapter.rs": "100644"
+  "gfx/wgpu_bindings/src/stealth_webgpu_adapter.rs": "100644",
+  "gfx/wgpu_bindings/src/stealth_webgpu_env.rs": "100644"
  },
  "inventory": [
   {
@@ -133,11 +134,12 @@
    "hunks": 2,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "after impl Deref for Global (the module), and after the Windows compositor-LUID block of Message::RequestAdapter (the call)",
+   "anchor": "after the instance_flags statement of wgpu_server_new (with_env), and after the Windows compositor-LUID block of Message::RequestAdapter; each line declares, in its own block, the path module it calls",
    "evidence": [
-    "+            stealth_webgpu_adapter::settle(global, &desc, adapter_id, &mut result); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
+    "+    #[path = \"stealth_webgpu_env.rs\"] mod stealth_webgpu_env; stealth_webgpu_env::without_host_env(&mut instance_flags); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)",
+    "+            #[path = \"stealth_webgpu_adapter.rs\"] mod stealth_webgpu_adapter; stealth_webgpu_adapter::settle(global, &desc, adapter_id, &mut result); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
    ],
-   "notes": "With the engine on, a compositor search that found no D3D12 adapter takes the software one (WARP) instead of answering null (stealth_webgpu_adapter::settle).",
+   "notes": "With the engine on, the instance flags are the ones built with no WGPU_* variable set (stealth_webgpu_env::without_host_env), and a compositor search that found no D3D12 adapter takes the software one (WARP) instead of answering null (stealth_webgpu_adapter::settle).",
    "verifier": {
     "changed": [],
     "why": "Written with the hook, 2026-11-01."

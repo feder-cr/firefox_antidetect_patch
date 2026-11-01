@@ -176,6 +176,26 @@ TEST(StealthWebGPUAdapter, AFoundCompositorAdapterIsLeftAlone)
   EXPECT_EQ(stealth_wgpu_adapter_after_search(true), 4u);
 }
 
+// The server's wgpu instance without the host's WGPU_* variables
+// (gfx/wgpu_bindings/src/stealth_webgpu_env.rs). Stock Firefox reads seven of
+// them into the instance flags; with the engine on, the flags are the ones
+// built with no variable set, whatever the host's environment says.
+extern "C" uint64_t stealth_wgpu_instance_flags(bool aWithEnv);
+
+TEST(StealthWebGPUInstanceEnv, TheHostsVariablesDoNotReachTheInstance)
+{
+  auto restore = MakeScopeExit([] { Preferences::ClearUser(kSeedPref); });
+  Preferences::ClearUser(kSeedPref);
+  const uint64_t stock = stealth_wgpu_instance_flags(false);
+  // Stock reads the environment: the test's variables do change the flags.
+  EXPECT_NE(stealth_wgpu_instance_flags(true), stock);
+  Preferences::SetInt(kSeedPref, 7);
+  // Engine on: the same flags as stock with no variable set, so our copy of
+  // Mozilla's expression is still Mozilla's.
+  EXPECT_EQ(stealth_wgpu_instance_flags(true), stock);
+  EXPECT_EQ(stealth_wgpu_instance_flags(false), stock);
+}
+
 #endif  // XP_WIN
 
 #if defined(XP_LINUX) && !defined(ANDROID) && defined(__x86_64__)

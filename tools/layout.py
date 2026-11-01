@@ -219,6 +219,7 @@ OWN_FILES = [
     (r"^gfx/idwr/", "fingerprint/fonts/idwr"),
     (r"^gfx/tests/gtest/TestStealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
     (r"^gfx/wgpu_bindings/src/stealth_webgpu_adapter\.rs$", "fingerprint/webgpu/adapter-declaration"),
+    (r"^gfx/wgpu_bindings/src/stealth_webgpu_env\.rs$", "fingerprint/webgpu/adapter-declaration"),
     (r"^gfx/wgpu_bindings/src/stealth_external_texture\.rs$", "fingerprint/webgpu/external-texture-vulkan"),
     (r"^gfx/tests/gtest/TestStealthWebGPUExternalTexture\.cpp$", "fingerprint/webgpu/external-texture-vulkan"),
     # A file upstream added, carried by the backport (its BACKPORT.json).
