@@ -5286,18 +5286,20 @@
   "category": "spoof",
   "feature": "webgpu-adapter-declaration",
   "prefs": [
-   "dom.webgpu.external-texture.enabled"
+   "dom.webgpu.external-texture.enabled",
+   "zoom.stealth.fpp.hw_seed"
   ],
   "added": 3,
   "removed": 1,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "gfxPlatform::InitWebGPUConfig, the WEBGPU_EXTERNAL_TEXTURE force-disable",
+  "anchor": "after #include \"gfxPlatform.h\"; gfxPlatform::InitWebGPUConfig, before the WEBGPU_EXTERNAL_TEXTURE force-disable",
   "evidence": [
+   "+  mozilla::webgpu::StealthWebGPUPlatformInit();  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Linux's Vulkan driver is ours; external textures are on as on Windows",
    "+#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0"
   ],
-  "notes": "The force-disable of WebGPU external textures off Windows and macOS is compiled out: the engine presents Windows on every OS, where the feature is on, and the import runs on the shared-memory buffer path."
+  "notes": "StealthWebGPUPlatformInit maps the bundled lavapipe (<exe dir>/lavapipe/libvulkan_lvp.so) under the Vulkan loader's name before wgpu opens it, and turns WebGPU off when it cannot (fail closed, never a host driver). The force-disable of WebGPU external textures off Windows and macOS is compiled out: the engine presents Windows on every OS, where the feature is on, and the import runs on the shared-memory buffer path."
  },
  {
   "file": "modules/libpref/init/StaticPrefList.yaml",

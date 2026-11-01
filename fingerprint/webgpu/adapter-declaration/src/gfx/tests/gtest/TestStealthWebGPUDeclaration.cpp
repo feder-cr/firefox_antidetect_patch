@@ -177,3 +177,76 @@ TEST(StealthWebGPUAdapter, AFoundCompositorAdapterIsLeftAlone)
 }
 
 #endif  // XP_WIN
+
+#if defined(XP_LINUX) && !defined(ANDROID) && defined(__x86_64__)
+
+#  include <dlfcn.h>
+
+#  include <fstream>
+#  include <string>
+
+// WebGPU's Vulkan driver on Linux is ours (scripts/ci/lavapipe_build.py), in
+// dist/bin/lavapipe/ next to the executable, mapped under the loader's name
+// (StealthWebGPUPreloadBundledVulkan). Before it, requestAdapter() answered
+// null on a host without a Vulkan driver and the host's Mesa elsewhere. x86_64
+// only: arm64 ships without it and WebGPU answers null there.
+
+extern "C" uint32_t stealth_wgpu_vulkan_adapter(uint8_t* aName,
+                                                size_t aNameLen,
+                                                const ffi::WGPULimits* aDeclared,
+                                                uint32_t* aBadLimits);
+
+TEST(StealthWebGPUBundledVulkan, TheLoaderNameLeadsToOurDriver)
+{
+  ASSERT_TRUE(StealthWebGPUPreloadBundledVulkan());
+  void* byName = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_NOLOAD);
+  ASSERT_TRUE(byName);
+  Dl_info info = {};
+  ASSERT_TRUE(dladdr(dlsym(byName, "vkGetInstanceProcAddr"), &info));
+  dlclose(byName);
+  ASSERT_TRUE(info.dli_fname);
+  EXPECT_NE(std::string(info.dli_fname).find("/lavapipe/libvulkan_lvp.so"),
+            std::string::npos)
+      << info.dli_fname;
+}
+
+// The adapter is our lavapipe at the pinned profile (128-bit, whatever this
+// runner's CPU), and every limit the declaration gives a page is one it has.
+TEST(StealthWebGPUBundledVulkan, TheAdapterIsOursAndHoldsTheDeclaration)
+{
+  ASSERT_TRUE(StealthWebGPUPreloadBundledVulkan());
+  ffi::WGPULimits declared = {};
+  ASSERT_TRUE(
+      StealthParseWebGPULimits(nsLiteralCString(kRetail), Key, declared));
+  uint8_t name[256] = {};
+  uint32_t badLimits = 0xffffffff;
+  EXPECT_EQ(stealth_wgpu_vulkan_adapter(name, sizeof(name), &declared,
+                                        &badLimits),
+            1u);
+  const std::string adapter(reinterpret_cast<const char*>(name));
+  EXPECT_NE(adapter.find("llvmpipe"), std::string::npos) << adapter;
+  EXPECT_NE(adapter.find("128 bits"), std::string::npos) << adapter;
+  EXPECT_EQ(badLimits, 0u);
+}
+
+// No library of the host's Vulkan stack is mapped in this process: the only
+// libvulkan anywhere in its maps is ours.
+TEST(StealthWebGPUBundledVulkan, NoHostVulkanIsMapped)
+{
+  ASSERT_TRUE(StealthWebGPUPreloadBundledVulkan());
+  std::ifstream maps("/proc/self/maps");
+  ASSERT_TRUE(maps.is_open());
+  std::string line;
+  bool ours = false;
+  while (std::getline(maps, line)) {
+    if (line.find("libvulkan") == std::string::npos) {
+      continue;
+    }
+    EXPECT_NE(line.find("/lavapipe/libvulkan_lvp.so"), std::string::npos)
+        << line;
+    ours = true;
+  }
+  EXPECT_TRUE(ours);
+}
+
+#endif  // XP_LINUX && !ANDROID && __x86_64__

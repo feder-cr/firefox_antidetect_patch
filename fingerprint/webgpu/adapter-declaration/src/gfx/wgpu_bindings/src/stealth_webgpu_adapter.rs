@@ -92,3 +92,65 @@ pub extern "C" fn stealth_wgpu_adapter_after_search(found: bool) -> u32 {
         3
     }
 }
+
+/// For the gtest StealthWebGPUBundledVulkan (Linux): a server built like the
+/// browser's asks its Vulkan backend for an adapter, after the test mapped the
+/// bundled lavapipe (dom/webgpu StealthWebGPUPreloadBundledVulkan). Writes the
+/// adapter's name (NUL-terminated, cut to `name_len`), counts in `bad_limits`
+/// the declared limits the adapter does not really have (each one a value a
+/// page reads and cannot use), and answers the device type: 0 no adapter,
+/// 1 Cpu, 2 another type, 3 not Linux.
+#[no_mangle]
+pub extern "C" fn stealth_wgpu_vulkan_adapter(
+    name: *mut u8,
+    name_len: usize,
+    declared: *const wgt::Limits,
+    bad_limits: *mut u32,
+) -> u32 {
+    #[cfg(target_os = "linux")]
+    {
+        let server = super::wgpu_server_new(super::WebGPUParentPtr(core::ptr::null_mut()));
+        // SAFETY: wgpu_server_new returns a Box it gave up.
+        let server = unsafe { Box::from_raw(server) };
+        let adapter_id = wgpu_core_remote_types::id::AdapterId::zip(1, 1);
+        let desc = wgpu_core_remote_types::RequestAdapterOptions {
+            power_preference: wgt::PowerPreference::None,
+            force_fallback_adapter: false,
+        };
+        if server
+            .request_adapter(&desc, false, wgt::Backends::VULKAN, adapter_id)
+            .is_err()
+        {
+            return 0;
+        }
+        let info = server.adapter_get_info(adapter_id);
+        if !name.is_null() && name_len > 0 {
+            let bytes = info.name.as_bytes();
+            let n = bytes.len().min(name_len - 1);
+            // SAFETY: the caller gives a buffer of name_len bytes.
+            unsafe {
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), name, n);
+                *name.add(n) = 0;
+            }
+        }
+        let real = super::restrict_limits(server.adapter_limits(adapter_id));
+        let mut bad = 0u32;
+        // SAFETY: the caller passes the declared limits it parsed.
+        let declared = unsafe { &*declared };
+        declared.check_limits_with_fail_fn(&real, false, |limit, wanted, has| {
+            log::warn!("declared {limit} = {wanted}, the bundled driver has {has}");
+            bad += 1;
+        });
+        // SAFETY: the caller passes a counter.
+        unsafe { *bad_limits = bad };
+        match info.device_type {
+            wgt::DeviceType::Cpu => 1,
+            _ => 2,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (name, name_len, declared, bad_limits);
+        3
+    }
+}

@@ -24,6 +24,13 @@
 #include "nsString.h"
 #include "SupportedFeatures.h"
 #include "SupportedLimits.h"
+#include "mozilla/gfx/gfxVars.h"
+
+#if defined(XP_LINUX) && !defined(ANDROID)
+#  include <dlfcn.h>
+#  include <unistd.h>
+#  include <string>
+#endif
 
 namespace mozilla::webgpu {
 
@@ -91,6 +98,64 @@ static nsAutoCString DeclaredLimits() {
   auto lock = StaticPrefs::zoom_stealth_webgpu_limits();
   spec = *lock;
   return spec;
+}
+
+// WebGPU on Linux has only wgpu's Vulkan backend. With no Vulkan driver on the
+// host requestAdapter() answered null, where retail on the declared GPU has an
+// adapter, and with the host's Mesa its version decided limits and raster
+// bytes. The driver now ships with the engine, built and patched so that no
+// host value reaches it (scripts/ci/lavapipe_build.py), with no Vulkan loader:
+// wgpu-hal opens "libvulkan.so.1" by name, and glibc answers a name that an
+// already mapped object carries as its SONAME with that object, so mapping
+// ours first is the whole hook. The checks make it fail closed: a host loader
+// mapped before ours, a missing file, or a name that leads elsewhere all
+// leave WebGPU without an adapter rather than with the host's.
+bool StealthWebGPUPreloadBundledVulkan() {
+#if defined(XP_LINUX) && !defined(ANDROID)
+  static void* sOurs = nullptr;
+  if (sOurs) {
+    return true;
+  }
+  if (void* host = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_NOLOAD)) {
+    dlclose(host);
+    return false;
+  }
+  // Next to the executable: the install dir, where libxul is too, and dist/bin
+  // for the gtests (whose libxul is in dist/bin/gtest).
+  char exe[4096];
+  const ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+  if (len <= 0) {
+    return false;
+  }
+  std::string path(exe, size_t(len));
+  const auto slash = path.rfind('/');
+  if (slash == std::string::npos) {
+    return false;
+  }
+  path.replace(slash, std::string::npos, "/lavapipe/libvulkan_lvp.so");
+  void* ours = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+  if (!ours) {
+    return false;
+  }
+  void* byName = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_NOLOAD);
+  if (byName) {
+    dlclose(byName);
+  }
+  if (byName != ours || !dlsym(ours, "vkGetInstanceProcAddr")) {
+    dlclose(ours);
+    return false;
+  }
+  sOurs = ours;
+#endif
+  return true;
+}
+
+void StealthWebGPUPlatformInit() {
+#if defined(XP_LINUX) && !defined(ANDROID)
+  if (gfx::StealthEngineActive() && !StealthWebGPUPreloadBundledVulkan()) {
+    gfx::gfxVars::SetAllowWebGPU(false);
+  }
+#endif
 }
 
 bool StealthWebGPUNoAdapter() {

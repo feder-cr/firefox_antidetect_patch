@@ -1,0 +1,12 @@
+--- a/src/gallium/drivers/llvmpipe/lp_screen.c
++++ b/src/gallium/drivers/llvmpipe/lp_screen.c
+@@ -1080,7 +1080,8 @@
+       screen->base.nir_options[i] = &gallivm_nir_options;
+ 
+ #if defined(HAVE_LIBDRM) && defined(HAVE_LINUX_UDMABUF_H)
+-   screen->udmabuf_fd = open("/dev/udmabuf", O_RDWR);
++   /* Firefox's bundled lavapipe: never the host's /dev/udmabuf. */
++   screen->udmabuf_fd = -1;
+    llvmpipe_init_screen_fence_funcs(&screen->base);
+ #endif
+ 

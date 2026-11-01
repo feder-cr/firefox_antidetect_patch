@@ -615,6 +615,42 @@ jobs:
           path: ~/.cache/sccache-ci
           key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # WebGPU's Vulkan driver on Linux is ours (scripts/ci/lavapipe_build.py):
+      # without one requestAdapter() answered null, and with the host's Mesa its
+      # version decided limits and raster bytes. Built from pinned sources and
+      # our patches with this build's clang and sysroot, into dist/bin before
+      # the gtests and the package; candidates keep it by its inputs, a release
+      # builds it cold. x86_64 only: arm64 is not a priority, and without the
+      # file WebGPU answers null there, never with a host driver.
+      - name: WebGPU's Vulkan driver (linux-x86_64) - its inputs
+        id: lavapipe-key
+        if: matrix.leg == 'linux-x86_64'
+        run: echo "key=lavapipe-${{ matrix.leg }}-$(python3 scripts/ci/lavapipe_build.py --key)" >> "$GITHUB_OUTPUT"
+      - name: WebGPU's Vulkan driver (linux-x86_64) - built before (candidates only)
+        id: lavapipe-cache
+        if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.compile_cache == 'gha'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/lavapipe
+          key: ${{ steps.lavapipe-key.outputs.key }}
+      - name: WebGPU's Vulkan driver (linux-x86_64) - build
+        id: lavapipe
+        if: matrix.leg == 'linux-x86_64'
+        # LLVM and Mesa cold: about an hour; a cache hit is seconds.
+        timeout-minutes: 150
+        run: |
+          sudo apt-get install -y cmake ninja-build glslang-tools bison flex patchelf
+          python3 scripts/ci phase lavapipe -- python3 scripts/ci/lavapipe_build.py --out "$HOME/.cache/lavapipe"
+          mkdir -p obj-rel/dist/bin/lavapipe
+          cp "$HOME/.cache/lavapipe/libvulkan_lvp.so" "$HOME/.cache/lavapipe/VERSION.json" obj-rel/dist/bin/lavapipe/
+          cat obj-rel/dist/bin/lavapipe/VERSION.json
+      - name: WebGPU's Vulkan driver (linux-x86_64) - keep it (candidates only)
+        if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.compile_cache == 'gha' && steps.lavapipe.outcome == 'success' && steps.lavapipe-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/lavapipe
+          key: ${{ steps.lavapipe-key.outputs.key }}
+
       # Packaging per family (scripts/ci/package_linux.sh, package_win.sh):
       # the same gates, the archive layout each platform ships.
       - name: Package + validate

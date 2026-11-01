@@ -74,6 +74,18 @@ auto StealthAdaptLimitKey(const Limit aLimit) {
   return nsDependentCSubstring(key.data(), key.size());
 }
 
+// Linux: maps Firefox's own Vulkan driver, <libxul's dir>/lavapipe/
+// libvulkan_lvp.so (scripts/ci/lavapipe_build.py), under the Vulkan loader's
+// name, so that wgpu's dlopen("libvulkan.so.1") is answered by it and never by
+// the host's loader or drivers. False when the file is missing, when the host's
+// libvulkan.so.1 is already mapped, or when the name does not lead to ours:
+// fail closed, never a host driver. True on other OSes (nothing to do).
+bool StealthWebGPUPreloadBundledVulkan();
+
+// gfxPlatform::InitWebGPUConfig, parent process: with the engine on, the
+// bundled Vulkan driver is mapped, and WebGPU is off when it cannot be.
+void StealthWebGPUPlatformInit();
+
 // Instance::RequestAdapter, after Firefox's own validation: true when the
 // declared GPU has no WebGPU adapter, and the promise resolves null.
 bool StealthWebGPUNoAdapter();

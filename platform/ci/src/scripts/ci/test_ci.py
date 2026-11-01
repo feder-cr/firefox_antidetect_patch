@@ -465,6 +465,40 @@ def main() -> int:
                           and fresh and "zram /dev/zram3" in fresh_summary))
         else:
             print("skip  swap: zram case runs on Linux only")
+        # WebGPU on Linux: our lavapipe, built before the gtests and the package
+        # and shipped with it (without one requestAdapter() answered null).
+        names = [st.get("name", "") for st in build_steps]
+        lvp = steps.get("WebGPU's Vulkan driver (linux-x86_64) - build", {})
+        lvp_at = names.index(lvp["name"]) if lvp else -1
+        key = steps.get("WebGPU's Vulkan driver (linux-x86_64) - its inputs", {})
+        kept = [st for st in build_steps if "lavapipe" in st.get("name", "") + str(st.get("with", {}))
+                and "cache" in st.get("uses", "")]
+        pkg = (HERE / "package_linux.sh").read_text(encoding="utf-8")
+        pins = json.loads((HERE / "lavapipe" / "VERSIONS.json").read_text(encoding="utf-8"))
+        cases.append(("webgpu: linux-x86_64 builds its lavapipe from pinned sources and patches before the gtests and the package, and ships it",
+                      lvp.get("if") == "matrix.leg == 'linux-x86_64'"
+                      and "lavapipe_build.py --out" in lvp.get("run", "")
+                      and "obj-rel/dist/bin/lavapipe" in lvp.get("run", "")
+                      and 0 <= lvp_at < names.index("Package + validate")
+                      and lvp_at < min(i for i, n in enumerate(names) if n.startswith("Engine gtests"))
+                      and "lavapipe_build.py --key" in key.get("run", "")
+                      and len(kept) == 2 and all("compile_cache == 'gha'" in st.get("if", "") for st in kept)
+                      and '"$STAGING/lavapipe/"' in pkg and "linux-x86_64" in pkg
+                      and len(pins["mesa"]["sha256"]) == 64 and len(pins["llvm"]["commit"]) == 40
+                      and len(sorted((HERE / "lavapipe").glob("*.patch"))) >= 4))
+        import lavapipe_build
+        good_dyn = (" 0x1 (NEEDED)             Shared library: [libc.so.6]\n"
+                    " 0xe (SONAME)             Library soname: [libvulkan.so.1]\n")
+        good_sym = ("     1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND memcpy@GLIBC_2.14 (2)\n"
+                    "     2: 0000000000001000    20 FUNC    GLOBAL DEFAULT   12 vkGetInstanceProcAddr\n"
+                    "     3: 0000000000001100    20 FUNC    GLOBAL DEFAULT   12 vk_icdGetInstanceProcAddr\n")
+        cases.append(("webgpu: the lavapipe check refuses a host library, the wrong SONAME, a missing entry point and a symbol above Firefox's floor",
+                      lavapipe_build.check_binary(good_dyn, good_sym) == []
+                      and len(lavapipe_build.check_binary(
+                          good_dyn.replace("libvulkan.so.1", "libvulkan_lvp.so")
+                          + " 0x1 (NEEDED)             Shared library: [libdrm.so.2]\n",
+                          good_sym.replace("GLIBC_2.14", "GLIBC_2.27").replace(" vkGetInstanceProcAddr", " other"))) == 4
+                      and lavapipe_build.glslang_version("Glslang Version: 11:14.0.0") == (14, 0)))
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)

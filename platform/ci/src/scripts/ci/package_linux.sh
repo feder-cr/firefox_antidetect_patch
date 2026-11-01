@@ -16,6 +16,14 @@ rm -rf "$STAGING"; mkdir -p "$STAGING" out
 cp -aL "$DIST/." "$STAGING/"                      # -L: dereference ALL symlinks into real files
 N=$(find "$STAGING" -type l | wc -l)
 [ "$N" -eq 0 ] || { echo "ERROR: $N symlinks remain after cp -aL"; exit 1; }
+# WebGPU's Vulkan driver (scripts/ci/lavapipe_build.py), next to libxul where
+# the engine looks for it. Required on linux-x86_64; arm64 ships without it and
+# WebGPU answers null there, never with a host driver.
+if [ "${CI_LEG:-}" = linux-x86_64 ]; then
+  [ -f obj-rel/dist/bin/lavapipe/libvulkan_lvp.so ] || { echo "ERROR: no lavapipe in obj-rel/dist/bin"; exit 1; }
+  mkdir -p "$STAGING/lavapipe"
+  cp -a obj-rel/dist/bin/lavapipe/libvulkan_lvp.so obj-rel/dist/bin/lavapipe/VERSION.json "$STAGING/lavapipe/"
+fi
 # JUGGLER GATE: present (Playwright cannot drive the binary without it).
 # PAGE-SURFACE GATE: what a page can read of the build is the retail's of the
 # same version, judged against Mozilla's complete MAR (stock_parity.py).

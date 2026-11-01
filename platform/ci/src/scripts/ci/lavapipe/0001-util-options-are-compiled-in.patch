@@ -1,0 +1,46 @@
+--- a/src/util/os_misc.c
++++ b/src/util/os_misc.c
+@@ -224,25 +224,27 @@
+ 
+ #else /* !DETECT_OS_WINDOWS */
+ 
++/* Firefox's bundled lavapipe: every option is compiled in and the host's
++ * environment is never read, so the same page renders the same bytes on every
++ * x86_64 host. SSE2 only (no FMA, 128-bit vectors) runs everywhere; a fixed
++ * thread count keeps the binning the same on every machine. */
++static const struct {
++   const char *name;
++   const char *value;
++} firefox_options[] = {
++   { "GALLIUM_OVERRIDE_CPU_CAPS", "sse2" },
++   { "LP_NATIVE_VECTOR_WIDTH", "128" },
++   { "LP_NUM_THREADS", "4" },
++};
++
+ static const char *
+-os_get_option_internal(const char *name, bool use_secure_getenv)
++os_get_option_internal(const char *name, UNUSED bool use_secure_getenv)
+ {
+-   const char *opt;
+-   if (use_secure_getenv) {
+-#ifdef HAVE_SECURE_GETENV
+-      opt = secure_getenv(name);
+-#else
+-      opt = getenv(name);
+-#endif
+-   } else {
+-      opt = getenv(name);
+-   }
+-#if DETECT_OS_ANDROID
+-   if (!opt) {
+-      opt = os_get_android_option(name);
++   for (unsigned i = 0; i < ARRAY_SIZE(firefox_options); i++) {
++      if (!strcmp(name, firefox_options[i].name))
++         return firefox_options[i].value;
+    }
+-#endif
+-   return opt;
++   return NULL;
+ }
+ 
+ #endif /* DETECT_OS_WINDOWS */
