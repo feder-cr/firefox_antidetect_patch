@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// Multisampling on the Basic Render Driver (StealthGLMultisample.cpp). Mozilla
-// drops it there for bug 978966, the Windows 8 device ignoring the blend
+// Multisampling follows the declaration (webgl.msaa-samples, set by the core),
+// not the host's renderer (StealthGLMultisample.cpp). Mozilla drops it on the
+// Basic Render Driver for bug 978966, the Windows 8 device ignoring the blend
 // function in multisampled draws. The Windows CI host has no GPU, so the draw
 // below runs on the device every GPU-less Windows machine renders on.
 
@@ -18,25 +19,19 @@
 
 namespace mozilla::gl {
 
-constexpr char kForceEnabledPref[] = "webgl.force-enabled";
+constexpr char kSamplesPref[] = "webgl.msaa-samples";
 
-TEST(StealthGLMultisample, OnlyTheBasicRenderDriverWorkaroundIsUndone)
+// The declaration decides, whatever renderer the host has.
+TEST(StealthGLMultisample, TheDeclaredSampleCountDecides)
 {
-  auto restore =
-      MakeScopeExit([] { Preferences::ClearUser(kForceEnabledPref); });
-  Preferences::SetBool(kForceEnabledPref, true);
-  EXPECT_TRUE(
-      StealthKeepsMultisample(true, GLRenderer::MicrosoftBasicRenderDriver));
+  auto restore = MakeScopeExit([] { Preferences::ClearUser(kSamplesPref); });
+  Preferences::SetUint(kSamplesPref, 4);
+  EXPECT_TRUE(StealthDeclaredMultisample(true));
   // Never more than the driver reports.
-  EXPECT_FALSE(
-      StealthKeepsMultisample(false, GLRenderer::MicrosoftBasicRenderDriver));
-  // Every other renderer keeps Mozilla's workarounds.
-  EXPECT_FALSE(StealthKeepsMultisample(true, GLRenderer::Other));
-  EXPECT_FALSE(StealthKeepsMultisample(true, GLRenderer::AdrenoTM320));
-  // Without WebGL forced on, Mozilla's decision stands.
-  Preferences::SetBool(kForceEnabledPref, false);
-  EXPECT_FALSE(
-      StealthKeepsMultisample(true, GLRenderer::MicrosoftBasicRenderDriver));
+  EXPECT_FALSE(StealthDeclaredMultisample(false));
+  // A declared 0: nothing to put back, Mozilla turns antialias off itself.
+  Preferences::SetUint(kSamplesPref, 0);
+  EXPECT_FALSE(StealthDeclaredMultisample(true));
 }
 
 #ifdef XP_WIN
@@ -58,12 +53,12 @@ TEST(StealthGLMultisample, BasicRenderDriverBlendsIntoAMultisampledTarget)
 {
   gfxPlatform::GetPlatform();
   auto restore = MakeScopeExit([] {
-    Preferences::ClearUser(kForceEnabledPref);
+    Preferences::ClearUser(kSamplesPref);
     Preferences::ClearUser("webgl.angle.force-warp");
   });
   // On a machine with a GPU, WARP is the Basic Render Driver too.
   Preferences::SetBool("webgl.angle.force-warp", true);
-  Preferences::SetBool(kForceEnabledPref, true);
+  Preferences::SetUint(kSamplesPref, 4);
 
   nsCString failureId;
   const RefPtr<GLContext> gl = GLContextProviderEGL::CreateHeadless(

@@ -5,14 +5,12 @@
 #ifndef GFX_GL_STEALTH_GL_MULTISAMPLE_H_
 #define GFX_GL_STEALTH_GL_MULTISAMPLE_H_
 
-#include "GLContext.h"
-
 namespace mozilla::gl {
 
-// Whether a context keeps multisampling that Mozilla's driver workarounds in
-// GLContext::InitImpl take away. aWasSupported is the feature as the driver
-// reports it, before the workarounds ran.
-bool StealthKeepsMultisample(bool aWasSupported, GLRenderer aRenderer);
+// Whether a context multisamples, decided by the declaration, not by the
+// host's renderer. aDriverSupports is the feature as the driver reports it,
+// before Mozilla's driver workarounds in GLContext::InitImpl ran.
+bool StealthDeclaredMultisample(bool aDriverSupports);
 
 }  // namespace mozilla::gl
 

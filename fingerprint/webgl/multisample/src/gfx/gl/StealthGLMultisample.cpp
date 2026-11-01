@@ -8,19 +8,21 @@
 
 namespace mozilla::gl {
 
-// Mozilla turns multisampling off on the Basic Render Driver, Microsoft's
-// software D3D device (bug 978966: on the Windows 8 device multisampled draws
-// ignored the blend function). Every Windows machine without a GPU renders
-// there, so a page's antialias:false and SAMPLES 0 became a fact about the
-// host, one no machine with the GPU the identity declares shows. Today's
-// device blends into a multisampled target as a GPU does
-// (TestStealthGLMultisample, run on the Windows CI host, which has no GPU).
-// With WebGL forced on regardless of the host's driver (webgl.force-enabled,
-// which the core sets on every host) the feature stays as the driver reports
-// it. Every other workaround, and every other renderer, is Mozilla's.
-bool StealthKeepsMultisample(bool aWasSupported, GLRenderer aRenderer) {
-  return aWasSupported && aRenderer == GLRenderer::MicrosoftBasicRenderDriver &&
-         StaticPrefs::webgl_force_enabled();
+// Multisampling is part of the GPU the core declares: webgl.msaa-samples, 4 on
+// every identity, which every declared GPU pairs with (its declared
+// MAX_SAMPLES is 4 or more). Mozilla's driver workarounds decide it from the
+// host's renderer instead: on the Basic Render Driver, Microsoft's software D3D
+// device and the one every Windows machine without a GPU renders on, it is
+// dropped (bug 978966, a Windows 8 blending bug), and a page read
+// antialias:false and SAMPLES 0, a fact about the host. The decision is taken
+// back where it is born: when the core declares samples and the driver can
+// draw them, the context has them. Today's device blends into a multisampled
+// target as a GPU does (TestStealthGLMultisample, on the Windows CI host, which
+// has no GPU). A declared 0 needs nothing here: Mozilla then turns antialias
+// off for every context (ClientWebGLContext). Never more than the driver
+// reports.
+bool StealthDeclaredMultisample(bool aDriverSupports) {
+  return aDriverSupports && StaticPrefs::webgl_msaa_samples() > 0;
 }
 
 }  // namespace mozilla::gl
