@@ -18,7 +18,10 @@ and environment back), and patched (scripts/ci/lavapipe/*.patch) so that no
 host value reaches it: every Mesa option compiled in and the environment never
 read, the x86-64 baseline (SSE2, 128-bit, no FMA) whatever the CPU, the exact
 sqrt instead of a vendor-dependent rsqrt, a fixed heap, budget and thread
-count, no /dev/udmabuf. Firefox maps it under the loader's name (SONAME
+count, no /dev/udmabuf. It meets Firefox's glibc 2.17 floor the way Firefox
+does, by defining __cxa_thread_atexit_impl (glibc 2.18) inside the library
+(0005, the counterpart of build/unix/stdc++compat for a static libstdc++).
+Firefox maps it under the loader's name (SONAME
 libvulkan.so.1) and asks it for vkGetInstanceProcAddr directly
 (dom/webgpu/StealthWebGPUDeclaration.cpp).
 
@@ -126,10 +129,24 @@ def check_binary(dynamic: str, symbols: str) -> list:
     for name in EXPORTS:
         if name not in defined:
             found.append("does not export %s" % name)
-    for prefix, floor in FLOORS.items():
-        for v in set(re.findall(r"@@?%s_([0-9.]+)" % prefix, symbols)):
-            if version_tuple(v) > floor:
-                found.append("needs %s_%s, above Firefox's floor %s" % (prefix, v, ".".join(map(str, floor))))
+    # Imports above Firefox's floors, named, as check_binary.py checks them:
+    # undefined symbols only.
+    above = {}
+    for line in symbols.splitlines():
+        cols = line.split()
+        if len(cols) < 8 or cols[6] != "UND" or "@" not in cols[7]:
+            continue
+        name, _, version = cols[7].partition("@")
+        version = version.lstrip("@")
+        for prefix, floor in FLOORS.items():
+            number = version[len(prefix) + 1:]
+            if (version.startswith(prefix + "_") and re.fullmatch(r"[0-9]+(\.[0-9]+)*", number)
+                    and version_tuple(number) > floor):
+                above.setdefault(version, set()).add(name)
+    for version in sorted(above):
+        prefix = version.partition("_")[0]
+        found.append("needs %s (%s), above Firefox's floor %s"
+                     % (version, ", ".join(sorted(above[version])), ".".join(map(str, FLOORS[prefix]))))
     return found
 
 

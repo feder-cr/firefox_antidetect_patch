@@ -1,0 +1,89 @@
+--- a/src/gallium/targets/lavapipe/meson.build
++++ b/src/gallium/targets/lavapipe/meson.build
+@@ -2,13 +2,13 @@
+ 
+ libvulkan_lvp = shared_library(
+   'vulkan_lvp',
+-  [ 'lavapipe_target.c' ],
++  [ 'lavapipe_target.c', 'lvp_glibc_floor.c' ],
+   vs_module_defs : vulkan_api_def,
+   include_directories : [ inc_src, inc_util, inc_include, inc_gallium, inc_gallium_aux, inc_gallium_winsys, inc_gallium_drivers ],
+   link_whole : [ liblavapipe_st ],
+   link_with : [libpipe_loader_static, libgallium, libwsw, libswdri, libws_null, libswkmsdri ],
+   gnu_symbol_visibility : 'hidden',
+-  link_args : [ld_args_bsymbolic, ld_args_gc_sections],
++  link_args : [ld_args_bsymbolic, ld_args_gc_sections, '-Wl,-z,nodelete'],
+   # On Apple systems, "weak" is actually "weak_import", which is slightly different.
+   # The linker still expects a definition for weak symbols at build time, just not at runtime.
+   # We have to forcibly ignore undefined symbols, which unfortunately applies to all symbols.
+--- /dev/null
++++ b/src/gallium/targets/lavapipe/lvp_glibc_floor.c
+@@ -0,0 +1,68 @@
++/* Firefox runs on glibc 2.17 (python/mozbuild/mozbuild/action/check_binary.py).
++ * __cxa_thread_atexit_impl, through which libstdc++ runs the destructors of
++ * C++ thread_local objects (LLVM has some), appeared in glibc 2.18. Firefox
++ * meets the same floor by defining the symbol inside its own binaries
++ * (build/unix/stdc++compat/stdc++compat.cpp), so that nothing imports
++ * GLIBC_2.18. Here libstdc++ is linked statically, so the definition carries
++ * what libstdc++ itself does where glibc has no such function
++ * (libsupc++/atexit_thread.cc): a per-thread list run when the thread exits,
++ * and at exit for the main thread. The library is linked -z nodelete, so the
++ * destructors it registers never outlive its code.
++ */
++
++#include <pthread.h>
++#include <stdlib.h>
++
++struct lvp_thread_dtor {
++   void (*dtor)(void *);
++   void *obj;
++   struct lvp_thread_dtor *next;
++};
++
++static pthread_key_t lvp_thread_dtor_key;
++static pthread_once_t lvp_thread_dtor_once = PTHREAD_ONCE_INIT;
++
++static void
++lvp_thread_dtor_run(void *list)
++{
++   struct lvp_thread_dtor *e = list;
++   while (e) {
++      struct lvp_thread_dtor *next = e->next;
++      e->dtor(e->obj);
++      free(e);
++      e = next;
++   }
++}
++
++static void
++lvp_thread_dtor_run_current(void)
++{
++   void *list = pthread_getspecific(lvp_thread_dtor_key);
++   pthread_setspecific(lvp_thread_dtor_key, NULL);
++   lvp_thread_dtor_run(list);
++}
++
++static void
++lvp_thread_dtor_init(void)
++{
++   pthread_key_create(&lvp_thread_dtor_key, lvp_thread_dtor_run);
++   atexit(lvp_thread_dtor_run_current);
++}
++
++__attribute__((visibility("hidden"))) int
++__cxa_thread_atexit_impl(void (*dtor)(void *), void *obj, void *dso_handle);
++
++int
++__cxa_thread_atexit_impl(void (*dtor)(void *), void *obj, void *dso_handle)
++{
++   (void)dso_handle;
++   pthread_once(&lvp_thread_dtor_once, lvp_thread_dtor_init);
++   struct lvp_thread_dtor *e = malloc(sizeof(*e));
++   if (!e)
++      return -1;
++   e->dtor = dtor;
++   e->obj = obj;
++   e->next = pthread_getspecific(lvp_thread_dtor_key);
++   pthread_setspecific(lvp_thread_dtor_key, e);
++   return 0;
++}

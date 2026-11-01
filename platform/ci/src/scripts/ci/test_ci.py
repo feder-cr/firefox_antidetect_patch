@@ -504,6 +504,18 @@ def main() -> int:
                           + " 0x1 (NEEDED)             Shared library: [libdrm.so.2]\n",
                           good_sym.replace("GLIBC_2.14", "GLIBC_2.27").replace(" vkGetInstanceProcAddr", " other"))) == 4
                       and lavapipe_build.glslang_version("Glslang Version: 11:14.0.0") == (14, 0)))
+        tls_sym = ("     5: 0000000000000000     0 FUNC    WEAK   DEFAULT  UND __cxa_thread_atexit_impl@GLIBC_2.18 (5)\n"
+                   "     6: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND __libc_dlopen_mode@GLIBC_PRIVATE (6)\n")
+        named = lavapipe_build.check_binary(good_dyn, good_sym + tls_sym)
+        cases.append(("webgpu: the lavapipe check names the import above Firefox's glibc floor (run 41346336371: GLIBC_2.18)",
+                      len(named) == 1 and "GLIBC_2.18 (__cxa_thread_atexit_impl)" in named[0]))
+        floor_patch = sorted((HERE / "lavapipe").glob("*-lavapipe-glibc-floor-*.patch"))
+        floor_text = floor_patch[0].read_text(encoding="utf-8") if floor_patch else ""
+        cases.append(("webgpu: lavapipe meets glibc 2.17 as Firefox does, defining __cxa_thread_atexit_impl in the library (hidden, -z nodelete)",
+                      "+  [ 'lavapipe_target.c', 'lvp_glibc_floor.c' ],\n" in floor_text
+                      and "-Wl,-z,nodelete" in floor_text
+                      and '+__attribute__((visibility("hidden"))) int\n+__cxa_thread_atexit_impl(' in floor_text
+                      and "-static-libstdc++" in (HERE / "lavapipe_build.py").read_text(encoding="utf-8")))
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)

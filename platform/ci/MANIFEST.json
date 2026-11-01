@@ -16,6 +16,7 @@
   "scripts/ci/lavapipe/0002-gallivm-baseline-cpu-and-exact-rsqrt.patch": "100644",
   "scripts/ci/lavapipe/0003-llvmpipe-no-host-udmabuf.patch": "100644",
   "scripts/ci/lavapipe/0004-lavapipe-fixed-memory-and-loaderless-entry.patch": "100644",
+  "scripts/ci/lavapipe/0005-lavapipe-glibc-floor-thread-atexit.patch": "100644",
   "scripts/ci/lavapipe/VERSIONS.json": "100644",
   "scripts/ci/lavapipe_build.py": "100644",
   "scripts/ci/legs.py": "100644",
