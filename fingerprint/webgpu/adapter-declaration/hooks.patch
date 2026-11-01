@@ -76,6 +76,18 @@ index d07fa7a9c96565a18f218be8d48438c21afe1a65..26df09d8e792bd041802a1b0d3915298
    child->EnqueueRequestAdapterPromise(
        PendingRequestAdapterPromise{promise, this, adapter_id});
  
+diff --git a/dom/webgpu/ipc/WebGPUParent.cpp b/dom/webgpu/ipc/WebGPUParent.cpp
+index a5587e0c02b9fc062e32be9329f1699376abc96f..98d1a347032f9b193d8ac24d57164f1f96fd036b 100644
+--- a/dom/webgpu/ipc/WebGPUParent.cpp
++++ b/dom/webgpu/ipc/WebGPUParent.cpp
+@@ -317,6 +317,7 @@ extern void wgpu_parent_swap_chain_drop(
+ #ifdef XP_WIN
+ extern void wgpu_parent_get_compositor_device_luid(
+     struct WGPUFfiLUID* aOutLuid) {
++  *aOutLuid = {};  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+   auto luid = WebGPUParent::GetCompositorDeviceLuid();
+   if (luid.isSome()) {
+     *aOutLuid = luid.extract();
 diff --git a/dom/webgpu/moz.build b/dom/webgpu/moz.build
 index a0d0ceba2c0d4615e259d7a04bed61adaff26203..1007a9714304e0c383c2b7ba242b4fef1787818f 100644
 --- a/dom/webgpu/moz.build
@@ -104,6 +116,26 @@ index 9385c82abed17b64c4dd7a45f15d1d0a26cc791c..cd66765ba704935354177cf6d2633d40
    featureExternalTexture.ForceDisable(
        FeatureStatus::Blocked,
        "WebGPU external textures are not supported on this Operating System",
+diff --git a/gfx/wgpu_bindings/src/server.rs b/gfx/wgpu_bindings/src/server.rs
+index b4ee977ca56ca3afa98cfcf2215b7790b97bd4fe..ddf538bd706e6d479ab250b7698bf8cde4c0ff3c 100644
+--- a/gfx/wgpu_bindings/src/server.rs
++++ b/gfx/wgpu_bindings/src/server.rs
+@@ -313,6 +313,7 @@ impl std::ops::Deref for Global {
+         &self.global
+     }
+ }
++#[path = "stealth_webgpu_adapter.rs"] mod stealth_webgpu_adapter; // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+ 
+ #[no_mangle]
+ pub extern "C" fn wgpu_server_new(owner: WebGPUParentPtr) -> *mut Global {
+@@ -2745,6 +2746,7 @@ unsafe fn process_message(
+                     }
+                 }
+             }
++            stealth_webgpu_adapter::settle(global, &desc, adapter_id, &mut result); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+ 
+             if result.is_none() {
+                 let created = match global.request_adapter(
 diff --git a/modules/libpref/init/StaticPrefList.yaml b/modules/libpref/init/StaticPrefList.yaml
 index 80be46d83cc04eb081ce58b4e322c8da15143c1c..11c7a6686bb1c6b626bc42379286f93600ec2780 100644
 --- a/modules/libpref/init/StaticPrefList.yaml

@@ -2,14 +2,17 @@
  "modified": [
   "dom/webgpu/Adapter.cpp",
   "dom/webgpu/Instance.cpp",
+  "dom/webgpu/ipc/WebGPUParent.cpp",
   "dom/webgpu/moz.build",
   "gfx/thebes/gfxPlatform.cpp",
+  "gfx/wgpu_bindings/src/server.rs",
   "modules/libpref/init/StaticPrefList.yaml"
  ],
  "added": {
   "dom/webgpu/StealthWebGPUDeclaration.cpp": "100644",
   "dom/webgpu/StealthWebGPUDeclaration.h": "100644",
-  "gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp": "100644"
+  "gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp": "100644",
+  "gfx/wgpu_bindings/src/stealth_webgpu_adapter.rs": "100644"
  },
  "inventory": [
   {
@@ -56,6 +59,28 @@
    "notes": "A declared GPU without Direct3D 12 resolves requestAdapter with null; otherwise the request notes forceFallbackAdapter for the adapter's isFallbackAdapter."
   },
   {
+   "file": "dom/webgpu/ipc/WebGPUParent.cpp",
+   "category": "spoof",
+   "feature": "webgpu-adapter-declaration",
+   "prefs": [
+    "zoom.stealth.fpp.hw_seed"
+   ],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "top of wgpu_parent_get_compositor_device_luid",
+   "evidence": [
+    "+  *aOutLuid = {};  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
+   ],
+   "notes": "The LUID out parameter is zeroed before Mozilla's code fills it: a missing compositor device reads as no match, not uninitialised memory.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-01."
+   }
+  },
+  {
    "file": "dom/webgpu/moz.build",
    "category": "spoof",
    "feature": "webgpu-adapter-declaration",
@@ -93,6 +118,28 @@
     "+#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0"
    ],
    "notes": "The force-disable of WebGPU external textures off Windows and macOS is compiled out: the engine presents Windows on every OS, where the feature is on, and the import runs on the shared-memory buffer path."
+  },
+  {
+   "file": "gfx/wgpu_bindings/src/server.rs",
+   "category": "spoof",
+   "feature": "webgpu-adapter-declaration",
+   "prefs": [
+    "zoom.stealth.fpp.hw_seed"
+   ],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after impl Deref for Global (the module), and after the Windows compositor-LUID block of Message::RequestAdapter (the call)",
+   "evidence": [
+    "+            stealth_webgpu_adapter::settle(global, &desc, adapter_id, &mut result); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
+   ],
+   "notes": "With the engine on, a compositor search that found no D3D12 adapter takes the software one (WARP) instead of answering null (stealth_webgpu_adapter::settle).",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-01."
+   }
   },
   {
    "file": "modules/libpref/init/StaticPrefList.yaml",
