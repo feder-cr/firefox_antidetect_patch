@@ -1,0 +1,52 @@
+diff --git a/gfx/gl/GLContext.cpp b/gfx/gl/GLContext.cpp
+index d6c5caf5691f63252ce75c69a091c18351a330a9..b2ed8351674ddaa2ab868baddc3968c03a0d213b 100644
+--- a/gfx/gl/GLContext.cpp
++++ b/gfx/gl/GLContext.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "GLContext.h"
++#include "StealthGLMultisample.h"  // STEALTH-HOOK(fingerprint/webgl/multisample)
+ 
+ #include <ctype.h>
+ #include <string.h>
+@@ -759,6 +760,7 @@ bool GLContext::InitImpl() {
+   }
+ 
+   InitFeatures();
++  const bool stealthMultisample = IsSupported(GLFeature::framebuffer_multisample);  // STEALTH-HOOK(fingerprint/webgl/multisample)
+ 
+   ////
+ 
+@@ -794,6 +796,7 @@ bool GLContext::InitImpl() {
+       MarkUnsupported(GLFeature::invalidate_framebuffer);
+     }
+   }
++  if (StealthKeepsMultisample(stealthMultisample, Renderer())) mAvailableFeatures[size_t(GLFeature::framebuffer_multisample)] = true;  // STEALTH-HOOK(fingerprint/webgl/multisample)
+ 
+   if (IsExtensionSupported(GLContext::ARB_pixel_buffer_object)) {
+     MOZ_ASSERT(
+diff --git a/gfx/gl/gtest/moz.build b/gfx/gl/gtest/moz.build
+index 83897f8de699bd4e1d547e21f6b2f94da98ac202..32b5fd1d20070ae5cb5256441ac4c80416124809 100644
+--- a/gfx/gl/gtest/moz.build
++++ b/gfx/gl/gtest/moz.build
+@@ -11,6 +11,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
+ UNIFIED_SOURCES += [
+     "TestColorspaces.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthGLMultisample.cpp"]  # STEALTH-HOOK(fingerprint/webgl/multisample)
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+     UNIFIED_SOURCES += [
+diff --git a/gfx/gl/moz.build b/gfx/gl/moz.build
+index c041b023b749ba6e9ed4c7b30597a03f9d371382..cea4df1336d39648769d6310715cbbf24d3b49de 100644
+--- a/gfx/gl/moz.build
++++ b/gfx/gl/moz.build
+@@ -136,6 +136,7 @@ UNIFIED_SOURCES += [
+ SOURCES += [
+     "GLScreenBuffer.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthGLMultisample.cpp"]  # STEALTH-HOOK(fingerprint/webgl/multisample)
+ 
+ TEST_DIRS += [
+     "gtest",
