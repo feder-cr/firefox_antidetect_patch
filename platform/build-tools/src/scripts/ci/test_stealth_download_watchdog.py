@@ -2,12 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import http.server
 import inspect
 import multiprocessing
 import os
 import pickle
 import signal
 import sys
+import tempfile
+import threading
 import time
 import types
 import unittest
@@ -31,19 +34,58 @@ def _cut_short(url, dest):
         "retrieval incomplete: got only 6291456 out of 15860356 bytes", b"")
 
 
+def _still_cut(request):
+    raise urllib.error.ContentTooShortError(
+        "retrieval incomplete: got only 6291456 out of 15860356 bytes", b"")
+
+
 def _download_in_worker():
     m.urllib.request.urlretrieve = _cut_short
-    m.stealth_urlretrieve({"url": "u"}, "d", "pkg/file.cab")
+    m.urllib.request.urlopen = _still_cut
+    m.stealth_urlretrieve({"url": "http://cdn.invalid/file.cab"}, "d", "pkg/file.cab", wait=lambda s: None)
+
+
+FILE = bytes(range(256)) * 64  # 16 KiB
+
+
+class _CutEdge(http.server.BaseHTTPRequestHandler):
+    """A CDN edge that holds the head of FILE only: a plain GET gets the head
+    and the connection closes; a ranged GET reaches the origin."""
+    cut = 4096
+    ranges = []
+
+    def do_GET(self):
+        wanted = self.headers.get("Range")
+        _CutEdge.ranges.append(wanted)
+        if wanted is None:
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(FILE)))
+            self.end_headers()
+            self.wfile.write(FILE[: self.cut])
+            self.close_connection = True
+            return
+        start = int(wanted[len("bytes="):-1])
+        self.send_response(206)
+        self.send_header("Content-Range",
+                         "bytes %d-%d/%d" % (start, len(FILE) - 1, len(FILE)))
+        self.send_header("Content-Length", str(len(FILE) - start))
+        self.end_headers()
+        self.wfile.write(FILE[start:])
+
+    def log_message(self, *args):
+        pass
 
 
 class WatchdogTest(unittest.TestCase):
     def setUp(self):
         self._orig = m.urllib.request.urlretrieve
+        self._orig_open = m.urllib.request.urlopen
         if HAVE_ALARM:
             self._prev = signal.signal(signal.SIGALRM, _sentinel)
 
     def tearDown(self):
         m.urllib.request.urlretrieve = self._orig
+        m.urllib.request.urlopen = self._orig_open
         if HAVE_ALARM:
             signal.alarm(0)
             signal.signal(signal.SIGALRM, self._prev)
@@ -97,9 +139,13 @@ class WatchdogTest(unittest.TestCase):
         for error in errors:
             def fail(url, dest, error=error):
                 raise error
+
+            def fail_again(request, error=error):
+                raise error
             m.urllib.request.urlretrieve = fail
+            m.urllib.request.urlopen = fail_again
             with self.assertRaises(OSError) as cm:
-                m.stealth_urlretrieve({"url": "u"}, "d", "f")
+                m.stealth_urlretrieve({"url": "http://cdn.invalid/f"}, "d", "f", wait=lambda s: None)
             self.assertIs(type(cm.exception), OSError)
             self.assertTrue(str(cm.exception).startswith(type(error).__name__ + ": "))
             self.assertEqual(str(pickle.loads(pickle.dumps(cm.exception))), str(cm.exception))
@@ -122,6 +168,104 @@ class WatchdogTest(unittest.TestCase):
                 task.get(timeout=60)
         self.assertTrue(str(cm.exception).startswith("ContentTooShortError: "))
         self.assertIn("got only 6291456 out of 15860356 bytes", str(cm.exception))
+
+    def _serve(self):
+        _CutEdge.ranges = []
+        server = http.server.HTTPServer(("127.0.0.1", 0), _CutEdge)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return "http://127.0.0.1:%d/pkg.vsix" % server.server_address[1]
+
+    def test_a_cut_file_is_resumed_from_where_it_stopped(self):
+        # Run 41302586484: five fetches from the start, five cuts at 4 MiB.
+        url = self._serve()
+        waits = []
+        with tempfile.TemporaryDirectory() as d:
+            dest = os.path.join(d, "pkg.vsix")
+            m.stealth_urlretrieve({"url": url}, dest, "pkg.vsix", wait=waits.append)
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), FILE)
+        self.assertEqual(_CutEdge.ranges, [None, "bytes=4096-"])
+        self.assertEqual(waits, [5])
+        if HAVE_ALARM:
+            self._assert_clean()
+
+    def test_a_server_that_ignores_the_range_sends_the_whole_file(self):
+        class Full:
+            status = 200
+            headers = {"Content-Length": str(len(FILE))}
+
+            def __init__(self):
+                self.left = FILE
+
+            def read(self, n):
+                block, self.left = self.left[:n], self.left[n:]
+                return block
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def cut(url, dest):
+            with open(dest, "wb") as f:
+                f.write(FILE[:100])
+            raise urllib.error.ContentTooShortError("retrieval incomplete", b"")
+        m.urllib.request.urlretrieve = cut
+        m.urllib.request.urlopen = lambda request: Full()
+        with tempfile.TemporaryDirectory() as d:
+            dest = os.path.join(d, "f")
+            m.stealth_urlretrieve({"url": "http://cdn.invalid/f"}, dest, "f", wait=lambda s: None)
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), FILE)
+
+    def test_a_file_still_cut_after_every_resume_fails_as_an_oserror(self):
+        def cut(url, dest):
+            with open(dest, "wb") as f:
+                f.write(FILE[:100])
+            raise urllib.error.ContentTooShortError("retrieval incomplete", b"")
+        requests = []
+
+        def still_cut(request):
+            requests.append(request.get_header("Range"))
+            raise urllib.error.ContentTooShortError("still cut", b"")
+        m.urllib.request.urlretrieve = cut
+        m.urllib.request.urlopen = still_cut
+        waits = []
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(OSError) as cm:
+                m.stealth_urlretrieve({"url": "http://cdn.invalid/f"}, os.path.join(d, "f"), "f",
+                                      wait=waits.append)
+        self.assertIs(type(cm.exception), OSError)
+        self.assertTrue(str(cm.exception).startswith("ContentTooShortError: "))
+        self.assertEqual(waits, list(m.RESUME_WAITS))
+        self.assertEqual(requests, ["bytes=100-"] * len(m.RESUME_WAITS))
+        if HAVE_ALARM:
+            self._assert_clean()
+
+    @unittest.skipUnless(HAVE_ALARM, "SIGALRM is Unix-only")
+    def test_no_alarm_runs_during_a_wait(self):
+        def cut(url, dest):
+            with open(dest, "wb") as f:
+                f.write(FILE[:100])
+            raise urllib.error.ContentTooShortError("retrieval incomplete", b"")
+        armed = []
+
+        def wait(seconds):
+            armed.append(signal.getitimer(signal.ITIMER_REAL)[0])
+
+        def still_cut(request):
+            raise urllib.error.ContentTooShortError("still cut", b"")
+        m.urllib.request.urlretrieve = cut
+        m.urllib.request.urlopen = still_cut
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(OSError):
+                m.stealth_urlretrieve({"url": "http://cdn.invalid/f"}, os.path.join(d, "f"), "f", wait=wait)
+        self.assertEqual(armed, [0] * len(m.RESUME_WAITS))
+        self._assert_clean()
 
     def test_hook_presence_guard(self):
         with open(os.path.join(VSDIR, "vsdownload.py"), encoding="utf-8") as f:
