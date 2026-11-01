@@ -25,7 +25,11 @@
   "fix(naga spv-out): Fetch external texture planes with an explicit Lod",
   "fix(naga spv-out): Round external texture load coordinates like HLSL (RoundEven, Floor)",
   "fix(naga spv-out): Scale external texture chroma coordinates by plane 0's size",
-  "fix(naga spv-out): Clamp and branch on plane count like the HLSL helpers"
+  "fix(naga spv-out): Clamp and branch on plane count like the HLSL helpers",
+  "fix(naga spv-out): Compute external texture sample bounds with NMin/NMax",
+  "fix(naga spv-out): Saturate external texture load coordinates at 0",
+  "fix(naga spv-out): Don't load external texture planes in function preludes",
+  "fix(naga spv-out): Reset external texture ids per function, return errors"
  ],
  "ours_where": "local branch bp159-fix of C:/ff/wgpu-bp (4f4dc63 + the commits above + ours), with naga tests and spirv-val checks",
  "drop_when": "Mozilla vendors a wgpu whose naga spv-out and Vulkan hal have external textures: at that port take Mozilla's files and keep only what upstream still lacks, compared with ours"
