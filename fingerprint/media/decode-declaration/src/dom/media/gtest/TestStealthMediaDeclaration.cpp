@@ -31,6 +31,7 @@
 #ifdef MOZ_WEBRTC
 #  include "EncoderConfig.h"
 #  include "MediaCapabilities.h"
+#  include "MediaMIMETypes.h"
 #  include "WebrtcVideoCodecFactory.h"
 #  include "js/Promise.h"
 #  include "js/PropertyAndElement.h"
