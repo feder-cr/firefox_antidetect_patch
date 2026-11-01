@@ -515,6 +515,19 @@
   value: ""
   mirror: always
 
+# What this build reports it can ENCODE for WebRTC, in the same
+# "trackmime|no|sw|hw|swhw" lines as decode_support, consulted first in
+# WebrtcVideoEncoderFactory::SupportsCodec. Without it the H.264 set came from
+# the OpenH264 plugin or the host's platform encoders. Together with
+# decode_support it also declares the H.264 software gate (video/avc in both
+# tables stands for the plugin), so the codec no longer follows the profile or
+# the GPU blocklist. Empty leaves the encoder factory alone; a type not named
+# falls through.
+- name: zoom.stealth.media.encode_support
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # Declared mediaCapabilities.decodingInfo answers, as
 # "containermime|codecfamily|SSP" entries separated by NEWLINES, where the three
 # digits are supported, smooth and powerEfficient. Keyed by BOTH the container

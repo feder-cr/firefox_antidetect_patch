@@ -5895,5 +5895,51 @@
    "changed": [],
    "why": "Written with the backport, 2026-11-01."
   }
+ },
+ {
+  "file": "dom/media/webrtc/jsapi/DefaultCodecPreferences.cpp",
+  "category": "spoof",
+  "feature": "media-decode-declaration",
+  "prefs": [
+   "zoom.stealth.media.decode_support",
+   "zoom.stealth.media.encode_support"
+  ],
+  "added": 3,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "the heads of SoftwareH264EnabledStatic and SendingH264PacketizationModeZeroSupportedStatic",
+  "evidence": [
+   "+  if (auto d = StealthDeclaredSoftwareH264()) return *d;  // STEALTH-HOOK(fingerprint/media/decode-declaration)"
+  ],
+  "notes": "When both declared tables name video/avc, the H.264 WebRTC gate answers from the declaration (sw flag): the OpenH264 plugin and the GPU blocklist no longer decide. Otherwise Mozilla's logic runs.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/libwebrtcglue/WebrtcVideoCodecFactory.cpp",
+  "category": "spoof",
+  "feature": "media-decode-declaration",
+  "prefs": [
+   "zoom.stealth.media.decode_support",
+   "zoom.stealth.media.encode_support"
+  ],
+  "added": 3,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "the head of WebrtcVideoEncoderFactory::SupportsCodec",
+  "evidence": [
+   "+  if (auto declared = StealthDeclaredWebrtcEncodeSupport(aConfig)) return declared;"
+  ],
+  "notes": "A declared codec answers the encode support set from zoom.stealth.media.encode_support instead of the plugin or the host's encoders; an undeclared one runs Mozilla's code.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
  }
 ]

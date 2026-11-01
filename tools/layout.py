@@ -168,6 +168,8 @@ OWN_FILES = [
     (r"^netwerk/dns/StealthDNSDeclaration\.", "network/dns"),
     (r"^js/src/debugger/StealthDebugger\.", "fingerprint/js-surface/debugger"),
     (r"^gfx/thebes/StealthDesignMetrics\.", "fingerprint/fonts/metrics"),
+    (r"^gfx/thebes/StealthTextMeasuring\.", "fingerprint/fonts/metrics"),
+    (r"^gfx/tests/gtest/TestStealthFontMetrics\.cpp$", "fingerprint/fonts/metrics"),
     (r"^gfx/thebes/StealthTextQuality\.", "fingerprint/fonts/metrics"),
     (r"^dom/serviceworkers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
     (r"^dom/security/StealthBypassCSP\.", "automation/bypass-csp"),

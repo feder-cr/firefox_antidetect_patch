@@ -377,7 +377,7 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..e6ad63f1cfb95537346d0ea7e41edd02026b5c63 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..b51becd548ea84cb31d401187fc334d405e7a715 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
 @@ -32,6 +32,8 @@ UNIFIED_SOURCES += [
@@ -394,7 +394,7 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..e6ad63f1cfb95537346d0ea7e41edd02
      ]
  
 +if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":  # STEALTH-HOOK(fingerprint/fonts/font-list)
-+    UNIFIED_SOURCES += ["TestStealthFcFontList.cpp"]
++    UNIFIED_SOURCES += ["TestStealthFcFontList.cpp", "TestStealthFontMetrics.cpp"]
 +    CXXFLAGS += CONFIG["CAIRO_FT_CFLAGS"]
 +if CONFIG["OS_TARGET"] == "WINNT":
 +    # gfxDWriteFonts' text quality and ClearType parameters, Windows only.

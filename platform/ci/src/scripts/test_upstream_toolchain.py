@@ -7,7 +7,7 @@
     3. a changeset with no retail build in the index;
     4. a retail build that fetched no profile;
     5. a Rust toolchain task with no X.Y.Z release (a nightly channel);
-  known-good
+  known-good (and 8-10: Taskcluster busy is asked again, a 404 is not)
     6. the Rust release of the toolchain the retail build fetched;
     7. the profile unpacked, and the mozconfig lines with the retail's LTO mode
        (full on x86_64, thin on arm64).
@@ -79,6 +79,28 @@ def refuses(fn):
     return False
 
 
+def busy_then(code: int, times: int):
+    """http_get against a server that fails `times` times with `code`, then answers."""
+    import urllib.error
+    calls, waits = [], []
+
+    def open_url(url, timeout):
+        calls.append(url)
+        if len(calls) <= times:
+            raise urllib.error.HTTPError(url, code, "busy", {}, None)
+        return io.BytesIO(b"OK")
+    return u.http_get("https://tc/x", open_url, waits.append), waits
+
+
+def refuses_http(fn) -> bool:
+    import urllib.error
+    try:
+        fn()
+    except urllib.error.HTTPError:
+        return True
+    return False
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "pgo"
@@ -95,6 +117,12 @@ def main() -> int:
              refuses(lambda: u.rust_version("win-x86_64", fake(channel="nightly"), SOURCE))),
             ("the Rust release the retail fetched",
              u.rust_version("win-x86_64", fake(), SOURCE) == "1.95.0"),
+            ("Taskcluster busy (503) twice, then the answer: asked again",
+             busy_then(503, 2) == (b"OK", [15, 60])),
+            ("Taskcluster busy on every attempt: the error after the last wait",
+             refuses_http(lambda: busy_then(503, 99))),
+            ("a 404 is an answer: not asked again",
+             refuses_http(lambda: busy_then(404, 1))),
         ]
         lines = u.pgo("win-x86_64", out, fake(), SOURCE)
         arm = u.pgo("linux-arm64", out, fake(), SOURCE)
