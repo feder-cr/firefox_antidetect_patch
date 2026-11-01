@@ -119,6 +119,23 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_webgpu_adapter();
          return lock->IsEmpty();
        }},
+      // The graphics feature decisions, added 2026-11-01. Missing, Mozilla
+      // would decide WebGL2, ANGLE, WebGPU and the video paths from this
+      // machine's adapter. Validated in full by StealthGfxFeatureStatus.cpp.
+      {"zoom.stealth.gfx.feature_status", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_gfx_feature_status();
+         return lock->IsEmpty();
+       }},
+      // The WebGL renderer and vendor, added 2026-11-01. Empty, ClientWebGLContext
+      // reports the host's own GL strings.
+      {"zoom.stealth.webgl.renderer", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_webgl_renderer();
+         return lock->IsEmpty();
+       }},
+      {"zoom.stealth.webgl.vendor", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_webgl_vendor();
+         return lock->IsEmpty();
+       }},
       {"zoom.stealth.webgpu.features", []() -> bool {
          auto lock = StaticPrefs::zoom_stealth_webgpu_features();
          return lock->IsEmpty();

@@ -1,10 +1,39 @@
 {
- "modified": [],
+ "modified": [
+  "widget/GfxInfoBase.cpp"
+ ],
  "added": {
   "gfx/2d/StealthRefuse.h": "100644",
   "gfx/thebes/StealthDeclarationGate.cpp": "100644",
   "gfx/thebes/StealthDeclarationGate.h": "100644",
-  "gfx/thebes/StealthDeclarationGate.mozbuild": "100644"
+  "gfx/thebes/StealthDeclarationGate.mozbuild": "100644",
+  "gfx/thebes/StealthGfxFeatureStatus.cpp": "100644",
+  "gfx/thebes/StealthGfxFeatureStatus.h": "100644",
+  "gfx/thebes/gtest/TestStealthGfxFeatureStatus.cpp": "100644",
+  "gfx/thebes/gtest/moz.build": "100644"
  },
- "inventory": []
+ "inventory": [
+  {
+   "file": "widget/GfxInfoBase.cpp",
+   "category": "spoof",
+   "feature": "gfx-feature-status-declared",
+   "prefs": [
+    "zoom.stealth.gfx.feature_status"
+   ],
+   "added": 4,
+   "removed": 0,
+   "hunks": 4,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after #include \"GfxInfoBase.h\"; GetFeatureStatus right after the retired-feature check; the top of GetFeatureSuggestedDriverVersion; the top of EvaluateDownloadedBlocklist",
+   "evidence": [
+    "+  if (mozilla::gfx::StealthGfxDeclaredStatus(this, aFeature, aFailureId, aStatus)) return NS_OK;  // STEALTH-HOOK(platform/declaration-gate)"
+   ],
+   "notes": "Every graphics feature decision answers from the declared retail statuses (StealthGfxFeatureStatus.cpp), ahead of gfx.blacklist.* prefs, the child cache and the host matcher; the downloaded blocklist is not evaluated and the suggested driver version is empty while declared.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-01."
+   }
+  }
+ ]
 }

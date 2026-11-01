@@ -6,9 +6,14 @@
 
 EXPORTS += [
     "StealthDeclarationGate.h",
+    "StealthGfxFeatureStatus.h",
 ]
 
 # Non-unified: file-static helpers with short names.
 SOURCES += [
     "StealthDeclarationGate.cpp",
+    "StealthGfxFeatureStatus.cpp",
 ]
+
+# The gate's own gtests (the graphics feature declaration).
+TEST_DIRS += ["gtest"]
