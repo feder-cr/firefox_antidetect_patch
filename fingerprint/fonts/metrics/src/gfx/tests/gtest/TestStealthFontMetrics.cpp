@@ -232,7 +232,7 @@ TEST_F(StealthFontMetrics, MetricsOffTheMainThreadReadTheDeclaration)
 {
   nsCOMPtr<nsIThread> thread;
   ASSERT_TRUE(NS_SUCCEEDED(
-      NS_NewNamedThread("StealthFontMetrics", getter_AddRefs(thread))));
+      NS_NewNamedThread("StealthFontMet", getter_AddRefs(thread))));
   auto shutdown = mozilla::MakeScopeExit([&] { thread->Shutdown(); });
   const struct {
     int32_t mRenderingMode;
