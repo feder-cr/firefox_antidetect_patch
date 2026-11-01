@@ -1,5 +1,5 @@
 diff --git a/gfx/gl/GLContext.cpp b/gfx/gl/GLContext.cpp
-index d6c5caf5691f63252ce75c69a091c18351a330a9..b2ed8351674ddaa2ab868baddc3968c03a0d213b 100644
+index d6c5caf5691f63252ce75c69a091c18351a330a9..6606d0c63caf4241cf851ad8bb93b421c832f7fe 100644
 --- a/gfx/gl/GLContext.cpp
 +++ b/gfx/gl/GLContext.cpp
 @@ -3,6 +3,7 @@
@@ -22,7 +22,7 @@ index d6c5caf5691f63252ce75c69a091c18351a330a9..b2ed8351674ddaa2ab868baddc3968c0
        MarkUnsupported(GLFeature::invalidate_framebuffer);
      }
    }
-+  if (StealthKeepsMultisample(stealthMultisample, Renderer())) mAvailableFeatures[size_t(GLFeature::framebuffer_multisample)] = true;  // STEALTH-HOOK(fingerprint/webgl/multisample)
++  if (StealthDeclaredMultisample(stealthMultisample)) mAvailableFeatures[size_t(GLFeature::framebuffer_multisample)] = true;  // STEALTH-HOOK(fingerprint/webgl/multisample)
  
    if (IsExtensionSupported(GLContext::ARB_pixel_buffer_object)) {
      MOZ_ASSERT(
