@@ -48,6 +48,13 @@ inline bool StealthIsInPopup(const nsGlobalWindowOuter& aWindow) {
   return bc && bc->Top()->GetIsPopupRequested();
 }
 
+// Is the top-level window in fullscreen (requestFullscreen or F11)? The same
+// source as window.fullScreen and the display-mode media query: in a content
+// process, the size mode the parent gave the puppet widget.
+inline bool StealthIsFullscreen(const nsGlobalWindowOuter& aWindow) {
+  return aWindow.Fullscreen();
+}
+
 // The content origin shift for the window's document, or Nothing().
 inline Maybe<nsPoint> StealthShiftOf(nsGlobalWindowOuter& aWindow) {
   nsIDocShell* docShell = aWindow.GetDocShell();
@@ -88,6 +95,15 @@ inline bool StealthOuterSize(nsGlobalWindowOuter& aWindow, CSSIntSize& aSize,
     aSize = CSSIntSize();
     return true;
   }
+  // In fullscreen the window is the declared screen, popups included: retail
+  // answers outer == inner == screen. It used to answer the maximized window
+  // (1936x1048 under a 1920x1080 inner), a window no screen holds.
+  if (StealthIsFullscreen(aWindow)) {
+    if (const auto screen = gfx::StealthDeclaredScreenRect()) {
+      aSize = screen->Size();
+      return true;
+    }
+  }
   const CSSToLayoutDeviceScale scale =
       aWindow.CSSToDevScaleForBaseWindow(treeOwnerAsWin);
   if (StealthIsInPopup(aWindow)) {
@@ -126,7 +142,15 @@ inline bool StealthOuterSize(nsGlobalWindowOuter& aWindow, CSSIntSize& aSize,
 // default when the page did not, so it is the same on both builds.
 inline bool StealthScreenXY(nsGlobalWindowOuter& aWindow,
                             nsIBaseWindow* aTreeOwner, CSSIntPoint& aPoint) {
-  if (!gfx::StealthEngineActive() || StealthIsInPopup(aWindow)) {
+  if (!gfx::StealthEngineActive()) {
+    return false;
+  }
+  // In fullscreen, main or popup, the window is the screen: (0, 0).
+  if (StealthIsFullscreen(aWindow)) {
+    aPoint = CSSIntPoint(0, 0);
+    return true;
+  }
+  if (StealthIsInPopup(aWindow)) {
     return false;
   }
   if (const auto maximized = gfx::StealthDeclaredMaximizedWindow()) {
@@ -233,7 +257,10 @@ mozilla::Maybe<nsPoint> nsGlobalWindowOuter::StealthContentOriginShift(
     }
     popupOrigin = mozilla::Some(outer);
   }
-  return mozilla::gfx::StealthDeclaredOriginShift(real, popupOrigin,
+  // In fullscreen the content is the screen. Same source as Fullscreen() in a
+  // content process: the puppet widget's size mode.
+  const bool fullscreen = rootWidget->SizeMode() == nsSizeMode_Fullscreen;
+  return mozilla::gfx::StealthDeclaredOriginShift(real, popupOrigin, fullscreen,
                                                   auPerDevPx);
 }
 

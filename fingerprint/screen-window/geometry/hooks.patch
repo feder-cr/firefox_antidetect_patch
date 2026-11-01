@@ -112,3 +112,15 @@ index 98ebfdab771f69cf2d891c184511b6758261246d..dd421282c0c57a6413c8fa0348249816
    return Some(CSSDoublePoint(pt.x, pt.y));
  }
  
+diff --git a/dom/events/test/gtest/moz.build b/dom/events/test/gtest/moz.build
+index 2b1e2c210050c9f13c35395f9683baddfb756a07..41c8ef1419811b6556fdbb69f445f81435488b99 100644
+--- a/dom/events/test/gtest/moz.build
++++ b/dom/events/test/gtest/moz.build
+@@ -8,6 +8,7 @@ with Files("**"):
+ UNIFIED_SOURCES += [
+     "TestShortcutKeyDefinitions.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthWindowGeometry.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)
+ 
+ LOCAL_INCLUDES += ["/dom/events"]
+ 

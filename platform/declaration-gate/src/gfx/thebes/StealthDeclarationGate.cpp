@@ -336,17 +336,18 @@ Maybe<LayoutDeviceIntRect> StealthDeclaredMaximizedWindow() {
 
 Maybe<nsPoint> StealthDeclaredOriginShift(
     const nsPoint& aRealContentOrigin,
-    const Maybe<LayoutDeviceIntPoint>& aPopupWindowOrigin,
+    const Maybe<LayoutDeviceIntPoint>& aPopupWindowOrigin, bool aFullscreen,
     int32_t aAppUnitsPerDevPixel) {
   const Maybe<StealthWindowFrame> frame = StealthDeclaredWindowFrame();
   if (frame.isNothing()) {
     return Nothing();
   }
-  // The maximized window's content starts at the screen's left edge, the UI
-  // height below its top; a popup's starts a border in and the popup UI down
-  // from wherever the popup really is.
+  // A fullscreen window's content is the screen; the maximized window's
+  // starts at the screen's left edge, the UI height below its top; a popup's
+  // starts a border in and the popup UI down from wherever the popup really is.
   const LayoutDeviceIntPoint declared =
-      aPopupWindowOrigin
+      aFullscreen ? LayoutDeviceIntPoint(0, 0)
+      : aPopupWindowOrigin
           ? *aPopupWindowOrigin +
                 LayoutDeviceIntPoint(frame->mBorder, frame->mPopupUi)
           : LayoutDeviceIntPoint(0, frame->mMaximizedUi);

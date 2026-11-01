@@ -164,9 +164,14 @@ Maybe<LayoutDeviceIntRect> StealthDeclaredMaximizedWindow();
  * Una funzione sola, perche' lo scarto e' un fatto e i fatti stanno in un posto:
  * quando era calcolato in tre punti, il quarto consumatore fu dimenticato.
  */
+//
+// `aFullscreen` comes first: a window in fullscreen, main or popup, is the
+// whole declared screen, its content at (0, 0) like retail's (no UI, no
+// border). Until 2026-11-01 the main window kept declaring the maximized one
+// in fullscreen, content 85 below the top while the page filled the screen.
 Maybe<nsPoint> StealthDeclaredOriginShift(
     const nsPoint& aRealContentOrigin,
-    const Maybe<LayoutDeviceIntPoint>& aPopupWindowOrigin,
+    const Maybe<LayoutDeviceIntPoint>& aPopupWindowOrigin, bool aFullscreen,
     int32_t aAppUnitsPerDevPixel);
 
 /**
