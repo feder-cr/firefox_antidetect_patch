@@ -412,6 +412,17 @@ def main() -> int:
         cross_ok = (cross_ok and "matrix.target" in gt_step[0]["run"] and "recurse_gtest" in gt_step[0]["run"]
                     and kept.get("with", {}).get("name") == "gtest-bin-${{ matrix.leg }}")
         cases.append(("gtests: a cross-compiled leg's run on its target's OS (run 41232307511)", cross_ok))
+        # apt has no network timeout: a stalled mirror held run 41248997155's
+        # linux-x86_64 leg in `apt-get update` for 5h40, until the job's limit.
+        build_steps = doc["jobs"]["build"]["steps"]
+        net = [i for i, st in enumerate(build_steps) if "80-ci-network" in st.get("run", "")]
+        apt_at = [i for i, st in enumerate(build_steps) if "apt-get" in st.get("run", "")]
+        conf = build_steps[net[0]]["run"] if net else ""
+        install = steps.get("Install Linux build tools", {})
+        cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
+                      len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)
+                      and all(k in conf for k in ('Acquire::http::Timeout', 'Acquire::https::Timeout', 'Acquire::Retries'))
+                      and 0 < install.get("timeout-minutes", 0) <= 30))
         # The repository holds the patch series only: a job that needs the source makes
         # it with tools/engine.py materialize (the Mozilla tag + the series), and no
         # checkout names a branch of Firefox's tree any more.
