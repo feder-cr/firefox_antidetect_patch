@@ -1,6 +1,6 @@
 {
  "README.md": 3,
- "browser/app/profile/firefox.js": 4,
+ "browser/app/profile/firefox.js": 2,
  "browser/branding/unofficial/pref/firefox-branding.js": 6,
  "browser/installer/package-manifest.in": 1,
  "chrome/nsChromeRegistry.cpp": 1,
@@ -56,7 +56,7 @@
  "layout/base/nsPresContext.cpp": 1,
  "layout/painting/nsImageRenderer.cpp": 1,
  "modules/libpref/init/StaticPrefList.yaml": 1,
- "modules/libpref/init/all.js": 7,
+ "modules/libpref/init/all.js": 6,
  "netwerk/base/LoadInfo.cpp": 1,
  "netwerk/base/nsProtocolProxyService.cpp": 3,
  "netwerk/protocol/http/AlternateServices.cpp": 1,

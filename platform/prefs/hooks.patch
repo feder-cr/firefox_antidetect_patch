@@ -1,19 +1,7 @@
 diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
-index 0f4b2915ad211349c424d1db2bd91c38f140782f..70d06fd1e7f03c978b4157debbf41fab21fb70df 100644
+index 0f4b2915ad211349c424d1db2bd91c38f140782f..880a0bce7895a6022c46f8c97d61a799a2fcacbb 100644
 --- a/browser/app/profile/firefox.js
 +++ b/browser/app/profile/firefox.js
-@@ -1954,9 +1954,9 @@ pref("browser.newtab.preload", true);
- // For further detail on the TOU prefs below, see the `preonboarding` feature in
- // FeatureManifest.yaml
- // Version of the TOU that the user last accepted
--pref("termsofuse.acceptedVersion", 0);
-+pref("termsofuse.acceptedVersion", 999);  // STEALTH-HOOK(platform/prefs)
- // Stringified timestamp of when the user last accepted the TOU
--pref("termsofuse.acceptedDate", "0");
-+pref("termsofuse.acceptedDate", "1785573000000");  // STEALTH-HOOK(platform/prefs)
- // Stringified timestamp of when the user first accepted the TOU, only set if
- // they have accepted more than one version.
- pref("termsofuse.firstAcceptedDate", "0");
 @@ -2633,11 +2633,11 @@ pref("media.contextmenu.video-overlay-detection", true);
  
  // Enable Firefox translations powered by the Bergamot translations
@@ -51,7 +39,7 @@ index c18e30b24e407fe97518150b004b7291de392c2a..d964a823ed12cc9ff84158354f3954aa
 +// STEALTH-HOOK(platform/prefs): our defaults, after all.js so they win.
 +#include init/StealthPrefs.js
 diff --git a/modules/libpref/init/all.js b/modules/libpref/init/all.js
-index 26753001966ab944c524b4ede79d58afe3b4f4de..d87f99ece1b1498df3c133780380e5c8cdc73dca 100644
+index 26753001966ab944c524b4ede79d58afe3b4f4de..15ce93f214584925c2030095eb4beab744c50c84 100644
 --- a/modules/libpref/init/all.js
 +++ b/modules/libpref/init/all.js
 @@ -2687,19 +2687,19 @@ pref("font.size.monospace.x-math", 13);
@@ -102,15 +90,6 @@ index 26753001966ab944c524b4ede79d58afe3b4f4de..d87f99ece1b1498df3c133780380e5c8
  
    pref("font.name-list.serif.zh-CN", "serif");
    pref("font.name-list.sans-serif.zh-CN", "sans-serif");
-@@ -3745,7 +3745,7 @@ pref("toolkit.legacyUserProfileCustomizations.stylesheets", false);
-   pref("datareporting.policy.minimumPolicyVersion", 1);
-   pref("datareporting.policy.minimumPolicyVersion.channel-beta", 2);
-   pref("datareporting.policy.firstRunURL", "https://www.mozilla.org/privacy/firefox/");
--  pref("datareporting.policy.dataSubmissionPolicyBypassNotification", false);
-+  pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);  // STEALTH-HOOK(platform/prefs)
- #endif
- 
- #ifdef MOZ_SERVICES_HEALTHREPORT
 diff --git a/modules/libpref/moz.build b/modules/libpref/moz.build
 index 2c8b218c618f8fa73ab4b21f4155d5f063bc1bb4..4d265ca09a7d9ab5fb429b13007993d3c89b0406 100644
 --- a/modules/libpref/moz.build

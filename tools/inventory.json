@@ -98,12 +98,11 @@
    "font.size.monospace.he",
    "font.size.monospace.x-cyrillic",
    "font.size.monospace.x-unicode",
-   "font.size.monospace.x-western",
-   "datareporting.policy.dataSubmissionPolicyBypassNotification"
+   "font.size.monospace.x-western"
   ],
-  "added": 4,
-  "removed": 4,
-  "hunks": 4,
+  "added": 2,
+  "removed": 2,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "values changed in place on 2026-10-29",
@@ -159,9 +158,7 @@
    {
     "feature": "data-submission-notification-bypassed",
     "category": "stillborn",
-    "prefs": [
-     "datareporting.policy.dataSubmissionPolicyBypassNotification"
-    ]
+    "prefs": []
    }
   ],
   "verifier": {
@@ -3533,8 +3530,7 @@
    "font.size.monospace.he",
    "font.size.monospace.x-cyrillic",
    "font.size.monospace.x-unicode",
-   "font.size.monospace.x-western",
-   "datareporting.policy.dataSubmissionPolicyBypassNotification"
+   "font.size.monospace.x-western"
   ],
   "added": 2,
   "removed": 0,
@@ -3594,9 +3590,7 @@
    {
     "feature": "data-submission-notification-bypassed",
     "category": "stillborn",
-    "prefs": [
-     "datareporting.policy.dataSubmissionPolicyBypassNotification"
-    ]
+    "prefs": []
    }
   ],
   "verifier": {
@@ -3636,12 +3630,11 @@
    "font.size.monospace.he",
    "font.size.monospace.x-cyrillic",
    "font.size.monospace.x-unicode",
-   "font.size.monospace.x-western",
-   "datareporting.policy.dataSubmissionPolicyBypassNotification"
+   "font.size.monospace.x-western"
   ],
-  "added": 7,
-  "removed": 7,
-  "hunks": 7,
+  "added": 6,
+  "removed": 6,
+  "hunks": 6,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "values changed in place on 2026-10-29",
@@ -3697,9 +3690,7 @@
    {
     "feature": "data-submission-notification-bypassed",
     "category": "stillborn",
-    "prefs": [
-     "datareporting.policy.dataSubmissionPolicyBypassNotification"
-    ]
+    "prefs": []
    }
   ],
   "verifier": {
