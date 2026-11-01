@@ -397,6 +397,35 @@ def removed_lines(patch: Path) -> dict:
     return _patch_lines(patch, "-")
 
 
+BACKPORT = "BACKPORT.json"
+# Where upstream code lives in Firefox's tree: its vendored copies, and the lock and
+# checksums Cargo checks them against.
+VENDORED = ("third_party/rust/", "Cargo.lock")
+
+
+def backport_problems(folder: str, upstream_code: set, patch: Path) -> list:
+    """Upstream code carried ahead of Mozilla (category backport) is not ours, so it has
+    no budget; what keeps it honest is its BACKPORT.json: the upstream, the revision
+    Mozilla vendors (the patch must apply on it), and the commits, ours last."""
+    if not upstream_code:
+        return []
+    found = ["%s: %s is category backport outside vendored code (%s)" % (folder, p, ", ".join(VENDORED))
+             for p in sorted(upstream_code) if not p.startswith(VENDORED)]
+    record = ROOT / folder / BACKPORT
+    if not record.exists():
+        return found + ["%s carries upstream code (%s) with no %s: name the upstream, the "
+                        "vendored revision and the commits" % (folder, sorted(upstream_code)[0], BACKPORT)]
+    data = json.loads(record.read_text(encoding="utf-8"))
+    missing = [k for k in ("upstream", "vendored", "commits", "drop_when") if not data.get(k)]
+    if missing:
+        return found + ["%s/%s lacks %s" % (folder, BACKPORT, ", ".join(missing))]
+    if data["vendored"] not in patch.read_text(encoding="utf-8", errors="replace"):
+        found.append("%s/%s says the vendored revision is %s, which its hooks.patch does not "
+                     "patch: Mozilla vendors another one now, so drop what upstream has and "
+                     "pick the rest again" % (folder, BACKPORT, data["vendored"]))
+    return found
+
+
 def problems() -> list:
     """Every rule of the series that is broken now, as sentences."""
     found = []
@@ -428,10 +457,17 @@ def problems() -> list:
         if sorted(touched) != sorted(manifest["modified"]):
             found.append("%s: hooks.patch touches %s, MANIFEST owns %s"
                          % (folder, sorted(touched), manifest["modified"]))
+        upstream_code = {r["file"] for r in manifest.get("inventory", []) if r["category"] == "backport"}
+        found += backport_problems(folder, upstream_code, patch)
         for path, n in touched.items():
             if path in seen:
                 found.append("%s is patched by both %s and %s" % (path, seen[path], folder))
             seen[path] = folder
+            if path in upstream_code:
+                if path in budget or path in removed_budget:
+                    found.append("%s (%s) is upstream code (category backport): it has no hook or "
+                                 "removed budget, take it out of both" % (path, folder))
+                continue
             allowed = budget.get(path)
             if allowed is None:
                 found.append("%s (%s) is a Mozilla file with no hook budget: a new hook is at most 5 "

@@ -5315,5 +5315,585 @@
    "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
   ],
   "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
+ },
+ {
+  "file": "Cargo.lock",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the naga-types package's dependencies",
+  "evidence": [
+   "+ \"bytemuck\","
+  ],
+  "notes": "naga-types depends on bytemuck from upstream wgpu 66e992c3a (ExternalTextureTransferFunction moved there); the lock says what the vendored Cargo.toml says.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "gfx/wgpu_bindings/src/lib.rs",
+  "category": "spoof",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "the module list after RawString",
+  "evidence": [
+   "+pub mod stealth_external_texture; // STEALTH-HOOK(fingerprint/webgpu/external-texture-vulkan)"
+  ],
+  "notes": "Declares our module with the function the gtest StealthWebGPUExternalTexture calls; the module is ours.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga-types/.cargo-checksum.json",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the hashes of the files the backport changes",
+  "evidence": [],
+  "notes": "Cargo verifies vendored crates against these hashes; each changed or added file of the crate has its new sha256.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga-types/Cargo.toml",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga-types/src/lib.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 26,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga-types/src/spv.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/.cargo-checksum.json",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the hashes of the files the backport changes",
+  "evidence": [],
+  "notes": "Cargo verifies vendored crates against these hashes; each changed or added file of the crate has its new sha256.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/hlsl/writer.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 4,
+  "removed": 23,
+  "hunks": 4,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/msl/writer.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 3,
+  "removed": 15,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/block.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 70,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/helpers.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 90,
+  "removed": 3,
+  "hunks": 5,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/image.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 2054,
+  "removed": 119,
+  "hunks": 27,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/index.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 3,
+  "removed": 2,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/mod.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 64,
+  "removed": 6,
+  "hunks": 10,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/ray/mod.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 35,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/ray/pipeline.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 6,
+  "removed": 2,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/ray/query.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 51,
+  "removed": 18,
+  "hunks": 8,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/back/spv/writer.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 407,
+  "removed": 145,
+  "hunks": 49,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/common/mod.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/front/type_gen.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 63,
+  "removed": 59,
+  "hunks": 4,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/proc/namer.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 2,
+  "removed": 14,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/proc/type_methods.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 11,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/naga/src/valid/type.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 7,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-core/.cargo-checksum.json",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the hashes of the files the backport changes",
+  "evidence": [],
+  "notes": "Cargo verifies vendored crates against these hashes; each changed or added file of the crate has its new sha256.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-core/src/device/resource.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 39,
+  "removed": 0,
+  "hunks": 8,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-hal/.cargo-checksum.json",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the hashes of the files the backport changes",
+  "evidence": [],
+  "notes": "Cargo verifies vendored crates against these hashes; each changed or added file of the crate has its new sha256.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-hal/src/vulkan/adapter.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-hal/src/vulkan/conv.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-hal/src/vulkan/device.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 141,
+  "removed": 43,
+  "hunks": 14,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-hal/src/vulkan/mod.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-types/.cargo-checksum.json",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the hashes of the files the backport changes",
+  "evidence": [],
+  "notes": "Cargo verifies vendored crates against these hashes; each changed or added file of the crate has its new sha256.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "third_party/rust/wgpu-types/src/texture/external_texture.rs",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 2,
+  "removed": 25,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "upstream wgpu code (see BACKPORT.json)",
+  "evidence": [],
+  "notes": "Upstream wgpu's Vulkan external-texture code, as BACKPORT.json lists it, on the vendored 4f4dc63.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
  }
 ]

@@ -1,0 +1,32 @@
+{
+ "upstream": "https://github.com/gfx-rs/wgpu",
+ "vendored": "4f4dc63098fae64a0e6d1d3dc6f4f328da8fd5c8",
+ "commits": [
+  "0ce78c5d0 refactor(naga): Create TypeInner::is_external_image helper",
+  "eb4678dd0 refactor(naga): Expose indices of ExternalTextureParams members",
+  "66e992c3a refactor(types): Move ExternalTextureTransferFunction to naga-types",
+  "de3dd5d1c refactor(naga spv-out): Add wrapped function preamble helper (WIP, PR #10600)",
+  "d1be86f2e fix debug info (WIP, with de3dd5d1c)",
+  "1c7ea0952 use function helper for ray tracing (WIP, with de3dd5d1c)",
+  "49325ca0a feat(vulkan): External texture binding support (#10768, merged 2026-10-29)",
+  "63bc1bb38 feat(naga spv-out): External texture globals (WIP, andyleiserson/wgpu external-texture)",
+  "fc19430c8 feat(naga spv-out): External texture function parameters (WIP)",
+  "826569e8e feat(naga spv-out): External texture helper functions (WIP)",
+  "fbf9484e6 feat(hal vulkan): Unconditionally expose Features::EXTERNAL_TEXTURE (WIP)",
+  "81e38d86f fix: emit NeedsInitializedMemory for create_external_texture_binding",
+  "5086e107a fix: emit NeedsInitializedMemory for create_external_texture_binding_from_view (#10276)",
+  "0342e2fba fix(core): Check same-device for external texture planes (#10636)"
+ ],
+ "ours": [
+  "fix(naga spv-out): Pass external texture globals to functions correctly (std140 params; conversion registered for every used global)",
+  "fix(naga spv-out): Use external texture function parameters correctly (params id, plane pointers)",
+  "fix(naga spv-out): Return an error for a non-external texture binding",
+  "fix(naga spv-out): Splat the condition of the external texture size select (SPIR-V < 1.4)",
+  "fix(naga spv-out): Fetch external texture planes with an explicit Lod",
+  "fix(naga spv-out): Round external texture load coordinates like HLSL (RoundEven, Floor)",
+  "fix(naga spv-out): Scale external texture chroma coordinates by plane 0's size",
+  "fix(naga spv-out): Clamp and branch on plane count like the HLSL helpers"
+ ],
+ "ours_where": "local branch bp159-fix of C:/ff/wgpu-bp (4f4dc63 + the commits above + ours), with naga tests and spirv-val checks",
+ "drop_when": "Mozilla vendors a wgpu whose naga spv-out and Vulkan hal have external textures: at that port take Mozilla's files and keep only what upstream still lacks, compared with ours"
+}

@@ -133,6 +133,7 @@
  "gfx/thebes/gfxPlatformGtk.cpp": 3,
  "gfx/thebes/gfxTextRun.cpp": 2,
  "gfx/thebes/moz.build": 4,
+ "gfx/wgpu_bindings/src/lib.rs": 1,
  "intl/locale/LocaleService.cpp": 6,
  "intl/locale/moz.build": 2,
  "intl/locale/nsLanguageAtomService.cpp": 6,

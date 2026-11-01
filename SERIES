@@ -67,4 +67,5 @@ fingerprint/screen-window/screen
 fingerprint/webgl/parameters
 fingerprint/webgl/shader-language
 fingerprint/webgpu/adapter-declaration
+fingerprint/webgpu/external-texture-vulkan
 fingerprint/webrtc/ice-candidates
