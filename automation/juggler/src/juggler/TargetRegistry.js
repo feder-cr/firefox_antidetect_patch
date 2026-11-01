@@ -20,6 +20,17 @@ const helper = new Helper();
 // JugglerWindowSize.h, a bit nsIWebBrowserChrome leaves free
 // (juggler/tests/explicit_size_flag_is_free.test.mjs).
 const JUGGLER_WINDOW_EXPLICIT_SIZE = 1 << 1;
+
+// The size the page's <browser> is pinned to, or undefined when it follows the
+// window. A window in fullscreen is the screen, content included, as in every
+// Firefox (outer == inner == screen): pinned, the page kept the maximized
+// window's viewport inside a fullscreen window
+// (juggler/tests/fullscreen_releases_the_viewport.test.mjs).
+function pinnedViewportSize(windowInFullscreen, pageViewportSize, contextViewportSize) {
+  if (windowInFullscreen)
+    return undefined;
+  return pageViewportSize || contextViewportSize;
+}
 const IDENTITY_NAME = 'JUGGLER ';
 const HUNDRED_YEARS = 60 * 60 * 24 * 365 * 100;
 
@@ -562,6 +573,9 @@ export class PageTarget {
       helper.addObserver(this._updateModalDialogs.bind(this), 'common-dialog-loaded'),
       helper.addProgressListener(tab.linkedBrowser, navigationListener, Ci.nsIWebProgress.NOTIFY_LOCATION),
       helper.addEventListener(this._linkedBrowser, 'DOMModalDialogClosed', event => this._updateModalDialogs()),
+      // The chrome window's "fullscreen" event, on entering and on leaving
+      // (nsGlobalWindowOuter::FinishFullscreenChange): the pin follows.
+      helper.addEventListener(this._window, 'fullscreen', () => this.updateViewportSize().catch(e => {})),
     ];
 
     this._disposed = false;
@@ -764,7 +778,7 @@ export class PageTarget {
     // The "default size" (1) is only respected when the page is opened.
     // Otherwise, explicitly set page viewport prevales over browser context
     // default viewport.
-    const viewportSize = this._viewportSize || this._browserContext.defaultViewportSize;
+    const viewportSize = pinnedViewportSize(this._window.fullScreen, this._viewportSize, this._browserContext.defaultViewportSize);
     if (viewportSize) {
       const {width, height} = viewportSize;
       this._linkedBrowser.style.setProperty('width', width + 'px');

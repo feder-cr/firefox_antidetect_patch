@@ -5007,12 +5007,13 @@
   "hunks": 2,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
-  "anchor": "nsWindow::OnVisibilityNotifyEvent (hunk 2; hunk 1 adds the StaticPrefs include)",
+  "anchor": "nsWindow::OnVisibilityNotifyEvent (the occlusion hunk; another adds the StaticPrefs include) and the head of nsWindow::MakeFullScreen (one line of fingerprint/screen-window/geometry: fullscreen without a window manager, nsWindow::StealthMakeFullScreenWithoutWM in widget/gtk/StealthFullscreenGtk.cpp)",
   "evidence": [
-   "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&",
-   "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()"
+   "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&  // STEALTH-HOOK(fingerprint/screen-window/occlusion): B149, see FEATURE.md",
+   "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()",
+   "+  if (GdkIsX11Display() && !IsFullscreenSupported(mShell) && StealthMakeFullScreenWithoutWM(aFullScreen)) return NS_OK;  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
   ],
-  "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result.",
+  "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result. Also carries the fullscreen call of fingerprint/screen-window/geometry (one line): on X with no window manager the widget decides fullscreen itself (the declared screen) instead of refusing; the occlusion marker moved to the end of its line to keep the budget at 4.",
   "verifier": {
    "changed": [
     "notes"
@@ -6023,6 +6024,121 @@
    "+UNIFIED_SOURCES += [\"TestStealthWindowGeometry.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
   ],
   "notes": "Builds TestStealthWindowGeometry.cpp, the declared content origin in and out of fullscreen.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/nsIWidget.cpp",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 5,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after #include \"mozilla/widget/ScreenManager.h\"; in nsIWidget::InfallibleMakeFullScreen after the null-screen check, before \"Move to fill the screen\"",
+  "evidence": [
+   "+    if (const auto declared = mozilla::widget::StealthDeclaredFullscreenRect(*this)) {  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "A fullscreen window fills the declared screen (StealthDeclaredFullscreenRect), not the host's monitor; Mozilla's path runs when the engine is off.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/moz.build",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the SOURCES list (nsBaseDragService.cpp, nsIWidget.cpp, ScreenManager.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthFullscreen.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds StealthFullscreen.cpp.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/gtk/nsWindow.h",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the MakeFullScreen declaration",
+  "evidence": [
+   "+  bool StealthMakeFullScreenWithoutWM(bool aFullScreen);  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Declares nsWindow::StealthMakeFullScreenWithoutWM (defined in widget/gtk/StealthFullscreenGtk.cpp, a member so it can set the size mode and the client area as OnWindowStateEvent does).",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/gtk/moz.build",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the SOURCES list (MediaKeysEventSourceFactory.cpp, nsNativeThemeGTK.cpp, nsWindow.cpp)",
+  "evidence": [
+   "+SOURCES += [\"StealthFullscreenGtk.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds StealthFullscreenGtk.cpp, not unified (X11 headers, like nsWindow.cpp).",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/tests/gtest/moz.build",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the first UNIFIED_SOURCES list (TestWidgetTouchEventCtors.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"TestStealthFullscreen.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds TestStealthFullscreen.cpp.",
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."

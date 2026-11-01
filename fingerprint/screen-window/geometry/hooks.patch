@@ -124,3 +124,74 @@ index 2b1e2c210050c9f13c35395f9683baddfb756a07..41c8ef1419811b6556fdbb69f445f814
  
  LOCAL_INCLUDES += ["/dom/events"]
  
+diff --git a/widget/gtk/moz.build b/widget/gtk/moz.build
+index e4be8ea072892ced0d3d6191f2ce122929e3b335..b2f68537271138874cb311c773b3a2a7333f0952 100644
+--- a/widget/gtk/moz.build
++++ b/widget/gtk/moz.build
+@@ -117,6 +117,7 @@ SOURCES += [
+     "nsNativeThemeGTK.cpp",  # conflicts with X11 headers
+     "nsWindow.cpp",  # conflicts with X11 headers
+ ]
++SOURCES += ["StealthFullscreenGtk.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)
+ 
+ if CONFIG["MOZ_WAYLAND"]:
+     UNIFIED_SOURCES += [
+diff --git a/widget/gtk/nsWindow.h b/widget/gtk/nsWindow.h
+index 8613fdfd1976a3df90d995ce59753c2ef1919f7f..b9d832e43134dd4a374b507a96ca457412850a19 100644
+--- a/widget/gtk/nsWindow.h
++++ b/widget/gtk/nsWindow.h
+@@ -270,6 +270,7 @@ class nsWindow : public nsIWidget {
+                                    nsIRunnable* aCallback) override;
+   already_AddRefed<mozilla::widget::Screen> GetWidgetScreen() override;
+   nsresult MakeFullScreen(bool aFullScreen) override;
++  bool StealthMakeFullScreenWithoutWM(bool aFullScreen);  // STEALTH-HOOK(fingerprint/screen-window/geometry)
+   void HideWindowChrome(bool aShouldHide) override;
+ 
+   /**
+diff --git a/widget/moz.build b/widget/moz.build
+index 67a8082de98eb985cfa40c9af158b0518ec577de..b15202b39ae70edadb66b0ecaa1939ba8fa9f4e7 100644
+--- a/widget/moz.build
++++ b/widget/moz.build
+@@ -320,6 +320,7 @@ SOURCES += [
+     "nsIWidget.cpp",
+     "ScreenManager.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthFullscreen.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)
+ 
+ EXPORTS.ipc = [
+     "nsGUIEventIPC.h",
+diff --git a/widget/nsIWidget.cpp b/widget/nsIWidget.cpp
+index 39411305c2b853b90a386d88b0c1fbae9449796e..9b379d51c28d08b854f62e120317c11ee0642063 100644
+--- a/widget/nsIWidget.cpp
++++ b/widget/nsIWidget.cpp
+@@ -55,6 +55,7 @@
+ #include "mozilla/layers/WebRenderLayerManager.h"
+ #include "mozilla/webrender/WebRenderTypes.h"
+ #include "mozilla/widget/ScreenManager.h"
++#include "StealthFullscreen.h"  // STEALTH-HOOK(fingerprint/screen-window/geometry)
+ #include "nsAppDirectoryServiceDefs.h"
+ #include "nsBaseDragService.h"
+ #include "nsCOMPtr.h"
+@@ -862,6 +863,10 @@ void nsIWidget::InfallibleMakeFullScreen(bool aFullScreen) {
+     if (!screen) {
+       return;
+     }
++    if (const auto declared = mozilla::widget::StealthDeclaredFullscreenRect(*this)) {  // STEALTH-HOOK(fingerprint/screen-window/geometry)
++      doReposition(*declared);
++      return void(mSavedBounds->screenRect = GetScreenBounds() / GetDesktopToDeviceScale());
++    }
+ 
+     // Move to fill the screen.
+     doReposition(DesktopRect(screen->GetRectDisplayPix()));
+diff --git a/widget/tests/gtest/moz.build b/widget/tests/gtest/moz.build
+index 6df00b19b64a0a066b05e4abd8e65551a71688f6..a80cdb175901d91abe4ddeb2ed444d290e294bce 100644
+--- a/widget/tests/gtest/moz.build
++++ b/widget/tests/gtest/moz.build
+@@ -10,6 +10,7 @@ UNIFIED_SOURCES = [
+     "TestWidgetMouseEventCtors.cpp",
+     "TestWidgetTouchEventCtors.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthFullscreen.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
+     UNIFIED_SOURCES += [

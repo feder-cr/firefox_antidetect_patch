@@ -47,6 +47,7 @@
   "juggler/tests/download_complete_follows_the_idl.test.mjs": "100644",
   "juggler/tests/explicit_size_flag_is_free.test.mjs": "100644",
   "juggler/tests/frame_tree.test.mjs": "100644",
+  "juggler/tests/fullscreen_releases_the_viewport.test.mjs": "100644",
   "juggler/tests/input_waits_are_bounded.test.mjs": "100644",
   "juggler/tests/navigation_abort.test.mjs": "100644",
   "juggler/tests/not_a_chrome_package.test.mjs": "100644",
