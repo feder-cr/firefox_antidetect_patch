@@ -53,7 +53,7 @@ def main() -> int:
         ("the compressed swap in RAM comes before the file (zram priority 100, file 10)",
          "swapon -p 100 \"$ZRAM\"" in swap_step and "swapon -p 10 \"$SWAPFILE\"" in swap_step),
         ("a runner without zram says so instead of building as if it had it",
-         "::warning::no zram" in swap_step),
+         "::warning::no usable zram" in swap_step),
     ]
     failures = 0
     for name, ok in cases:
