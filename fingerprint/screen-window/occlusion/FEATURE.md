@@ -10,7 +10,7 @@ TODO: one paragraph, from the notes below.
 
 ## Hooks in Mozilla files
 
-- `widget/gtk/nsWindow.cpp` (nsWindow::OnVisibilityNotifyEvent (hunk 2; hunk 1 adds the StaticPrefs include), already-hook): GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result.
+- `widget/gtk/nsWindow.cpp` (nsWindow::OnVisibilityNotifyEvent (hunk 2; hunk 1 adds the StaticPrefs include), already-hook): GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result. The file also carries one line of fingerprint/screen-window/geometry at the head of nsWindow::MakeFullScreen (fullscreen without a window manager); the occlusion marker sits at the end of its code line so the file stays at its budget of 4.
 
 ## widget/gtk/nsWindow.cpp: nsWindow::OnVisibilityNotifyEvent
 

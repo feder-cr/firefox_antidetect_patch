@@ -16,12 +16,13 @@
    "hunks": 2,
    "inline_logic_lines": 2,
    "hookable": "already-hook",
-   "anchor": "nsWindow::OnVisibilityNotifyEvent (hunk 2; hunk 1 adds the StaticPrefs include)",
+   "anchor": "nsWindow::OnVisibilityNotifyEvent (the occlusion hunk; another adds the StaticPrefs include) and the head of nsWindow::MakeFullScreen (one line of fingerprint/screen-window/geometry: fullscreen without a window manager, nsWindow::StealthMakeFullScreenWithoutWM in widget/gtk/StealthFullscreenGtk.cpp)",
    "evidence": [
-    "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&",
-    "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()"
+    "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&  // STEALTH-HOOK(fingerprint/screen-window/occlusion): B149, see FEATURE.md",
+    "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()",
+    "+  if (GdkIsX11Display() && !IsFullscreenSupported(mShell) && StealthMakeFullScreenWithoutWM(aFullScreen)) return NS_OK;  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
    ],
-   "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result.",
+   "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result. Also carries the fullscreen call of fingerprint/screen-window/geometry (one line): on X with no window manager the widget decides fullscreen itself (the declared screen) instead of refusing; the occlusion marker moved to the end of its line to keep the budget at 4.",
    "verifier": {
     "changed": [
      "notes"
