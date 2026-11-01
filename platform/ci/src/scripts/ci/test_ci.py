@@ -487,6 +487,11 @@ def main() -> int:
                       and len(pins["mesa"]["sha256"]) == 64 and len(pins["llvm"]["commit"]) == 40
                       and len(sorted((HERE / "lavapipe").glob("*.patch"))) >= 4))
         import lavapipe_build
+        rtti_off = "-DLLVM_ENABLE_RTTI=OFF" in lavapipe_build.LLVM_CMAKE
+        cases.append(("webgpu: LLVM and Mesa agree on RTTI (meson refuses a mismatch, run 41330839671)",
+                      rtti_off and "-Dcpp_rtti=false" in lavapipe_build.MESON_OPTIONS
+                      or not rtti_off and "-Dcpp_rtti=false" not in lavapipe_build.MESON_OPTIONS
+                      and "-DLLVM_ENABLE_RTTI=ON" in lavapipe_build.LLVM_CMAKE))
         good_dyn = (" 0x1 (NEEDED)             Shared library: [libc.so.6]\n"
                     " 0xe (SONAME)             Library soname: [libvulkan.so.1]\n")
         good_sym = ("     1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND memcpy@GLIBC_2.14 (2)\n"
