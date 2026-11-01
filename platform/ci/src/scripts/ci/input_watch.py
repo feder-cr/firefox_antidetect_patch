@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -53,8 +54,13 @@ def first_change(before: tuple, now: tuple) -> bool:
 
 def watch(path: Path, log: Path, interval: float = 1.0, stop=lambda: False) -> None:
     begin = state(path)
-    (log.with_suffix(".start.json")).write_text(json.dumps(
+    # Whole or absent, never half-written: a reader waiting for the record to
+    # exist read it empty (run 41356589923, JSONDecodeError in verify).
+    record = log.with_suffix(".start.json")
+    partial = record.with_suffix(".json.partial")
+    partial.write_text(json.dumps(
         {"mtime_ns": begin[0], "size": begin[1], "sha256": digest(path)}), encoding="utf-8")
+    os.replace(partial, record)
     while not stop():
         time.sleep(interval)
         now = state(path)

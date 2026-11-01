@@ -319,6 +319,25 @@ def main() -> int:
         tmp = Path(t)
         prof, log = tmp / "merged.profdata", tmp / "inputwatch.log"
         prof.write_bytes(b"PROFILE")
+        appeared = []
+        real_replace = iw.os.replace
+
+        def spy(src, dst):
+            appeared.append(Path(dst).exists())
+            real_replace(src, dst)
+        iw.os.replace = spy
+        try:
+            iw.watch(prof, log, 0.01, stop=lambda: True)
+        finally:
+            iw.os.replace = real_replace
+        record = log.with_suffix(".start.json")
+        cases.append(("input watch: the start record appears whole, by one rename (run 41356589923 read it empty)",
+                      appeared == [False] and json.loads(record.read_text(encoding="utf-8"))["sha256"]
+                      and not list(tmp.glob("*.partial"))))
+    with tempfile.TemporaryDirectory() as t:
+        tmp = Path(t)
+        prof, log = tmp / "merged.profdata", tmp / "inputwatch.log"
+        prof.write_bytes(b"PROFILE")
         th = threading.Thread(target=iw.watch, args=(prof, log, 0.05))
         th.start()
         while not log.with_suffix(".start.json").exists():
