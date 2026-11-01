@@ -210,18 +210,26 @@ jobs:
           # to the objdir. The binary does not change: only where pages wait.
           sudo swapoff -a
           sudo rm -f /swapfile
-          if sudo modprobe zram 2>/dev/null || { sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && sudo modprobe zram; }; then
-            # 28G: the Windows link needs ~26 GB of swap and its pages compress ~4:1
-            # (run 41013087933: link 45 min, against 57 at 16G and 78 on the disk).
-            ZRAM="$(sudo zramctl --find --size 28G --algorithm zstd)"
-            echo 10G | sudo tee "/sys/block/${ZRAM#/dev/}/mem_limit" >/dev/null
-            sudo mkswap "$ZRAM" >/dev/null
-            sudo swapon -p 100 "$ZRAM"
+          # 28G: the Windows link needs ~26 GB of swap and its pages compress ~4:1
+          # (run 41013087933: link 45 min, against 57 at 16G and 78 on the disk).
+          # A runner whose free device is taken (run 41325666566: "zramctl:
+          # /dev/zram0: failed to reset: Device or resource busy") gets a new one
+          # from hot_add; one where neither works degrades like a runner without
+          # the module, a warning and the disk file alone, never a lost leg.
+          zram_swap() {
+            ZRAM="$(sudo zramctl --find --size 28G --algorithm zstd)" || {
+              N="$(sudo cat /sys/class/zram-control/hot_add)" &&
+                sudo zramctl --size 28G --algorithm zstd "/dev/zram$N" && ZRAM="/dev/zram$N"
+            } || return 1
+            echo 10G | sudo tee "/sys/block/${ZRAM#/dev/}/mem_limit" >/dev/null &&
+              sudo mkswap "$ZRAM" >/dev/null && sudo swapon -p 100 "$ZRAM"
+          }
+          if { sudo modprobe zram 2>/dev/null || { sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && sudo modprobe zram; }; } && zram_swap; then
             sudo sysctl -q vm.page-cluster=0
             echo "swap: zram $ZRAM, 28G of pages in at most 10 GB of memory, first" | tee -a "$GITHUB_STEP_SUMMARY"
           else
-            echo "::warning::no zram on this runner: the swap is the disk file alone"
-            echo "swap: NO zram on this runner, the disk file alone" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::no usable zram on this runner: the swap is the disk file alone"
+            echo "swap: NO usable zram on this runner, the disk file alone" >> "$GITHUB_STEP_SUMMARY"
           fi
           SWAPFILE=/swapfile
           if [ -d /mnt ] && [ "$(df -BG --output=avail /mnt | tail -1 | tr -dc 0-9)" -ge 40 ]; then

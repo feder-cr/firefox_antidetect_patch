@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -111,6 +112,39 @@ def phase_case(tmp: Path, argv, memwatch=""):
         restore(old)
     events = [json.loads(l) for l in (tmp / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     return code, events, (tmp / "summary.md").read_text(encoding="utf-8")
+
+
+def zram_case(run: str, find_ok: bool, hot_add_ok: bool) -> tuple:
+    """The swap step's zram block (release.yml, "Free disk + 32G swap") run by
+    bash -e, as the runner does, with sudo, modprobe and zramctl faked:
+    `zramctl --find` succeeds or exits 1, /sys/class/zram-control/hot_add
+    answers 3 or fails. Returns (the shell went on, the step summary)."""
+    lines = run.splitlines()
+    start = min(i for i, l in enumerate(lines) if "zram_swap() {" in l or "modprobe zram" in l)
+    end = next(i for i in range(start, len(lines))
+               if lines[i].strip() == "fi" and any("the disk file alone" in l for l in lines[start:i]))
+    block = "\n".join(lines[start:end + 1])
+    find = ("echo /dev/zram0; exit 0" if find_ok else
+            "echo 'zramctl: /dev/zram0: failed to reset: Device or resource busy' >&2; exit 1")
+    fake_sudo = "\n".join([
+        "#!/bin/bash",
+        'case "$1" in',
+        '  zramctl) for a; do [ "$a" = --find ] && { %s; }; done; exit 0 ;;' % find,
+        "  cat) %s ;;" % ("echo 3" if hot_add_ok else "exit 1"),
+        "  *) exit 0 ;;",
+        "esac", ""])
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        sudo = tmp / "sudo"
+        sudo.write_text(fake_sudo, newline="\n")
+        sudo.chmod(0o755)
+        summary = tmp / "summary"
+        summary.write_text("")
+        env = dict(os.environ, PATH="%s%s%s" % (tmp, os.pathsep, os.environ.get("PATH", "")),
+                   GITHUB_STEP_SUMMARY=str(summary))
+        out = subprocess.run(["bash", "-e", "-c", block + "\necho WENT-ON"], env=env,
+                             capture_output=True, text=True)
+        return "WENT-ON" in out.stdout, summary.read_text()
 
 
 def main() -> int:
@@ -418,6 +452,19 @@ def main() -> int:
         net = [i for i, st in enumerate(build_steps) if "80-ci-network" in st.get("run", "")]
         apt_at = [i for i, st in enumerate(build_steps) if "apt-get" in st.get("run", "")]
         conf = build_steps[net[0]]["run"] if net else ""
+        # zram is best-effort: run 41325666566's win-x86_64 leg died in the swap
+        # step on "zramctl: /dev/zram0: failed to reset: Device or resource busy".
+        # It runs the step's own shell with a fake sudo: Linux only, where the
+        # CI runs it (a Windows host's "bash" may be WSL's, without our PATH).
+        swap = steps.get("Free disk + 32G swap (Linux runners)", {}).get("run", "")
+        if sys.platform.startswith("linux"):
+            busy, busy_summary = zram_case(swap, find_ok=False, hot_add_ok=False)
+            fresh, fresh_summary = zram_case(swap, find_ok=False, hot_add_ok=True)
+            cases.append(("swap: a runner whose zram is taken gets a new device, or goes on with the disk file alone (run 41325666566)",
+                          busy and "NO usable zram" in busy_summary
+                          and fresh and "zram /dev/zram3" in fresh_summary))
+        else:
+            print("skip  swap: zram case runs on Linux only")
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)
