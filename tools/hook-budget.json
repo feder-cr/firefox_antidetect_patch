@@ -111,13 +111,10 @@
  "gfx/2d/ScaledFontDWrite.cpp": 8,
  "gfx/2d/UnscaledFontDWrite.h": 7,
  "gfx/2d/moz.build": 5,
-<<<<<<< HEAD
- "gfx/moz.build": 2,
-=======
  "gfx/gl/GLContext.cpp": 3,
  "gfx/gl/gtest/moz.build": 1,
  "gfx/gl/moz.build": 1,
->>>>>>> webgpu-declaration
+ "gfx/moz.build": 2,
  "gfx/skia/skia/src/core/SkScalerContext.cpp": 10,
  "gfx/tests/gtest/moz.build": 12,
  "gfx/thebes/CoreTextFontList.cpp": 32,
