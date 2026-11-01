@@ -30,6 +30,23 @@ Maybe<DesktopRect> StealthFullscreenRect(
 // origin of the screen the widget is on. Nothing() with the engine off.
 Maybe<DesktopRect> StealthDeclaredFullscreenRect(nsIWidget& aWidget);
 
+// The same rectangle in device pixels, rounded as Windows sizes a window.
+Maybe<LayoutDeviceIntRect> StealthDeclaredFullscreenDeviceRect(
+    nsIWidget& aWidget);
+
+// What Windows may do to a fullscreen window (StealthFullscreenWin.h), as pure
+// rules. A move-and-resize of a fullscreen window lands on the declared
+// rectangle; the largest size the window may take grows to it. Nothing
+// changes outside fullscreen, without a declaration, or for a message that
+// does not both move and resize.
+void StealthHeldFullscreenPosition(const Maybe<LayoutDeviceIntRect>& aDeclared,
+                                   bool aFullscreen, bool aMoves, bool aSizes,
+                                   int32_t* aX, int32_t* aY, int32_t* aWidth,
+                                   int32_t* aHeight);
+void StealthFullscreenMaxTrackSize(const Maybe<LayoutDeviceIntRect>& aDeclared,
+                                   bool aFullscreen, int32_t* aMaxWidth,
+                                   int32_t* aMaxHeight);
+
 }  // namespace mozilla::widget
 
 #endif  // mozilla_widget_StealthFullscreen_h

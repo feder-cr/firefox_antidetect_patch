@@ -10,6 +10,7 @@
   "gfx/thebes/StealthGfxFeatureStatus.cpp": "100644",
   "gfx/thebes/StealthGfxFeatureStatus.h": "100644",
   "gfx/thebes/gtest/TestStealthGfxFeatureStatus.cpp": "100644",
+  "gfx/thebes/gtest/TestStealthScaleDeclaration.cpp": "100644",
   "gfx/thebes/gtest/moz.build": "100644"
  },
  "inventory": [

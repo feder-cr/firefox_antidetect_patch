@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: zoom.stealth.gfx.feature_status (and the gate's list of required declarations in StealthDeclarationGate.cpp)
-Test: gfx/thebes/gtest/TestStealthGfxFeatureStatus.cpp (StealthGfxFeatureStatus.TheMeasuredRetailDeclarationsParse, EveryBrokenRuleIsRefused, WebglOpenglGatesTheWebglPathOfThisPlatform, EveryLiveFeatureAnswersFromTheDeclaration, TheDownloadedBlocklistLeavesTheProfileAlone, NoSuggestedDriverVersionWhileDeclared); gtest filter StealthGfxFeatureStatus.*
+Test: gfx/thebes/gtest/TestStealthGfxFeatureStatus.cpp (StealthGfxFeatureStatus.TheMeasuredRetailDeclarationsParse, EveryBrokenRuleIsRefused, WebglOpenglGatesTheWebglPathOfThisPlatform, EveryLiveFeatureAnswersFromTheDeclaration, TheDownloadedBlocklistLeavesTheProfileAlone, NoSuggestedDriverVersionWhileDeclared); gtest filter StealthGfxFeatureStatus.* gfx/thebes/gtest/TestStealthScaleDeclaration.cpp (StealthScaleDeclaration.TheScaleTheDeclarationWasMadeAt, StealthScaleDeclaration.AnyOtherScaleIsAnIdentityNoMachineHas).
 
 ## What it does
 
@@ -23,6 +23,17 @@ prefs no longer outrank the declaration, and the suggested driver version is
 empty. On GTK, WEBGL_OPENGL answers the declared WEBGL entry when the GL probe
 succeeded: there it gates the only WebGL path, on Windows a path retail never
 takes. The gate also requires the WebGL renderer and vendor strings.
+
+## One scale for the window geometry (2026-11-02)
+
+The screen is declared in CSS pixels, the work area and the window frame in
+device pixels, and the page reads every CSS value through
+layout.css.devPixelsPerPx. StealthAssertDeclarationsComplete refuses a scale
+that is not the one the declaration was made at (screen width x scale must be
+the device work-area width, within one device pixel) and a missing one (-1, the
+host's own). Run 41325657085 forced 1.5 over a 100% persona and read innerWidth
+1920 inside an outerWidth of 1291. The DPR is pinned in the persona
+(screen.dpr), never forced through the pref.
 
 ## Hooks in Mozilla files
 

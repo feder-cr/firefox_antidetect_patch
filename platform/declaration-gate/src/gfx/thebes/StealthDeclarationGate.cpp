@@ -4,11 +4,14 @@
 
 #include "StealthDeclarationGate.h"
 
+#include <cmath>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/gfx/StealthRefuse.h"
 #include "mozilla/Preferences.h"
 #include "nsXULAppAPI.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/net/StealthBranding.h"
 #include "nsIFile.h"
@@ -312,6 +315,40 @@ void StealthAssertDeclarationsComplete() {
       RefuseUndeclared(d.mName);
     }
   }
+
+  // One scale for the whole window geometry, added 2026-11-02. The screen is
+  // declared in CSS pixels and the work area and window frame in device
+  // pixels; the page reads every CSS value through layout.css.devPixelsPerPx.
+  // A scale that is not the one the declaration was made at (run 41325657085:
+  // a 100% persona under a forced 1.5 read innerWidth 1920 inside an
+  // outerWidth of 1291) is an identity no machine has, and a missing one (-1)
+  // is the host's own scale. Both refuse.
+  const float dpr = StaticPrefs::layout_css_devPixelsPerPx();
+  const int32_t screenWidth = StaticPrefs::zoom_stealth_screen_width();
+  const int32_t availDeviceWidth =
+      StaticPrefs::zoom_stealth_screen_avail_device_width();
+  if (!StealthScaleMatchesDeclaration(dpr, screenWidth, availDeviceWidth)) {
+    StealthRefuse(
+        "stealth: layout.css.devPixelsPerPx is %.4f, but the declared screen "
+        "is %d CSS pixels over a %d device-pixel work area. The scale is part "
+        "of the declaration (invisible_core sets it from the persona's DPR): "
+        "pin screen.dpr instead of overriding the pref.",
+        double(dpr), screenWidth, availDeviceWidth);
+  }
+}
+
+bool StealthScaleMatchesDeclaration(float aDevPixelsPerPx,
+                                    int32_t aScreenWidth,
+                                    int32_t aAvailDeviceWidth) {
+  if (!(aDevPixelsPerPx > 0.0f) || aScreenWidth <= 0 ||
+      aAvailDeviceWidth <= 0) {
+    return false;
+  }
+  // The work area spans the screen's width (the taskbar is at the bottom), so
+  // the CSS width times the scale is the device width, give or take the
+  // rounding of a fractional CSS width (1707 x 1.5 = 2560.5 for 2560).
+  const double device = double(aScreenWidth) * double(aDevPixelsPerPx);
+  return std::abs(device - double(aAvailDeviceWidth)) <= 1.0;
 }
 
 Maybe<StealthWindowFrame> StealthDeclaredWindowFrame() {
