@@ -241,6 +241,8 @@
  "widget/nsIWidget.cpp": 5,
  "widget/tests/gtest/moz.build": 1,
  "widget/windows/TaskbarPreview.cpp": 2,
+ "widget/windows/moz.build": 1,
+ "widget/windows/nsWindow.cpp": 3,
  "xpcom/reflect/xptinfo/xptinfo.h": 2,
  "xpfe/appshell/AppWindow.cpp": 12
 }

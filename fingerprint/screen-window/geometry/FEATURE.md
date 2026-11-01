@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: zoom.stealth.screen.width, zoom.stealth.screen.height (the fullscreen rectangle, through gfx::StealthDeclaredScreenRect); the window frame through StealthDeclarationGate
-Test: dom/events/test/gtest/TestStealthWindowGeometry.cpp (StealthWindowGeometry.FullscreenContentStartsAtTheScreenOrigin, StealthWindowGeometry.OutsideFullscreenNothingChanges); widget/tests/gtest/TestStealthFullscreen.cpp (StealthFullscreen.TheDeclaredScreenAtTheDeclaredScale, StealthFullscreen.PlacedOnTheScreenTheWindowIsOn, StealthFullscreen.NothingWithoutADeclaredScreenOrAScale); juggler/tests/fullscreen_releases_the_viewport.test.mjs; the fullscreen state of the host gate in the wrapper (scripts/ci_host_gate.py: geometry after a real click on requestFullscreen() and after exitFullscreen(), with its invariants) on every CI host, Linux under Xvfb without a window manager included; the g.fullscreen key of headless_probe.py.
+Test: dom/events/test/gtest/TestStealthWindowGeometry.cpp (StealthWindowGeometry.FullscreenContentStartsAtTheScreenOrigin, StealthWindowGeometry.OutsideFullscreenNothingChanges); widget/tests/gtest/TestStealthFullscreen.cpp (StealthFullscreen.TheDeclaredScreenAtTheDeclaredScale, StealthFullscreen.PlacedOnTheScreenTheWindowIsOn, StealthFullscreen.NothingWithoutADeclaredScreenOrAScale); juggler/tests/fullscreen_releases_the_viewport.test.mjs; the fullscreen state of the host gate in the wrapper (scripts/ci_host_gate.py: geometry after a real click on requestFullscreen() and after exitFullscreen(), with its invariants) on every CI host, Linux under Xvfb without a window manager included; the g.fullscreen key of headless_probe.py. widget/tests/gtest/TestStealthFullscreen.cpp also holds StealthFullscreen.AFullscreenMoveAndResizeLandsOnTheDeclaredRect and StealthFullscreen.TheLargestSizeGrowsToTheDeclaredScreenInFullscreen (the Windows rules); the host gate invariant fullscreen_is_the_screen on win-x86_64 is their end-to-end proof.
 
 ## What it does
 
@@ -24,6 +24,19 @@ listener; leaving restores both). It is a member of nsWindow, defined in our
 file, because the size mode and the client area are private state that only
 OnWindowStateEvent sets; the hook is one call at the head of MakeFullScreen.
 Juggler's viewport pin lets go in fullscreen and comes back on leaving.
+
+## Windows fullscreen (2026-11-02)
+
+On Windows a fullscreen window was put back on the HOST's monitor after
+InfallibleMakeFullScreen had asked for the declared rectangle: run 41325657085
+read innerWidth x innerHeight 1024x768 (the GPU-less CI desktop) under a declared
+1280x720 or 1920x1080 screen. Two Mozilla rules decide from the host there:
+nsWindow::OnWindowPosChanging forces every move-and-resize of a fullscreen window
+onto the monitor's rect (bug 1482920), and DefWindowProc clamps the size to
+MINMAXINFO.ptMaxTrackSize, about the monitor's size. Both are answered from the
+declaration in fullscreen (widget/windows/StealthFullscreenWin.cpp, thin
+adapters over the pure rules StealthHeldFullscreenPosition and
+StealthFullscreenMaxTrackSize in widget/StealthFullscreen.cpp).
 
 ## Hooks in Mozilla files
 

@@ -89,6 +89,17 @@ inline gfx::StealthCanvasNoise StealthCanvasNoiseDeclared() {
 void StealthAssertDeclarationsComplete();
 
 /**
+ * Whether the CSS scale the page reads through (layout.css.devPixelsPerPx) is
+ * the scale the window geometry was declared at: the declared CSS screen width
+ * times the scale is the declared device work-area width, within one device
+ * pixel. False for a non-positive scale (the host's own, -1) or width.
+ * StealthAssertDeclarationsComplete refuses when this is false.
+ */
+bool StealthScaleMatchesDeclaration(float aDevPixelsPerPx,
+                                    int32_t aScreenWidth,
+                                    int32_t aAvailDeviceWidth);
+
+/**
  * The window frame and the maximized window, in DEVICE pixels.
  *
  * One function per fact, read by everyone who can be asked it, instead of each

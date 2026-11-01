@@ -70,3 +70,56 @@ TEST(StealthFullscreen, NothingWithoutADeclaredScreenOrAScale)
                                   DesktopPoint(0, 0)),
             Nothing());
 }
+
+// Windows' own rules for a fullscreen window (StealthFullscreenWin.cpp). Run
+// 41325657085: on the GPU-less CI desktop (a 1024x768 monitor) the window of a
+// persona with a 1280x720 or 1920x1080 screen went fullscreen at 1024x768,
+// because OnWindowPosChanging forced it onto the monitor and the size was
+// clamped to about the monitor's.
+TEST(StealthFullscreen, AFullscreenMoveAndResizeLandsOnTheDeclaredRect)
+{
+  const auto declared = Some(LayoutDeviceIntRect(0, 0, 1920, 1080));
+  int32_t x = 0, y = 0, w = 1024, h = 768;
+  widget::StealthHeldFullscreenPosition(declared, true, true, true, &x, &y, &w,
+                                        &h);
+  EXPECT_EQ(LayoutDeviceIntRect(x, y, w, h), *declared);
+
+  // A message that only moves, or only resizes, is left as it is.
+  w = 1024;
+  h = 768;
+  widget::StealthHeldFullscreenPosition(declared, true, true, false, &x, &y, &w,
+                                        &h);
+  EXPECT_EQ(w, 1024);
+  widget::StealthHeldFullscreenPosition(declared, true, false, true, &x, &y, &w,
+                                        &h);
+  EXPECT_EQ(h, 768);
+  // Outside fullscreen, or without a declaration, Mozilla's rect stands.
+  widget::StealthHeldFullscreenPosition(declared, false, true, true, &x, &y, &w,
+                                        &h);
+  EXPECT_EQ(w, 1024);
+  widget::StealthHeldFullscreenPosition(Nothing(), true, true, true, &x, &y, &w,
+                                        &h);
+  EXPECT_EQ(w, 1024);
+}
+
+TEST(StealthFullscreen, TheLargestSizeGrowsToTheDeclaredScreenInFullscreen)
+{
+  const auto declared = Some(LayoutDeviceIntRect(0, 0, 1920, 1080));
+  int32_t w = 1040, h = 784;  // about a 1024x768 monitor plus frame
+  widget::StealthFullscreenMaxTrackSize(declared, true, &w, &h);
+  EXPECT_EQ(w, 1920);
+  EXPECT_EQ(h, 1080);
+  // Never smaller than Windows' own limit.
+  w = 2600;
+  h = 1500;
+  widget::StealthFullscreenMaxTrackSize(declared, true, &w, &h);
+  EXPECT_EQ(w, 2600);
+  EXPECT_EQ(h, 1500);
+  // Outside fullscreen the limit is Windows'.
+  w = 1040;
+  h = 784;
+  widget::StealthFullscreenMaxTrackSize(declared, false, &w, &h);
+  EXPECT_EQ(w, 1040);
+  widget::StealthFullscreenMaxTrackSize(Nothing(), true, &w, &h);
+  EXPECT_EQ(w, 1040);
+}

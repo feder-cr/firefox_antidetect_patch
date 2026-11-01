@@ -4,6 +4,8 @@
 
 #include "StealthFullscreen.h"
 
+#include <algorithm>
+
 #include "StealthDeclarationGate.h"
 #include "mozilla/widget/Screen.h"
 #include "nsCOMPtr.h"
@@ -49,6 +51,39 @@ Maybe<DesktopRect> StealthDeclaredFullscreenRect(nsIWidget& aWidget) {
   return StealthFullscreenRect(gfx::StealthDeclaredScreenRect(),
                                aWidget.GetDefaultScale(),
                                aWidget.GetDesktopToDeviceScale(), origin);
+}
+
+Maybe<LayoutDeviceIntRect> StealthDeclaredFullscreenDeviceRect(
+    nsIWidget& aWidget) {
+  const Maybe<DesktopRect> rect = StealthDeclaredFullscreenRect(aWidget);
+  if (!rect) {
+    return Nothing();
+  }
+  return Some(LayoutDeviceIntRect::Round(*rect *
+                                         aWidget.GetDesktopToDeviceScale()));
+}
+
+void StealthHeldFullscreenPosition(const Maybe<LayoutDeviceIntRect>& aDeclared,
+                                   bool aFullscreen, bool aMoves, bool aSizes,
+                                   int32_t* aX, int32_t* aY, int32_t* aWidth,
+                                   int32_t* aHeight) {
+  if (!aDeclared || !aFullscreen || !aMoves || !aSizes) {
+    return;
+  }
+  *aX = aDeclared->x;
+  *aY = aDeclared->y;
+  *aWidth = aDeclared->width;
+  *aHeight = aDeclared->height;
+}
+
+void StealthFullscreenMaxTrackSize(const Maybe<LayoutDeviceIntRect>& aDeclared,
+                                   bool aFullscreen, int32_t* aMaxWidth,
+                                   int32_t* aMaxHeight) {
+  if (!aDeclared || !aFullscreen) {
+    return;
+  }
+  *aMaxWidth = std::max(*aMaxWidth, aDeclared->width);
+  *aMaxHeight = std::max(*aMaxHeight, aDeclared->height);
 }
 
 }  // namespace mozilla::widget
