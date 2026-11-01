@@ -33,6 +33,8 @@ import json
 import re
 import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -54,9 +56,25 @@ class UpstreamError(Exception):
     pass
 
 
-def http_get(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=120) as r:
-        return r.read()
+#: Seconds before each new attempt. Taskcluster answers 5xx and 429 when it is busy
+#: (run 41269143133: "HTTP Error 503: Service Unavailable" on the chain of trust,
+#: and the leg died 8 minutes in); a 4xx is an answer and is not asked again.
+RETRY_WAITS = (15, 60, 180, 300)
+
+
+def http_get(url: str, open_url=urllib.request.urlopen, wait=time.sleep) -> bytes:
+    for pause in RETRY_WAITS + (None,):
+        try:
+            with open_url(url, timeout=120) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if pause is None or not (e.code >= 500 or e.code == 429):
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if pause is None:
+                raise
+        print("upstream_toolchain: %s failed, again in %ds" % (url, pause), file=sys.stderr)
+        wait(pause)
 
 
 def upstream_source(path: Path = UPSTREAM_SOURCE) -> dict:

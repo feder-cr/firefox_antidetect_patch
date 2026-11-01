@@ -1,8 +1,8 @@
 # fingerprint/fonts/metrics
 
 Category: spoof
-Prefs: zoom.stealth.text.system_quality
-Test: TODO
+Prefs: zoom.stealth.text.system_quality, gfx.font_rendering.cleartype_params.rendering_mode (read through an atomic mirror, StealthTextMeasuring.h)
+Test: gtest StealthFontMetrics.* (gfx/tests/gtest/TestStealthFontMetrics.cpp, Linux: the average character width is DirectWrite's, also off the main thread)
 
 ## What it does
 

@@ -130,3 +130,51 @@ def test_a_root_workflow_edited_by_hand_fails(tmp_path, monkeypatch):
     (root / "release.yml").write_bytes((root / "release.yml").read_bytes() + b"# by hand\n")
     monkeypatch.setattr(engine, "WORKFLOWS_ROOT", root)
     assert any("release.yml differs" in p for p in engine.problems())
+
+
+# Upstream code carried ahead of Mozilla (category backport): it is not ours, so it has
+# no budget; its BACKPORT.json names the upstream, the revision Mozilla vendors and the
+# commits (wgpu's Vulkan external textures on the vendored 4f4dc63, 2026-11-01).
+BACKPORTED = "third_party/rust/naga/src/back/spv/image.rs"
+RECORD = {"upstream": "https://github.com/gfx-rs/wgpu", "vendored": "4f4dc63",
+          "commits": ["49325ca"], "drop_when": "Mozilla vendors a wgpu that has them"}
+
+
+def _backport(tmp_path, monkeypatch, record):
+    d = tmp_path / "f"
+    d.mkdir()
+    patch = d / "hooks.patch"
+    patch.write_text('source = "git+https://github.com/gfx-rs/wgpu?rev=4f4dc63"\n', encoding="utf-8")
+    if record is not None:
+        (d / engine.BACKPORT).write_text(json.dumps(record), encoding="utf-8")
+    monkeypatch.setattr(engine, "ROOT", tmp_path)
+    return lambda files: engine.backport_problems("f", files, patch)
+
+
+def test_a_well_formed_backport_breaks_no_rule(tmp_path, monkeypatch):
+    assert _backport(tmp_path, monkeypatch, RECORD)({BACKPORTED}) == []
+
+
+def test_upstream_code_needs_its_backport_record(tmp_path, monkeypatch):
+    found = _backport(tmp_path, monkeypatch, None)({BACKPORTED})
+    assert any("no BACKPORT.json" in p for p in found), found
+
+
+def test_a_backport_record_names_all_it_must(tmp_path, monkeypatch):
+    found = _backport(tmp_path, monkeypatch, dict(RECORD, drop_when=""))({BACKPORTED})
+    assert any("lacks drop_when" in p for p in found), found
+
+
+def test_a_backport_on_a_revision_mozilla_no_longer_vendors_fails(tmp_path, monkeypatch):
+    found = _backport(tmp_path, monkeypatch, dict(RECORD, vendored="0123abc"))({BACKPORTED})
+    assert any("Mozilla vendors another one now" in p for p in found), found
+
+
+def test_only_vendored_code_can_be_a_backport(tmp_path, monkeypatch):
+    found = _backport(tmp_path, monkeypatch, RECORD)({"gfx/wgpu_bindings/src/lib.rs"})
+    assert any("outside vendored code" in p for p in found), found
+
+
+def test_upstream_code_carries_no_budget(tmp_path, monkeypatch):
+    found = _with_budget(tmp_path, monkeypatch, lambda b: b.__setitem__(BACKPORTED, 5000))
+    assert any(BACKPORTED in p and "is upstream code" in p for p in found), found

@@ -108,6 +108,7 @@ FEATURES = {
     "idwr-text-engine": "fingerprint/fonts/idwr",
     # fingerprint: webgpu
     "webgpu-adapter-declaration": "fingerprint/webgpu/adapter-declaration",
+    "webgpu-external-texture-vulkan": "fingerprint/webgpu/external-texture-vulkan",
     # fingerprint: webrtc
     "webrtc-ice-candidates": "fingerprint/webrtc/ice-candidates",
     "webrtc-stealth-bridge": "fingerprint/webrtc/ice-candidates",
@@ -169,6 +170,8 @@ OWN_FILES = [
     (r"^netwerk/dns/StealthDNSDeclaration\.", "network/dns"),
     (r"^js/src/debugger/StealthDebugger\.", "fingerprint/js-surface/debugger"),
     (r"^gfx/thebes/StealthDesignMetrics\.", "fingerprint/fonts/metrics"),
+    (r"^gfx/thebes/StealthTextMeasuring\.", "fingerprint/fonts/metrics"),
+    (r"^gfx/tests/gtest/TestStealthFontMetrics\.cpp$", "fingerprint/fonts/metrics"),
     (r"^gfx/thebes/StealthTextQuality\.", "fingerprint/fonts/metrics"),
     (r"^dom/serviceworkers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
     (r"^dom/security/StealthBypassCSP\.", "automation/bypass-csp"),
@@ -211,6 +214,10 @@ OWN_FILES = [
     (r"^dom/webgpu/StealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
     (r"^gfx/idwr/", "fingerprint/fonts/idwr"),
     (r"^gfx/tests/gtest/TestStealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
+    (r"^gfx/wgpu_bindings/src/stealth_external_texture\.rs$", "fingerprint/webgpu/external-texture-vulkan"),
+    (r"^gfx/tests/gtest/TestStealthWebGPUExternalTexture\.cpp$", "fingerprint/webgpu/external-texture-vulkan"),
+    # A file upstream added, carried by the backport (its BACKPORT.json).
+    (r"^third_party/rust/naga/src/common/external_texture\.rs$", "fingerprint/webgpu/external-texture-vulkan"),
     (r"^dom/html/StealthCanvasSnapshot\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/canvas/StealthWebGLShaderLanguage\.", "fingerprint/webgl/shader-language"),
     (r"^dom/canvas/StealthCanvasNoise\.", "fingerprint/canvas/noise-projection"),

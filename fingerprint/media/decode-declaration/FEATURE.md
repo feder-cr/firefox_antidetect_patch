@@ -1,8 +1,8 @@
 # fingerprint/media/decode-declaration
 
 Category: build, other, spoof
-Prefs: none read directly
-Test: TODO
+Prefs: zoom.stealth.media.decode_support, zoom.stealth.media.decoding_info, zoom.stealth.media.encode_support, zoom.stealth.hw_concurrency (declared by fingerprint/hardware)
+Test: gtest StealthMediaDeclaration.* (dom/media/gtest/TestStealthMediaDeclaration.cpp: EncodeSupport*, DeclaredH264GateIgnoresThePlugin, DeclaredNumberOfProcessors, WebrtcAv1EncodeSmoothFollowsTheDeclaredCores)
 
 ## What it does
 

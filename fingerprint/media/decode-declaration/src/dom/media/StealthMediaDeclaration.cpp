@@ -8,11 +8,16 @@
 #include "DecoderTraits.h"
 #include "MediaContainerType.h"
 #include "MediaMIMETypes.h"
+#include "PlatformEncoderModule.h"
+#include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/MediaCapabilitiesBinding.h"
 #include "mozilla/dom/MediaKeySystemAccess.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsString.h"
+#include "nsThreadUtils.h"
+
+#include <type_traits>
 
 namespace mozilla {
 
@@ -25,17 +30,17 @@ namespace mozilla {
 // being ADDED to the table, which is what pointed at the parser rather than the
 // data. Nothing in these fields can contain a newline.
 
-bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
-                                  bool& aSoftware, bool& aHardware) {
-  nsAutoCString spec;
-  {
-    auto lock = StaticPrefs::zoom_stealth_media_decode_support();
-    spec = *lock;
-  }
-  if (spec.IsEmpty()) {
+namespace {
+
+// One parser for both tables, decode_support and encode_support: the same
+// "trackmime|no|sw|hw|swhw" lines, so a token means the same thing in both.
+bool ParseDeclaredSupport(const nsACString& aSpec,
+                          const nsACString& aTrackMimeType, bool& aSoftware,
+                          bool& aHardware) {
+  if (aSpec.IsEmpty()) {
     return false;
   }
-  for (const nsACString& entry : spec.Split('\n')) {
+  for (const nsACString& entry : aSpec.Split('\n')) {
     const int32_t bar = nsCString(entry).FindChar('|');
     if (bar <= 0) {
       continue;
@@ -67,6 +72,95 @@ bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
     return true;
   }
   return false;
+}
+
+}  // namespace
+
+bool StealthDeclaredDecodeSupport(const nsACString& aTrackMimeType,
+                                  bool& aSoftware, bool& aHardware) {
+  nsAutoCString spec;
+  {
+    auto lock = StaticPrefs::zoom_stealth_media_decode_support();
+    spec = *lock;
+  }
+  return ParseDeclaredSupport(spec, aTrackMimeType, aSoftware, aHardware);
+}
+
+bool StealthDeclaredEncodeSupport(const nsACString& aTrackMimeType,
+                                  bool& aSoftware, bool& aHardware) {
+  nsAutoCString spec;
+  {
+    auto lock = StaticPrefs::zoom_stealth_media_encode_support();
+    spec = *lock;
+  }
+  return ParseDeclaredSupport(spec, aTrackMimeType, aSoftware, aHardware);
+}
+
+Maybe<media::EncodeSupportSet> StealthDeclaredEncodeSupportSet(
+    const nsACString& aTrackMimeType) {
+  bool software = false;
+  bool hardware = false;
+  if (!StealthDeclaredEncodeSupport(aTrackMimeType, software, hardware)) {
+    return Nothing();
+  }
+  media::EncodeSupportSet declared{};
+  if (software) {
+    declared += media::EncodeSupport::SoftwareEncode;
+  }
+  if (hardware) {
+    declared += media::EncodeSupport::HardwareEncode;
+  }
+  return Some(declared);
+}
+
+static_assert(std::is_same_v<StealthEncodeSupportPromise,
+                             PlatformEncoderModule::SupportsEncoderPromise>);
+
+// The track mime types decode_support is keyed by, so one name means one codec
+// in both tables.
+static const char* StealthTrackMimeOf(CodecType aCodec) {
+  switch (aCodec) {
+    case CodecType::H264:
+      return "video/avc";
+    case CodecType::H265:
+      return "video/hevc";
+    case CodecType::VP8:
+      return "video/vp8";
+    case CodecType::VP9:
+      return "video/vp9";
+    case CodecType::AV1:
+      return "video/av1";
+    default:
+      return nullptr;
+  }
+}
+
+RefPtr<StealthEncodeSupportPromise> StealthDeclaredWebrtcEncodeSupport(
+    const EncoderConfig& aConfig) {
+  const char* mime = StealthTrackMimeOf(aConfig.mCodec);
+  if (!mime) {
+    return nullptr;
+  }
+  Maybe<media::EncodeSupportSet> declared =
+      StealthDeclaredEncodeSupportSet(nsDependentCString(mime));
+  if (!declared) {
+    return nullptr;
+  }
+  return StealthEncodeSupportPromise::CreateAndResolve(*declared, __func__);
+}
+
+Maybe<bool> StealthDeclaredSoftwareH264() {
+  bool decodeSw = false, decodeHw = false, encodeSw = false, encodeHw = false;
+  if (!StealthDeclaredDecodeSupport("video/avc"_ns, decodeSw, decodeHw) ||
+      !StealthDeclaredEncodeSupport("video/avc"_ns, encodeSw, encodeHw)) {
+    return Nothing();
+  }
+  return Some(decodeSw && encodeSw);
+}
+
+size_t StealthDeclaredNumberOfProcessors() {
+  const int32_t declared = StaticPrefs::zoom_stealth_hw_concurrency();
+  return declared > 0 ? size_t(declared) : GetNumberOfProcessors();
 }
 
 Maybe<media::DecodeSupportSet> StealthDeclaredDecodeSupportSet(
@@ -142,6 +236,10 @@ bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
 
 namespace mozilla::dom {
 
+// The declared decodingInfo answer is logged under MediaCapabilities' own
+// module, as the hook in MediaCapabilities::CreateNonWebRTCDecodingInfo used to.
+static LazyLogModule sStealthMediaCapabilitiesLog("MediaCapabilities");
+
 Maybe<MediaCapabilitiesDecodingInfo> StealthDeclaredDecodingInfoFor(
     const MediaDecodingConfiguration& aConfiguration) {
   if (!aConfiguration.mVideo.WasPassed()) {
@@ -186,6 +284,12 @@ Maybe<MediaCapabilitiesDecodingInfo> StealthDeclaredDecodingInfoFor(
   if (!sawOne) {
     return Nothing();
   }
+  MOZ_LOG(sStealthMediaCapabilitiesLog, LogLevel::Debug,
+          ("[MediaCapabilities] %s -> DECLARED supported=%d smooth=%d "
+           "powerEfficient=%d",
+           NS_ConvertUTF16toUTF8(aConfiguration.mVideo.Value().mContentType)
+               .get(),
+           supported, smooth, powerEfficient));
   MediaCapabilitiesDecodingInfo info;
   info.mSupported = supported;
   info.mSmooth = smooth;

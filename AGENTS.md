@@ -110,6 +110,14 @@ di rete e difetti noti con il lavoro che li chiude.
   girare o va esteso, il blocco resta intatto e il gancio gli sta accanto (esempio:
   il caricamento delle mappe dei caratteri in `InitializeFamily`). Stesso tetto, solo verso
   il basso, abbassato da `shrink-budget`.
+- **Codice a monte portato in anticipo: categoria `backport`.** Quando ciò che manca è
+  codice di un progetto che Mozilla vendorizza (es. wgpu in `third_party/rust/`), si porta
+  il codice a monte com'è, non una nostra riscrittura. Non è logica nostra: niente tetti,
+  ma la cartella ha `BACKPORT.json` (progetto, revisione vendorizzata, commit a monte,
+  correzioni nostre, `drop_when`). `check` lo lega alla revisione: quando Mozilla ne
+  vendorizza un'altra fallisce, e al port si prende il file di Mozilla tenendo solo ciò
+  che a monte manca ancora. Solo dentro `third_party/rust/` e `Cargo.lock`; le
+  `.cargo-checksum.json` delle crate toccate si aggiornano con i nuovi hash.
 - **Un test di comportamento per ogni gancio**: si imposta la pref e si controlla il
   valore che la pagina vede. Il nome del test va in `FEATURE.md` (riga `Test:`).
 - **Ogni falsificazione passa da una pref** `zoom.stealth.*` / `stealthfox.*`; non si

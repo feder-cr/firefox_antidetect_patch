@@ -73,7 +73,7 @@ index ce52760aeeed01b32648a6d9164cf9384acf3889..eef93f418127388a6619b476018658c4
      if (prefInt >= 0 && prefInt <= 100) {
        clearTypeLevel = float(prefInt / 100.0);
 diff --git a/gfx/thebes/gfxFT2FontBase.cpp b/gfx/thebes/gfxFT2FontBase.cpp
-index 6cf3d24740f15fd830576024f327a94bd8dcac59..900db8dd70b907dda4a91c8f7f086b0c66dbec84 100644
+index 6cf3d24740f15fd830576024f327a94bd8dcac59..65853b0ccd150f1c1546fb3ab2c4d85512a0448f 100644
 --- a/gfx/thebes/gfxFT2FontBase.cpp
 +++ b/gfx/thebes/gfxFT2FontBase.cpp
 @@ -21,6 +21,7 @@
@@ -84,45 +84,58 @@ index 6cf3d24740f15fd830576024f327a94bd8dcac59..900db8dd70b907dda4a91c8f7f086b0c
  
  #ifndef FT_LOAD_COLOR
  #  define FT_LOAD_COLOR (1L << 20)
-@@ -723,7 +724,8 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
+@@ -558,6 +559,7 @@ void gfxFT2FontBase::InitExtraMetrics(gfxFloat aEmHeight,
+   if (mMetrics.aveCharWidth == 0.0) {
+     mMetrics.aveCharWidth = mMetrics.spaceWidth;
+   }
++  StealthDWriteAveCharWidth(*this, mMetrics);  // STEALTH-HOOK(fingerprint/fonts/metrics)
+   // Apparently hinting can mean that max_advance is not always accurate.
+   mMetrics.maxAdvance = std::max(mMetrics.maxAdvance, mMetrics.aveCharWidth);
+ 
+@@ -723,7 +725,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
    // Due to freetype bug 52683 we MUST use the linearHoriAdvance field when
    // dealing with a variation font; also use it for scalable fonts when not
    // applying hinting. Otherwise, prefer hinted width from glyph->advance.x.
 -  if (aAdvance) {
-+  // STEALTH-HOOK(fingerprint/fonts/metrics)
-+  if (aAdvance && !StealthDesignAdvance(*this, aGID, bold.x, aAdvance)) {
++  if (aAdvance && !StealthDesignAdvance(*this, aGID, bold.x, aAdvance)) {  // STEALTH-HOOK(fingerprint/fonts/metrics)
      FT_Fixed advance;
      if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
        advance = face.get()->glyph->linearHoriAdvance;
-@@ -824,6 +826,10 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
+@@ -824,6 +826,9 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
  
  bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
                                      bool aTight) {
-+  // STEALTH-HOOK(fingerprint/fonts/metrics)
-+  if (StealthDesignGlyphBounds(*this, aGID, aBounds)) {
++  if (StealthDesignGlyphBounds(*this, aGID, aBounds)) {  // STEALTH-HOOK(fingerprint/fonts/metrics)
 +    return true;
 +  }
    IntRect bounds;
    const GlyphMetrics metrics = GetCachedGlyphMetrics(aGID, &bounds);
    if (!metrics.HasValidBounds()) {
 diff --git a/gfx/thebes/gfxFont.cpp b/gfx/thebes/gfxFont.cpp
-index f4a983fcb965b391604f62d37b6ceebb7ee8b3ad..3fb0fcd5f12bf57001e999e7810e961945e11664 100644
+index f4a983fcb965b391604f62d37b6ceebb7ee8b3ad..353fb76c96b2c5899997107c38d48693442b1627 100644
 --- a/gfx/thebes/gfxFont.cpp
 +++ b/gfx/thebes/gfxFont.cpp
 @@ -7,6 +7,7 @@
  #include "COLRFonts.h"
  #include "FontPaletteCache.h"
  #include "GreekCasing.h"
-+#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/metrics)
++#include "StealthTextMeasuring.h"  // STEALTH-HOOK(fingerprint/fonts/metrics)
  #include "TextDrawTarget.h"
  #include "ThebesRLBox.h"
  #include "cairo.h"
-@@ -4456,6 +4457,8 @@ void gfxFont::SanitizeMetrics(bool aIsBadUnderlineFont) {
+@@ -141,6 +142,7 @@ gfxFontCache::Observer::Observe(nsISupports* aSubject, const char* aTopic,
+ }
+ 
+ nsresult gfxFontCache::Init() {
++  StealthTextMeasuringInit();  // STEALTH-HOOK(fingerprint/fonts/metrics)
+   StaticMutexAutoLock lock(gMutex);
+   NS_ASSERTION(!gGlobalCache, "Where did this come from?");
+   gGlobalCache = new gfxFontCache(GetMainThreadSerialEventTarget());
+@@ -4456,6 +4458,7 @@ void gfxFont::SanitizeMetrics(bool aIsBadUnderlineFont) {
      memset(&mMetrics, 0, sizeof(mMetrics));
      return;
    }
-+  // STEALTH-HOOK(fingerprint/fonts/metrics)
-+  StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), &mMetrics);
++  StealthImposeBundleVMetrics(mFontEntry, GetAdjustedSize(), &mMetrics);  // STEALTH-HOOK(fingerprint/fonts/metrics)
  
    // If the font entry has ascent/descent/lineGap-override values,
    // replace the metrics from the font with the overrides.

@@ -5,21 +5,27 @@
 // STEALTH: design-space glyph metrics for gfxHarfBuzzShaper. The members are
 // declared in gfxHarfBuzzShaper.h; their definitions live here so that the
 // Mozilla file carries only a hook. See fingerprint/fonts/metrics/FEATURE.md.
-// No namespace and no `using`: these are definitions of members of the global
-// class gfxHarfBuzzShaper, and everything else is spelled out, so the file does
-// not depend on what a unified blob would have opened before it.
+// No `using`: these are definitions of members of the global class
+// gfxHarfBuzzShaper, and everything else is spelled out, so the file does not
+// depend on what a unified blob would have opened before it. It also holds the
+// any-thread mirror of the declared rendering mode (StealthTextMeasuring.h).
 
 #include "gfxHarfBuzzShaper.h"
 
 #include <stdint.h>
 
+#include "StealthTextMeasuring.h"
 #include "gfxFont.h"
 #include "gfxFontEntry.h"
 #include "gfxFontVariations.h"
 #include "harfbuzz/hb-ot.h"
 #include "harfbuzz/hb.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/RecursiveMutex.h"
 #include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 // STEALTH: the design-space metrics font (member mDesignFont, declared in
 // gfxHarfBuzzShaper.h), built on demand by GetDesignFont and never used for
@@ -169,4 +175,35 @@ bool gfxHarfBuzzShaper::GetDesignAdvance(uint16_t aGID,
   }
   aAdvance = hb_font_get_glyph_h_advance(font, aGID);
   return true;
+}
+
+// STEALTH: the declared rendering mode, mirrored for any thread
+// (StealthTextMeasuring.h says why).
+namespace {
+
+const char kStealthRenderingModePref[] =
+    "gfx.font_rendering.cleartype_params.rendering_mode";
+
+mozilla::Atomic<int32_t, mozilla::Relaxed> sStealthRenderingMode(-1);
+
+void StealthRenderingModeChanged(const char* aPref, void* aClosure) {
+  sStealthRenderingMode =
+      mozilla::Preferences::GetInt(kStealthRenderingModePref, -1);
+}
+
+}  // namespace
+
+void mozilla::gfx::StealthTextMeasuringInit() {
+  MOZ_ASSERT(NS_IsMainThread());
+  static bool sRegistered = false;
+  if (sRegistered) {
+    return;
+  }
+  sRegistered = true;
+  mozilla::Preferences::RegisterCallbackAndCall(StealthRenderingModeChanged,
+                                                kStealthRenderingModePref);
+}
+
+int32_t mozilla::gfx::StealthDeclaredRenderingMode() {
+  return sStealthRenderingMode;
 }

@@ -8,9 +8,13 @@
 
 #include "MediaCodecsSupport.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/RefPtr.h"
 #include "nsStringFwd.h"
 
 namespace mozilla {
+
+class EncoderConfig;
 
 /**
  * What this build reports it can decode, DECLARED by invisible_core instead of
@@ -156,6 +160,71 @@ Maybe<media::DecodeSupportSet> StealthDeclaredDecodeSupportSet(
 bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
                                  const nsACString& aCodec, bool& aSupported,
                                  bool& aSmooth, bool& aPowerEfficient);
+
+/**
+ * Declared WebRTC ENCODE support for a track mime type, read from
+ * zoom.stealth.media.encode_support in the same "trackmime|no|sw|hw|swhw" lines
+ * and with the same parser as decode_support. Same contract: false means not
+ * declared (absent, or an unrecognised token) and the caller keeps Mozilla's
+ * answer.
+ */
+bool StealthDeclaredEncodeSupport(const nsACString& aTrackMimeType,
+                                  bool& aSoftware, bool& aHardware);
+
+Maybe<media::EncodeSupportSet> StealthDeclaredEncodeSupportSet(
+    const nsACString& aTrackMimeType);
+
+// The same type as PlatformEncoderModule::SupportsEncoderPromise, named here so
+// this header does not pull the encoder module in (asserted in the .cpp).
+using StealthEncodeSupportPromise =
+    MozPromise<media::EncodeSupportSet, nsresult, /* IsExclusive = */ true>;
+
+/**
+ * The declared answer of WebrtcVideoEncoderFactory::SupportsCodec, or nullptr
+ * when aConfig's codec is not declared. Called at the head of SupportsCodec,
+ * before the creation strategy is looked at.
+ *
+ * Without it the WebRTC H.264 set came from the host: the OpenH264 plugin
+ * (WebrtcGmpEncoderSupports), and when that is empty the platform encoders
+ * (PlatformEncodeSupportOrNone). VP8, VP9 and AV1 were already a constant
+ * SoftwareEncode on desktop; declaring them too keeps the whole table in one
+ * place. The query path only: encoder creation does not ask SupportsCodec.
+ */
+RefPtr<StealthEncodeSupportPromise> StealthDeclaredWebrtcEncodeSupport(
+    const EncoderConfig& aConfig);
+
+/**
+ * The declared WebRTC H.264 software gate, standing in for "the OpenH264
+ * plugin is installed" in DefaultCodecPreferences::SoftwareH264EnabledStatic
+ * and SendingH264PacketizationModeZeroSupportedStatic.
+ *
+ * Nothing() unless BOTH tables declare video/avc (then Mozilla's plugin check
+ * runs); otherwise Some(decode has sw AND encode has sw). That gate decides
+ * whether H.264 is in WebrtcCodecInfo at all, so before this the codec followed
+ * the profile's plugin and, through HardwareH264Enabled, the GPU blocklist: a
+ * Windows VM, or a Linux host whose glxtest fails, answered decodingInfo and
+ * encodingInfo for H.264 with false everywhere.
+ *
+ * HardwareH264EnabledStatic is not declared here and still reads
+ * gfxVars::HasWebrtcH264Hw; with video/avc declared sw it cannot change
+ * whether H.264 is enabled, only the hardware flag the codec carries.
+ */
+Maybe<bool> StealthDeclaredSoftwareH264();
+
+/**
+ * The core count the encodingInfo "smooth" estimate uses: the declared
+ * zoom.stealth.hw_concurrency (what navigator.hardwareConcurrency answers)
+ * when it is above 0, otherwise GetNumberOfProcessors().
+ *
+ * IsSWEncodeSmooth in MediaCapabilities.cpp sizes libwebrtc's encoder threads
+ * from the core count, and AV1 720p30 flips there: 4 cores or fewer give 2
+ * threads (0.98 x 2 x 2/4 = 0.98, not smooth), more give 4 (1.96, smooth). A
+ * page could read the host's core count through it while
+ * navigator.hardwareConcurrency said something else. The hook declares a local
+ * GetNumberOfProcessors bound to this function at the head of IsSWEncodeSmooth,
+ * so only that function sees it; the real thread pools keep the real count.
+ */
+size_t StealthDeclaredNumberOfProcessors();
 
 namespace dom {
 

@@ -105,6 +105,13 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_media_decoding_info();
          return lock->IsEmpty();
        }},
+      // The WebRTC encode set, added 2026-11-01. Missing, encodingInfo's
+      // H.264 row would follow the OpenH264 plugin and the host's platform
+      // encoders, and the H.264 gate the GPU blocklist.
+      {"zoom.stealth.media.encode_support", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_media_encode_support();
+         return lock->IsEmpty();
+       }},
       // The WebGPU adapter, added 2026-10-31. Missing, a page would read the
       // host's adapter: its backend, its features, its limits, and on a
       // machine with no GPU an isFallbackAdapter of true.
