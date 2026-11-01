@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -111,6 +112,39 @@ def phase_case(tmp: Path, argv, memwatch=""):
         restore(old)
     events = [json.loads(l) for l in (tmp / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     return code, events, (tmp / "summary.md").read_text(encoding="utf-8")
+
+
+def zram_case(run: str, find_ok: bool, hot_add_ok: bool) -> tuple:
+    """The swap step's zram block (release.yml, "Free disk + 32G swap") run by
+    bash -e, as the runner does, with sudo, modprobe and zramctl faked:
+    `zramctl --find` succeeds or exits 1, /sys/class/zram-control/hot_add
+    answers 3 or fails. Returns (the shell went on, the step summary)."""
+    lines = run.splitlines()
+    start = min(i for i, l in enumerate(lines) if "zram_swap() {" in l or "modprobe zram" in l)
+    end = next(i for i in range(start, len(lines))
+               if lines[i].strip() == "fi" and any("the disk file alone" in l for l in lines[start:i]))
+    block = "\n".join(lines[start:end + 1])
+    find = ("echo /dev/zram0; exit 0" if find_ok else
+            "echo 'zramctl: /dev/zram0: failed to reset: Device or resource busy' >&2; exit 1")
+    fake_sudo = "\n".join([
+        "#!/bin/bash",
+        'case "$1" in',
+        '  zramctl) for a; do [ "$a" = --find ] && { %s; }; done; exit 0 ;;' % find,
+        "  cat) %s ;;" % ("echo 3" if hot_add_ok else "exit 1"),
+        "  *) exit 0 ;;",
+        "esac", ""])
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        sudo = tmp / "sudo"
+        sudo.write_text(fake_sudo, newline="\n")
+        sudo.chmod(0o755)
+        summary = tmp / "summary"
+        summary.write_text("")
+        env = dict(os.environ, PATH="%s%s%s" % (tmp, os.pathsep, os.environ.get("PATH", "")),
+                   GITHUB_STEP_SUMMARY=str(summary))
+        out = subprocess.run(["bash", "-e", "-c", block + "\necho WENT-ON"], env=env,
+                             capture_output=True, text=True)
+        return "WENT-ON" in out.stdout, summary.read_text()
 
 
 def main() -> int:
@@ -418,6 +452,53 @@ def main() -> int:
         net = [i for i, st in enumerate(build_steps) if "80-ci-network" in st.get("run", "")]
         apt_at = [i for i, st in enumerate(build_steps) if "apt-get" in st.get("run", "")]
         conf = build_steps[net[0]]["run"] if net else ""
+        # zram is best-effort: run 41325666566's win-x86_64 leg died in the swap
+        # step on "zramctl: /dev/zram0: failed to reset: Device or resource busy".
+        # It runs the step's own shell with a fake sudo: Linux only, where the
+        # CI runs it (a Windows host's "bash" may be WSL's, without our PATH).
+        swap = steps.get("Free disk + 32G swap (Linux runners)", {}).get("run", "")
+        if sys.platform.startswith("linux"):
+            busy, busy_summary = zram_case(swap, find_ok=False, hot_add_ok=False)
+            fresh, fresh_summary = zram_case(swap, find_ok=False, hot_add_ok=True)
+            cases.append(("swap: a runner whose zram is taken gets a new device, or goes on with the disk file alone (run 41325666566)",
+                          busy and "NO usable zram" in busy_summary
+                          and fresh and "zram /dev/zram3" in fresh_summary))
+        else:
+            print("skip  swap: zram case runs on Linux only")
+        # WebGPU on Linux: our lavapipe, built before the gtests and the package
+        # and shipped with it (without one requestAdapter() answered null).
+        names = [st.get("name", "") for st in build_steps]
+        lvp = steps.get("WebGPU's Vulkan driver (linux-x86_64) - build", {})
+        lvp_at = names.index(lvp["name"]) if lvp else -1
+        key = steps.get("WebGPU's Vulkan driver (linux-x86_64) - its inputs", {})
+        kept = [st for st in build_steps if "lavapipe" in st.get("name", "") + str(st.get("with", {}))
+                and "cache" in st.get("uses", "")]
+        pkg = (HERE / "package_linux.sh").read_text(encoding="utf-8")
+        pins = json.loads((HERE / "lavapipe" / "VERSIONS.json").read_text(encoding="utf-8"))
+        cases.append(("webgpu: linux-x86_64 builds its lavapipe from pinned sources and patches before the gtests and the package, and ships it",
+                      lvp.get("if") == "matrix.leg == 'linux-x86_64'"
+                      and "lavapipe_build.py --out" in lvp.get("run", "")
+                      and "obj-rel/dist/bin/lavapipe" in lvp.get("run", "")
+                      and 0 <= lvp_at < names.index("Package + validate")
+                      and lvp_at < min(i for i, n in enumerate(names) if n.startswith("Engine gtests"))
+                      and "lavapipe_build.py --key" in key.get("run", "")
+                      and len(kept) == 2 and all("compile_cache == 'gha'" in st.get("if", "") for st in kept)
+                      and '"$STAGING/lavapipe/"' in pkg and "linux-x86_64" in pkg
+                      and len(pins["mesa"]["sha256"]) == 64 and len(pins["llvm"]["commit"]) == 40
+                      and len(sorted((HERE / "lavapipe").glob("*.patch"))) >= 4))
+        import lavapipe_build
+        good_dyn = (" 0x1 (NEEDED)             Shared library: [libc.so.6]\n"
+                    " 0xe (SONAME)             Library soname: [libvulkan.so.1]\n")
+        good_sym = ("     1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND memcpy@GLIBC_2.14 (2)\n"
+                    "     2: 0000000000001000    20 FUNC    GLOBAL DEFAULT   12 vkGetInstanceProcAddr\n"
+                    "     3: 0000000000001100    20 FUNC    GLOBAL DEFAULT   12 vk_icdGetInstanceProcAddr\n")
+        cases.append(("webgpu: the lavapipe check refuses a host library, the wrong SONAME, a missing entry point and a symbol above Firefox's floor",
+                      lavapipe_build.check_binary(good_dyn, good_sym) == []
+                      and len(lavapipe_build.check_binary(
+                          good_dyn.replace("libvulkan.so.1", "libvulkan_lvp.so")
+                          + " 0x1 (NEEDED)             Shared library: [libdrm.so.2]\n",
+                          good_sym.replace("GLIBC_2.14", "GLIBC_2.27").replace(" vkGetInstanceProcAddr", " other"))) == 4
+                      and lavapipe_build.glslang_version("Glslang Version: 11:14.0.0") == (14, 0)))
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)

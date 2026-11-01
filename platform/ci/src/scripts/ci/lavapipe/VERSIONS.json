@@ -1,0 +1,19 @@
+{
+  "mesa": {
+    "version": "26.2.6",
+    "url": "https://archive.mesa3d.org/mesa-26.2.6.tar.xz",
+    "sha256": "b9436b3e1a8be76fbd4823dc884f90596ab7c6ac5e1867a305e66ffccfb31a92"
+  },
+  "llvm": {
+    "version": "22.1.8",
+    "repo": "https://github.com/llvm/llvm-project.git",
+    "commit": "ca7933e47d3a3451d81e72ac174dcb5aa28b59d1"
+  },
+  "pip": {
+    "meson": "1.7.0",
+    "mako": "1.3.10",
+    "pyyaml": "6.0.2",
+    "packaging": "24.2"
+  },
+  "glslang_min": [12, 2]
+}

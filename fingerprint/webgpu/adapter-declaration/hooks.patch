@@ -102,16 +102,23 @@ index a0d0ceba2c0d4615e259d7a04bed61adaff26203..1007a9714304e0c383c2b7ba242b4fef
  IPDL_SOURCES += [
      "ipc/PWebGPU.ipdl",
 diff --git a/gfx/thebes/gfxPlatform.cpp b/gfx/thebes/gfxPlatform.cpp
-index 9385c82abed17b64c4dd7a45f15d1d0a26cc791c..cd66765ba704935354177cf6d2633d40382e3931 100644
+index 9385c82abed17b64c4dd7a45f15d1d0a26cc791c..9c9e17407a6ad8daf6199e66269e553e3f3789e4 100644
 --- a/gfx/thebes/gfxPlatform.cpp
 +++ b/gfx/thebes/gfxPlatform.cpp
-@@ -3238,7 +3238,9 @@ void gfxPlatform::InitWebGPUConfig() {
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "gfxPlatform.h"
++#include "mozilla/webgpu/StealthWebGPUDeclaration.h"  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
+ 
+ #include "GfxDriverInfo.h"
+ #include "VRProcessManager.h"
+@@ -3238,7 +3239,8 @@ void gfxPlatform::InitWebGPUConfig() {
      featureExternalTexture.Disable(FeatureStatus::Blocklisted, message.get(),
                                     failureId);
    }
 -#if !defined(XP_WIN) && !defined(XP_MACOSX)
-+// STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): the engine presents Windows on every OS, where external
-+// textures are on; elsewhere they run on the shared-memory buffer path.
++  mozilla::webgpu::StealthWebGPUPlatformInit();  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Linux's Vulkan driver is ours; external textures are on as on Windows
 +#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0
    featureExternalTexture.ForceDisable(
        FeatureStatus::Blocked,

@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: zoom.stealth.webgpu.adapter, zoom.stealth.webgpu.features, zoom.stealth.webgpu.limits, zoom.stealth.fpp.hw_seed (the software adapter on Windows)
-Test: gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp (StealthWebGPUDeclaration.*; StealthWebGPUAdapter.*, Windows only: on the GPU-less CI runner the compositor search finds nothing and the adapter must be WARP, engine off keeps null, a found adapter is left alone). Host gate: navigator.gpu.requestAdapter() non-null with info.isFallbackAdapter false on the GPU-less Windows runner.
+Test: gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp (StealthWebGPUDeclaration.*; StealthWebGPUAdapter.*, Windows only: on the GPU-less CI runner the compositor search finds nothing and the adapter must be WARP, engine off keeps null, a found adapter is left alone). Host gate: navigator.gpu.requestAdapter() non-null with info.isFallbackAdapter false on the GPU-less Windows runner. Linux x86_64: StealthWebGPUBundledVulkan.* (the loader's name leads to our lavapipe, the adapter is ours at 128 bits and has every declared limit, no host libvulkan is mapped); scripts/ci/test_ci.py (the workflow builds and ships it, the library check).
 
 ## What it does
 
@@ -32,6 +32,20 @@ declared maximum the host lacks still gives a device.
 
 The hook ceiling of gfx/tests/gtest/moz.build (owned by fingerprint/canvas/noise-projection) went
 from 11 to 12 for the one line that registers this folder's gtest.
+
+## Linux: our own Vulkan driver
+
+WebGPU on Linux has only wgpu's Vulkan backend: with no Vulkan driver on the host
+`requestAdapter()` answered null, and with the host's Mesa its version decided
+limits and raster bytes. The driver ships in the package (`lavapipe/`, built in CI
+by `scripts/ci/lavapipe_build.py` from pinned Mesa and LLVM, patched so no host
+value reaches it: no environment, the x86-64 baseline, exact sqrt, fixed heap,
+budget and threads, no udmabuf). There is no Vulkan loader: the library carries
+the loader's SONAME and exports `vkGetInstanceProcAddr`, and
+`StealthWebGPUPlatformInit` (gfxPlatform::InitWebGPUConfig, parent) maps it before
+wgpu opens "libvulkan.so.1" by name. Fail closed: a host loader mapped first, a
+missing file or a name that leads elsewhere turn WebGPU off. x86_64 only: arm64
+ships without it and WebGPU answers null there.
 
 ## Hooks in Mozilla files
 

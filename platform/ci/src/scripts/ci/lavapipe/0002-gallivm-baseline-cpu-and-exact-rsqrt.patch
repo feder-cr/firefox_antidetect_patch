@@ -1,0 +1,44 @@
+--- a/src/gallium/auxiliary/gallivm/lp_bld_misc.cpp
++++ b/src/gallium/auxiliary/gallivm/lp_bld_misc.cpp
+@@ -560,7 +560,12 @@
+ 
+    lp_build_dump_mattrs(MAttrs);
+ 
++#if DETECT_ARCH_X86_64
++   /* Firefox's bundled lavapipe: the baseline, never the host's CPU model. */
++   StringRef MCPU = "x86-64";
++#else
+    StringRef MCPU = llvm::sys::getHostCPUName();
++#endif
+    /*
+     * The cpu bits are no longer set automatically, so need to set mcpu manually.
+     * Note that the MAttrs set above will be sort of ignored (since we should
+--- a/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
++++ b/src/gallium/auxiliary/gallivm/lp_bld_init_orc.cpp
+@@ -447,7 +447,12 @@
+ 
+    lp_build_dump_mattrs(MAttrs);
+ 
++#if DETECT_ARCH_X86_64
++   /* Firefox's bundled lavapipe: the baseline, never the host's CPU model. */
++   std::string MCPU = "x86-64";
++#else
+    std::string MCPU = llvm::sys::getHostCPUName().str();
++#endif
+    /*
+     * Note that the MAttrs set above will be sort of ignored (since we should
+     * not set any which would not be set by specifying the cpu anyway).
+--- a/src/gallium/auxiliary/gallivm/lp_bld_arit.c
++++ b/src/gallium/auxiliary/gallivm/lp_bld_arit.c
+@@ -2601,6 +2601,11 @@
+ {
+    assert(type.floating);
+ 
++   /* Firefox's bundled lavapipe: rsqrtps is an approximation whose bits
++    * differ between Intel and AMD; the exact sqrt path is used instead. */
++   if (type.floating)
++      return false;
++
+    if ((util_get_cpu_caps()->has_sse && type.width == 32 && type.length == 4) ||
+        (util_get_cpu_caps()->has_avx && type.width == 32 && type.length == 8)) {
+       return true;
