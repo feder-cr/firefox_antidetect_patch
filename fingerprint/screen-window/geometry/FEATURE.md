@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: none read directly
-Test: TODO
+Test: dom/events/test/gtest/TestStealthWindowGeometry.cpp (StealthWindowGeometry.FullscreenContentStartsAtTheScreenOrigin, StealthWindowGeometry.OutsideFullscreenNothingChanges); the g.fullscreen key of headless_probe.py (outer, screenX/Y, mozInnerScreenX/Y and events after requestFullscreen()).
 
 ## What it does
 

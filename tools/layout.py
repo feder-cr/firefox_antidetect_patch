@@ -248,6 +248,7 @@ OWN_FILES = [
     (r"^dom/media/gtest/TestStealthMediaDeclaration\.", "fingerprint/media/decode-declaration"),
     (r"^dom/quota/test/gtest/TestStealthQuotaEstimate\.", "fingerprint/hardware/storage-quota"),
     (r"^dom/base/StealthWindowGeometry\.", "fingerprint/screen-window/geometry"),
+    (r"^dom/events/test/gtest/TestStealthWindowGeometry\.cpp$", "fingerprint/screen-window/geometry"),
     (r"^dom/events/StealthScreenCoords\.", "fingerprint/screen-window/geometry"),
     (r"^dom/media/StealthMediaDeclaration\.", "fingerprint/media/decode-declaration"),
     (r"^dom/media/webrtc/transport/nr_stealth_bridge\.", "fingerprint/webrtc/ice-candidates"),

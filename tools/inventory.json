@@ -6007,5 +6007,25 @@
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
   }
+ },
+ {
+  "file": "dom/events/test/gtest/moz.build",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the UNIFIED_SOURCES list (TestShortcutKeyDefinitions.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"TestStealthWindowGeometry.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds TestStealthWindowGeometry.cpp, the declared content origin in and out of fullscreen.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
  }
 ]

@@ -2,11 +2,13 @@
  "modified": [
   "dom/base/nsGlobalWindowOuter.cpp",
   "dom/base/nsGlobalWindowOuter.h",
-  "dom/events/Event.cpp"
+  "dom/events/Event.cpp",
+  "dom/events/test/gtest/moz.build"
  ],
  "added": {
   "dom/base/StealthWindowGeometry.h": "100644",
-  "dom/events/StealthScreenCoords.h": "100644"
+  "dom/events/StealthScreenCoords.h": "100644",
+  "dom/events/test/gtest/TestStealthWindowGeometry.cpp": "100644"
  },
  "inventory": [
   {
@@ -72,6 +74,26 @@
    "verifier": {
     "changed": [],
     "why": "Checked against the diff and source; no correction needed."
+   }
+  },
+  {
+   "file": "dom/events/test/gtest/moz.build",
+   "category": "spoof",
+   "feature": "window-geometry",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after the UNIFIED_SOURCES list (TestShortcutKeyDefinitions.cpp)",
+   "evidence": [
+    "+UNIFIED_SOURCES += [\"TestStealthWindowGeometry.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+   ],
+   "notes": "Builds TestStealthWindowGeometry.cpp, the declared content origin in and out of fullscreen.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-01."
    }
   }
  ]

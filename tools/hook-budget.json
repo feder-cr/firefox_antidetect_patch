@@ -50,6 +50,7 @@
  "dom/events/Event.cpp": 4,
  "dom/events/EventStateManager.cpp": 9,
  "dom/events/EventStateManager.h": 4,
+ "dom/events/test/gtest/moz.build": 1,
  "dom/file/BlobSet.cpp": 4,
  "dom/html/HTMLCanvasElement.cpp": 9,
  "dom/html/HTMLCanvasElement.h": 5,
