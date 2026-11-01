@@ -9,6 +9,8 @@
 // which is the leak the declaration exists against.
 
 #include "gtest/gtest.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/webgpu/StealthWebGPUDeclaration.h"
 #include "mozilla/webgpu/SupportedLimits.h"
@@ -139,3 +141,39 @@ TEST(StealthWebGPUDeclaration, FeaturesAreFirefoxsOwnNames)
   EXPECT_TRUE(StealthParseWebGPUFeatures("shader-f16\nno-such-feature\n"_ns)
                   .isNothing());
 }
+
+#ifdef XP_WIN
+
+// The adapter on a Windows host without a GPU (gfx/wgpu_bindings/src/
+// stealth_webgpu_adapter.rs). The CI Windows runner has no GPU: the server's
+// search for the compositor's D3D12 adapter finds nothing there, and every
+// requestAdapter() resolved null where retail on the declared GPU has one.
+// Results: 0 null, 1 an adapter of device type Cpu (WARP), 2 another
+// adapter, 4 the found adapter left alone.
+extern "C" uint32_t stealth_wgpu_adapter_after_search(bool aFound);
+
+namespace {
+constexpr char kSeedPref[] = "zoom.stealth.fpp.hw_seed";
+}
+
+TEST(StealthWebGPUAdapter, NoCompositorAdapterIsTheSoftwareOne)
+{
+  auto restore = MakeScopeExit([] { Preferences::ClearUser(kSeedPref); });
+  Preferences::SetInt(kSeedPref, 7);
+  EXPECT_EQ(stealth_wgpu_adapter_after_search(false), 1u);
+}
+
+TEST(StealthWebGPUAdapter, EngineOffKeepsMozillasNull)
+{
+  Preferences::ClearUser(kSeedPref);
+  EXPECT_EQ(stealth_wgpu_adapter_after_search(false), 0u);
+}
+
+TEST(StealthWebGPUAdapter, AFoundCompositorAdapterIsLeftAlone)
+{
+  auto restore = MakeScopeExit([] { Preferences::ClearUser(kSeedPref); });
+  Preferences::SetInt(kSeedPref, 7);
+  EXPECT_EQ(stealth_wgpu_adapter_after_search(true), 4u);
+}
+
+#endif  // XP_WIN

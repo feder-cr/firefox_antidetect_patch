@@ -226,3 +226,10 @@ void StealthWebGPUClampToReal(ffi::WGPUFfiDeviceDescriptor& aDesc,
 }
 
 }  // namespace mozilla::webgpu
+
+// For the server's adapter request (gfx/wgpu_bindings/src/stealth_webgpu_adapter.rs),
+// which runs in the GPU process: the software adapter stands in for a
+// missing compositor adapter only with the engine on.
+extern "C" bool stealth_webgpu_engine_active() {
+  return mozilla::gfx::StealthEngineActive();
+}

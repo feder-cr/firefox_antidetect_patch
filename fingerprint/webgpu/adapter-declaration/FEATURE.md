@@ -1,10 +1,20 @@
 # fingerprint/webgpu/adapter-declaration
 
 Category: spoof
-Prefs: zoom.stealth.webgpu.adapter, zoom.stealth.webgpu.features, zoom.stealth.webgpu.limits
-Test: gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp
+Prefs: zoom.stealth.webgpu.adapter, zoom.stealth.webgpu.features, zoom.stealth.webgpu.limits, zoom.stealth.fpp.hw_seed (the software adapter on Windows)
+Test: gfx/tests/gtest/TestStealthWebGPUDeclaration.cpp (StealthWebGPUDeclaration.*; StealthWebGPUAdapter.*, Windows only: on the GPU-less CI runner the compositor search finds nothing and the adapter must be WARP, engine off keeps null, a found adapter is left alone). Host gate: navigator.gpu.requestAdapter() non-null with info.isFallbackAdapter false on the GPU-less Windows runner.
 
 ## What it does
+
+On Windows the server answers null when the compositor's D3D12 adapter is not
+among wgpu's, which is every host without a GPU (the Basic Render Driver
+adapter is dropped by wgpu-hal, or there is no compositor device). With the
+engine on, that search falling empty takes the software D3D12 adapter (WARP),
+present on every Windows host, so a page gets an adapter as on retail with the
+declared GPU; features, limits and isFallbackAdapter stay declared
+(gfx/wgpu_bindings/src/stealth_webgpu_adapter.rs). The compositor LUID out
+parameter is zeroed first, so a missing compositor device is no match rather
+than uninitialised memory read by Mozilla's code.
 
 The WebGPU adapter a page sees is declared by invisible_core, never read from the host. Firefox's
 Adapter::Adapter hands the page the features and limits wgpu reports for the real adapter (D3D12 on
