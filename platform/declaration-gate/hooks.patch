@@ -1,0 +1,36 @@
+diff --git a/widget/GfxInfoBase.cpp b/widget/GfxInfoBase.cpp
+index 9ebeb94673c98bde3238c03208d6fa9408c21452..1768d2e8a353df6fdeffc692146cbb156100e71a 100644
+--- a/widget/GfxInfoBase.cpp
++++ b/widget/GfxInfoBase.cpp
+@@ -4,6 +4,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "GfxInfoBase.h"
++#include "StealthGfxFeatureStatus.h"  // STEALTH-HOOK(platform/declaration-gate)
+ 
+ #include <mutex>  // std::call_once
+ 
+@@ -589,6 +590,7 @@ GfxInfoBase::GetFeatureStatus(int32_t aFeature, nsACString& aFailureId,
+     MOZ_ASSERT_UNREACHABLE("Checking retired feature!");
+     return NS_ERROR_INVALID_ARG;
+   }
++  if (mozilla::gfx::StealthGfxDeclaredStatus(this, aFeature, aFailureId, aStatus)) return NS_OK;  // STEALTH-HOOK(platform/declaration-gate)
+ 
+   // Ignore the gfx.blocklist.all pref on release and beta.
+ #if defined(RELEASE_OR_BETA)
+@@ -1232,6 +1234,7 @@ nsresult GfxInfoBase::GetFeatureStatusImpl(
+ NS_IMETHODIMP
+ GfxInfoBase::GetFeatureSuggestedDriverVersion(int32_t aFeature,
+                                               nsAString& aVersion) {
++  if (mozilla::gfx::StealthGfxSuggestedDriverVersion(aVersion)) return NS_OK;  // STEALTH-HOOK(platform/declaration-gate)
+   nsCString version;
+   if (GetPrefValueForDriverVersion(version)) {
+     aVersion = NS_ConvertASCIItoUTF16(version);
+@@ -1259,6 +1262,7 @@ GfxInfoBase::GetFeatureSuggestedDriverVersionStr(const nsAString& aFeature,
+ 
+ void GfxInfoBase::EvaluateDownloadedBlocklist(
+     nsTArray<RefPtr<GfxDriverInfo>>& aDriverInfo) {
++  if (mozilla::gfx::StealthGfxDeclarationActive()) return;  // STEALTH-HOOK(platform/declaration-gate)
+   // If the list is empty, then we don't actually want to call
+   // GetFeatureStatusImpl since we will use the static list instead. In that
+   // case, all we want to do is make sure the pref is removed.

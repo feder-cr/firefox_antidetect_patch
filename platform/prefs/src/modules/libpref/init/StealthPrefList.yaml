@@ -528,6 +528,18 @@
   value: ""
   mirror: always
 
+# The graphics feature decisions (nsIGfxInfo::GetFeatureStatus), as
+# "NAME|STATUS[|FAILURE],..." for every live feature of
+# widget/GfxInfoFeatureDefs.inc: the statuses retail Firefox on Windows 11
+# gives the persona's real GPU, measured by invisible_core. Read by
+# gfx/thebes/StealthGfxFeatureStatus.cpp; with the engine on, a missing or
+# malformed value refuses at the first decision instead of letting Mozilla
+# decide from the host's adapter.
+- name: zoom.stealth.gfx.feature_status
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # Declared mediaCapabilities.decodingInfo answers, as
 # "containermime|codecfamily|SSP" entries separated by NEWLINES, where the three
 # digits are supported, smooth and powerEfficient. Keyed by BOTH the container

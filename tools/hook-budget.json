@@ -228,6 +228,7 @@
  "uriloader/exthandler/nsExternalHelperAppService.cpp": 13,
  "uriloader/exthandler/nsExternalHelperAppService.h": 9,
  "uriloader/exthandler/nsIExternalHelperAppService.idl": 2,
+ "widget/GfxInfoBase.cpp": 4,
  "widget/MouseEvents.h": 4,
  "widget/gtk/moz.build": 1,
  "widget/gtk/nsWindow.cpp": 4,
