@@ -5941,5 +5941,71 @@
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
   }
+ },
+ {
+  "file": "gfx/gl/GLContext.cpp",
+  "category": "spoof",
+  "feature": "webgl-multisample",
+  "prefs": [
+   "webgl.force-enabled"
+  ],
+  "added": 3,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after #include \"GLContext.h\", after InitFeatures() in GLContext::InitImpl, and after the closing brace of its driver-workaround block",
+  "evidence": [
+   "+  if (StealthKeepsMultisample(stealthMultisample, Renderer())) mAvailableFeatures[size_t(GLFeature::framebuffer_multisample)] = true;  // STEALTH-HOOK(fingerprint/webgl/multisample)"
+  ],
+  "notes": "The multisample feature as the driver reports it is kept before the workarounds; on the Basic Render Driver, with WebGL forced on, it is put back after them (StealthKeepsMultisample).",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "gfx/gl/moz.build",
+  "category": "spoof",
+  "feature": "webgl-multisample",
+  "prefs": [
+   "webgl.force-enabled"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the SOURCES list (GLScreenBuffer.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
+  ],
+  "notes": "Builds StealthGLMultisample.cpp.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "gfx/gl/gtest/moz.build",
+  "category": "spoof",
+  "feature": "webgl-multisample",
+  "prefs": [
+   "webgl.force-enabled"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the UNIFIED_SOURCES list (TestColorspaces.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
+  ],
+  "notes": "Builds TestStealthGLMultisample.cpp.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
  }
 ]

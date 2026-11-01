@@ -96,6 +96,7 @@ FEATURES = {
     "canvas-2d-text-metrics": "fingerprint/canvas/text-metrics",
     "webgl-parameters": "fingerprint/webgl/parameters",
     "webgl-shader-output-language": "fingerprint/webgl/shader-language",
+    "webgl-multisample": "fingerprint/webgl/multisample",
     # fingerprint: audio, media
     "audio-context-values": "fingerprint/audio/context-values",
     "audio-fingerprint-noise": "fingerprint/audio/noise",
@@ -155,6 +156,8 @@ OWN_FILES = [
     (r"^gfx/thebes/StealthFcFontList\.", "fingerprint/fonts/font-list"),
     (r"^dom/canvas/StealthWebGLReadback\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/canvas/StealthWebGLParams\.", "fingerprint/webgl/parameters"),
+    (r"^gfx/gl/StealthGLMultisample\.", "fingerprint/webgl/multisample"),
+    (r"^gfx/gl/gtest/TestStealthGLMultisample\.cpp$", "fingerprint/webgl/multisample"),
     (r"^toolkit/xre/dllservices/StealthOwnBinaries\.", "platform/untrusted-modules"),
     (r"^js/xpconnect/loader/StealthScriptCache\-inl\.", "platform/script-cache"),
     (r"^toolkit/components/urlformatter/tests/unit/test_stealth_apikeys\.", "stillborn/api-keys"),

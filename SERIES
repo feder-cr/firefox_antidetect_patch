@@ -64,6 +64,7 @@ fingerprint/screen-window/geometry
 fingerprint/screen-window/occlusion
 fingerprint/screen-window/popup-position
 fingerprint/screen-window/screen
+fingerprint/webgl/multisample
 fingerprint/webgl/parameters
 fingerprint/webgl/shader-language
 fingerprint/webgpu/adapter-declaration
