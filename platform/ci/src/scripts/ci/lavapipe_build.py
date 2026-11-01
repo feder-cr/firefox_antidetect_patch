@@ -65,6 +65,9 @@ LLVM_CMAKE = [
     "-DLLVM_ENABLE_LIBXML2=OFF", "-DLLVM_ENABLE_LIBEDIT=OFF", "-DLLVM_ENABLE_LIBPFM=OFF",
     "-DLLVM_ENABLE_Z3_SOLVER=OFF", "-DLLVM_ENABLE_BINDINGS=OFF", "-DLLVM_APPEND_VC_REV=OFF",
     "-DLLVM_ENABLE_ASSERTIONS=OFF", "-DLLVM_INSTALL_UTILS=OFF",
+    # Without RTTI, and Mesa told so (cpp_rtti=false below): meson refuses a
+    # mismatch (run 41330839671).
+    "-DLLVM_ENABLE_RTTI=OFF",
     "-DLLVM_DISTRIBUTION_COMPONENTS=llvm-headers;llvm-libraries;llvm-config;cmake-exports",
 ]
 
@@ -73,7 +76,7 @@ MESON_OPTIONS = [
     "-Dvulkan-drivers=swrast", "-Dgallium-drivers=", "-Dplatforms=",
     "-Dglx=disabled", "-Degl=disabled", "-Dgbm=disabled", "-Dopengl=false",
     "-Dgles1=disabled", "-Dgles2=disabled", "-Dglvnd=disabled",
-    "-Dllvm=enabled", "-Dshared-llvm=disabled", "-Ddraw-use-llvm=true",
+    "-Dllvm=enabled", "-Dshared-llvm=disabled", "-Ddraw-use-llvm=true", "-Dcpp_rtti=false",
     "-Dshader-cache=disabled", "-Dxmlconfig=disabled", "-Dexpat=disabled",
     "-Dzstd=disabled", "-Dzlib=disabled", "-Dlibunwind=disabled", "-Dvalgrind=disabled",
     "-Dlmsensors=disabled", "-Dperfetto=false", "-Dbuild-tests=false", "-Dtools=",
