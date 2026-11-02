@@ -1,0 +1,39 @@
+--- a/src/gallium/frontends/lavapipe/lvp_device.c
++++ b/src/gallium/frontends/lavapipe/lvp_device.c
+@@ -2123,13 +2123,12 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_EnumerateInstanceLayerProperties(
+    uint32_t*                                   pPropertyCount,
+    VkLayerProperties*                          pProperties)
+ {
+-   if (pProperties == NULL) {
+-      *pPropertyCount = 0;
+-      return VK_SUCCESS;
+-   }
+-
+-   /* None supported at this time */
+-   return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
++   /* Firefox's bundled lavapipe answers this itself (no loader in between):
++    * no layers is a count of 0 and VK_SUCCESS whatever the array, as the
++    * specification asks. VK_ERROR_LAYER_NOT_PRESENT is not a result of this
++    * command, and wgpu, which always passes an array, gave up the instance. */
++   *pPropertyCount = 0;
++   return VK_SUCCESS;
+ }
+ 
+ VKAPI_ATTR VkResult VKAPI_CALL lvp_EnumerateDeviceLayerProperties(
+@@ -2137,13 +2136,9 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_EnumerateDeviceLayerProperties(
+    uint32_t*                                   pPropertyCount,
+    VkLayerProperties*                          pProperties)
+ {
+-   if (pProperties == NULL) {
+-      *pPropertyCount = 0;
+-      return VK_SUCCESS;
+-   }
+-
+-   /* None supported at this time */
+-   return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
++   /* Firefox's bundled lavapipe: as lvp_EnumerateInstanceLayerProperties. */
++   *pPropertyCount = 0;
++   return VK_SUCCESS;
+ }
+ 
+ static void

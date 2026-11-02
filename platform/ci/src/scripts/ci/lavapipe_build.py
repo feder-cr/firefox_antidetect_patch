@@ -16,7 +16,8 @@ bytes. The driver now comes with the engine: Mesa 26.2.6's lavapipe on LLVM
 clang and sysroot, no Vulkan loader (the loader would bring the host's layers
 and environment back), and patched (scripts/ci/lavapipe/*.patch) so that no
 host value reaches it: every Mesa option compiled in and the environment never
-read, the x86-64 baseline (SSE2, 128-bit, no FMA) whatever the CPU, the exact
+read, one x86-64 profile (SSE to 4.2, AVX and F16C for half floats; never FMA,
+AVX2 or AVX-512; 128-bit vectors) whatever the CPU, the exact
 sqrt instead of a vendor-dependent rsqrt, a fixed heap, budget and thread
 count, no /dev/udmabuf. It meets Firefox's glibc 2.17 floor the way Firefox
 does, by defining __cxa_thread_atexit_impl (glibc 2.18) inside the library
