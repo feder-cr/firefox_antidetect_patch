@@ -203,6 +203,8 @@ TEST(StealthWebGPUInstanceEnv, TheHostsVariablesDoNotReachTheInstance)
 #  include <dlfcn.h>
 
 #  include <fstream>
+#  include <iterator>
+#  include <set>
 #  include <string>
 
 // WebGPU's Vulkan driver on Linux is ours (scripts/ci/lavapipe_build.py), in
@@ -233,7 +235,33 @@ TEST(StealthWebGPUBundledVulkan, TheLoaderNameLeadsToOurDriver)
 }
 
 // The adapter is our lavapipe at the pinned profile (128-bit, whatever this
-// runner's CPU), and every limit the declaration gives a page is one it has.
+// runner's CPU), and every limit the declaration gives a page is one it has,
+// save the known defects below: exactly those, neither more nor fewer, so a
+// new gap fails here and a closed one asks for its line to go.
+//
+// Known defect (decided 2026-11-02 for firefox-55): maxBindingsPerBindGroup.
+// Retail on D3D12 reports u32::MAX; lavapipe sizes a set layout by the highest
+// binding NUMBER, so it holds about 2^20. A page binding at an index above that
+// fails on Linux and not on retail. The work that closes it: dense Vulkan
+// binding indices per layout in wgpu-hal and naga's SPIR-V output.
+static const char* const kKnownLimitDefects[] = {"max_bindings_per_bind_group"};
+
+static std::set<std::string> LimitNames(const char* aList) {
+  std::set<std::string> names;
+  std::string list(aList);
+  size_t start = 0;
+  while (start < list.size()) {
+    size_t end = list.find("; ", start);
+    if (end == std::string::npos) {
+      end = list.size();
+    }
+    const std::string entry = list.substr(start, end - start);
+    names.insert(entry.substr(0, entry.find(' ')));
+    start = end + 2;
+  }
+  return names;
+}
+
 TEST(StealthWebGPUBundledVulkan, TheAdapterIsOursAndHoldsTheDeclaration)
 {
   ASSERT_TRUE(StealthWebGPUPreloadBundledVulkan());
@@ -249,7 +277,11 @@ TEST(StealthWebGPUBundledVulkan, TheAdapterIsOursAndHoldsTheDeclaration)
   const std::string adapter(reinterpret_cast<const char*>(name));
   EXPECT_NE(adapter.find("llvmpipe"), std::string::npos) << adapter;
   EXPECT_NE(adapter.find("128 bits"), std::string::npos) << adapter;
-  EXPECT_EQ(badLimits, 0u) << reinterpret_cast<const char*>(badNames);
+  const std::set<std::string> known(std::begin(kKnownLimitDefects),
+                                    std::end(kKnownLimitDefects));
+  const char* names = reinterpret_cast<const char*>(badNames);
+  EXPECT_EQ(LimitNames(names), known) << names;
+  EXPECT_EQ(static_cast<size_t>(badLimits), known.size()) << names;
 }
 
 // No library of the host's Vulkan stack is mapped in this process: the only
