@@ -49,6 +49,10 @@ ships without it and WebGPU answers null there.
 
 The WebGPU server's wgpu instance does not read the host's environment: `wgpu_server_new` reads seven `WGPU_*` variables into its instance flags (`InstanceFlags::with_env()`), the only environment read reachable in a release build; with the engine on the flags are the ones built with no variable set (`gfx/wgpu_bindings/src/stealth_webgpu_env.rs`). Both `server.rs` hooks declare their path module in the block they run in, so the file keeps two lines.
 
+## Known defect
+
+maxBindingsPerBindGroup on Linux (decided 2026-11-02 for firefox-55): retail on D3D12 reports u32::MAX; our lavapipe holds about 2^20 because it sizes a descriptor set layout by the highest binding number. A page binding at an index above that fails on Linux and not on retail. The gtest StealthWebGPUBundledVulkan.TheAdapterIsOursAndHoldsTheDeclaration lists it by name and fails on any other gap or when this one closes. The work that closes it: dense Vulkan binding indices per layout in wgpu-hal and in naga's SPIR-V output.
+
 ## Hooks in Mozilla files
 
 - `dom/webgpu/Adapter.cpp` (includes; AdapterInfo::IsFallbackAdapter; a forward declaration of ToJsKey; Adapter::Adapter after the feature loop; Adapter::RequestDevice before wgpu_client_request_device, already-hook): Calls only: the declared features, limits and fallback answer, and the clamp of what is sent to wgpu, all in dom/webgpu/StealthWebGPUDeclaration.cpp. ToJsKey is Adapter.cpp's own static; it is forward-declared so the declaration is keyed by the names the page reads.
