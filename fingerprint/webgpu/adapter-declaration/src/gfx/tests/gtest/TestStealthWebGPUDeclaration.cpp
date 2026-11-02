@@ -214,7 +214,9 @@ TEST(StealthWebGPUInstanceEnv, TheHostsVariablesDoNotReachTheInstance)
 extern "C" uint32_t stealth_wgpu_vulkan_adapter(uint8_t* aName,
                                                 size_t aNameLen,
                                                 const ffi::WGPULimits* aDeclared,
-                                                uint32_t* aBadLimits);
+                                                uint32_t* aBadLimits,
+                                                uint8_t* aBadNames,
+                                                size_t aBadNamesLen);
 
 TEST(StealthWebGPUBundledVulkan, TheLoaderNameLeadsToOurDriver)
 {
@@ -240,13 +242,14 @@ TEST(StealthWebGPUBundledVulkan, TheAdapterIsOursAndHoldsTheDeclaration)
       StealthParseWebGPULimits(nsLiteralCString(kRetail), Key, declared));
   uint8_t name[256] = {};
   uint32_t badLimits = 0xffffffff;
+  uint8_t badNames[2048] = {};
   EXPECT_EQ(stealth_wgpu_vulkan_adapter(name, sizeof(name), &declared,
-                                        &badLimits),
+                                        &badLimits, badNames, sizeof(badNames)),
             1u);
   const std::string adapter(reinterpret_cast<const char*>(name));
   EXPECT_NE(adapter.find("llvmpipe"), std::string::npos) << adapter;
   EXPECT_NE(adapter.find("128 bits"), std::string::npos) << adapter;
-  EXPECT_EQ(badLimits, 0u);
+  EXPECT_EQ(badLimits, 0u) << reinterpret_cast<const char*>(badNames);
 }
 
 // No library of the host's Vulkan stack is mapped in this process: the only

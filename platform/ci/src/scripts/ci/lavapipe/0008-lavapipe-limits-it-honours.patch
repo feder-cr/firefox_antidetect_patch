@@ -1,0 +1,33 @@
+diff --git a/src/gallium/frontends/lavapipe/lvp_device.c b/src/gallium/frontends/lavapipe/lvp_device.c
+index d9e05e5..d28c04a 100755
+--- a/src/gallium/frontends/lavapipe/lvp_device.c
++++ b/src/gallium/frontends/lavapipe/lvp_device.c
+@@ -976,7 +976,11 @@ lvp_get_properties(const struct lvp_physical_device *device, struct vk_propertie
+       .maxImageArrayLayers                      = device->pscreen->caps.max_texture_array_layers,
+       .maxTexelBufferElements                   = device->pscreen->caps.max_texel_buffer_elements,
+       .maxUniformBufferRange                    = MIN_SHADER_CAP(device->pscreen, max_const_buffer0_size),
+-      .maxStorageBufferRange                    = device->pscreen->caps.max_shader_buffer_size,
++      /* Firefox's bundled lavapipe: SSBOs are addressed through descriptor
++       * sets with 32-bit offsets (nir_address_format_vec2_index_32bit_offset),
++       * not gallium's legacy 1 << 27; a 2^31-4 byte binding written at its
++       * last u32 is checked by scripts/ci/lavapipe/proof on every build. */
++      .maxStorageBufferRange                    = (1u << 31) - 4,
+       .maxPushConstantsSize                     = MAX_PUSH_CONSTANTS_SIZE,
+       .maxMemoryAllocationCount                 = UINT32_MAX,
+       .maxSamplerAllocationCount                = 32 * 1024,
+@@ -1019,9 +1023,12 @@ lvp_get_properties(const struct lvp_physical_device *device, struct vk_propertie
+       .maxFragmentInputComponents               = 128,
+       .maxFragmentOutputAttachments             = 8,
+       .maxFragmentDualSrcAttachments            = 2,
+-      .maxFragmentCombinedOutputResources       = max_render_targets +
+-                                                  device->pscreen->shader_caps[MESA_SHADER_FRAGMENT].max_shader_buffers +
+-                                                  device->pscreen->shader_caps[MESA_SHADER_FRAGMENT].max_shader_images,
++      /* Firefox's bundled lavapipe: storage buffers and images are read from
++       * descriptor sets, bounded per stage by MAX_DESCRIPTORS (as declared
++       * above), not by gallium's legacy 32 buffer and 64 image slots; a
++       * fragment shader writing 64 of each is checked by
++       * scripts/ci/lavapipe/proof on every build. */
++      .maxFragmentCombinedOutputResources       = max_render_targets + 2 * MAX_DESCRIPTORS,
+       .maxComputeSharedMemorySize               = device->pscreen->compute_caps.max_local_size,
+       .maxComputeWorkGroupCount                 = { grid_size[0], grid_size[1], grid_size[2] },
+       .maxComputeWorkGroupInvocations           = device->pscreen->compute_caps.max_threads_per_block,
