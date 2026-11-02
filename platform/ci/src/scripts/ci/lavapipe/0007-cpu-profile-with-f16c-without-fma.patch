@@ -1,0 +1,22 @@
+--- a/src/util/u_cpu_detect.c
++++ b/src/util/u_cpu_detect.c
+@@ -708,6 +708,19 @@ void check_cpu_caps_override(void)
+ #endif /* DETECT_ARCH_X86 || DETECT_ARCH_X86_64 */
+    }
+ 
++#if DETECT_ARCH_X86_64
++   /* Firefox's bundled lavapipe: ONE x86_64 code profile, so a page renders
++    * the same bytes on every host. SSE up to 4.2, AVX and F16C (exact
++    * half-float conversions: Vulkan's shaderFloat16, which WebGPU's
++    * compliance needs on llvmpipe); never FMA, whose fused results differ
++    * from a separate multiply and add, nor AVX2 or AVX-512. Only ever
++    * lowered from the host's: a CPU without F16C has no half floats, so
++    * WebGPU exposes no adapter there, never other bytes. */
++   util_cpu_caps.has_fma = 0;
++   util_cpu_caps.has_avx2 = 0;
++   util_cpu_caps.has_avx512f = 0;
++#endif
++
+ #if DETECT_ARCH_X86 || DETECT_ARCH_X86_64
+    if (!util_cpu_caps.has_sse) {
+       util_cpu_caps.has_sse2 = 0;

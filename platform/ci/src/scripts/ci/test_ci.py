@@ -535,6 +535,22 @@ def main() -> int:
                       and "-Wl,-z,nodelete" in floor_text
                       and '+__attribute__((visibility("hidden"))) int\n+__cxa_thread_atexit_impl(' in floor_text
                       and "-static-libstdc++" in (HERE / "lavapipe_build.py").read_text(encoding="utf-8")))
+        lvp = HERE / "lavapipe"
+
+        def patch_text(glob):
+            found = sorted(lvp.glob(glob))
+            return found[0].read_text(encoding="utf-8") if found else ""
+        layers = patch_text("*-lavapipe-layer-enumeration-without-a-loader.patch")
+        cases.append(("webgpu: with no loader lavapipe answers no layers as 0 and VK_SUCCESS (run 41358084281: wgpu gave up the instance on VK_ERROR_LAYER_NOT_PRESENT)",
+                      layers.count("+   *pPropertyCount = 0;\n+   return VK_SUCCESS;\n") == 2
+                      and layers.count("-   return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);") == 2
+                      and "+   return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);" not in layers))
+        profile = patch_text("*-cpu-profile-with-f16c-without-fma.patch")
+        options = patch_text("0001-*.patch")
+        cases.append(("webgpu: lavapipe's CPU profile keeps F16C (shaderFloat16, which WebGPU's compliance needs on llvmpipe; run 41358084281 had no adapter) and drops FMA, AVX2, AVX-512",
+                      '"GALLIUM_OVERRIDE_CPU_CAPS"' not in options
+                      and all("+   util_cpu_caps.%s = 0;" % cap in profile for cap in ("has_fma", "has_avx2", "has_avx512f"))
+                      and "has_f16c = 0" not in profile and "has_avx = 0" not in profile))
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)
