@@ -551,6 +551,29 @@ def main() -> int:
                       '"GALLIUM_OVERRIDE_CPU_CAPS"' not in options
                       and all("+   util_cpu_caps.%s = 0;" % cap in profile for cap in ("has_fma", "has_avx2", "has_avx512f"))
                       and "has_f16c = 0" not in profile and "has_avx = 0" not in profile))
+        honours = patch_text("*-lavapipe-limits-it-honours.patch")
+        cases.append(("webgpu: lavapipe advertises the storage limits it honours, not gallium's legacy 1 << 27 and 32+64 slots (run 41372399866: 8 declared limits above the adapter's)",
+                      "+      .maxStorageBufferRange                    = (1u << 31) - 4,\n" in honours
+                      and "+      .maxFragmentCombinedOutputResources       = max_render_targets + 2 * MAX_DESCRIPTORS,\n" in honours
+                      and "-      .maxStorageBufferRange                    = device->pscreen->caps.max_shader_buffer_size,\n" in honours))
+        with tempfile.TemporaryDirectory() as t:
+            fake = Path(t)
+            (fake / "VERSIONS.json").write_text("{}", encoding="utf-8")
+            (fake / "0001-x.patch").write_text("x", encoding="utf-8")
+            (fake / "proof").mkdir()
+            (fake / "proof" / "proof.c").write_text("a", encoding="utf-8")
+            before = lavapipe_build.inputs_key("clang", fake / "VERSIONS.json", fake)
+            (fake / "proof" / "proof.c").write_text("b", encoding="utf-8")
+            after = lavapipe_build.inputs_key("clang", fake / "VERSIONS.json", fake)
+        good = ("A storage buffer binding of 2147483644 bytes: first 0x12345678 last 0xdeadbeef -> OK\n"
+                "B fragment shader with 64 storage buffers and 64 storage images: 0 wrong -> OK\n")
+        check = getattr(lavapipe_build, "proof_problems", None)
+        cases.append(("webgpu: every lavapipe build uses its raised limits for real before keeping the library, and the proof is in the cache key",
+                      before != after and check is not None and check(good) == []
+                      and len(check(good.replace("0 wrong -> OK", "3 wrong -> WRONG"))) == 1
+                      and len(check(good.splitlines()[0])) == 1
+                      and "prove(lib," in (HERE / "lavapipe_build.py").read_text(encoding="utf-8")
+                      and all((lvp / "proof" / f).is_file() for f in ("proof.c", "big.comp", "many.vert", "many.frag"))))
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)

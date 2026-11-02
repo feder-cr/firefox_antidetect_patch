@@ -1,0 +1,4 @@
+#version 450
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) buffer B { uint d[]; } b;
+void main() { b.d[0] = 0x12345678u; b.d[b.d.length() - 1] = 0xdeadbeefu; }

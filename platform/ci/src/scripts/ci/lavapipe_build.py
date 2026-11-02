@@ -22,6 +22,10 @@ sqrt instead of a vendor-dependent rsqrt, a fixed heap, budget and thread
 count, no /dev/udmabuf. It meets Firefox's glibc 2.17 floor the way Firefox
 does, by defining __cxa_thread_atexit_impl (glibc 2.18) inside the library
 (0005, the counterpart of build/unix/stdc++compat for a static libstdc++).
+It advertises the storage limits it honours (0008: a 2^31-4 byte storage
+buffer binding, and storage buffers and images bounded by its descriptor sets
+rather than gallium's legacy 32 and 64 slots), and every build proves them by
+using them (scripts/ci/lavapipe/proof) before the library is kept.
 Firefox maps it under the loader's name (SONAME
 libvulkan.so.1) and asks it for vkGetInstanceProcAddr directly
 (dom/webgpu/StealthWebGPUDeclaration.cpp).
@@ -50,6 +54,9 @@ sys.path.insert(0, str(HERE.parent))  # upstream_toolchain.py
 from upstream_toolchain import http_get  # noqa: E402
 
 PATCHES = HERE / "lavapipe"
+# A Vulkan program that uses, beyond what lavapipe used to advertise, the limits
+# patch 0008 raises: every build runs it before the library is kept.
+PROOF = PATCHES / "proof"
 VERSIONS = PATCHES / "VERSIONS.json"
 LIB = "libvulkan_lvp.so"
 SONAME = "libvulkan.so.1"
@@ -105,6 +112,8 @@ def inputs_key(clang_version: str, versions: Path = VERSIONS, patches: Path = PA
     h.update(versions.read_bytes())
     for p in sorted(patches.glob("*.patch")):
         h.update(p.name.encode() + b"\0" + p.read_bytes())
+    for p in sorted((patches / "proof").glob("*")):
+        h.update(b"proof/" + p.name.encode() + b"\0" + p.read_bytes())
     h.update(script.read_bytes())
     h.update(clang_version.encode())
     return h.hexdigest()[:32]
@@ -175,6 +184,39 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: f.read(1 << 20), b""):
             h.update(block)
     return h.hexdigest()
+
+
+PROOF_LINES = ("A storage buffer binding of 2147483644 bytes",
+               "B fragment shader with 64 storage buffers and 64 storage images")
+
+
+def proof_problems(output: str) -> list:
+    """What the proof's output says is wrong; [] when every use worked."""
+    problems = []
+    for start in PROOF_LINES:
+        line = next((l for l in output.splitlines() if l.startswith(start)), None)
+        if line is None:
+            problems.append("the proof never reported: %s" % start)
+        elif not line.endswith("-> OK"):
+            problems.append(line)
+    return problems
+
+
+def prove(lib: Path, vulkan_include: Path, work: Path, run=subprocess.run) -> list:
+    """Builds scripts/ci/lavapipe/proof against `lib` and runs it: a 2^31-4
+    byte storage buffer binding written at its last u32, and a fragment shader
+    writing 64 storage buffers and 64 storage images (run 41372399866: our
+    lavapipe advertised 1 << 27 and 104, gallium's legacy slots, under the
+    declared retail limits). Returns the problems."""
+    work.mkdir(parents=True, exist_ok=True)
+    for shader in ("big.comp", "many.vert", "many.frag"):
+        run(["glslangValidator", "-V", "--target-env", "vulkan1.3", "-o", str(work / (shader + ".spv")),
+             str(PROOF / shader)], check=True, capture_output=True)
+    exe = work / "proof"
+    run(["cc", "-O1", "-I", str(vulkan_include), "-o", str(exe), str(PROOF / "proof.c"), "-ldl"], check=True)
+    done = run([str(exe), str(lib)], cwd=work, capture_output=True, text=True)
+    print(done.stdout, end="")
+    return proof_problems(done.stdout) + ([] if done.returncode == 0 else ["the proof exited %d" % done.returncode])
 
 
 def cached(out: Path, key: str) -> Path | None:
@@ -273,6 +315,8 @@ def build(out: Path, clang: Path, sysroot: Path, jobs: int, run=subprocess.run, 
         dynamic = run(["readelf", "-d", str(lib)], check=True, capture_output=True, text=True).stdout
         symbols = run(["readelf", "--dyn-syms", "-W", str(lib)], check=True, capture_output=True, text=True).stdout
         problems = check_binary(dynamic, symbols)
+        if not problems:
+            problems = prove(lib, mesa / "include", tmp / "proof", run)
         if problems:
             lib.unlink()
             raise RuntimeError("the lavapipe library is not shippable:\n  " + "\n  ".join(problems))

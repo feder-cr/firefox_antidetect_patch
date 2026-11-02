@@ -98,14 +98,18 @@ pub extern "C" fn stealth_wgpu_adapter_after_search(found: bool) -> u32 {
 /// bundled lavapipe (dom/webgpu StealthWebGPUPreloadBundledVulkan). Writes the
 /// adapter's name (NUL-terminated, cut to `name_len`), counts in `bad_limits`
 /// the declared limits the adapter does not really have (each one a value a
-/// page reads and cannot use), and answers the device type: 0 no adapter,
-/// 1 Cpu, 2 another type, 3 not Linux.
+/// page reads and cannot use), writes them as "name declared/has" entries
+/// into `bad_names` (NUL-terminated, cut to `bad_names_len`) so a failure says
+/// which, and answers the device type: 0 no adapter, 1 Cpu, 2 another type,
+/// 3 not Linux.
 #[no_mangle]
 pub extern "C" fn stealth_wgpu_vulkan_adapter(
     name: *mut u8,
     name_len: usize,
     declared: *const wgt::Limits,
     bad_limits: *mut u32,
+    bad_names: *mut u8,
+    bad_names_len: usize,
 ) -> u32 {
     #[cfg(target_os = "linux")]
     {
@@ -135,14 +139,28 @@ pub extern "C" fn stealth_wgpu_vulkan_adapter(
         }
         let real = super::restrict_limits(server.adapter_limits(adapter_id));
         let mut bad = 0u32;
+        let mut names = String::new();
         // SAFETY: the caller passes the declared limits it parsed.
         let declared = unsafe { &*declared };
         declared.check_limits_with_fail_fn(&real, false, |limit, wanted, has| {
             log::warn!("declared {limit} = {wanted}, the bundled driver has {has}");
             bad += 1;
+            if !names.is_empty() {
+                names.push_str("; ");
+            }
+            names.push_str(&format!("{limit} {wanted}/{has}"));
         });
         // SAFETY: the caller passes a counter.
         unsafe { *bad_limits = bad };
+        if !bad_names.is_null() && bad_names_len > 0 {
+            let bytes = names.as_bytes();
+            let n = bytes.len().min(bad_names_len - 1);
+            // SAFETY: the caller gives a buffer of bad_names_len bytes.
+            unsafe {
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), bad_names, n);
+                *bad_names.add(n) = 0;
+            }
+        }
         match info.device_type {
             wgt::DeviceType::Cpu => 1,
             _ => 2,
@@ -150,7 +168,7 @@ pub extern "C" fn stealth_wgpu_vulkan_adapter(
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (name, name_len, declared, bad_limits);
+        let _ = (name, name_len, declared, bad_limits, bad_names, bad_names_len);
         3
     }
 }
