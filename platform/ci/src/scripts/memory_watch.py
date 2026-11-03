@@ -20,6 +20,13 @@ So every 5 seconds:
     ld.lld linking libxul.so with full LTO at 14 GB (run 40500378511), a link
     that finishes in swap (run 40466778026).
 Every line also goes to --log, which the workflow uploads with build.log.
+
+On a machine whose container has less memory than its host (the Theta node: a
+cgroup limit of 62.5 GB, no swap possible, and a /proc/meminfo that describes the
+host) the limits are the cgroup's: what /proc/meminfo calls available and free
+swap would be memory the kernel never gives this build, and the first sign would
+be the cgroup's OOM killer choosing the victim. The thresholds grow with the
+limit there; on a 16 GB runner they are what they always were.
 """
 from __future__ import annotations
 
@@ -33,6 +40,9 @@ from pathlib import Path
 
 LOW_MB = 3000
 KILL_MB = 600
+# The machine those two were measured on. Larger ones keep the same proportion.
+BASE_MB = 16000
+CGROUP = Path("/sys/fs/cgroup")
 # The runner's own processes: killing them is what freezes or ends the job.
 SPARED = ("Runner.Worker", "Runner.Listener", "memory_watch.py")
 
@@ -43,6 +53,58 @@ def meminfo(proc: Path = Path("/proc")) -> dict:
         key, value = line.split(":", 1)
         out[key] = int(value.split()[0]) // 1024  # kB -> MB
     return out
+
+
+def _cgroup_value(path: Path):
+    """A cgroup file's number; None when it is absent or says "max"."""
+    try:
+        return int(path.read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def memory(proc: Path = Path("/proc"), cgroup: Path = CGROUP) -> dict:
+    """meminfo, with the container's limits where they are lower than the host's.
+
+    Page cache counts as used in memory.current and the kernel gives it back, so
+    what is available is the limit less what cannot be reclaimed: the same sum
+    that decides the cgroup's OOM, in the working-set form of inactive_file."""
+    m = meminfo(proc)
+    limit = _cgroup_value(cgroup / "memory.max")
+    current = _cgroup_value(cgroup / "memory.current")
+    if limit is not None and current is not None and limit // 2**20 < m["MemTotal"]:
+        reclaimable = 0
+        try:
+            for line in (cgroup / "memory.stat").read_text().splitlines():
+                if line.startswith("inactive_file "):
+                    reclaimable = int(line.split()[1])
+        except (OSError, ValueError, IndexError):
+            pass
+        used = max(0, current - reclaimable)
+        m["MemTotal"] = limit // 2**20
+        m["MemAvailable"] = min(m["MemAvailable"], max(0, limit - used) // 2**20)
+        swap_limit = _cgroup_value(cgroup / "memory.swap.max")
+        if swap_limit is not None:
+            swap_used = _cgroup_value(cgroup / "memory.swap.current") or 0
+            m["SwapTotal"] = min(m["SwapTotal"], swap_limit // 2**20)
+            m["SwapFree"] = min(m["SwapFree"], max(0, swap_limit - swap_used) // 2**20)
+    return m
+
+
+def cpu_limit(cgroup: Path = CGROUP) -> int:
+    """The CPUs this container may use: cpu.max's quota, or what the kernel reports."""
+    cpus = os.cpu_count() or 1
+    try:
+        quota, period = (cgroup / "cpu.max").read_text().split()[:2]
+        cpus = min(cpus, max(1, int(quota) // int(period)))
+    except (OSError, ValueError):
+        pass
+    return cpus
+
+
+def thresholds(total_mb: int) -> tuple:
+    """(low, kill) in MB: the measured ones, in proportion on a larger machine."""
+    return (max(LOW_MB, LOW_MB * total_mb // BASE_MB), max(KILL_MB, KILL_MB * total_mb // BASE_MB))
 
 
 def processes(proc: Path = Path("/proc")) -> list:
@@ -92,7 +154,8 @@ def main(argv=None) -> int:
     last_status = last_top = 0.0
     starving = 0
     while True:
-        m = meminfo()
+        m = memory()
+        low_mb, kill_mb = thresholds(m["MemTotal"])
         avail = m["MemAvailable"]
         swap_used = m["SwapTotal"] - m["SwapFree"]
         now = time.monotonic()
@@ -101,12 +164,12 @@ def main(argv=None) -> int:
             say("[mem] available %d/%d MB, swap used %d/%d MB, disk free %d GB"
                 % (avail, m["MemTotal"], swap_used, m["SwapTotal"], disk))
             last_status = now
-        if avail < LOW_MB and now - last_top >= 15:
+        if avail < low_mb and now - last_top >= 15:
             top = processes()[:6]
             say("[mem] available %d MB, largest: %s" % (
                 avail, "; ".join("%d MB pid %d %s" % (r, p, c[:160]) for r, p, c in top)))
             last_top = now
-        starving = starving + 1 if left_mb(m) < KILL_MB else 0
+        starving = starving + 1 if left_mb(m) < kill_mb else 0
         if starving >= 2:
             hit = victim(processes(), os.getpid())
             if hit:

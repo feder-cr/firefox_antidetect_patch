@@ -86,28 +86,6 @@ jobs:
           path: src-meta
           run-id: ${{ inputs.build_run_id }}
           github-token: ${{ inputs.build_run_id != github.run_id && github.token || '' }}
-      # What is published is compiled from nothing (scripts/release_plan.py,
-      # compile_cache). release.yml records it beside source-commit.txt; a
-      # candidate compiled through the cache stops here, which is what keeps
-      # republish.yml from publishing one. To ship that code: a release run, or
-      # a candidate with compile_cache=off republished.
-      # A run without the file was built before the record existed (2026-10-26),
-      # when every build was cold; artifacts live 7 days, so after 2026-11-02
-      # no such run can reach this step and the branch below can go.
-      - name: Refuse archives compiled through the compile cache
-        run: |
-          if [ ! -f src-meta/compile-cache.txt ]; then
-            echo "no compile-cache.txt: a run from before the record, built cold"
-            exit 0
-          fi
-          CACHE="$(tr -d '[:space:]' < src-meta/compile-cache.txt)"
-          if [ "$CACHE" != "off" ]; then
-            echo "ERROR: run ${{ inputs.build_run_id }} was compiled through the compile cache ($CACHE)."
-            echo "A published build is compiled from nothing: run kind=release, or a"
-            echo "candidate with compile_cache=off, and publish that run."
-            exit 1
-          fi
-          echo "compiled cold: ok to publish"
       - name: Assert all 3 target archives present (no silent partial release)
         run: |
           # The names the legs build, from the tree (scripts/ci/legs.py), never

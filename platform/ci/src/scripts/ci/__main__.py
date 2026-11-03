@@ -2,8 +2,9 @@
 
   matrix                          the build matrix (JSON), for the plan job
   asset --leg L                   the asset name of leg L for this tree
-  mozconfig --leg L --compile-cache gha|off [--sccache PATH] [--pgo-dir DIR]
+  mozconfig --leg L --compile-cache gha|off [--sccache PATH] [--pgo-dir DIR] [--parallel N]
                                   extend ./.mozconfig with the CI layers, print it
+  node-parallel                   the compile jobs this machine's limits allow (the node)
   phase NAME -- CMD...            run CMD as phase NAME, recording its events
   report DIR                      the run's summary from the legs' events
   assets | version                every leg's asset name | the version the tree builds
@@ -50,6 +51,9 @@ def main(argv) -> int:
     m.add_argument("--compile-cache", required=True, choices=("gha", "off"))
     m.add_argument("--sccache", default=os.environ.get("SCCACHE_PATH", ""))
     m.add_argument("--pgo-dir", type=Path, default=Path.home() / "pgo")
+    # The node's job writes CI_PARALLEL; GitHub's runners never have it.
+    m.add_argument("--parallel", type=int, default=int(os.environ.get("CI_PARALLEL", "4")))
+    sub.add_parser("node-parallel")
     r = sub.add_parser("report")
     r.add_argument("dir", type=Path)
     sub.add_parser("assets")
@@ -72,7 +76,11 @@ def main(argv) -> int:
     b.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
-    if args.cmd == "matrix":
+    if args.cmd == "node-parallel":
+        sys.path.insert(0, str(HERE.parent))
+        import memory_watch
+        print(mozconfig.node_parallel(memory_watch.cpu_limit(), memory_watch.memory()["MemTotal"] * 2**20))
+    elif args.cmd == "matrix":
         print(legs.matrix(legs.tree_version()))
     elif args.cmd == "assets":
         print("\n".join(l.asset(legs.tree_version()) for l in legs.LEGS))
@@ -113,7 +121,8 @@ def main(argv) -> int:
         if not path.is_file():
             print("ERROR: no .mozconfig in the source", file=sys.stderr)
             return 1
-        plan = mozconfig.Plan(args.compile_cache, args.sccache, args.pgo_dir, upstream_toolchain.pgo)
+        plan = mozconfig.Plan(args.compile_cache, args.sccache, args.pgo_dir, upstream_toolchain.pgo,
+                              args.parallel)
         text = mozconfig.compose(path.read_text(encoding="utf-8"), legs.by_name(args.leg), plan)
         path.write_text(text, encoding="utf-8")
         print("----- final .mozconfig -----")

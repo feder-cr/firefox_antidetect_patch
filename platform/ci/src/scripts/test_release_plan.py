@@ -15,16 +15,17 @@ refuse, each one a real way to get it wrong, and the runs it must accept:
        `firefox-49-rc` would start a release);
     5. a kind nobody declared;
     6. an event that is neither a pushed tag nor a run by hand;
-    7. a release asked to compile through the cache - what is published is
-       compiled from nothing;
-    8. a compile cache nobody declared.
+    8. a compile cache nobody declared;
+    8b. a builder nobody declared.
   known-good
     9. a candidate: nothing published, the gate's seal LOCAL, the cache on;
-   10. a candidate with the cache off, the one that can be republished;
+   10. a candidate with the cache off, a cold build;
    11. a release by hand: tag, number, previous tag, the seal under the tag,
-       the cache off;
-   12. a release by hand that asks for the cache off, which it is anyway;
-   13. a pushed firefox-N tag, whatever the (absent) kind input says.
+       the cache on;
+   12. a release by hand that asks for the cache off, or for it by name;
+   13. a pushed firefox-N tag, whatever the (absent) kind input says, the cache on;
+   14. the builder: theta by default for candidates, releases and pushed tags,
+       github only when asked, and either one with either kind.
 
 Run it directly, like test_make_seal.py: `python3 scripts/test_release_plan.py`.
 """
@@ -48,29 +49,44 @@ REFUSED = [
     ("an undeclared kind", ("workflow_dispatch", "nightly", "", "x")),
     ("an empty kind by hand", ("workflow_dispatch", "", "", "x")),
     ("another event", ("pull_request", "release", "firefox-49", "x")),
-    ("a release asked for the compile cache",
-     ("workflow_dispatch", "release", "firefox-49", "x", "gha")),
     ("an undeclared compile cache", ("workflow_dispatch", "candidate", "", "x", "on")),
+    ("an undeclared builder", ("workflow_dispatch", "candidate", "", "x", "", "self-hosted")),
 ]
 
 ACCEPTED = [
     ("a candidate", ("workflow_dispatch", "candidate", "", "next/firefox-49"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "gha"}),
+      "compile_cache": "gha", "builder": "theta"}),
     ("a candidate without the cache",
      ("workflow_dispatch", "candidate", "", "next/firefox-49", "off"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "off"}),
+      "compile_cache": "off", "builder": "theta"}),
     ("a release by hand", ("workflow_dispatch", "release", "firefox-49", "next/firefox-49"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "off"}),
+      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "theta"}),
+    ("a release by hand asking for the cache",
+     ("workflow_dispatch", "release", "firefox-49", "next/firefox-49", "gha"),
+     {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
+      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "theta"}),
     ("a release by hand asking for no cache",
      ("workflow_dispatch", "release", "firefox-49", "next/firefox-49", "off"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "off"}),
+      "seal_tag": "firefox-49", "compile_cache": "off", "builder": "theta"}),
     ("a pushed tag", ("push", "", "", "firefox-50"),
      {"kind": "release", "tag": "firefox-50", "num": "50", "prevtag": "firefox-49",
-      "seal_tag": "firefox-50", "compile_cache": "off"}),
+      "seal_tag": "firefox-50", "compile_cache": "gha", "builder": "theta"}),
+    ("a candidate back on GitHub's runners",
+     ("workflow_dispatch", "candidate", "", "x", "", "github"),
+     {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
+      "compile_cache": "gha", "builder": "github"}),
+    ("a release back on GitHub's runners",
+     ("workflow_dispatch", "release", "firefox-49", "x", "", "github"),
+     {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
+      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "github"}),
+    ("a release on the node, asked by name",
+     ("workflow_dispatch", "release", "firefox-49", "x", "", "theta"),
+     {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
+      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "theta"}),
 ]
 
 

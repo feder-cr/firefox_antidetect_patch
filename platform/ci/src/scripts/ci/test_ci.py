@@ -11,6 +11,8 @@
     4. the repository's sccache lines go, case-insensitive (SCCACHE_CACHE_SIZE
        too), its comments stay;
     5. compile_cache=gha without the pinned sccache's path is refused;
+    5b. parallelism: 4 by default with GitHub's file unchanged, on the node
+        min(CPU, RAM GB / 2);
     6. every layer writes its reason into the file;
   phase
     7. a failing command fails the phase with its exit code, and the summary
@@ -174,6 +176,16 @@ def main() -> int:
             return True
         return False
     cases.append(("compile_cache=gha without the sccache path is refused", gha_without_path()))
+    plain = mozconfig.compose(BASE, legs.by_name("linux-x86_64"), mozconfig.Plan("off", "", Path("pgo"), fake_pgo))
+    wide = mozconfig.compose(BASE, legs.by_name("linux-x86_64"), mozconfig.Plan("off", "", Path("pgo"), fake_pgo, 30))
+    cases.append(("parallelism: 4 unless the plan says otherwise, and only that line and its reason change",
+                  plain == text and "mk_add_options MOZ_PARALLEL_BUILD=4\n" in plain
+                  and mozconfig.active(wide) == [l.replace("BUILD=4", "BUILD=30") for l in mozconfig.active(plain)]
+                  and "no swap" in wide and "no swap" not in plain))
+    cases.append(("parallelism on the node: min(CPU, RAM GB / 2), measured values 48 CPU and 62.5 GB give 31",
+                  mozconfig.node_parallel(48, 67177832448) == 31
+                  and mozconfig.node_parallel(24, 67177832448) == 24
+                  and mozconfig.node_parallel(48, 1) == 1))
     cases.append(("every layer writes its reason",
                   all(("# [%s] " % f.__name__) in text for f in mozconfig.LAYERS)))
 
@@ -438,15 +450,15 @@ def main() -> int:
         gt_input = doc[True]["workflow_dispatch"]["inputs"]["gtests"]
         gt_step = [s for s in doc["jobs"]["build"]["steps"] if s.get("name", "").startswith("Engine gtests")]
         steps = {s.get("name", ""): s for s in doc["jobs"]["build"]["steps"]}
-        again = steps.get("Compile cache (candidates only) - restore again if the first brought nothing", {})
-        said = steps.get("Compile cache (candidates only) - what this build starts from", {})
+        again = steps.get("Compile cache - restore again if the first brought nothing", {})
+        said = steps.get("Compile cache - what this build starts from", {})
         cases.append(("compile cache: a restore that brought nothing is tried again, and a cold build says so (run 40647970370)",
                       "steps.cache-restore.outputs.cache-matched-key == ''" in again.get("if", "")
                       and again.get("with", {}).get("restore-keys") == "sccache-${{ matrix.leg }}-"
                       and "builds cold" in said.get("run", "") and "GITHUB_STEP_SUMMARY" in said.get("run", "")))
         cases.append(("gtests: an input, off by default, on every leg, as a phase",
                       gt_input["type"] == "boolean" and gt_input["default"] is False and len(gt_step) == 1
-                      and gt_step[0]["if"] == "github.event.inputs.gtests == 'true'"
+                      and gt_step[0]["if"] == "github.event.inputs.gtests == 'true' && runner.environment == 'github-hosted'"
                       and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"]))
         # A cross-compiled leg's runner cannot execute what it builds (run 41232307511:
         # "Exec format error" on firefox.exe): its gtests are built there and run by a
@@ -593,6 +605,11 @@ def main() -> int:
                                     "publish.yml:publish", "republish.yml:plan"}
                       and "SOURCE_REF" not in every and "SOURCE_REPO" not in every and "source_ref" not in every
                       and "series-commit.txt" in every and "--series-commit-file" in every))
+
+    import test_cache_rules
+    import test_release_builder
+    import test_theta_node
+    cases += test_theta_node.cases() + test_cache_rules.cases() + test_release_builder.cases()
 
     failures = 0
     for name, ok in cases:

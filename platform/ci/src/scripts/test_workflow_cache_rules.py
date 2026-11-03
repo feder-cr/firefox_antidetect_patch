@@ -35,7 +35,7 @@ def step(text: str, name: str) -> str:
 def main() -> int:
     text = WORKFLOW.read_text(encoding="utf-8").replace("\r\n", "\n")
     build = step(text, "Build")
-    save = step(text, "Compile cache (candidates only) - save this leg's")
+    save = step(text, "Compile cache - save this leg's")
     cond = re.search(r"^\s+if: (.*)$", save, re.M).group(1)
     size = int(re.search(r"SCCACHE_CACHE_SIZE=(\d+)G", text).group(1))
     swap = int(re.search(r"fallocate -l (\d+)G \"\$SWAPFILE\"", text).group(1))

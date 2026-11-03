@@ -31,6 +31,8 @@ class Leg:
     host: str = ""
     target: str = ""
     extra_pkgs: str = ""
+    # Compiled on the Theta node when the plan's builder says so (scripts/ci/theta_node.py).
+    node: bool = False
 
     def asset(self, version: str) -> str:
         os_name, arch = self.leg.split("-", 1)
@@ -40,11 +42,11 @@ class Leg:
 
 LEGS = (
     Leg("linux-x86_64", "ubuntu-24.04", "linux", "x86_64-unknown-linux-gnu",
-        host="x86_64-unknown-linux-gnu"),
+        host="x86_64-unknown-linux-gnu", node=True),
     Leg("linux-arm64", "ubuntu-24.04-arm", "linux", "aarch64-unknown-linux-gnu"),
     Leg("win-x86_64", "ubuntu-24.04", "win", "x86_64-pc-windows-msvc",
         host="x86_64-unknown-linux-gnu", target="x86_64-pc-windows-msvc",
-        extra_pkgs="msitools p7zip-full zip"),
+        extra_pkgs="msitools p7zip-full zip", node=True),
 )
 
 

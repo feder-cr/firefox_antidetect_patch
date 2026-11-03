@@ -5,7 +5,11 @@
   2. processes come largest first, kernel threads (no command line) left out;
   3. the victim is the largest process that is not the runner: killing
      Runner.Worker is what loses the job, the failure this script exists for;
-  4. a runner-only machine has no victim.
+  4. a runner-only machine has no victim;
+  5. a container's limits win over the host's meminfo (the Theta node's measured
+     numbers): available and free swap are the cgroup's, page cache is not used;
+  6. no limit, or a limit above the host: exactly meminfo, as on GitHub's runners;
+  7. the thresholds are the measured ones on 16 GB and in proportion above it.
 
 Run it directly: `python3 scripts/test_memory_watch.py`.
 """
@@ -56,6 +60,41 @@ def main() -> int:
         cases.append(("itself is spared", w.victim([(5, 99, "python3 x")], me=99) is None))
         cases.append(("a runner-only machine has no victim",
                       w.victim([p for p in procs if p[1] == 10], me=99) is None))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        proc, cg = root / "proc", root / "cg"
+        proc.mkdir()
+        cg.mkdir()
+        # A host with more memory and swap than the container may use.
+        (proc / "meminfo").write_text("MemTotal: 131072000 kB\nMemAvailable: 120000000 kB\n"
+                                      "SwapTotal: 8388608 kB\nSwapFree: 8388608 kB\n")
+        (cg / "memory.max").write_text("67177832448\n")
+        (cg / "memory.current").write_text("%d\n" % (40 * 2**30))
+        (cg / "memory.stat").write_text("anon 21474836480\ninactive_file %d\nfile 1\n" % (10 * 2**30))
+        (cg / "memory.swap.max").write_text("0\n")
+        (cg / "memory.swap.current").write_text("0\n")
+        (cg / "cpu.max").write_text("4800000 100000\n")
+        got = w.memory(proc, cg)
+        cases.append(("the container's limit is the total, as measured on the node",
+                      got["MemTotal"] == 67177832448 // 2**20))
+        cases.append(("page cache the kernel gives back is available (40 GB used, 10 of it inactive file)",
+                      got["MemAvailable"] == (67177832448 - 30 * 2**30) // 2**20))
+        cases.append(("no swap for the container, whatever the host has",
+                      got["SwapFree"] == 0 and got["SwapTotal"] == 0))
+        (cg / "memory.current").write_text("%d\n" % 67177832448)
+        (cg / "memory.stat").write_text("inactive_file 0\n")
+        cases.append(("a container at its limit starves, with the host's memory free",
+                      w.left_mb(w.memory(proc, cg)) < w.thresholds(64065)[1]))
+        cases.append(("cpu.max is the CPU limit", w.cpu_limit(cg) == min(48, __import__("os").cpu_count() or 1)))
+        (cg / "memory.max").write_text("max\n")
+        cases.append(("memory.max = max: exactly meminfo", w.memory(proc, cg) == w.meminfo(proc)))
+        (cg / "memory.max").write_text("%d\n" % (2**40))
+        cases.append(("a limit above the host: exactly meminfo", w.memory(proc, cg) == w.meminfo(proc)))
+        cases.append(("no cgroup at all: exactly meminfo", w.memory(proc, root / "none") == w.meminfo(proc)))
+        cases.append(("a GitHub runner's thresholds are the measured ones",
+                      w.thresholds(15989) == (3000, 600)))
+        cases.append(("the node's thresholds keep their proportion", w.thresholds(64065) == (12012, 2402)))
 
     failures = 0
     for name, ok in cases:

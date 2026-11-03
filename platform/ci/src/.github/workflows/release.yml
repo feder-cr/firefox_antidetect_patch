@@ -21,6 +21,14 @@
 # A run by hand is a CANDIDATE (build + gate, nothing published, a green run)
 # unless it says kind=release; the `plan` job decides, once, before any build
 # (scripts/release_plan.py), and every job reads its outputs.
+#
+# WHO COMPILES (builder, the plan's). theta, the default: the two x86_64 legs
+# compile on one Theta node, one after the other, each on a single-job runner; the
+# `node` job turns it on and `stop-node` off, both on GitHub's runners with the
+# API key, which never reaches the node. The node only compiles: gates and tests
+# stay on GitHub's runners, with the binaries from the artifacts. If it cannot
+# start the legs run on GitHub's runners, with a warning. github: what this
+# workflow was before the node, scripts/ci/test_release_builder.py holds it to that.
 # ─────────────────────────────────────────────────────────────────────────────
 name: release
 
@@ -44,14 +52,19 @@ on:
         default: ''
       compile_cache:
         description: >
-          candidate only. gha: compile through sccache on the GitHub Actions
-          cache, so a run after a fix recompiles only what changed (the plan's
-          default for a candidate). off: a cold build, the only candidate
-          republish.yml can publish. A release is always cold and refuses gha
-          (scripts/release_plan.py).
+          gha: compile through sccache on the GitHub Actions cache, so a run after
+          a fix recompiles only what changed (the plan's default). off: a cold
+          build.
         type: choice
         options: ['gha', 'off']
         default: 'gha'
+      builder:
+        description: >
+          theta: the x86_64 legs compile on the Theta node, gates and tests on
+          GitHub (scripts/ci/theta_node.py). github: everything on GitHub's runners.
+        type: choice
+        options: ['theta', 'github']
+        default: 'theta'
       wrapper_ref:
         description: >
           invisible_playwright ref the gate runs against. Defaults to main,
@@ -102,6 +115,7 @@ jobs:
       prevtag: ${{ steps.plan.outputs.prevtag }}
       seal_tag: ${{ steps.plan.outputs.seal_tag }}
       compile_cache: ${{ steps.plan.outputs.compile_cache }}
+      builder: ${{ steps.plan.outputs.builder }}
       build_date: ${{ steps.build_date.outputs.build_date }}
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -120,13 +134,14 @@ jobs:
           KIND: ${{ inputs.kind }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           REF_NAME: ${{ github.ref_name }}
-          # A pushed tag has no inputs: empty, and the plan makes it a cold release.
+          # A pushed tag has no inputs: empty, and the plan takes its defaults.
           COMPILE_CACHE: ${{ inputs.compile_cache }}
+          BUILDER: ${{ inputs.builder }}
         run: |
           set -e
           python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
             --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
-            --compile-cache "$COMPILE_CACHE" > plan.txt
+            --compile-cache "$COMPILE_CACHE" --builder "$BUILDER" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every
@@ -147,11 +162,46 @@ jobs:
           python3 scripts/ci/test_stealth_download_watchdog.py
           echo "matrix=$(python3 scripts/ci matrix)" | tee -a "$GITHUB_OUTPUT"
 
+  # Turns the Theta node on for this run (scripts/ci/theta_node.py). It runs on
+  # every run, with nothing to do on builder=github, instead of being skipped: a
+  # skipped ancestor skips gate and publish below, whose `if` is the implicit
+  # success(). Its failures all mean the same, GitHub's runners: the script answers
+  # with an empty runner, and continue-on-error covers a job that dies around it.
+  node:
+    needs: plan
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 40
+    permissions: { contents: read }
+    outputs:
+      runner: ${{ steps.node.outputs.runner }}
+      attempt: ${{ steps.node.outputs.attempt }}
+    steps:
+      - name: The series (this repository, this commit)
+        if: needs.plan.outputs.builder == 'theta'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
+      - name: Turn the node on, prepare it, start one runner per x86_64 leg
+        id: node
+        if: needs.plan.outputs.builder == 'theta'
+        env:
+          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
+          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+          RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
+        run: |
+          python3 .series/platform/ci/src/scripts/ci/theta_node.py provision \
+            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" | tee -a "$GITHUB_OUTPUT"
+
   build:
     name: build-${{ matrix.leg }}
-    needs: plan
-    runs-on: ${{ matrix.runner }}
+    needs: [plan, node]
+    # On the node's label only for the attempt that started it. A rerun of failed
+    # jobs reuses this job's outputs with a node already deleted: that leg goes to
+    # GitHub's runners instead of waiting on a label no runner will ever serve.
+    runs-on: ${{ (matrix.node && needs.node.outputs.attempt == github.run_attempt && needs.node.outputs.runner) || matrix.runner }}
     timeout-minutes: 350
+    # What the job's token may do, on a node a stranger owns: read this repository.
+    permissions: { contents: read }
     env:
       MOZ_BUILD_DATE: ${{ needs.plan.outputs.build_date }}
       # Every event scripts/ci/phase.py records is this leg's.
@@ -172,6 +222,8 @@ jobs:
           printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' \
             | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
       - name: Free disk + 32G swap (Linux runners)
+        # The node has 700 GB free, and a container cannot have swap.
+        if: runner.environment == 'github-hosted'
         run: |
           # The GH-hosted 14GB-free disk is tight for a full Firefox build: objdir
           # (.o + libxul) + `mach package` (a second dist copy) + the archive, plus
@@ -310,19 +362,12 @@ jobs:
       # notes (scripts/gen_release_notes.py) and re-publishes both files as assets, so
       # the NEXT release knows where to start the changelog. One leg is enough: every
       # leg applies the same series to the same tag.
-      #
-      # compile-cache.txt rides with it: whether these archives were compiled
-      # through the cache (the plan's compile_cache, the same for every leg).
-      # publish.yml refuses to publish a run whose archives were, so a cached
-      # candidate cannot become a release through republish.yml.
-      - name: Record source commit (for auto release notes) and compile cache
+      - name: Record source commit (for auto release notes)
         if: matrix.leg == 'linux-x86_64'
         shell: bash
         run: |
           git rev-parse HEAD > source-commit.txt && cat source-commit.txt
           git -C .series rev-parse HEAD > series-commit.txt && cat series-commit.txt
-          echo "${{ needs.plan.outputs.compile_cache }}" > compile-cache.txt
-          echo "compile cache: $(cat compile-cache.txt)"
       - name: Upload source-commit artifact
         if: matrix.leg == 'linux-x86_64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -331,7 +376,6 @@ jobs:
           path: |
             source-commit.txt
             series-commit.txt
-            compile-cache.txt
           if-no-files-found: error
           retention-days: 7
 
@@ -370,6 +414,29 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y util-linux binutils ${{ matrix.extra_pkgs }}
 
+      # The toolchains in an entry of their own, by their versions, on the x86_64
+      # legs wherever they run: ~/.mozbuild (clang, the MSVC of the win leg, what
+      # --enable-bootstrap fetches) and the retail's Rust. The CDNs have stopped us
+      # twice (runs 41205185526, 41302586484), and the node starts empty every time.
+      - name: Toolchains - their versions
+        id: toolchains-key
+        if: needs.plan.outputs.builder == 'theta' && matrix.node
+        shell: bash
+        run: |
+          RUST="$(python3 scripts/upstream_toolchain.py --leg ${{ matrix.leg }} rust-version)"
+          echo "rust=$RUST" >> "$GITHUB_OUTPUT"
+          echo "key=toolchains-${{ matrix.leg }}-rust$RUST-${{ hashFiles('taskcluster/kinds/toolchain/*.yml', 'build/vs/*.yaml', 'build/moz.configure/bootstrap.configure') }}" | tee -a "$GITHUB_OUTPUT"
+      - name: Toolchains - restore
+        id: toolchains
+        if: needs.plan.outputs.builder == 'theta' && matrix.node
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.mozbuild
+            !~/.mozbuild/srcdirs
+            ~/.rustup/toolchains/${{ steps.toolchains-key.outputs.rust }}-x86_64-unknown-linux-gnu
+          key: ${{ steps.toolchains-key.outputs.key }}
+
       # The retail's Rust, not the runner's. --enable-bootstrap fetches clang
       # from Mozilla but takes Rust from PATH, and the runner's "stable" built
       # the 157 candidates with rustc 1.99.0 against the retail's 1.95.0 - and
@@ -384,7 +451,7 @@ jobs:
           rustup default "$RUST"
           rustc --version
 
-      # LA CACHE DI COMPILAZIONE DELLE CANDIDATE (compile_cache=gha, deciso da
+      # LA CACHE DI COMPILAZIONE (compile_cache=gha, deciso da
       # scripts/release_plan.py). La corsa dopo una correzione deve ricompilare
       # solo cio' che la correzione tocca: un port a una nuova versione di
       # Firefox richiede molte corse, e ognuna a freddo costa 1-2 ore a gamba.
@@ -431,20 +498,23 @@ jobs:
       # compile's outputs and wrote the PGO profile back on every cache hit, and
       # the new mtime made the symbols step rebuild gkrust and relink xul (run
       # 40630019710). The binary is cached by tag and patches.
-      - name: Compile cache (candidates only) - the sccache binary, if built before
+      - name: Compile cache - the sccache binary, if built before
         if: needs.plan.outputs.compile_cache == 'gha'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/sccache-bin
-          key: sccache-bin-${{ runner.os }}-${{ runner.arch }}-v0.18.0-${{ hashFiles('scripts/ci/sccache/*.patch') }}
-      - name: Compile cache (candidates only) - build the one sccache this build uses
+          # The node is Ubuntu 22.04 and a binary built on 24.04 wants a newer glibc:
+          # its own entry. Compile hits are shared all the same, sccache's version
+          # enters their key and its binary does not.
+          key: sccache-bin-${{ runner.os }}-${{ runner.arch }}${{ runner.environment == 'github-hosted' && '' || '-node' }}-v0.18.0-${{ hashFiles('scripts/ci/sccache/*.patch') }}
+      - name: Compile cache - build the one sccache this build uses
         if: needs.plan.outputs.compile_cache == 'gha'
         shell: bash
         run: |
           SCCACHE_PATH="$(python3 scripts/ci sccache-build --tag v0.18.0 --patches scripts/ci/sccache --out "$HOME/.cache/sccache-bin")"
           "$SCCACHE_PATH" --version
           echo "SCCACHE_PATH=$SCCACHE_PATH" >> "$GITHUB_ENV"
-      - name: Compile cache (candidates only) - sccache keeps it on the runner's disk
+      - name: Compile cache - sccache keeps it on the runner's disk
         if: needs.plan.outputs.compile_cache == 'gha'
         run: |
           {
@@ -456,7 +526,7 @@ jobs:
             # statistics step read a fresh server's zeros (run 40593659072).
             echo "SCCACHE_IDLE_TIMEOUT=0"
           } >> "$GITHUB_ENV"
-      - name: Compile cache (candidates only) - restore this leg's last one
+      - name: Compile cache - restore this leg's last one
         id: cache-restore
         if: needs.plan.outputs.compile_cache == 'gha'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -470,7 +540,7 @@ jobs:
       # only warned, and both legs built cold without a word: 0.06% and 1.6%
       # hits, the Windows build 2h39 against 1h50. A leg that has no cache
       # yet misses twice, which costs seconds.
-      - name: Compile cache (candidates only) - restore again if the first brought nothing
+      - name: Compile cache - restore again if the first brought nothing
         id: cache-restore-again
         if: needs.plan.outputs.compile_cache == 'gha' && steps.cache-restore.outputs.cache-matched-key == ''
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -480,7 +550,7 @@ jobs:
           restore-keys: sccache-${{ matrix.leg }}-
       # What this build starts from, said where it is read: a cold candidate is
       # a fact of the run, not something to infer from its length.
-      - name: Compile cache (candidates only) - what this build starts from
+      - name: Compile cache - what this build starts from
         if: needs.plan.outputs.compile_cache == 'gha'
         shell: bash
         env:
@@ -498,6 +568,9 @@ jobs:
       # The .mozconfig in layers (scripts/ci/mozconfig.py): compile cache,
       # symbols, the retail's PGO and LTO, platform, machine. Each layer writes
       # its reason into the file, and the flags are fixed by scripts/ci/test_ci.py.
+      - name: The node - compile jobs from its limits
+        if: runner.environment != 'github-hosted'
+        run: echo "CI_PARALLEL=$(python3 scripts/ci node-parallel)" | tee -a "$GITHUB_ENV"
       - name: The CI's .mozconfig, in layers
         env:
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
@@ -581,7 +654,7 @@ jobs:
       # pinned above, nothing else, and every object it compiled was stored.
       # Statistics first, so a refusal still shows them; then the server stops,
       # which flushes the cache directory before it is saved.
-      - name: Compile cache (candidates only) - the build used the pinned sccache
+      - name: Compile cache - the build used the pinned sccache
         if: always() && needs.plan.outputs.compile_cache == 'gha'
         run: |
           "$SCCACHE_PATH" --show-stats | tee sccache-stats.txt || true
@@ -603,30 +676,47 @@ jobs:
           if [ "${WRITE_ERRORS:-0}" != "0" ]; then
             echo "::warning::sccache failed to store $WRITE_ERRORS objects: the next run recompiles them"
           fi
-      - name: Compile cache (candidates only) - save this leg's
+      # The node uploads at about 5 MB/s: 15 minutes for an entry. A build that wrote
+      # few new objects leaves the last entry as it is (scripts/ci/cache_rules.py).
+      - name: Compile cache - is the node's upload worth it
+        id: cache-worth
+        if: always() && needs.plan.outputs.compile_cache == 'gha' && runner.environment != 'github-hosted'
+        run: python3 scripts/ci/cache_rules.py worth --stats sccache-stats.txt | tee -a "$GITHUB_OUTPUT"
+      - name: Compile cache - save this leg's
         # Also when the build failed: the runs that fix a port fail by design,
         # and they are the ones the cache is for.
         # Never when the build did not start: run 40519477694, cancelled during
         # checkout, saved an empty arm64 entry, and the next run would have
         # restored that one - the newest of its leg - and compiled cold.
-        if: always() && needs.plan.outputs.compile_cache == 'gha' && (steps.build.outcome == 'success' || steps.build.outcome == 'failure' || steps.build.outcome == 'cancelled')
+        if: always() && needs.plan.outputs.compile_cache == 'gha' && (steps.build.outcome == 'success' || steps.build.outcome == 'failure' || steps.build.outcome == 'cancelled') && steps.cache-worth.outputs.save != 'false'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/sccache-ci
           key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # Only after a build that worked: a download cut off half way must not become
+      # the entry every later run starts from.
+      - name: Toolchains - save
+        if: always() && needs.plan.outputs.builder == 'theta' && matrix.node && steps.build.outcome == 'success' && steps.toolchains.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.mozbuild
+            !~/.mozbuild/srcdirs
+            ~/.rustup/toolchains/${{ steps.toolchains-key.outputs.rust }}-x86_64-unknown-linux-gnu
+          key: ${{ steps.toolchains-key.outputs.key }}
 
       # WebGPU's Vulkan driver on Linux is ours (scripts/ci/lavapipe_build.py):
       # without one requestAdapter() answered null, and with the host's Mesa its
       # version decided limits and raster bytes. Built from pinned sources and
       # our patches with this build's clang and sysroot, into dist/bin before
-      # the gtests and the package; candidates keep it by its inputs, a release
-      # builds it cold. x86_64 only: arm64 is not a priority, and without the
+      # the gtests and the package; it is kept by its inputs, unless the run asks
+      # for a cold build. x86_64 only: arm64 is not a priority, and without the
       # file WebGPU answers null there, never with a host driver.
       - name: WebGPU's Vulkan driver (linux-x86_64) - its inputs
         id: lavapipe-key
         if: matrix.leg == 'linux-x86_64'
         run: echo "key=lavapipe-${{ matrix.leg }}-$(python3 scripts/ci/lavapipe_build.py --key)" >> "$GITHUB_OUTPUT"
-      - name: WebGPU's Vulkan driver (linux-x86_64) - built before (candidates only)
+      - name: WebGPU's Vulkan driver (linux-x86_64) - built before
         id: lavapipe-cache
         if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.compile_cache == 'gha'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -644,7 +734,7 @@ jobs:
           mkdir -p obj-rel/dist/bin/lavapipe
           cp "$HOME/.cache/lavapipe/libvulkan_lvp.so" "$HOME/.cache/lavapipe/VERSION.json" obj-rel/dist/bin/lavapipe/
           cat obj-rel/dist/bin/lavapipe/VERSION.json
-      - name: WebGPU's Vulkan driver (linux-x86_64) - keep it (candidates only)
+      - name: WebGPU's Vulkan driver (linux-x86_64) - keep it
         if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.compile_cache == 'gha' && steps.lavapipe.outcome == 'success' && steps.lavapipe-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -734,7 +824,7 @@ jobs:
       # symbols, so what ships is already built and checked when the second
       # libxul is linked. A phase, so the report has its row.
       - name: Engine gtests (gtests=true only)
-        if: github.event.inputs.gtests == 'true'
+        if: github.event.inputs.gtests == 'true' && runner.environment == 'github-hosted'
         timeout-minutes: 180
         shell: bash
         env:
@@ -754,8 +844,24 @@ jobs:
           else
             python3 scripts/ci phase gtest -- ./mach gtest "$GTEST_FILTER_INPUT"
           fi
+      # The node only compiles, on both legs: a hosted job runs what it built.
+      - name: The node - its gtest binaries, for a job on GitHub's runners
+        if: github.event.inputs.gtests == 'true' && runner.environment != 'github-hosted'
+        timeout-minutes: 180
+        shell: bash
+        run: |
+          python3 scripts/ci phase gtest -- ./mach build recurse_gtest
+          tar -C obj-rel/dist -chf gtest-bin.tar bin
+      - name: The node - keep them
+        if: github.event.inputs.gtests == 'true' && runner.environment != 'github-hosted'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gtest-bin-${{ matrix.leg }}
+          path: gtest-bin.tar
+          if-no-files-found: error
+          retention-days: 3
       - name: Keep the cross-compiled gtests for the target's OS
-        if: github.event.inputs.gtests == 'true' && matrix.target != ''
+        if: github.event.inputs.gtests == 'true' && matrix.target != '' && runner.environment == 'github-hosted'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtest-bin-${{ matrix.leg }}
@@ -804,6 +910,98 @@ jobs:
           tar -xf gtest-bin.tar
           export MOZ_XRE_DIR="$(cygpath -w "$PWD/bin")"
           ./bin/firefox.exe -unittest --gtest_death_test_style=threadsafe --wait-for-browser
+
+  # The Linux leg's gtests when the node compiled it, as gtest-cross runs Windows's:
+  # the node's machine has a GPU and GitHub's runners, where they are judged, do not.
+  gtest-linux:
+    name: gtest-linux-x86_64
+    needs: [node, build]
+    if: github.event.inputs.gtests == 'true' && needs.node.outputs.runner != '' && needs.node.outputs.attempt == github.run_attempt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: The leg's dist/bin with its gtest libxul
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: gtest-bin-linux-x86_64
+          path: gtest-run
+      - name: Engine gtests (gtests=true only)
+        shell: bash
+        env:
+          GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
+          MOZ_RUN_GTEST: 'True'
+          MOZ_WEBRENDER: '0'
+        run: |
+          sudo apt-get install -y xvfb >/dev/null
+          cd gtest-run
+          tar -xf gtest-bin.tar
+          export MOZ_XRE_DIR="$PWD/bin"
+          xvfb-run -a ./bin/firefox -unittest --gtest_death_test_style=threadsafe --wait-for-browser
+
+  # Turns the node off as soon as its legs are done, not when the whole run is: the
+  # arm64 leg on GitHub's runners may take hours more, and the node is paid by the
+  # hour. It needs `node` only, so it watches the legs (scripts/ci/theta_node.py,
+  # watch) and survives a cancel. A runner lost on the node reruns the whole run
+  # once, with builder=github, so that rerun cannot lose a node again. GitHub stops
+  # a job after 6 hours: the watch stops first, and the delete still runs.
+  stop-node:
+    needs: [plan, node]
+    if: always() && needs.plan.outputs.builder == 'theta'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    permissions: { actions: write, contents: read }
+    env:
+      THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
+      THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+      RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      ATTEMPT: ${{ needs.node.outputs.attempt || github.run_attempt }}
+    steps:
+      - name: The series (this repository, this commit)
+        if: always()
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
+      - name: Wait for the legs on the node
+        if: always() && needs.node.outputs.runner != '' && needs.node.outputs.attempt == github.run_attempt
+        timeout-minutes: 340
+        env:
+          # The same run again if a runner is lost. A pushed tag has no inputs.
+          KIND: ${{ needs.plan.outputs.kind }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
+          CORE_REF: ${{ inputs.core_ref }}
+          WRAPPER_REF: ${{ inputs.wrapper_ref }}
+          GTESTS: ${{ inputs.gtests }}
+          GTEST_FILTER_INPUT: ${{ inputs.gtest_filter }}
+        run: |
+          python3 .series/platform/ci/src/scripts/ci/theta_node.py watch \
+            --run "$GITHUB_RUN_ID" --attempt "$ATTEMPT" --ref "$GITHUB_REF_NAME" \
+            --kind "$KIND" --tag "$TAG" --compile-cache "$COMPILE_CACHE" \
+            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" \
+            --gtests "$GTESTS" --gtest-filter "$GTEST_FILTER_INPUT"
+      - name: Turn the node off and see it gone
+        if: always()
+        timeout-minutes: 8
+        run: python3 .series/platform/ci/src/scripts/ci/theta_node.py off --run "$GITHUB_RUN_ID" --attempt "$ATTEMPT"
+
+  # After a save, this ref's older entries of the same leg go: the repository is over
+  # its cache quota. Deleting needs actions: write, so never in a job on the node.
+  cache-trim:
+    needs: [plan, build]
+    if: always() && needs.plan.outputs.builder == 'theta'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: { actions: write, contents: read }
+    steps:
+      - name: The series (this repository, this commit)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
+      - name: Delete this ref's older entries of the legs this run saved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .series/platform/ci/src/scripts/ci/cache_rules.py trim \
+            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF"
 
   # One table for the whole run, on its summary page: leg x phase, result,
   # time, memory peak, compile cache hits (scripts/ci/report.py). Always,

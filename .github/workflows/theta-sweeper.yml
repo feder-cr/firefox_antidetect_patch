@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# theta-sweeper.yml — the protection against a forgotten Theta node.
+#
+# stop-node in release.yml deletes the node of its run, always. This is for what
+# stop-node cannot see: a job killed outright, a create that answered after the
+# delete. It deletes only the nodes we started (the name ci<run>a<attempt>) that no
+# run needs, past GUARD_HOURS or with their run finished, and cancels a run whose
+# leg waits on a label no runner will come for. A node made by hand has another
+# name and is never touched. Rules and cases: scripts/ci/theta_node.py, sweep().
+# ─────────────────────────────────────────────────────────────────────────────
+name: theta-sweeper
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: The series (this repository, this commit)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
+      - name: Delete the nodes no run needs
+        env:
+          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
+          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .series/platform/ci/src/scripts/ci/theta_node.py sweep

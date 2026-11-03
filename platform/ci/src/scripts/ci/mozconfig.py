@@ -32,6 +32,8 @@ class Plan:
     pgo_dir: Path = Path("pgo")
     # upstream_toolchain.pgo(leg, out) -> lines; injected so the tests run offline
     pgo: Callable = None
+    # MOZ_PARALLEL_BUILD: GitHub's runners have 4 cores; on the node, node_parallel().
+    parallel: int = 4
 
 
 @dataclass
@@ -53,7 +55,7 @@ def cache(leg: Leg, plan: Plan) -> Layer:
         "machine's) and are removed here. With compile_cache=gha the pinned sccache "
         "comes back by ABSOLUTE path: by name, configure takes the one mach "
         "downloads into ~/.mozbuild, another version on two of the three legs. "
-        "compile_cache=off (every release) compiles cold for real."), lines)
+        "compile_cache=off compiles cold for real."), lines)
 
 
 def symbols(leg: Leg, plan: Plan) -> Layer:
@@ -99,10 +101,20 @@ def platform(leg: Leg, plan: Plan) -> Layer:
         "it back here removed its page-readable image (B157)."), lines)
 
 
+def node_parallel(cpus: int, ram_bytes: int) -> int:
+    """Compile jobs on the node: one per CPU, but 2 GB of memory for each, because
+    the node has no swap and cannot have one (48 jobs on its 62 GB would run a
+    PGO + LTO compile out of memory before the link)."""
+    return max(1, min(cpus, ram_bytes // (2 * 2**30)))
+
+
 def machine(leg: Leg, plan: Plan) -> Layer:
-    return Layer("machine", (
-        "The runner's 4 cores, and the objdir every later step reads."), [
-        "mk_add_options MOZ_PARALLEL_BUILD=4",
+    why = "The runner's 4 cores, and the objdir every later step reads."
+    if plan.parallel != 4:
+        why = ("The node's compile jobs, min(CPU, RAM GB / 2) because it has no swap, "
+               "and the objdir every later step reads.")
+    return Layer("machine", why, [
+        "mk_add_options MOZ_PARALLEL_BUILD=%d" % plan.parallel,
         "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-rel"])
 
 
