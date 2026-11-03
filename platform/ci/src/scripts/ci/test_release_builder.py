@@ -392,7 +392,7 @@ def group_exposure(doc, jobs, build, steps) -> list:
     sudo = [s.get("name") for s in build["steps"] if gated not in str(s.get("if", "")) and re.search(r"\bsudo\b", s.get("run") or "")]
     out.append(("node: no step that can run on it uses sudo, which it does not have (%s)" % sudo, not sudo))
     scripts = [p for p in list(HERE.glob("*.py")) + list(HERE.glob("*.sh")) + list(HERE.parent.glob("*.py"))
-               if not p.name.startswith("test_") and p.name != "node_bootstrap.sh"]
+               if not p.name.startswith("test_") and p.name not in ("node_bootstrap.sh", "theta_node.py")]
     calling = [p.name for p in scripts if re.search(r"\bsudo\b", p.read_text(encoding="utf-8"))]
     out.append(("node: nor does a script its steps call (%s)" % calling, not calling))
     block = bootstrap.split("PACKAGES=(", 1)[1].split("\n)", 1)[0]

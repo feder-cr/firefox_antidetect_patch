@@ -33,6 +33,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import urllib.error
 from pathlib import Path
 
@@ -325,6 +326,29 @@ def group_turning_on():
         out.append(("on, %s: a node that went well stays on" % leg, api.deleted == []))
     out.append(("prices: the ceiling is above both machines' price", t.MAX_PRICE_USD_HOUR >= 0.182))
     got, error = provisioned(FakeTheta(), FakeGitHub(), FakeSsh({"true": (255, "", "root@<node>: Permission denied (publickey).")}))
+    calls = []
+
+    def route(argv, **kw):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0, stdout="9.9.9.9 via 10.1.0.1 dev eth0 src 10.1.0.11 uid 1001", stderr="")
+    t.clamp_path("9.9.9.9", route)
+    out.append(("path: the node's address alone goes through small packets, by the same gateway",
+                calls[-1] == ["sudo", "-n", "ip", "route", "replace", "9.9.9.9/32", "via", "10.1.0.1", "dev", "eth0", "mtu", "lock", "1200"]))
+
+    def refused(argv, **kw):
+        return SimpleNamespace(returncode=1 if "sudo" in argv else 0, stdout="9.9.9.9 dev eth0 src 10.1.0.11", stderr="9.9.9.9 refused")
+    try:
+        t.clamp_path("9.9.9.9", refused)
+        said = ""
+    except t.ThetaError as exc:
+        said = str(exc)
+    out.append(("path: refused, the node's connection stops there, and its address stays out of the error", "size the path" in said and "9.9.9.9" not in said))
+    seen = []
+    made = t.node_ssh(Path("work"), seen.append)("9.9.9.9", 22)
+    out.append(("path: every connection of provision goes through it", seen == ["9.9.9.9"] and isinstance(made, t.Ssh)))
+    source = (HERE / "theta_node.py").read_text(encoding="utf-8")
+    body = source[source.index("def run_provision"):source.index("def run_watch")]
+    out.append(("path: provision takes its connections from there", "node_ssh(work)" in body and "Ssh(" not in body))
     out.append(("up: a node that never answers says why, with ssh's own words",
                 not got and "Permission denied (publickey)" in error and "ssh exited 255" in error))
     return out

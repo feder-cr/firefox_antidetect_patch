@@ -79,6 +79,8 @@ MIN_BALANCE_USD = 3.0
 # 404 too: the wait covers our own delete, and at its end gpu-resources says which it is.
 FREE_LIMIT_S = 360
 UP_LIMIT_S = 600
+# Measured from a hosted runner to a node: 1440 and below carry everything. Kept lower, for paths not measured.
+PATH_MTU = 1200
 BOOTSTRAP_LIMIT_S = 1200
 # How long a delete Theta accepted may stay in its list before we stop looking. It left
 # both lists within 7 s, and sshd refused within 6 s (measured).
@@ -369,6 +371,22 @@ class Ssh:
         except subprocess.TimeoutExpired:
             return 124, "", "timed out after %d s" % timeout
         return done.returncode, self.said(done.stdout), self.said(done.stderr)
+
+
+def clamp_path(host, run=subprocess.run):
+    """From a hosted runner, packets over about 1500 bytes never reach a node and nothing
+    says so: ssh hangs at the key exchange, and any larger transfer with it (measured:
+    run 41715927503). Sized for this one address, so that the runner's other traffic
+    stays as it is. Says nothing of the address, its output ends in public logs."""
+    found = run(["ip", "route", "get", str(host)], capture_output=True, text=True)
+    words = found.stdout.split()
+    if found.returncode != 0 or "dev" not in words:
+        raise ThetaError("no route to the node to size")
+    via = ["via", words[words.index("via") + 1]] if "via" in words else []
+    set_it = run(["sudo", "-n", "ip", "route", "replace", "%s/32" % host, *via, "dev", words[words.index("dev") + 1],
+                  "mtu", "lock", str(PATH_MTU)], capture_output=True, text=True)
+    if set_it.returncode != 0:
+        raise ThetaError("could not size the path to the node: ssh would hang on it")
 
 
 def new_key(directory: Path) -> Path:
@@ -1048,14 +1066,20 @@ def github_from_env():
     return GitHub(repo, os.environ.get("GH_TOKEN", ""), os.environ.get("RUNNER_ADMIN_TOKEN", ""))
 
 
+def node_ssh(work: Path, clamp=clamp_path):
+    def make(host, port):
+        clamp(host)
+        return Ssh(host, port, work / "node_key")
+    return make
+
+
 def run_provision(a) -> int:
     work = Path(tempfile.mkdtemp(prefix="theta-node-"))
     try:
         theta, github = from_env(), github_from_env()
         if github is None:
             raise ThetaError("GITHUB_REPOSITORY is not set")
-        provision(theta, github, a.run, a.attempt, a.leg,
-                  lambda host, port: Ssh(host, port, work / "node_key"), lambda: new_key(work))
+        provision(theta, github, a.run, a.attempt, a.leg, node_ssh(work), lambda: new_key(work))
     except (ThetaError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         # Without its node the leg has nowhere to run: the run has failed.
         print("::error::no Theta node for %s, the run fails: %s" % (a.leg, exc), file=sys.stderr)
