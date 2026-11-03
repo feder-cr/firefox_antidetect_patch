@@ -104,10 +104,12 @@ jobs:
       # The tag, its number for the title and the previous tag for the changelog
       # range are the caller's plan (scripts/release_plan.py), not derived here.
       - name: Generate + gate seal.json
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          echo "publishing DRAFT release for tag: ${{ inputs.tag }}"
+          echo "publishing DRAFT release for tag: $TAG"
           python3 _src/scripts/make_seal.py \
-            --tag "${{ inputs.tag }}" \
+            --tag "$TAG" \
             --assets dl \
             --source-commit-file src-meta/source-commit.txt \
             --series-commit-file src-meta/series-commit.txt \
@@ -119,6 +121,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          PREVTAG: ${{ inputs.prevtag }}
         run: |
           set -e
           CUR="$(cat src-meta/series-commit.txt 2>/dev/null | tr -d '[:space:]')"
@@ -126,7 +130,6 @@ jobs:
           # previous release's recorded series commit — gives the changelog range.
           # Missing (releases built before the series, firefox-0) -> notes omit the changelog.
           PREV=""
-          PREVTAG="${{ inputs.prevtag }}"
           if [ -n "$PREVTAG" ] && gh release download "$PREVTAG" -R "${{ github.repository }}" \
                --pattern series-commit.txt --dir prev 2>/dev/null; then
             PREV="$(cat prev/series-commit.txt | tr -d '[:space:]')"
@@ -134,7 +137,7 @@ jobs:
           else
             echo "no previous series-commit.txt — changelog section omitted this time"
           fi
-          python scripts/gen_release_notes.py --tag "${{ inputs.tag }}" \
+          python scripts/gen_release_notes.py --tag "$TAG" \
             --current "$CUR" --prev-sha "$PREV" --source-repo "${{ env.SERIES_REPO }}" > body.md
           echo "----- generated body.md -----"; cat body.md
           # publish THIS build's commits so the next release can diff from them

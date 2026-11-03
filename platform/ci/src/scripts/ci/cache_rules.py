@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """When a leg's compile cache is saved, and which old entries go after it.
 
-    cache_rules.py worth --stats sccache-stats.txt
+    cache_rules.py snapshot --dir D --out F
+        after the restore: which objects the leg starts from
+    cache_rules.py worth --stats sccache-stats.txt --dir D --restored F
         prints save=true|false for $GITHUB_OUTPUT, and how many objects it counted
+    cache_rules.py heat --leg L --stats sccache-stats.txt
+        for the step summary: whether this build was cold or warm, from its hits
     cache_rules.py trim --run R --attempt A --ref refs/heads/main
         after this run's saves: this ref's older entries of the legs it saved
     cache_rules.py guard
@@ -10,7 +14,10 @@
 
 Worth it: the node uploads at about 5 MB/s, so an entry of 4-5 GB costs about 15
 minutes of a machine paid by the hour. A run after a small fix recompiled a handful
-of objects and the next run loses seconds without them, so it does not save.
+of objects and the next run loses seconds without them, so it does not save. Two
+witnesses, and either saves: sccache's count, and what is on disk that the restore did
+not bring, because a server that restarted counts from zero (run 40593659072). And never
+an entry that holds next to nothing, on any leg: the next run restores only the newest.
 
 Trim: the repository's caches are over their quota (504 of 500 GB) and GitHub evicts
 by itself, without knowing which entries matter. Every entry this removes is proved
@@ -41,6 +48,11 @@ import legs  # noqa: E402
 # Objects compiled by this build, below which its entry is not worth the upload.
 # A leg has about 5,500; change this after the first real runs.
 NEW_OBJECTS_WORTH_SAVING = 300
+NEW_BYTES_WORTH_SAVING = 2**30
+# A whole leg has about 5,500. Fewer than this is a build that stopped early.
+ENTRY_OBJECTS_FLOOR = 1000
+# Fewer compiles than this say nothing about the cache: a server that restarted.
+HEAT_MIN_COMPILES = 100
 KEEP_NEWEST = 2
 # The entries with a run in their key. Each is <prefix><leg>-<run>-<attempt>.
 PREFIXES = ("sccache-",)
@@ -58,15 +70,63 @@ def new_objects(stats: str):
     return max(0, int(misses.group(1)) - (int(errors.group(1)) if errors else 0))
 
 
-def worth_saving(stats: str, threshold: int = NEW_OBJECTS_WORTH_SAVING) -> tuple:
-    """(save or not, why). Statistics that say nothing save: losing a build's objects
-    costs far more than one needless upload."""
+def objects_on_disk(directory: Path) -> dict:
+    """relative path -> size of what a sccache directory holds as compiled objects:
+    its preprocessor cache and its own files are not objects."""
+    found = {}
+    try:
+        for path in directory.rglob("*"):
+            relative = path.relative_to(directory)
+            if relative.parts[0] != "preprocessor" and not relative.name.startswith(".") and path.is_file():
+                found[relative.as_posix()] = path.stat().st_size
+    except OSError:
+        pass
+    return found
+
+
+def grown(now: dict, restored) -> tuple:
+    """(objects, bytes) on disk that the restore did not bring; None when unknown."""
+    if restored is None:
+        return None
+    new = [size for name, size in now.items() if name not in restored]
+    return len(new), sum(new)
+
+
+def worth_saving(stats: str, threshold: int = NEW_OBJECTS_WORTH_SAVING, now=None, restored=None) -> tuple:
+    """(save or not, why). `now` is what the directory holds, `restored` the names it
+    held after the restore. A witness that cannot say saves: losing a build's objects
+    costs far more than one needless upload. An entry next to empty never does, because
+    it would become what the next run restores."""
+    if now is not None and len(now) < ENTRY_OBJECTS_FLOOR:
+        return False, "%d objects in the directory, below %d: an entry this small would be the next run's start" % (len(now), ENTRY_OBJECTS_FLOOR)
     count = new_objects(stats)
+    if count is not None and count >= threshold:
+        return True, "%d new objects, at least %d: saving" % (count, threshold)
+    on_disk = grown(now, restored) if now is not None else None
+    if on_disk is not None and (on_disk[0] >= threshold or on_disk[1] >= NEW_BYTES_WORTH_SAVING):
+        return True, "%d objects and %d MB on disk that the restore did not bring: saving" % (on_disk[0], on_disk[1] // 2**20)
     if count is None:
         return True, "no object count in the statistics, saving"
-    if count >= threshold:
-        return True, "%d new objects, at least %d: saving" % (count, threshold)
-    return False, "%d new objects, below %d: not worth the upload" % (count, threshold)
+    if now is not None and on_disk is None:
+        return True, "%d new objects, but nothing to compare the disk with: saving" % count
+    if on_disk is None:
+        return False, "%d new objects, below %d: not worth the upload" % (count, threshold)
+    return False, "%d new objects and %d on disk, below %d: not worth the upload" % (count, on_disk[0], threshold)
+
+
+def heat(stats: str, leg: str) -> str:
+    """Whether the build was cold or warm, from the hits it really had: an entry that
+    restores and matches nothing reads, until here, like a good one."""
+    hits = re.search(r"^Cache hits\s+(\d+)\s*$", stats, re.M)
+    misses = re.search(r"^Cache misses\s+(\d+)\s*$", stats, re.M)
+    if not hits or not misses:
+        return "compile cache: %s has no counts, cold or warm cannot be said" % leg
+    hit, miss = int(hits.group(1)), int(misses.group(1))
+    total = hit + miss
+    if total < HEAT_MIN_COMPILES:
+        return "compile cache: %s counted only %d compiles, so a restarted server or a build that stopped: cold or warm cannot be said" % (leg, total)
+    return "compile cache: %s was %s, %d hits of %d compiles (%.1f%%)" % (
+        leg, "WARM" if hit * 2 >= total else "COLD", hit, total, 100.0 * hit / total)
 
 
 def to_delete(caches, ref, leg, run, attempt, prefix="sccache-", keep=KEEP_NEWEST) -> list:
@@ -78,7 +138,12 @@ def to_delete(caches, ref, leg, run, attempt, prefix="sccache-", keep=KEEP_NEWES
     if "%s%s-%s" % (start, run, attempt) not in [c["key"] for c in mine]:
         return []
     mine.sort(key=lambda c: c.get("created_at", ""), reverse=True)
-    return [c["id"] for c in mine[keep:]]
+    kept, older = mine[:keep], mine[keep:]
+    # Entries that slipped through small must not push a good one out.
+    largest = max(older, key=lambda c: c.get("size_in_bytes", 0), default=None)
+    if largest and largest.get("size_in_bytes", 0) > 2 * max(c.get("size_in_bytes", 0) for c in kept):
+        older.remove(largest)
+    return [c["id"] for c in older]
 
 
 def sha256_of(path: Path) -> str:
@@ -153,6 +218,14 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     w = sub.add_parser("worth")
     w.add_argument("--stats", type=Path, required=True)
+    w.add_argument("--dir", type=Path)
+    w.add_argument("--restored", type=Path)
+    n = sub.add_parser("snapshot")
+    n.add_argument("--dir", type=Path, required=True)
+    n.add_argument("--out", type=Path, required=True)
+    h = sub.add_parser("heat")
+    h.add_argument("--leg", required=True)
+    h.add_argument("--stats", type=Path, required=True)
     t = sub.add_parser("trim")
     t.add_argument("--run", required=True)
     t.add_argument("--attempt", required=True)
@@ -168,9 +241,23 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "worth":
         text = a.stats.read_text(encoding="utf-8", errors="replace") if a.stats.is_file() else ""
-        save, why = worth_saving(text)
+        now = objects_on_disk(a.dir) if a.dir else None
+        restored = None
+        if a.restored and a.restored.is_file():
+            try:
+                restored = set(json.loads(a.restored.read_text(encoding="utf-8")))
+            except ValueError:
+                pass
+        save, why = worth_saving(text, now=now, restored=restored)
         print("compile cache: %s" % why, file=sys.stderr)
         print("save=%s" % str(save).lower())
+        return 0
+    if a.cmd == "snapshot":
+        a.out.write_text(json.dumps(sorted(objects_on_disk(a.dir))), encoding="utf-8")
+        return 0
+    if a.cmd == "heat":
+        text = a.stats.read_text(encoding="utf-8", errors="replace") if a.stats.is_file() else ""
+        print(heat(text, a.leg))
         return 0
     repo, token = os.environ.get("GITHUB_REPOSITORY"), os.environ.get("GH_TOKEN")
     if not repo or not token:

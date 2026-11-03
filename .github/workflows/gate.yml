@@ -249,13 +249,16 @@ jobs:
       # version is fetched as before, and the force-reinstall puts core_ref back.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
+        env:
+          CORE_REF: ${{ inputs.core_ref }}
+          SEAL_TAG: ${{ inputs.seal_tag }}
         run: |
           export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
-          CORE_GIT="git+https://github.com/feder-cr/invisible_core@${{ inputs.core_ref }}"
+          CORE_GIT="git+https://github.com/feder-cr/invisible_core@$CORE_REF"
           python -m pip install --quiet "$CORE_GIT"
           python -m pip install --quiet ".[dev]"
           python -m pip install --quiet --force-reinstall "$CORE_GIT"
-          CORE_REF="${{ inputs.core_ref }}" python - <<'PY'
+          python - <<'PY'
           import json, os, re, subprocess, sys
           from importlib.metadata import distribution, version
           ref = os.environ["CORE_REF"]
@@ -280,7 +283,7 @@ jobs:
                           want or "not a full sha nor a ref of invisible_core"))
           PY
           python -m invisible_core seal --binary "$FF_EXE" \
-            --tag "${{ inputs.seal_tag }}" \
+            --tag "$SEAL_TAG" \
             -o gate.seal.json
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_hidden_desktop.py \

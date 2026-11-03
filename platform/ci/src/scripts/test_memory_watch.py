@@ -34,6 +34,22 @@ def fake_proc(root: Path, procs):
         (d / "cmdline").write_bytes(cmd.replace(" ", "\0").encode())
 
 
+def huge_page_cases() -> list:
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        proc, cg = Path(tmp) / "proc", Path(tmp) / "cg"
+        proc.mkdir()
+        cg.mkdir()
+        (proc / "meminfo").write_text("MemTotal: 1024 kB\nAnonHugePages: 2097152 kB\n")
+        out.append(("huge pages: the machine's where the container has no memory.stat", w.huge_pages_mb(proc, cg) == 2048))
+        (cg / "memory.stat").write_text("anon 1\nanon_thp %d\n" % (512 * 2**20))
+        out.append(("huge pages: the container's where it has one", w.huge_pages_mb(proc, cg) == 512))
+        (proc / "meminfo").unlink()
+        (cg / "memory.stat").unlink()
+        out.append(("huge pages: nothing to read says nothing", w.huge_pages_mb(proc, cg) is None))
+    return out
+
+
 def main() -> int:
     cases = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -116,6 +132,7 @@ def main() -> int:
                       w.thresholds(15989) == (3000, 600)))
         cases.append(("the node's thresholds keep their proportion", w.thresholds(64065) == (12012, 2402)))
 
+    cases += huge_page_cases()
     failures = 0
     for name, ok in cases:
         print(("ok    " if ok else "FAIL  ") + name)

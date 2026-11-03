@@ -26,7 +26,7 @@ def test_the_workflows_name_the_node_scripts():
 
 def test_the_node_scripts_travel_with_the_series():
     scripts = ROOT / "platform/ci/src/scripts/ci"
-    assert (scripts / "node_bootstrap.sh").is_file() and (scripts / "node_runners.sh").is_file()
+    assert (scripts / "node_bootstrap.sh").is_file() and (scripts / "node_runner.sh").is_file()
 
 
 def test_no_pull_request_reaches_a_runner_of_ours():

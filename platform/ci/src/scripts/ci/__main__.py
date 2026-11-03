@@ -5,6 +5,7 @@
   mozconfig --leg L --compile-cache gha|off [--sccache PATH] [--pgo-dir DIR] [--parallel N]
                                   extend ./.mozconfig with the CI layers, print it
   node-parallel                   the compile jobs this machine's limits allow (the node)
+  linker-shim --out DIR           the Linux node's linker, asking for huge pages; prints what the job's environment takes
   cpu-report [--samples F] [--events F]
                                   the CPU use of this leg's phases, for the step summary
   phase NAME -- CMD...            run CMD as phase NAME, recording its events
@@ -58,6 +59,8 @@ def main(argv) -> int:
     # step refuses that. int("") used to stop even --help.
     m.add_argument("--parallel", type=int, default=int(os.environ.get("CI_PARALLEL") or 4))
     sub.add_parser("node-parallel")
+    k = sub.add_parser("linker-shim")
+    k.add_argument("--out", type=Path, required=True)
     u = sub.add_parser("cpu-report")
     u.add_argument("--samples", type=Path, default=Path("cpuwatch.jsonl"))
     u.add_argument("--events", type=Path, default=Path("events.jsonl"))
@@ -96,6 +99,11 @@ def main(argv) -> int:
         sys.path.insert(0, str(HERE.parent))
         import memory_watch
         print(mozconfig.node_parallel(memory_watch.cpu_limit(), memory_watch.memory()["MemTotal"] * 2**20))
+    elif args.cmd == "linker-shim":
+        sys.path.insert(0, str(HERE.parent))
+        import linker_shim
+        import memory_watch
+        print("\n".join(linker_shim.write(args.out, threads=memory_watch.cpu_limit())))
     elif args.cmd == "matrix":
         print(legs.matrix(legs.tree_version()))
     elif args.cmd == "assets":

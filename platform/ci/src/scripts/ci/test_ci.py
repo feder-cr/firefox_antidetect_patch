@@ -182,10 +182,23 @@ def main() -> int:
                   plain == text and "mk_add_options MOZ_PARALLEL_BUILD=4\n" in plain
                   and mozconfig.active(wide) == [l.replace("BUILD=4", "BUILD=30") for l in mozconfig.active(plain)]
                   and "no swap" in wide and "no swap" not in plain))
-    cases.append(("parallelism on the node: min(CPU, RAM GB / 2), measured values 48 CPU and 62.5 GB give 31",
-                  mozconfig.node_parallel(48, 67177832448) == 31
-                  and mozconfig.node_parallel(24, 67177832448) == 24
+    node_ram = 67177832448
+    gib = 2**30
+    cases.append(("parallelism on the node: min(CPU, (RAM GB - 27) / 0.7), measured values 48 CPU and 62.5 GB give 48",
+                  mozconfig.node_parallel(48, node_ram) == 48
+                  and mozconfig.node_parallel(24, node_ram) == 24
+                  and mozconfig.node_parallel(64, node_ram) == 50
+                  and mozconfig.node_parallel(48, 41 * gib) == 20
                   and mozconfig.node_parallel(48, 1) == 1))
+    jobs = mozconfig.node_parallel(48, node_ram)
+    cases.append(("parallelism on the node: its compiles and the link's start fit together, and the Windows link's 37 GB fits by itself",
+                  jobs * mozconfig.GB_PER_JOB + mozconfig.LINK_DURING_COMPILE_GB + mozconfig.MARGIN_GB <= node_ram / gib
+                  and 37 + mozconfig.MARGIN_GB <= node_ram / gib))
+    lavapipe_gb = 9.5
+    cases.append(("parallelism on the node: lavapipe's 9.5 GB fits beside the link's 24 GB on the Linux leg's own machine, under memory_watch's kill",
+                  24 + lavapipe_gb + mozconfig.MARGIN_GB <= node_ram / gib))
+    cases.append(("parallelism on GitHub's runners: 4, as it was, whatever the node's limits are",
+                  mozconfig.Plan("off").parallel == 4 and "MOZ_PARALLEL_BUILD=4" in plain))
     cases.append(("every layer writes its reason",
                   all(("# [%s] " % f.__name__) in text for f in mozconfig.LAYERS)))
 
@@ -471,8 +484,9 @@ def main() -> int:
             ran = [j for j in jobs.values()
                    if j.get("runs-on") == runners.get(leg.target)
                    and any(st.get("with", {}).get("name") == "gtest-bin-%s" % leg.leg for st in j.get("steps", []))
-                   and any("-unittest" in st.get("run", "") for st in j.get("steps", []))]
-            cross_ok = cross_ok and len(ran) == 1 and ran[0].get("if") == "github.event.inputs.gtests == 'true'"
+                   and any("gtest_run.py" in st.get("run", "") for st in j.get("steps", []))]
+            cross_ok = (cross_ok and len(ran) == 1 and "if" not in ran[0]
+                        and all("github.event.inputs.gtests == 'true'" in st.get("if", "") for st in ran[0]["steps"]))
         kept = steps.get("The node - keep them", {})
         built = steps.get("The node - its gtest binaries, for a job on GitHub's runners", {})
         cross_ok = (cross_ok and "recurse_gtest" in built.get("run", "") and "matrix.target" not in gt_step[0]["run"]
@@ -508,9 +522,9 @@ def main() -> int:
         pkg = (HERE / "package_linux.sh").read_text(encoding="utf-8")
         pins = json.loads((HERE / "lavapipe" / "VERSIONS.json").read_text(encoding="utf-8"))
         cases.append(("webgpu: linux-x86_64 builds its lavapipe from pinned sources and patches before the gtests and the package, and ships it",
-                      lvp.get("if") == "matrix.leg == 'linux-x86_64'"
+                      lvp.get("if", "").startswith("matrix.leg == 'linux-x86_64'")
                       and "lavapipe_build.py --out" in lvp.get("run", "")
-                      and "obj-rel/dist/bin/lavapipe" in lvp.get("run", "")
+                      and "obj-rel/dist/bin/lavapipe" in steps.get("WebGPU's Vulkan driver (linux-x86_64) - done", {}).get("run", "")
                       and 0 <= lvp_at < names.index("Package + validate")
                       and lvp_at < min(i for i, n in enumerate(names) if n.startswith("Engine gtests"))
                       and "lavapipe_build.py --key" in key.get("run", "")
@@ -609,8 +623,9 @@ def main() -> int:
 
     import test_cache_rules
     import test_release_builder
+    import test_release_path
     import test_theta_node
-    cases += test_theta_node.cases() + test_cache_rules.cases() + test_release_builder.cases()
+    cases += test_theta_node.cases() + test_cache_rules.cases() + test_release_builder.cases() + test_release_path.cases()
 
     failures = 0
     for name, ok in cases:

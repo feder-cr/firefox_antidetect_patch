@@ -101,18 +101,27 @@ def platform(leg: Leg, plan: Plan) -> Layer:
         "it back here removed its page-readable image (B157)."), lines)
 
 
+# Measured on the node, cold linux-x86_64 at -j31 (03/11): anon peak 21.1 GB, 0.68 a job.
+GB_PER_JOB = 0.7
+# The node has no swap. What the link may hold while compiles still run, and a margin.
+# They barely overlap: the link's anon reached 14.4 GB by the time the last compile
+# ended, with 2.3 GB beside it at most; scaled to the Windows link's 37 GB against
+# Linux's 23.6, that is 23. The link's peak comes half an hour after them, alone.
+LINK_DURING_COMPILE_GB = 23
+MARGIN_GB = 4
+
+
 def node_parallel(cpus: int, ram_bytes: int) -> int:
-    """Compile jobs on the node: one per CPU, but 2 GB of memory for each, because
-    the node has no swap and cannot have one (48 jobs on its 62 GB would run a
-    PGO + LTO compile out of memory before the link)."""
-    return max(1, min(cpus, ram_bytes // (2 * 2**30)))
+    """Compile jobs on the node: one per CPU, while they fit beside the link's start."""
+    room = ram_bytes / 2**30 - LINK_DURING_COMPILE_GB - MARGIN_GB
+    return max(1, min(cpus, int(room / GB_PER_JOB)))
 
 
 def machine(leg: Leg, plan: Plan) -> Layer:
     why = "The runner's 4 cores, and the objdir every later step reads."
     if plan.parallel != 4:
-        why = ("The node's compile jobs, min(CPU, RAM GB / 2) because it has no swap, "
-               "and the objdir every later step reads.")
+        why = ("The node's compile jobs, min(CPU, (RAM GB - %d) / %s) because it has no swap, "
+               "and the objdir every later step reads." % (LINK_DURING_COMPILE_GB + MARGIN_GB, GB_PER_JOB))
     return Layer("machine", why, [
         "mk_add_options MOZ_PARALLEL_BUILD=%d" % plan.parallel,
         "mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-rel"])

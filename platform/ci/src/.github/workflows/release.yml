@@ -22,13 +22,13 @@
 # unless it says kind=release; the `plan` job decides, once, before any build
 # (scripts/release_plan.py), and every job reads its outputs.
 #
-# WHO COMPILES: the two x86_64 legs on one Theta node, ONLY there, one after the
-# other, each on a single-job runner with a label of its own. linux-arm64 on GitHub's
-# runners, because the node is x86. Gates and tests stay on GitHub's runners, with the
-# binaries from the artifacts. `node` turns the node on: if it cannot, the run fails.
-# `watch-*` start the next leg's runner, and re-launch the run once if the machine is
-# lost; `stop-node` turns it off. All on GitHub's runners with the API key, which never
-# reaches the node (scripts/ci/theta_node.py, scripts/ci/test_release_builder.py).
+# WHO COMPILES: the two x86_64 legs ONLY on Theta nodes, at the same time, each on its own
+# fixed machine, on a single-job runner with a label of its own. linux-arm64 on GitHub's
+# runners, because the nodes are x86. Gates and tests stay on GitHub's runners, with the
+# binaries from the artifacts. `node` turns the nodes on: if either cannot, the run fails.
+# `watch-*` turn each node off as its leg ends, and re-launch the run once if a machine is
+# lost; `stop-node` makes sure both are off. All on GitHub's runners with the API key, which
+# never reaches a node (scripts/ci/theta_node.py, scripts/ci/test_release_builder.py).
 # ─────────────────────────────────────────────────────────────────────────────
 name: release
 # A re-launch says so where the watch of the run it replaces can find it (theta_node.py).
@@ -73,11 +73,8 @@ on:
           engine's layout (firefox-47 moved the juggler to modules/juggler):
           main still reads the old one and refuses every launch. The core is
           installed before the wrapper, so wrapper_ref must pin the version this
-          ref builds. On stealth/157 it is engine/firefox-157 until that branch
-          is merged: main's branding archives are 151's, and the page-surface
-          gate refuses every leg built with them (aboutDialog.css differs from
-          the retail's; run 40403680432, dispatched with the old default).
-        default: 'engine/firefox-157'
+          ref builds.
+        default: ''
       gtests:
         description: >
           Also run the engine's gtests on every leg, after its package and
@@ -87,8 +84,9 @@ on:
         type: boolean
         default: false
       gtest_filter:
-        description: "gtests=true only: which, as mach gtest takes them (e.g. StartupCache.*:Stealth*); * is all"
-        default: '*'
+        # What the last green gtests ran (run 41402916724). * has never gone green here.
+        description: "gtests=true only: which, as mach gtest takes them; * is all, and unproven"
+        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*'
       relaunch_of:
         description: >
           Set by the watch of a run whose machine was lost, to that run's id: this run
@@ -118,6 +116,10 @@ jobs:
       compile_cache: ${{ steps.plan.outputs.compile_cache }}
       build_date: ${{ steps.build_date.outputs.build_date }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      # What a leg's runs-on needs, known here so that it reads no matrix job's output, which
+      # overwrite each other. A rerun of failed jobs reuses it: it no longer matches.
+      attempt: ${{ github.run_attempt }}
+      node_label: theta-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -161,52 +163,49 @@ jobs:
           python3 scripts/ci/test_stealth_download_watchdog.py
           echo "matrix=$(python3 scripts/ci matrix)" | tee -a "$GITHUB_OUTPUT"
 
-  # Turns the Theta node on for this run (scripts/ci/theta_node.py). If it cannot, this
-  # job fails and with it the run: nothing else compiles the x86_64 legs.
+  # Turns each leg's node on, on its own machine (scripts/ci/theta_node.py). If either
+  # cannot, the run fails: nothing else compiles an x86_64 leg, the build is skipped, the
+  # arm64 leg with it, and stop-node turns off what did come up. fail-fast is off so that
+  # the run names every machine it could not have. The legs are test_release_builder.py's
+  # to hold to scripts/ci/legs.py.
   node:
+    name: node-${{ matrix.leg }}
     needs: plan
+    # A rerun of failed jobs has no watch and no label to run on: nothing to turn on for it.
+    if: needs.plan.outputs.attempt == github.run_attempt
     runs-on: ubuntu-24.04
     environment: theta-builder
     timeout-minutes: 45
     permissions: { actions: read, contents: read }
-    outputs:
-      runner: ${{ steps.node.outputs.runner }}
-      attempt: ${{ steps.node.outputs.attempt }}
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [linux-x86_64, win-x86_64]
     steps:
       - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
-      - name: Turn the node on, prepare it, start the first leg's runner
-        id: node
-        # `shell: bash` is what adds pipefail: without it a crash behind this `tee`
-        # would pass for a job that worked and said nothing.
-        shell: bash
+      - name: Turn this leg's node on, prepare it, start its runner
         env:
           THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
           THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
+          LEG: ${{ matrix.leg }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/theta_node.py provision \
-            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --access-out node-access.enc | tee -a "$GITHUB_OUTPUT"
-      # The node's SSH key for the watch, which starts the next leg's runner. Encrypted
-      # with what only a job holding the API key can derive: artifacts here are public.
-      - name: Keep the node's access for the watch
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: node-access-${{ github.run_attempt }}
-          path: node-access.enc
-          if-no-files-found: error
-          retention-days: 1
+            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --leg "$LEG"
 
   build:
     name: build-${{ matrix.leg }}
     needs: [plan, node]
     # The label of this run and attempt, one per leg, or the matrix's own runner for
     # linux-arm64. An x86_64 leg names no runner (scripts/ci/legs.py), so there is
-    # nothing else for it to run on. A rerun of failed jobs reuses this job's outputs
-    # with a node already deleted: empty, and GitHub refuses the job at once.
-    runs-on: ${{ matrix.runner || (needs.node.outputs.attempt == github.run_attempt && format('{0}-{1}', needs.node.outputs.runner, matrix.leg)) || '' }}
+    # nothing else for it to run on. A rerun of failed jobs reuses the plan's outputs, with
+    # the nodes deleted: empty, and GitHub drops the whole matrix, the arm64 leg and the legs
+    # that were green too. `rerun-refused` says so. A leg that failed is run again with a
+    # full re-run, which turns new nodes on.
+    runs-on: ${{ matrix.runner || (needs.plan.outputs.attempt == github.run_attempt && format('{0}-{1}', needs.plan.outputs.node_label, matrix.leg)) || '' }}
     timeout-minutes: 350
     # What the job's token may do, on a node a stranger owns: read this repository.
     permissions: { contents: read }
@@ -214,8 +213,8 @@ jobs:
       MOZ_BUILD_DATE: ${{ needs.plan.outputs.build_date }}
       # Every event scripts/ci/phase.py records is this leg's.
       CI_LEG: ${{ matrix.leg }}
-      # Every inherited CARGO_* variable enters sccache's key for Rust. Stated here, as
-      # GitHub's images state it, so that the node's first run finds their entries.
+      # Every inherited CARGO_* variable enters sccache's key for Rust, and no runner's
+      # image sets this one: stated here, so the key is the same on every leg.
       CARGO_HOME: /home/runner/.cargo
     strategy:
       fail-fast: false
@@ -228,7 +227,9 @@ jobs:
       # update` waited on archive.ubuntu.com for 5h40, until the job's limit,
       # and the leg was lost. Every apt-get of this job reads this file, so a
       # stalled mirror fails in minutes and a busy one is asked again.
+      # The node's bootstrap writes the same file, and a job there has no sudo.
       - name: apt - network timeouts and retries
+        if: runner.environment == 'github-hosted'
         run: |
           printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' \
             | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
@@ -315,7 +316,50 @@ jobs:
         with: { path: .series, fetch-depth: 1 }
       - name: The source tree, the Mozilla tag with our series applied (tools/engine.py)
         shell: bash
-        run: python .series/tools/engine.py materialize --into .
+        # 497 `git update-index` and 70 `git apply`, each reading and rewriting an index
+        # of 400,000 entries. Split, each rewrites only what changed: same objects, same
+        # commit, and materialize refuses a tree other than the one UPSTREAM.json declares.
+        # The checkout that follows writes its files on every core.
+        env:
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: core.splitIndex
+          GIT_CONFIG_VALUE_0: 'true'
+          GIT_CONFIG_KEY_1: checkout.workers
+          GIT_CONFIG_VALUE_1: '0'
+        run: |
+          MATERIALIZE="python .series/tools/engine.py materialize --into ."
+          if [ "${{ matrix.node }}" = "true" ]; then
+            python3 .series/platform/ci/src/scripts/ci/background.py start materialize -- $MATERIALIZE
+          else
+            $MATERIALIZE
+          fi
+      # What needs no source tree comes down beside it on the node. The toolchains cannot:
+      # their key hashes files of the tree.
+      - name: Compile cache - restore this leg's last one
+        id: cache-restore
+        if: needs.plan.outputs.compile_cache == 'gha'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/sccache-ci
+          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ matrix.leg }}-
+      # Once more when the first restore brought nothing. In run 40647970370
+      # the download was cut off two minutes in on linux-arm64 and
+      # win-x86_64 ("Failed to restore: The operation was aborted"), the step
+      # only warned, and both legs built cold without a word: 0.06% and 1.6%
+      # hits, the Windows build 2h39 against 1h50. A leg that has no cache
+      # yet misses twice, which costs seconds.
+      - name: Compile cache - restore again if the first brought nothing
+        id: cache-restore-again
+        if: needs.plan.outputs.compile_cache == 'gha' && steps.cache-restore.outputs.cache-matched-key == ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/sccache-ci
+          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sccache-${{ matrix.leg }}-
+      - name: The source tree - materialized
+        if: matrix.node
+        run: python3 .series/platform/ci/src/scripts/ci/background.py wait materialize
 
       # Cheapest gate in the pipeline, guarding the most expensive failure: the asset
       # basename is hand-written in every matrix entry below and derived independently
@@ -414,13 +458,17 @@ jobs:
       # there, because core 49.46.0 refuses a profile translated without a
       # session zone and the gate did not pass one.
       - name: Install the invisible_core the page-surface gate asks for its branding
+        env:
+          CORE_REF: ${{ github.event.inputs.core_ref || 'main' }}
         run: |
           python3 -m pip install --quiet \
-            "git+https://github.com/feder-cr/invisible_core@${{ github.event.inputs.core_ref || 'main' }}"
+            "git+https://github.com/feder-cr/invisible_core@$CORE_REF"
           python3 -c "from importlib.metadata import version; print('core asked for the branding:', version('invisible-core'))"
           ( cd scripts && python3 -c "import validate_release; print('branding it declares:', validate_release.declared_branding())" )
 
+      # On the node they came with its bootstrap (test_release_builder.py compares the lists).
       - name: Install Linux build tools
+        if: runner.environment == 'github-hosted'
         timeout-minutes: 20
         run: |
           sudo apt-get update
@@ -519,7 +567,7 @@ jobs:
           # own entry. Compile hits do not depend on it: neither sccache's version nor
           # its path enters their key. No key here is one the arm64 leg reads
           # (test_release_builder.py), so nothing the node writes runs on GitHub's runners.
-          key: sccache-bin-${{ runner.os }}-${{ runner.arch }}${{ runner.environment == 'github-hosted' && '' || '-node' }}-v0.18.0-${{ hashFiles('scripts/ci/sccache/*.patch') }}
+          key: sccache-bin-${{ runner.os }}-${{ runner.arch }}${{ runner.environment != 'github-hosted' && '-node' || '' }}-v0.18.0-${{ hashFiles('scripts/ci/sccache/*.patch') }}
       - name: Compile cache - build the one sccache this build uses
         if: needs.plan.outputs.compile_cache == 'gha'
         shell: bash
@@ -538,35 +586,7 @@ jobs:
             # ten minutes with nothing to compile, the server exited, and the
             # statistics step read a fresh server's zeros (run 40593659072).
             echo "SCCACHE_IDLE_TIMEOUT=0"
-            # For the node's first runs: which objects miss on every run, by name
-            # (about 55 on Linux). Only their names are kept, see the step after the stats.
-            if [ "${{ matrix.node }}" = "true" ]; then
-              echo "SCCACHE_LOG=debug"
-              echo "SCCACHE_ERROR_LOG=$RUNNER_TEMP/sccache-debug.log"
-            fi
           } >> "$GITHUB_ENV"
-      - name: Compile cache - restore this leg's last one
-        id: cache-restore
-        if: needs.plan.outputs.compile_cache == 'gha'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/sccache-ci
-          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sccache-${{ matrix.leg }}-
-      # Once more when the first restore brought nothing. In run 40647970370
-      # the download was cut off two minutes in on linux-arm64 and
-      # win-x86_64 ("Failed to restore: The operation was aborted"), the step
-      # only warned, and both legs built cold without a word: 0.06% and 1.6%
-      # hits, the Windows build 2h39 against 1h50. A leg that has no cache
-      # yet misses twice, which costs seconds.
-      - name: Compile cache - restore again if the first brought nothing
-        id: cache-restore-again
-        if: needs.plan.outputs.compile_cache == 'gha' && steps.cache-restore.outputs.cache-matched-key == ''
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/sccache-ci
-          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: sccache-${{ matrix.leg }}-
       # What this build starts from, said where it is read: a cold candidate is
       # a fact of the run, not something to infer from its length.
       - name: Compile cache - what this build starts from
@@ -577,12 +597,21 @@ jobs:
           AGAIN: ${{ steps.cache-restore-again.outputs.cache-matched-key }}
         run: |
           FROM="${FIRST:-$AGAIN}"
+          # What this build adds is measured against this (scripts/ci/cache_rules.py).
+          python3 scripts/ci/cache_rules.py snapshot --dir ~/.cache/sccache-ci --out "$RUNNER_TEMP/sccache-restored.json"
           if [ -n "$FROM" ]; then
-            echo "compile cache: ${{ matrix.leg }} starts from $FROM" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "compile cache: ${{ matrix.leg }} restored $FROM; whether it was any use is said after the build, from its hits" | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::compile cache: ${{ matrix.leg }} restored nothing and builds cold"
             echo "compile cache: ${{ matrix.leg }} restored NOTHING, this build is cold" >> "$GITHUB_STEP_SUMMARY"
           fi
+      # For the node's first runs: which objects miss on every run, by name (about 55 on
+      # Linux). The server alone: every client logs to stderr under SCCACHE_LOG, and that
+      # would go into the build's log and into what configure's compiler checks read. Only
+      # the server has SCCACHE_ERROR_LOG, out of the tree; only the names leave the node.
+      - name: Compile cache - the node's server, which alone logs
+        if: needs.plan.outputs.compile_cache == 'gha' && matrix.node
+        run: SCCACHE_LOG=debug SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-debug.log" "$SCCACHE_PATH" --start-server
 
       # The .mozconfig in layers (scripts/ci/mozconfig.py): compile cache,
       # symbols, the retail's PGO and LTO, platform, machine. Each layer writes
@@ -593,6 +622,13 @@ jobs:
           PARALLEL="$(python3 scripts/ci node-parallel)"
           [ "$PARALLEL" -ge 1 ] || { echo "ERROR: no compile jobs from the node's limits: '$PARALLEL'"; exit 1; }
           echo "CI_PARALLEL=$PARALLEL" | tee -a "$GITHUB_ENV"
+      # The link of a full-LTO libxul is one thread for 29 minutes on 24 GB. Huge pages for
+      # that heap, on the Linux node's links only: `mach build` runs them through this linker.
+      # Not on Windows: there the only way to the linker is LINKER, a configure option, which
+      # about:buildconfig would print (see the Build step).
+      - name: The node - its linker asks for huge pages
+        if: matrix.node && matrix.family == 'linux'
+        run: python3 scripts/ci linker-shim --out "$HOME/.cache/ci-linker" | tee -a "$GITHUB_ENV"
       - name: The CI's .mozconfig, in layers
         env:
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
@@ -605,6 +641,10 @@ jobs:
 
       - name: Build
         id: build
+        env:
+          # Windows's link cannot be reached alone, so its whole build asks for huge pages.
+          # No configure option reads this (scripts/ci/test_release_path.py).
+          GLIBC_TUNABLES: ${{ matrix.node && matrix.family == 'win' && 'glibc.malloc.hugetlb=1' || '' }}
         # ⛔ Un tetto sul PASSO, non solo sul job. Il 2026-08-26 la gamba
         # win-x86_64 si e' piantata sul download del toolchain Microsoft che
         # `--enable-bootstrap` fa a inizio build: nessuna riga emessa per oltre
@@ -615,8 +655,8 @@ jobs:
         # 180 minuti sono il 48% sopra la piu' lenta build riuscita mai
         # osservata su questa gamba (121 min il 2026-08-26; 105 e 106 il
         # 2026-08-17), quindi non uccide una build lenta ma vera. Quando scatta,
-        # il job risulta FALLITO invece che appeso, e `rerun-failed-jobs`
-        # ricompila la sola gamba caduta riusando gli artefatti delle altre.
+        # il job risulta FALLITO invece che appeso. Si rilancia la corsa intera, che
+        # accende un nodo nuovo: `rerun-failed-jobs` non puo' (vedi `rerun-refused`).
         #
         # --keep-going: una corsa che fallisce riporta TUTTI gli errori di
         # compilazione della gamba, non solo i primi. Senza, make si ferma al
@@ -652,15 +692,110 @@ jobs:
           # rebuilt gkrust for it in the symbols step.
           PROFILE="$HOME/pgo/merged.profdata"
           if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log & fi
-          python3 scripts/ci phase build -- ./mach build --keep-going
+          # On the node the link goes on while the steps below use the machine: this step
+          # ends with the compiles, the next ones save, `Build - the link` takes the result.
+          if [ "${{ matrix.node }}" = "true" ]; then
+            python3 scripts/ci/background.py start build -- python3 scripts/ci phase build -- ./mach build --keep-going
+            python3 scripts/ci/background.py until-compiled build
+          else
+            python3 scripts/ci phase build -- ./mach build --keep-going
+            if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
+          fi
+      # WebGPU's Vulkan driver on Linux is ours (scripts/ci/lavapipe_build.py):
+      # without one requestAdapter() answered null, and with the host's Mesa its
+      # version decided limits and raster bytes. Built from pinned sources and
+      # our patches with this build's clang and sysroot, into dist/bin before
+      # the gtests and the package; it is kept by its inputs, unless the run asks
+      # for a cold build. x86_64 only: arm64 is not a priority, and without the
+      # file WebGPU answers null there, never with a host driver.
+      # It needs nothing of the build but its clang and sysroot, so it starts when the
+      # compiles are over and libxul links: on the 47 cores the link does not use, at nice
+      # 19 so the link wins, 24 GB of link and 9.5 of it. Beside the compile it would add
+      # to 33.6 GB, and hold the save back. A build that stops before that is red anyway.
+      - name: WebGPU's Vulkan driver (linux-x86_64) - its inputs
+        id: lavapipe-key
+        if: matrix.leg == 'linux-x86_64' && steps.build.outputs.compiled == 'true'
+        run: echo "key=lavapipe-${{ matrix.leg }}-$(python3 scripts/ci/lavapipe_build.py --key)" >> "$GITHUB_OUTPUT"
+      - name: WebGPU's Vulkan driver (linux-x86_64) - built before
+        id: lavapipe-cache
+        if: matrix.leg == 'linux-x86_64' && steps.build.outputs.compiled == 'true' && needs.plan.outputs.compile_cache == 'gha'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/lavapipe
+          key: ${{ steps.lavapipe-key.outputs.key }}
+      - name: WebGPU's Vulkan driver (linux-x86_64) - build
+        if: matrix.leg == 'linux-x86_64' && steps.build.outputs.compiled == 'true'
+        run: |
+          python3 scripts/ci/background.py start lavapipe --nice 19 -- \
+            python3 scripts/ci phase lavapipe -- python3 scripts/ci/lavapipe_build.py --out "$HOME/.cache/lavapipe" --jobs "${CI_PARALLEL:-4}"
+      # On every leg: the newest entry is the one the next run restores, and the node
+      # uploads at about 5 MB/s. A build that added little leaves the last entry as it is
+      # (scripts/ci/cache_rules.py).
+      - name: Compile cache - is this leg's upload worth it
+        id: cache-worth
+        if: "!cancelled() && needs.plan.outputs.compile_cache == 'gha'"
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          "$SCCACHE_PATH" --show-stats > sccache-stats-now.txt || true
+          python3 scripts/ci/cache_rules.py worth --stats sccache-stats-now.txt \
+            --dir ~/.cache/sccache-ci --restored "$RUNNER_TEMP/sccache-restored.json" | tee -a "$GITHUB_OUTPUT"
+      # Before the link's end on the node: the objects are complete and whole (sccache writes
+      # a temporary file and renames it), the upload has 47 idle cores beside it, and a link
+      # that fails or a machine lost later no longer costs them.
+      - name: Compile cache - save this leg's
+        continue-on-error: true
+        # 5 GB at half the measured 5 MB/s. A stalled upload must not hold a finished link.
+        timeout-minutes: 35
+        # Also when the build failed: the runs that fix a port fail by design,
+        # and they are the ones the cache is for.
+        # Never when the build did not start: run 40519477694, cancelled during
+        # checkout, saved an empty arm64 entry, and the next run would have
+        # restored that one - the newest of its leg - and compiled cold.
+        # Never on a cancel: GitHub cuts this job 5:00 after it, always() steps included,
+        # and the node's upload takes 15. Not starting frees the node at once; an upload
+        # that is cut is never committed, and its key holds this run and attempt.
+        if: "!cancelled() && needs.plan.outputs.compile_cache == 'gha' && (steps.build.outcome == 'success' || steps.build.outcome == 'failure') && steps.cache-worth.outputs.save != 'false'"
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/sccache-ci
+          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # Only after they have compiled the whole build: a download cut off half way must not
+      # become the entry every later run starts from.
+      - name: Toolchains - save
+        continue-on-error: true
+        timeout-minutes: 30
+        if: "!cancelled() && matrix.node && steps.build.outputs.compiled == 'true' && steps.toolchains.outputs.cache-hit != 'true'"
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.mozbuild
+            !~/.mozbuild/srcdirs
+            ~/.rustup/toolchains/${{ steps.toolchains-key.outputs.rust }}-x86_64-unknown-linux-gnu
+          key: ${{ steps.toolchains-key.outputs.key }}
+
+      - name: Build - the link
+        id: build-end
+        if: "!cancelled() && matrix.node && steps.build.outcome == 'success'"
+        timeout-minutes: 300
+        run: |
+          python3 scripts/ci/background.py wait build
+          PROFILE="$HOME/pgo/merged.profdata"
           if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
+      # Nothing of a leg outlives its job: the node is deleted as soon as the job ends. The
+      # runner's signals reach a step's shell and no further, so this is what stops a build
+      # on a cancel, about 41 s after it and well inside the 5:00 cut (PROBES.md).
+      - name: The node - a cancel or a failure ends what runs beside the steps
+        if: (cancelled() || failure()) && matrix.node
+        timeout-minutes: 2
+        run: python3 scripts/ci/background.py stop build lavapipe
       # What enters the compile's key and can move by itself: two runs that miss for no
       # reason differ here (scripts/ci/cache_rules.py).
       - name: Compile cache - what its key depends on
         if: always() && steps.build.outcome != 'skipped'
         run: python3 scripts/ci/cache_rules.py guard | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Swap - what the build left in zram and in the file
-        if: always()
+        if: always() && runner.environment == 'github-hosted'
         run: |
           # How much of the link went to zram, how well it compressed, and whether
           # the file was reached: the numbers that say if the compressed swap paid.
@@ -679,8 +814,7 @@ jobs:
 
       # The compile cache's own gate: the build compiled through the sccache
       # pinned above, nothing else, and every object it compiled was stored.
-      # Statistics first, so a refusal still shows them; then the server stops,
-      # which flushes the cache directory before it is saved.
+      # Statistics first, so a refusal still shows them; then the server stops.
       - name: Compile cache - the build used the pinned sccache
         if: always() && needs.plan.outputs.compile_cache == 'gha'
         run: |
@@ -703,66 +837,21 @@ jobs:
           if [ "${WRITE_ERRORS:-0}" != "0" ]; then
             echo "::warning::sccache failed to store $WRITE_ERRORS objects: the next run recompiles them"
           fi
+      - name: Compile cache - cold or warm, from its hits
+        if: always() && needs.plan.outputs.compile_cache == 'gha' && steps.build.outcome != 'skipped'
+        run: python3 scripts/ci/cache_rules.py heat --leg "$CI_LEG" --stats sccache-stats.txt | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Compile cache - which objects missed, by name
         if: always() && matrix.node && needs.plan.outputs.compile_cache == 'gha'
         run: |
-          grep -F 'Cache miss in' "$SCCACHE_ERROR_LOG" > sccache-misses.txt || true
+          grep -F 'Cache miss in' "$RUNNER_TEMP/sccache-debug.log" > sccache-misses.txt || true
           echo "compile cache: $(wc -l < sccache-misses.txt) objects missed, by name in this leg's events artifact" | tee -a "$GITHUB_STEP_SUMMARY"
-      # The node uploads at about 5 MB/s: 15 minutes for an entry. A build that wrote
-      # few new objects leaves the last entry as it is (scripts/ci/cache_rules.py).
-      - name: Compile cache - is the node's upload worth it
-        id: cache-worth
-        if: always() && needs.plan.outputs.compile_cache == 'gha' && runner.environment != 'github-hosted'
-        run: python3 scripts/ci/cache_rules.py worth --stats sccache-stats.txt | tee -a "$GITHUB_OUTPUT"
-      - name: Compile cache - save this leg's
-        # Also when the build failed: the runs that fix a port fail by design,
-        # and they are the ones the cache is for.
-        # Never when the build did not start: run 40519477694, cancelled during
-        # checkout, saved an empty arm64 entry, and the next run would have
-        # restored that one - the newest of its leg - and compiled cold.
-        if: always() && needs.plan.outputs.compile_cache == 'gha' && (steps.build.outcome == 'success' || steps.build.outcome == 'failure' || steps.build.outcome == 'cancelled') && steps.cache-worth.outputs.save != 'false'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/sccache-ci
-          key: sccache-${{ matrix.leg }}-${{ github.run_id }}-${{ github.run_attempt }}
-      # Only after a build that worked: a download cut off half way must not become
-      # the entry every later run starts from.
-      - name: Toolchains - save
-        if: always() && matrix.node && steps.build.outcome == 'success' && steps.toolchains.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.mozbuild
-            !~/.mozbuild/srcdirs
-            ~/.rustup/toolchains/${{ steps.toolchains-key.outputs.rust }}-x86_64-unknown-linux-gnu
-          key: ${{ steps.toolchains-key.outputs.key }}
-
-      # WebGPU's Vulkan driver on Linux is ours (scripts/ci/lavapipe_build.py):
-      # without one requestAdapter() answered null, and with the host's Mesa its
-      # version decided limits and raster bytes. Built from pinned sources and
-      # our patches with this build's clang and sysroot, into dist/bin before
-      # the gtests and the package; it is kept by its inputs, unless the run asks
-      # for a cold build. x86_64 only: arm64 is not a priority, and without the
-      # file WebGPU answers null there, never with a host driver.
-      - name: WebGPU's Vulkan driver (linux-x86_64) - its inputs
-        id: lavapipe-key
-        if: matrix.leg == 'linux-x86_64'
-        run: echo "key=lavapipe-${{ matrix.leg }}-$(python3 scripts/ci/lavapipe_build.py --key)" >> "$GITHUB_OUTPUT"
-      - name: WebGPU's Vulkan driver (linux-x86_64) - built before
-        id: lavapipe-cache
-        if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.compile_cache == 'gha'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/lavapipe
-          key: ${{ steps.lavapipe-key.outputs.key }}
-      - name: WebGPU's Vulkan driver (linux-x86_64) - build
+      - name: WebGPU's Vulkan driver (linux-x86_64) - done
         id: lavapipe
         if: matrix.leg == 'linux-x86_64'
-        # LLVM and Mesa cold: about an hour; a cache hit is seconds.
+        # LLVM and Mesa cold: about an hour; a cache hit is seconds. It began long ago.
         timeout-minutes: 150
         run: |
-          sudo apt-get install -y cmake ninja-build glslang-tools bison flex patchelf
-          python3 scripts/ci phase lavapipe -- python3 scripts/ci/lavapipe_build.py --out "$HOME/.cache/lavapipe"
+          python3 scripts/ci/background.py wait lavapipe
           mkdir -p obj-rel/dist/bin/lavapipe
           cp "$HOME/.cache/lavapipe/libvulkan_lvp.so" "$HOME/.cache/lavapipe/VERSION.json" obj-rel/dist/bin/lavapipe/
           cat obj-rel/dist/bin/lavapipe/VERSION.json
@@ -778,6 +867,10 @@ jobs:
       - name: Package + validate
         env:
           ASSET: ${{ matrix.asset }}
+          # `mach package` compresses a tar.xz nothing reads: the leg ships its own tar.gz
+          # of dist/firefox. With PGO its command line says -9e, 192 MiB blocks: too few for
+          # threads to matter. xz reads this, and counts 12.3 GiB for it, with the build over.
+          XZ_OPT: ${{ matrix.node && '-T16 --block-size=32MiB --memlimit-compress=16GiB' || '' }}
         run: python3 scripts/ci phase package -- bash scripts/ci/package_${{ matrix.family }}.sh
 
       - name: Upload build artifact
@@ -860,8 +953,9 @@ jobs:
         timeout-minutes: 180
         shell: bash
         env:
-          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter || '*' }}
+          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter }}
         run: |
+          : "${GTEST_FILTER_INPUT:?an empty filter: name the gtests, or * for all}"
           # The Linux runners have no display, and some gtests open windows.
           sudo apt-get install -y xvfb >/dev/null
           python3 scripts/ci phase gtest -- xvfb-run -a ./mach gtest "$GTEST_FILTER_INPUT"
@@ -872,8 +966,12 @@ jobs:
         shell: bash
         run: |
           python3 scripts/ci phase gtest -- ./mach build recurse_gtest
-          tar -C obj-rel/dist -chf gtest-bin.tar bin
+          # And _tests/gtest, the directory mach runs them from: what they read at run time.
+          mkdir -p obj-rel/_tests/gtest
+          tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest
       - name: The node - keep them
+        # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.
+        timeout-minutes: 60
         if: github.event.inputs.gtests == 'true' && runner.environment != 'github-hosted'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -905,67 +1003,121 @@ jobs:
           retention-days: 14
 
   # The Windows leg's gtests, run where its binary runs. Its build job compiled them
-  # on the node; here they run as `mach gtest` runs them on Windows:
-  # firefox.exe -unittest from dist/bin, with MOZ_RUN_GTEST and the filter.
+  # on the node; here they run as the Linux leg's do (scripts/ci/gtest_run.py).
+  # The job always runs and its steps ask for gtests=true, because the gate needs it. A
+  # skipped job would count against every job below it, at any distance, and whether
+  # that reaches the jobs inside gate.yml is not established.
   gtest-cross:
     name: gtest-win-x86_64
     needs: build
-    if: github.event.inputs.gtests == 'true'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
+      - name: The series (this repository, this commit)
+        if: github.event.inputs.gtests == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
       - name: The leg's dist/bin with its gtest libxul
+        if: github.event.inputs.gtests == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: gtest-bin-win-x86_64
           path: gtest-run
       - name: Engine gtests (gtests=true only)
+        if: github.event.inputs.gtests == 'true'
         shell: bash
         env:
-          GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
-          MOZ_RUN_GTEST: 'True'
-          MOZ_WEBRENDER: '0'
+          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter }}
         run: |
-          cd gtest-run
-          tar -xf gtest-bin.tar
-          export MOZ_XRE_DIR="$(cygpath -w "$PWD/bin")"
-          ./bin/firefox.exe -unittest --gtest_death_test_style=threadsafe --wait-for-browser
+          ( cd gtest-run && tar -xf gtest-bin.tar )
+          python .series/platform/ci/src/scripts/ci/gtest_run.py --root gtest-run --reports gtest-reports
+      - name: What each suite did
+        if: always() && github.event.inputs.gtests == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gtest-reports-win-x86_64
+          path: gtest-reports/
+          if-no-files-found: ignore
+          retention-days: 14
 
-  # The Linux leg's gtests, as gtest-cross runs Windows's:
+  # The Linux leg's gtests, as `mach gtest` ran them on the green candidate
+  # (scripts/ci/gtest_run.py), and always running for the reason gtest-cross does:
   # the node's machine has a GPU and GitHub's runners, where they are judged, do not.
+  # The limit is the old step's, which held the link too: * is unproven, and time here
+  # is a runner of GitHub's, not the node.
   gtest-linux:
     name: gtest-linux-x86_64
     needs: build
-    if: github.event.inputs.gtests == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 180
     steps:
+      - name: The series (this repository, this commit)
+        if: github.event.inputs.gtests == 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
+      - name: apt - network timeouts and retries
+        if: github.event.inputs.gtests == 'true'
+        run: |
+          printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' \
+            | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
+      # The runners have no display, and some gtests open windows.
+      - name: A display
+        if: github.event.inputs.gtests == 'true'
+        timeout-minutes: 20
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
       - name: The leg's dist/bin with its gtest libxul
+        if: github.event.inputs.gtests == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: gtest-bin-linux-x86_64
           path: gtest-run
       - name: Engine gtests (gtests=true only)
-        shell: bash
+        if: github.event.inputs.gtests == 'true'
         env:
-          GTEST_FILTER: ${{ github.event.inputs.gtest_filter || '*' }}
-          MOZ_RUN_GTEST: 'True'
-          MOZ_WEBRENDER: '0'
+          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter }}
         run: |
-          sudo apt-get install -y xvfb >/dev/null
-          cd gtest-run
-          tar -xf gtest-bin.tar
-          export MOZ_XRE_DIR="$PWD/bin"
-          xvfb-run -a ./bin/firefox -unittest --gtest_death_test_style=threadsafe --wait-for-browser
+          tar -C gtest-run -xf gtest-run/gtest-bin.tar
+          xvfb-run -a python3 .series/platform/ci/src/scripts/ci/gtest_run.py --root gtest-run --reports gtest-reports
+      - name: What each suite did
+        if: always() && github.event.inputs.gtests == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gtest-reports-linux-x86_64
+          path: gtest-reports/
+          if-no-files-found: ignore
+          retention-days: 14
 
-  # Follows the legs on the node. It needs `node` only, so it does not wait for the
-  # arm64 leg, and survives a cancel. It starts each next leg's runner when the last has
-  # finished, and a machine lost mid-build re-launches the whole run once. Three jobs in
-  # a row, each stopping by itself in time: GitHub ends one of its jobs at 6 hours, and
-  # two legs can take 700 minutes. One that dies leaves the next to go on.
+  # GitHub drops the build matrix on a rerun of failed jobs, with an error only the run's
+  # page shows (`runs-on` above). This job is re-run with it, and says what to do.
+  rerun-refused:
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.attempt != github.run_attempt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: A failed leg comes back with a full re-run
+        env:
+          SAID: >-
+            A re-run of failed jobs cannot bring a leg back: its node is gone, so the
+            build matrix vanished, arm64 and the green legs too. Re-run ALL jobs, which
+            turns a new node on and rebuilds from the cache:
+            gh run rerun ${{ github.run_id }}
+        run: |
+          echo "::error::$SAID"
+          echo "**$SAID**" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+  # Follows both legs. It needs `node` only, so it does not wait for the arm64 leg, and
+  # survives a cancel. It turns each node off as its leg ends. A machine lost mid-build
+  # leaves the other leg to finish and save its cache, then re-launches the whole run once.
+  # Two jobs in a row, each stopping by itself in time: GitHub ends one of its jobs at 6
+  # hours, a leg has nearly that from when its runner takes it, and one that dies leaves the
+  # next to go on.
   watch-1:
     needs: [plan, node]
-    if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.node.outputs.attempt == github.run_attempt
+    if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.plan.outputs.attempt == github.run_attempt
     runs-on: ubuntu-24.04
     environment: theta-builder
     timeout-minutes: 345
@@ -976,14 +1128,7 @@ jobs:
       - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
-      - name: The node's access
-        # Without it the next leg's runner cannot start, and the watch says so; it can
-        # still see the legs and the machine, and that is worth more than this step.
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: node-access-${{ github.run_attempt }}
-      - name: Watch the legs, start the next leg's runner, re-launch once if the machine is lost
+      - name: Watch both legs, turn each node off as its leg ends, re-launch once if a machine is lost
         id: watch
         shell: bash
         env:
@@ -991,7 +1136,7 @@ jobs:
           THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-          # The same run again if the machine is lost: every input by value.
+          # The same run again if a machine is lost: every input by value.
           KIND: ${{ needs.plan.outputs.kind }}
           TAG: ${{ needs.plan.outputs.tag }}
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
@@ -1002,11 +1147,11 @@ jobs:
           RELAUNCH_OF: ${{ inputs.relaunch_of }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/theta_node.py watch --run "$GITHUB_RUN_ID" \
-            --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" --access node-access.enc | tee -a "$GITHUB_OUTPUT"
+            --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
 
   watch-2:
     needs: [plan, node, watch-1]
-    if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.node.outputs.attempt == github.run_attempt && !contains(fromJSON('["done","lost","failed"]'), needs.watch-1.outputs.verdict)
+    if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.plan.outputs.attempt == github.run_attempt && !contains(fromJSON('["done","lost","failed"]'), needs.watch-1.outputs.verdict)
     runs-on: ubuntu-24.04
     environment: theta-builder
     timeout-minutes: 345
@@ -1017,14 +1162,7 @@ jobs:
       - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
-      - name: The node's access
-        # Without it the next leg's runner cannot start, and the watch says so; it can
-        # still see the legs and the machine, and that is worth more than this step.
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: node-access-${{ github.run_attempt }}
-      - name: Watch the legs, start the next leg's runner, re-launch once if the machine is lost
+      - name: Watch both legs, turn each node off as its leg ends, re-launch once if a machine is lost
         id: watch
         shell: bash
         env:
@@ -1032,7 +1170,7 @@ jobs:
           THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-          # The same run again if the machine is lost: every input by value.
+          # The same run again if a machine is lost: every input by value.
           KIND: ${{ needs.plan.outputs.kind }}
           TAG: ${{ needs.plan.outputs.tag }}
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
@@ -1043,56 +1181,15 @@ jobs:
           RELAUNCH_OF: ${{ inputs.relaunch_of }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/theta_node.py watch --run "$GITHUB_RUN_ID" \
-            --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" --access node-access.enc | tee -a "$GITHUB_OUTPUT"
+            --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
 
-  watch-3:
-    needs: [plan, node, watch-1, watch-2]
-    if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.node.outputs.attempt == github.run_attempt && !contains(fromJSON('["done","lost","failed"]'), needs.watch-1.outputs.verdict) && !contains(fromJSON('["done","lost","failed"]'), needs.watch-2.outputs.verdict)
-    runs-on: ubuntu-24.04
-    environment: theta-builder
-    timeout-minutes: 345
-    permissions: { actions: write, contents: read }
-    outputs:
-      verdict: ${{ steps.watch.outputs.verdict }}
-    steps:
-      - name: The series (this repository, this commit)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with: { path: .series, fetch-depth: 1 }
-      - name: The node's access
-        # Without it the next leg's runner cannot start, and the watch says so; it can
-        # still see the legs and the machine, and that is worth more than this step.
-        continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: node-access-${{ github.run_attempt }}
-      - name: Watch the legs, start the next leg's runner, re-launch once if the machine is lost
-        id: watch
-        shell: bash
-        env:
-          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
-          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
-          RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-          # The same run again if the machine is lost: every input by value.
-          KIND: ${{ needs.plan.outputs.kind }}
-          TAG: ${{ needs.plan.outputs.tag }}
-          COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
-          CORE_REF: ${{ inputs.core_ref || 'main' }}
-          WRAPPER_REF: ${{ inputs.wrapper_ref || 'main' }}
-          GTESTS: ${{ inputs.gtests }}
-          GTEST_FILTER_INPUT: ${{ inputs.gtest_filter }}
-          RELAUNCH_OF: ${{ inputs.relaunch_of }}
-        run: |
-          python3 .series/platform/ci/src/scripts/ci/theta_node.py watch --run "$GITHUB_RUN_ID" \
-            --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" --access node-access.enc | tee -a "$GITHUB_OUTPUT"
-
-  # Turns the node off as soon as its legs are done, not when the whole run is: the
-  # arm64 leg on GitHub's runners may take hours more, and the node is paid by the hour.
-  # When the node job did its work this asks GitHub first: a watch that crashed says
-  # nothing about the legs, and a healthy build is not deleted for that. A node it leaves
-  # on, the sweeper deletes as soon as its legs have finished.
+  # Makes sure both nodes are off once the watch is over, not when the whole run is: the
+  # arm64 leg on GitHub's runners may take hours more, and a node is paid by the hour. Each
+  # goes whatever happens to the other. When the node job did its work this asks GitHub
+  # first: a watch that crashed says nothing about a leg, and a healthy build is not deleted
+  # for that. A node it leaves on, the sweeper deletes as soon as its leg has finished.
   stop-node:
-    needs: [plan, node, watch-1, watch-2, watch-3]
+    needs: [plan, node, watch-1, watch-2]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     environment: theta-builder
@@ -1103,17 +1200,16 @@ jobs:
         if: always()
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
-      - name: Turn the node off and see it gone
+      - name: Turn both nodes off and see them gone
         if: always()
-        timeout-minutes: 8
+        timeout-minutes: 12
         env:
           THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
           THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-          ATTEMPT: ${{ needs.node.outputs.attempt || github.run_attempt }}
           ONLY_IF: ${{ needs.node.result == 'success' && '--if-legs-done' || '' }}
-        run: python3 .series/platform/ci/src/scripts/ci/theta_node.py off --run "$GITHUB_RUN_ID" --attempt "$ATTEMPT" $ONLY_IF
+        run: python3 .series/platform/ci/src/scripts/ci/theta_node.py off --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" $ONLY_IF
 
   # After a save, this ref's older entries of the same leg go: the repository is over
   # its cache quota. Deleting needs actions: write, so never in a job on the node.
@@ -1160,7 +1256,8 @@ jobs:
   # The gate and the publish are written once, in gate.yml and publish.yml,
   # and republish.yml calls the same two.
   gate:
-    needs: [plan, build]
+    # Red or cancelled gtests stop the gate, and so the publish that needs it.
+    needs: [plan, build, gtest-cross, gtest-linux]
     permissions: { actions: read, contents: read }
     uses: ./.github/workflows/gate.yml
     with:

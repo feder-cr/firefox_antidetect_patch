@@ -69,10 +69,11 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
         run: |
           set -e
           mkdir -p art
-          gh release download "${{ github.event.inputs.release_tag }}" \
+          gh release download "$RELEASE_TAG" \
             --repo "${{ github.repository }}" \
             --pattern "firefox-*-stealth-${{ matrix.leg }}.*" \
             --dir art

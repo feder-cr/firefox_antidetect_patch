@@ -8,7 +8,7 @@ index dac0fd33ddbb43b4fc9114de5d4138b995441095..a00c91ba898919ade19ed385e4a06175
  /*.json.gz
 +release-out/
 diff --git a/CLAUDE.md b/CLAUDE.md
-index 43c994c2d3617f947bcb5adf1933e21dabe46bb5..a9153f74f29dda91ef30cfb846f936f5474b83a4 100644
+index 43c994c2d3617f947bcb5adf1933e21dabe46bb5..b7eeef163e7f0b92c5ece27f620f341fcbf6f9df 100644
 --- a/CLAUDE.md
 +++ b/CLAUDE.md
 @@ -1 +1,77 @@
@@ -57,17 +57,17 @@ index 43c994c2d3617f947bcb5adf1933e21dabe46bb5..a9153f74f29dda91ef30cfb846f936f5
 +  di GitHub Actions (`compile_cache=gha`, il default), quindi la corsa dopo una
 +  correzione ricompila solo cio' che e' cambiato. Per correggere errori di
 +  build si itera cosi', non con corse a freddo.
-+- **Release**: sempre a freddo, senza cache. Una candidata compilata con la
-+  cache non si pubblica: `publish.yml` la rifiuta, anche da `republish.yml`.
-+  Per pubblicare il codice di una candidata si lancia una release, oppure una
-+  candidata con `compile_cache=off` da ripubblicare.
++- **Release**: con la cache anche lei (decisione del 03/11). `compile_cache=off`
++  chiede una build a freddo, e `publish.yml` non rifiuta niente per la cache.
++  Si lancia a mano da `main`, una candidata da un ramo; da un tag non parte
++  nessuna build. Una candidata si pubblica senza ricompilare da `republish.yml`.
 +- Ogni build gira con `--keep-going`: una corsa fallita elenca tutti gli
 +  errori della gamba, non solo il primo.
 +- La decisione sta in un posto solo, `scripts/release_plan.py` (con i suoi casi
 +  in `scripts/test_release_plan.py`); i workflow leggono il piano e basta.
-+- Finche' `engine/firefox-157` del core non e' in main, `core_ref` deve essere
-+  quel ramo (e' il default su questo ramo): il branding di main e' quello del
-+  151 e il controllo della superficie rifiuta tutte le gambe.
++- `core_ref` vuoto vuol dire `main`. Una versione nuova del motore passa il ramo
++  del core che la segue: il controllo della superficie giudica il branding che
++  quel core dichiara.
 +
 +## Le due regole che rompono il prodotto se ignorate
 +

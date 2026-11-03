@@ -4,8 +4,9 @@
   1. the save step runs only when the Build step started: run 40519477694,
      cancelled during checkout, saved an empty arm64 entry that the next run
      would have restored as the newest of its leg, and compiled cold;
-  2. it still runs when the build failed or was cancelled mid-way (the runs
-     that fix a port fail by design, and they are the ones the cache is for);
+  2. it still runs when the build failed (the runs that fix a port fail by design,
+     and they are the ones the cache is for), and not on a cancel: GitHub cuts the job
+     5:00 after one, and the node's upload takes 15;
   3. the size per leg times three legs fits the repository's 150 GB, and is
      at least 30 GB: a PGO + LTO build writes more than 15, and a cache smaller
      than a build evicts itself (run 40557157874 reused 0.2%);
@@ -44,8 +45,8 @@ def main() -> int:
         ("the Build step has id build", re.search(r"^\s+id: build$", build, re.M) is not None),
         ("the save waits for the Build step to have started",
          "steps.build.outcome" in cond and "skipped" not in cond),
-        ("the save still runs after a failed or cancelled build",
-         "always()" in cond and "'failure'" in cond and "'cancelled'" in cond),
+        ("the save still runs after a failed build, not after a cancel",
+         "!cancelled()" in cond and "always()" not in cond and "'failure'" in cond and "'cancelled'" not in cond),
         ("%d legs of %d GB fit the repository's %d GB" % (LEGS, size, REPO_LIMIT_GB),
          LEGS * size <= REPO_LIMIT_GB),
         ("the cache per leg (%d GB) holds a PGO + LTO build" % size, size >= 30),

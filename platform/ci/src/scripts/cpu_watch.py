@@ -14,13 +14,18 @@ The phases come from what the build did, never from how long it usually takes:
 
   build, package, symbols...  scripts/ci/phase.py's start and end events
   configure, compile          until mach's "Finished reading N moz.build files", then
-                              until the first long link
+                              until libxul's link: the links before it (libgkcodecs,
+                              the gtest stubs) run among the compiles
   rust                        from cargo's first "Compiling" to its last "Finished"
   link <file>                 a linker process seen alive, by pid, named by its -o
 
+Each row says the core-minutes it left idle, and the whole job's use closes the table.
+A link is listed as one thread by nature, with what ran beside it.
+
 Warnings, never failures: a phase over LONG_S outside the link whose mean is below
-UNDERUSED_SHARE of the available cores, and a phase where the machine is busy with
-something that is not us (the owner of the PC using it).
+UNDERUSED_SHARE of the available cores, COMPILE_SHARE for the compile, and a phase where the machine is busy with
+something that is not us (the owner of the PC using it). That one is the machine's busy
+above ours: steal has read 0 on the node's kernel, with 2 days 22 hours of uptime.
 
 Its cases: scripts/test_cpu_watch.py.
 """
@@ -38,12 +43,16 @@ LINE_S = 60
 LONG_S = 600
 # Mean cores below this share of the available ones, in a long phase outside the link.
 UNDERUSED_SHARE = 0.5
+# The compile has a job for every core: below this, something holds them back.
+COMPILE_SHARE = 0.85
 # Cores busy with what is not ours: at least this many, and this share of the machine.
 OTHERS_CORES = 4
 OTHERS_SHARE = 0.15
 # A link seen in fewer samples than this is too short to have a row.
 LINK_MIN_SAMPLES = 2
 LINKERS = ("ld", "ld.lld", "ld64.lld", "lld", "lld-link", "rust-lld")
+# The link that ends the compiling, on every leg.
+MAIN_LIBRARY = ("libxul.so", "xul.dll")
 OUTPUT = re.compile(r"(?:^|\s)(?:-o\s+|[-/]OUT:)(\S+)", re.I)
 
 # What phase.py looks for in a build's output (mach's elapsed time comes first).
@@ -225,7 +234,7 @@ def phases(samples: list, events: list) -> list:
             marks.setdefault(e.get("mark"), []).append(_epoch(e.get("t")))
     if build:
         configured = (marks.get("configured") or [None])[0]
-        inside = sorted(l[2] for l in links if build[2] <= l[2] <= build[3])
+        inside = sorted(l[2] for l in links if build[2] <= l[2] <= build[3] and l[0].split(" ", 1)[1] in MAIN_LIBRARY)
         compile_end = inside[0] if inside else build[3]
         if configured is not None:
             out.append(("configure", "phase", build[2], configured))
@@ -245,7 +254,7 @@ def measure(phase, samples: list):
     if not inside:
         return None
     n = len(inside)
-    return {"name": name, "kind": kind, "seconds": end - start, "mean": sum(s["ours"] for s in inside) / n,
+    return {"name": name, "kind": kind, "start": start, "end": end, "seconds": end - start, "mean": sum(s["ours"] for s in inside) / n,
             "peak": max(s["ours"] for s in inside), "busy": sum(s["busy"] for s in inside) / n,
             "iowait": sum(s["iowait"] for s in inside) / n, "steal": sum(s["steal"] for s in inside) / n,
             "total": inside[-1]["total"], "avail": inside[-1]["avail"], "src": inside[-1]["src"]}
@@ -255,9 +264,10 @@ def warnings(rows: list) -> list:
     out = []
     for r in rows:
         minutes = r["seconds"] / 60
-        if r["kind"] != "link" and r["seconds"] > LONG_S and r["mean"] < UNDERUSED_SHARE * r["avail"]:
+        share = COMPILE_SHARE if r["name"] == "compile" else UNDERUSED_SHARE
+        if r["kind"] != "link" and r["seconds"] > LONG_S and r["mean"] < share * r["avail"]:
             out.append("%s: %.0f min at a mean of %.1f cores, below %d%% of the %d available"
-                       % (r["name"], minutes, r["mean"], UNDERUSED_SHARE * 100, r["avail"]))
+                       % (r["name"], minutes, r["mean"], share * 100, r["avail"]))
         others = r["busy"] - r["mean"]
         if others >= max(OTHERS_CORES, OTHERS_SHARE * r["total"]):
             out.append("%s: the machine was busy on %.1f cores and we used %.1f: something else, the owner's PC, took %.1f"
@@ -269,15 +279,48 @@ def clock(seconds: float) -> str:
     return "%dh%02d" % (seconds // 3600, seconds % 3600 // 60) if seconds >= 3600 else "%dm%02d" % (seconds // 60, seconds % 60)
 
 
-def render(rows: list) -> str:
+def idle_core_minutes(r: dict) -> float:
+    return max(0.0, r["avail"] - r["mean"]) * r["seconds"] / 60
+
+
+def whole(samples: list):
+    """(share of the available cores used, idle core-minutes, core-minutes) between the
+    first sample and the last: from the build's start, when the watch starts."""
+    used = total = 0.0
+    for a, b in zip(samples, samples[1:]):
+        minutes = max(0.0, b["t"] - a["t"]) / 60
+        used += b["ours"] * minutes
+        total += b["avail"] * minutes
+    return (used / total, total - used, total) if total else None
+
+
+def beside(link: dict, rows: list) -> str:
+    """What ran beside a link: the phases it overlaps, and its cores beyond its own one."""
+    names = [r["name"] for r in rows if r is not link and r["kind"] != "link" and r["name"] not in ("build", "compile", "rust", "configure")
+             and r["start"] < link["end"] and r["end"] > link["start"]]
+    return "%s and %.1f cores in all beyond its own" % (", ".join(names) or "no phase", max(0.0, link["mean"] - 1))
+
+
+def render(rows: list, samples=()) -> str:
     if not rows:
         return "**CPU:** no samples for this leg."
     lines = ["**CPU use, by phase** (%d cores on the machine, %d available, measured from %s)"
              % (rows[0]["total"], rows[0]["avail"], rows[0]["src"]), "",
-             "| phase | time | mean cores | peak cores | machine busy | iowait | steal |", "|---|---|---|---|---|---|---|"]
+             "| phase | time | mean cores | peak cores | machine busy | iowait | steal | use | idle core-minutes |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        lines.append("| %s | %s | %.1f | %.1f | %.1f | %.1f | %.1f |"
-                     % (r["name"], clock(r["seconds"]), r["mean"], r["peak"], r["busy"], r["iowait"], r["steal"]))
+        lines.append("| %s | %s | %.1f | %.1f | %.1f | %.1f | %.1f | %.0f%% | %.0f |"
+                     % (r["name"], clock(r["seconds"]), r["mean"], r["peak"], r["busy"], r["iowait"], r["steal"],
+                        100 * r["mean"] / r["avail"], idle_core_minutes(r)))
+    overall = whole(list(samples))
+    if overall:
+        lines += ["", "**The whole job, from the build's start:** %.0f%% of the cores, %.0f core-minutes idle of %.0f."
+                  % (100 * overall[0], overall[1], overall[2])]
+    links = [r for r in rows if r["kind"] == "link" and r["seconds"] > LONG_S]
+    if links:
+        lines += [""] + ["%s: one thread by nature, full LTO. Beside it: %s." % (r["name"], beside(r, rows)) for r in links]
+    if not any(r["steal"] for r in rows):
+        lines += ["", "Steal did not move, and on the node's kernel it does not: another load on the machine shows only as its busy above ours."]
     found = warnings(rows)
     if found:
         lines += [""] + ["⚠️ CPU: %s" % w for w in found]
@@ -287,4 +330,4 @@ def render(rows: list) -> str:
 def report(samples_path: Path, events_path: Path) -> str:
     samples = read_jsonl(samples_path)
     rows = [measure(p, samples) for p in phases(samples, read_jsonl(events_path))]
-    return render([r for r in rows if r])
+    return render([r for r in rows if r], samples)

@@ -108,6 +108,22 @@ def memory(proc: Path = Path("/proc"), cgroup: Path = CGROUP) -> dict:
     return m
 
 
+def huge_pages_mb(proc: Path = Path("/proc"), cgroup: Path = CGROUP):
+    """Anonymous memory in transparent huge pages: this container's, or the machine's
+    where it has no memory.stat. None where neither says. It tells whether the node's
+    linker got the huge pages it asks for (scripts/ci/linker_shim.py)."""
+    try:
+        for line in (cgroup / "memory.stat").read_text().splitlines():
+            if line.startswith("anon_thp "):
+                return int(line.split()[1]) // 2**20
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        return meminfo(proc).get("AnonHugePages")
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 def cpu_limit(cgroup: Path = CGROUP) -> int:
     """The CPUs this container may use: cpu.max's quota, or what the kernel reports."""
     cpus = os.cpu_count() or 1
@@ -205,8 +221,9 @@ def main(argv=None) -> int:
         now = time.monotonic()
         if now - last_status >= 60:
             disk = shutil.disk_usage("/").free // 2**30
-            say("[mem] available %d/%d MB, swap used %d/%d MB, disk free %d GB"
-                % (avail, m["MemTotal"], swap_used, m["SwapTotal"], disk))
+            thp = huge_pages_mb()
+            say("[mem] available %d/%d MB, swap used %d/%d MB, disk free %d GB%s"
+                % (avail, m["MemTotal"], swap_used, m["SwapTotal"], disk, "" if thp is None else ", huge pages %d MB" % thp))
             last_status = now
         if avail < low_mb and now - last_top >= 15:
             top = processes()[:6]

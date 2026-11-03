@@ -18,6 +18,9 @@ not about the page surface: it is about the code a page RUNS. A different
 compiler, a missing PGO or LTO, Rust without SIMD, all leave every value a page
 reads as it was and change how fast each operation runs, and not uniformly.
 
+And it refuses what the CI's own machinery would leave on that page (CI_ONLY): the node's
+linker stand-in as LINKER made every Windows build print its path from omni.ja.
+
 WHY IT EXISTS. On 2026-10-27 the 157 candidates turned out to be compiled with
 rustc 1.99.0 while the retail used 1.95.0: --enable-bootstrap fetched clang
 from Mozilla but took Rust from whatever "stable" the CI runner had installed,
@@ -51,6 +54,18 @@ CODEGEN_OPTIONS = {
 }
 
 
+#: What the CI's job may never leave among the configure options.
+REFUSED_OPTIONS = ("LINKER", "COMPILER_PATH", "GLIBC_TUNABLES")
+#: A path of the runner in an option, unless it is one of these, as run 41402916724 had them.
+RUNNER_PATH = re.compile(r"/home/runner|/opt/hostedtoolcache|/tmp/|ci-linker")
+KNOWN_RUNNER_PATHS = {
+    "--with-ccache": "/home/runner/.cache/sccache-bin/sccache",
+    "RUSTC_WRAPPER": "/home/runner/.cache/sccache-bin/sccache",
+    "--with-pgo-profile-path": "/home/runner/pgo/merged.profdata",
+    "--with-pgo-jarlog": "/home/runner/pgo/en-US.log",
+}
+
+
 class ToolchainError(Exception):
     pass
 
@@ -71,6 +86,19 @@ def parse(page: str) -> dict:
         options[name.strip()] = value
     return {"tools": tools, "options": options,
             "target": html.unescape(target.group(1)).strip() if target else ""}
+
+
+def ci_only(page: str, config: dict) -> dict:
+    """{what: why} of what the CI's machinery left on this page. Never declarable."""
+    out = {}
+    for name, value in config["options"].items():
+        if name in REFUSED_OPTIONS:
+            out["option %s" % name] = "a job's environment reached the configure options: %s" % value
+        elif RUNNER_PATH.search(value) and KNOWN_RUNNER_PATHS.get(name) != value:
+            out["option %s" % name] = "a path of the CI's runner in about:buildconfig: %s" % value
+    if "ci-linker" in page and not out:
+        out["ci-linker"] = "the node's linker stand-in in about:buildconfig"
+    return out
 
 
 def lto_mode(config: dict) -> str | None:
@@ -146,10 +174,12 @@ def judge(tree: Path, retail=stock_parity.retail_files, exceptions: Path = EXCEP
     for files, who in ((ours, "this build"), (stock, "the retail")):
         if not files.has(BUILDCONFIG):
             raise ToolchainError("%s has no %s" % (who, BUILDCONFIG))
-    diff = differences(facts(parse(ours.read(BUILDCONFIG).decode("utf-8"))),
-                       facts(parse(stock.read(BUILDCONFIG).decode("utf-8"))))
+    page = ours.read(BUILDCONFIG).decode("utf-8")
+    config = parse(page)
+    diff = differences(facts(config), facts(parse(stock.read(BUILDCONFIG).decode("utf-8"))))
     declared = load_exceptions(platform, exceptions)
     undeclared = {k: v for k, v in diff.items() if k not in declared}
+    undeclared.update(ci_only(page, config))
     stale = sorted(k for k in declared if k not in diff)
     return platform, version, undeclared, stale
 

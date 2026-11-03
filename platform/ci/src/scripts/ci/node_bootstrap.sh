@@ -7,12 +7,13 @@
 # What a job on ubuntu-24.04 finds already installed, this installs, at fixed
 # versions: the apt packages from one dated snapshot (apt checks them against
 # the archive's signature), the rest by version and sha256. A user `runner` with
-# home /home/runner and passwordless sudo, as on GitHub's runners, so the job's
-# paths (HOME, ~/pgo, ~/.mozbuild) are the same; the runner itself in
-# ~/actions-runner, jobs in ~/work, Python's in /opt/hostedtoolcache.
+# home /home/runner, as on GitHub's runners, so the job's paths (HOME, ~/pgo,
+# ~/.mozbuild) are the same; the runner itself in ~/actions-runner, jobs in ~/work,
+# Python's in /opt/hostedtoolcache. Unlike GitHub's, this user has no sudo: what a job
+# would install with it is installed here, and a job has no way to root.
 #
-# It registers nothing: scripts/ci/node_runners.sh starts the runners, with
-# their configurations on stdin. It can run again on a prepared node.
+# It registers nothing: scripts/ci/node_runner.sh starts the runner, with
+# its configuration on stdin. It can run again on a prepared node.
 #
 # Everything it needs is checked at the end, as that user: a missing tool stops
 # here, by name, not an hour into a build.
@@ -32,7 +33,7 @@ GLSLANG_SHA256=80bbb916a23e94ea9cbfb1acb5d1a44a7e0c9613bcf5b5947c03f2273bdc92b0
 
 # The image's sources.list carries no security pocket and follows the archive.
 PACKAGES=(
-  # the job's steps
+  # the job's steps; sudo is for this script's as_runner
   sudo git curl ca-certificates python3 python3-venv
   build-essential binutils util-linux make m4 pkg-config patch file
   tar gzip bzip2 xz-utils zstd zip unzip rsync procps psmisc
@@ -81,11 +82,7 @@ apt-get install -y -qq --no-install-recommends "${PACKAGES[@]}" >/dev/null
 
 echo "== the user"
 id runner >/dev/null 2>&1 || useradd --create-home --home-dir /home/runner --uid 1001 --shell /bin/bash runner
-install -m 0440 /dev/stdin /etc/sudoers.d/runner <<'EOF'
-runner ALL=(ALL) NOPASSWD:ALL
-Defaults:runner !requiretty
-EOF
-visudo -cq -f /etc/sudoers.d/runner || die "the sudoers file does not parse"
+rm -f /etc/sudoers.d/runner
 # sudo looks the machine's name up on every call, and warns when it cannot.
 grep -q "[[:space:]]$(hostname)\$" /etc/hosts || echo "127.0.0.1 $(hostname)" >> /etc/hosts
 install -d -o runner -g runner /home/runner/work /opt/hostedtoolcache
@@ -109,7 +106,7 @@ if [ "$(as_runner rustup --version 2>/dev/null | awk 'NR==1{print $2}')" != "$RU
   rm -f /tmp/rustup-init
 fi
 
-echo "== glslang $GLSLANG_VERSION, in /usr/local/bin, before the job's apt-installed 11.8 in PATH"
+echo "== glslang $GLSLANG_VERSION, in /usr/local/bin"
 if ! /usr/local/bin/glslangValidator --version 2>/dev/null | grep -q ":$GLSLANG_VERSION\$"; then
   fetch "https://github.com/KhronosGroup/glslang/archive/refs/tags/$GLSLANG_VERSION.tar.gz" "$GLSLANG_SHA256" /tmp/glslang.tar.gz
   rm -rf /tmp/glslang && mkdir -p /tmp/glslang
@@ -140,11 +137,11 @@ as_runner sh -c "echo /home/runner/.cargo/bin:/opt/node/bin:/usr/local/sbin:/usr
 
 echo "== everything the job counts on, as the user that runs it"
 missing=()
-for tool in sudo git curl python3 gcc g++ make strip tar xz zstd zip unzip 7z msiextract cmake ninja \
+for tool in git curl python3 gcc g++ make strip tar xz zstd zip unzip 7z msiextract cmake ninja \
             glslangValidator bison flex patchelf node rustup; do
   as_runner sh -c "command -v $tool" >/dev/null || missing+=("$tool")
 done
-as_runner sudo -n true || missing+=("passwordless sudo")
+! as_runner sudo -n true 2>/dev/null || missing+=("a user without sudo")
 [ "$(as_runner sh -c 'echo $HOME')" = /home/runner ] || missing+=("HOME=/home/runner")
 [ -w /home/runner/work ] && as_runner test -w /home/runner/work || missing+=("a writable /home/runner/work")
 as_runner test -w /opt/hostedtoolcache || missing+=("a writable tool cache")
@@ -153,4 +150,21 @@ as_runner test -w /opt/hostedtoolcache || missing+=("a writable tool cache")
 [ "$(as_runner node --version)" = "v$NODE_VERSION" ] || missing+=("Node.js $NODE_VERSION")
 /usr/local/bin/glslangValidator --version | grep -q ":$GLSLANG_VERSION\$" || missing+=("glslang $GLSLANG_VERSION")
 [ "${#missing[@]}" = 0 ] || die "missing: ${missing[*]}"
+
+echo "== a host key of this node's own"
+# The image's is the same on every node (measured). theta_node.py pins this one, read
+# from this session, for every later connection.
+rm -f /etc/ssh/ssh_host_*
+ssh-keygen -A >/dev/null
+kill -HUP "$(pgrep -o -x sshd)"
+host_key="$(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)"
+served=""
+for _ in $(seq 30); do
+  # awk, not cut: ssh-keyscan's "# host banner" line goes to stdout in newer OpenSSH.
+  served="$(ssh-keyscan -T 2 -t ed25519 127.0.0.1 2>/dev/null | awk '$1 !~ /^#/ {print $2, $3}' || true)"
+  [ "$served" != "$host_key" ] || break
+  sleep 1
+done
+[ "$served" = "$host_key" ] || die "sshd does not serve the host key just made"
+echo "node_bootstrap: host key: $host_key"
 echo "node_bootstrap: ready (runner $RUNNER_VERSION, node $NODE_VERSION, rustup $RUSTUP_VERSION, glslang $GLSLANG_VERSION, apt snapshot $APT_SNAPSHOT)"

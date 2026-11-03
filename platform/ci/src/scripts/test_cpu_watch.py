@@ -131,6 +131,24 @@ def cases() -> list:
                 and names["rust"][2:] == (T0 + 600, T0 + 1500)
                 and names["link libxul.so"][1:] == ("link", T0 + 3600, T0 + 5340)
                 and names["package"][2:] == (T0 + 5500, T0 + 5800)))
+    # The cold build of 03/11, as mach printed it: libgkcodecs at 35:14, the gtest stubs at
+    # 37:15 and 38:36, libmozavcodec at 41:03, libxul at 41:46.
+    real = events(("start", "build", at(0)), ("mark", "build", at(117), {"mark": "configured"}), ("end", "build", at(4869)))
+    linked = [sample(T0 + t, 33.0) for t in range(0, 2100, 15)]
+    linked += [sample(T0 + 2114 + i * 15, 33.0, link=[[501, "libgkcodecs.so"]]) for i in range(3)]
+    linked += [sample(T0 + 2235 + i * 15, 33.0, link=[[502, "libxul_broken_buildid.so"]]) for i in range(2)]
+    linked += [sample(T0 + 2316 + i * 15, 33.0, link=[[503, "libxul_correct_buildid.so"]]) for i in range(2)]
+    linked += [sample(T0 + 2463 + i * 15, 33.0, link=[[504, "libmozavcodec.so"]]) for i in range(2)]
+    linked += [sample(T0 + 2506 + i * 15, 1.0, link=[[505, "libxul.so"]]) for i in range(100)]
+    by_name = {p[0]: p for p in c.phases(linked, real)}
+    out.append(("compile ends at libxul's link, not at a stub or another library seen in two samples, on the real order",
+                by_name["compile"][2:] == (T0 + 117, T0 + 2506)
+                and {"link libgkcodecs.so", "link libxul_broken_buildid.so", "link libmozavcodec.so"} <= set(by_name)))
+    windows = [sample(T0 + t, 33.0) for t in range(0, 300, 15)]
+    windows += [sample(T0 + 300 + i * 15, 1.0, link=[[9, "xul.dll"]]) for i in range(3)]
+    out.append(("compile ends at xul.dll on the Windows leg", {p[0]: p for p in c.phases(windows, real)}["compile"][3] == T0 + 300))
+    only_stub = [sample(T0 + t, 33.0) for t in range(0, 300, 15)] + [sample(T0 + 300 + i * 15, 33.0, link=[[9, "libgkcodecs.so"]]) for i in range(3)]
+    out.append(("a build stopped before libxul compiled until its end", {p[0]: p for p in c.phases(only_stub, real)}["compile"][3] == T0 + 4869))
     two = data + [sample(T0 + 6000, 1.0, link=[[88, "xul.dll"]]), sample(T0 + 6060, 1.0, link=[[88, "xul.dll"]]),
                   sample(T0 + 6120, 1.0, link=[[99, "small"]])]
     out.append(("each link has its row, one seen once does not", [p[0] for p in c.phases(two, run) if p[1] == "link"]
@@ -146,21 +164,41 @@ def cases() -> list:
     out.append(("only the samples inside it", mixed["mean"] == 20.0 and mixed["peak"] == 30.0 and mixed["iowait"] == 1.0))
     out.append(("a phase with no sample has no row", c.measure(("x", "phase", T0 + 9000, T0 + 9100), data) is None))
 
-    def row(name="compile", kind="phase", seconds=1800, mean=30.0, busy=None, total=48, avail=48):
-        return {"name": name, "kind": kind, "seconds": seconds, "mean": mean, "peak": mean, "busy": mean if busy is None else busy,
+    def row(name="compile", kind="phase", seconds=1800, mean=44.0, busy=None, total=48, avail=48):
+        return {"name": name, "kind": kind, "start": T0, "end": T0 + seconds, "seconds": seconds, "mean": mean, "peak": mean, "busy": mean if busy is None else busy,
                 "iowait": 0.0, "steal": 0.0, "total": total, "avail": avail, "src": "cgroup"}
     out.append(("no warning for a healthy phase", c.warnings([row()]) == []))
-    under = c.warnings([row(mean=10.0)])
+    under = c.warnings([row(name="package", mean=10.0)])
     out.append(("a long phase under half of the cores: a warning, naming the phase, the mean and the share",
-                len(under) == 1 and "compile" in under[0] and "10.0 cores" in under[0] and "50%" in under[0]))
-    out.append(("the share is of the available cores, not the machine's", c.warnings([row(mean=10.0, avail=16)]) == []))
+                len(under) == 1 and "package" in under[0] and "10.0 cores" in under[0] and "50%" in under[0]))
+    held = c.warnings([row(mean=40.0)])
+    out.append(("the compile has a job for every core: under 85% it warns, at 40.8 of 48 it does not",
+                len(held) == 1 and "85%" in held[0] and c.warnings([row(mean=40.8)]) == []))
+    out.append(("the measured -j31 build's compile, 33 of 48, would have warned", len(c.warnings([row(mean=33.0)])) == 1))
+    out.append(("the share is of the available cores, not the machine's", c.warnings([row(mean=14.0, avail=16)]) == []))
     out.append(("a short phase may idle", c.warnings([row(seconds=c.LONG_S, mean=1.0)]) == []))
     out.append(("a link may idle: a single thread for most of it", c.warnings([row(name="link libxul.so", kind="link", mean=1.0)]) == []))
-    owner = c.warnings([row(mean=30.0, busy=42.0)])
+    owner = c.warnings([row(mean=41.0, busy=47.0, total=48, avail=48), row(name="package", mean=30.0, busy=42.0)])[-1:]
     out.append(("the machine busy well above ours: a warning that names the owner's use",
                 len(owner) == 1 and "owner" in owner[0] and "12.0" in owner[0]))
-    out.append(("a little noise on the machine is not the owner", c.warnings([row(mean=30.0, busy=33.0)]) == []))
+    out.append(("a little noise on the machine is not the owner", c.warnings([row(mean=44.0, busy=47.0)]) == []))
     out.append(("the same on a link: the machine is not ours even then", len(c.warnings([row(kind="link", mean=1.0, busy=20.0)])) == 1))
+    still = row(name="package", mean=30.0, busy=42.0)
+    out.append(("the owner's warning does not need steal, which reads 0 on the node's kernel", still["steal"] == 0.0 and len(c.warnings([still])) == 1))
+    out.append(("the summary says steal does not show here", "Steal did not move" in c.render([row()])
+                and "Steal did not move" not in c.render([dict(row(), steal=0.5)])))
+    idle = row(mean=33.0, seconds=2400)
+    out.append(("the idle core-minutes of a phase: 15 cores for 40 minutes", c.idle_core_minutes(idle) == 600.0))
+    spaced = [sample(T0, 0.0), sample(T0 + 60, 24.0), sample(T0 + 120, 12.0)]
+    out.append(("the whole job's use, weighted by time: 36 of 96 core-minutes", c.whole(spaced) == (36 / 96, 60.0, 96.0)))
+    out.append(("no time, no figure", c.whole(spaced[:1]) is None and c.whole([]) is None))
+    link = row(name="link libxul.so", kind="link", mean=3.5, seconds=2300)
+    beside = c.render([link, dict(row(name="lavapipe", mean=30.0, seconds=900), start=T0 + 60, end=T0 + 960),
+                       dict(row(name="package", seconds=60), start=T0 + 3000, end=T0 + 3060)], spaced)
+    out.append(("the summary: a link is one thread by nature, with what ran beside it and the cores it took, not what ran after",
+                "link libxul.so: one thread by nature" in beside and "Beside it: lavapipe and 2.5 cores" in beside and "package" not in beside.split("one thread by nature")[1]))
+    out.append(("the summary: the whole job's percentage and idle core-minutes", "The whole job, from the build's start:** 38% of the cores, 60 core-minutes idle of 96" in beside))
+    out.append(("the summary: each row its use and idle core-minutes", "| 7% | " in beside and "| %.0f |" % c.idle_core_minutes(link) in beside))
     text = c.render([row(mean=10.0), row(name="link libxul.so", kind="link", mean=1.0, seconds=3600)])
     out.append(("the table: duration, mean and peak against the total, iowait; the warnings under it",
                 "48 cores on the machine" in text and "| compile | 30m00 | 10.0 | 10.0 |" in text
