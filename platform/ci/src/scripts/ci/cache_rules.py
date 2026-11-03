@@ -5,6 +5,8 @@
         prints save=true|false for $GITHUB_OUTPUT, and how many objects it counted
     cache_rules.py trim --run R --attempt A --ref refs/heads/main
         after this run's saves: this ref's older entries of the legs it saved
+    cache_rules.py guard
+        for the step summary: what enters the compile's key and can move by itself
 
 Worth it: the node uploads at about 5 MB/s, so an entry of 4-5 GB costs about 15
 minutes of a machine paid by the hour. A run after a small fix recompiled a handful
@@ -21,9 +23,11 @@ Standard library only, from the series' own copy: no source tree needed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -40,6 +44,8 @@ NEW_OBJECTS_WORTH_SAVING = 300
 KEEP_NEWEST = 2
 # The entries with a run in their key. Each is <prefix><leg>-<run>-<attempt>.
 PREFIXES = ("sccache-",)
+# The environment that can move a compile's key.
+KEY_ENV = re.compile(r"^(CARGO|RUSTUP|SDKROOT|CCC_|SCCACHE_C|CPATH|C_INCLUDE|CPLUS)")
 
 
 def new_objects(stats: str):
@@ -73,6 +79,37 @@ def to_delete(caches, ref, leg, run, attempt, prefix="sccache-", keep=KEEP_NEWES
         return []
     mine.sort(key=lambda c: c.get("created_at", ""), reverse=True)
     return [c["id"] for c in mine[keep:]]
+
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(2**20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def key_guard(home: Path, cwd: Path, environ: dict, sysroot) -> list:
+    """What enters the compile cache's key and can move without anyone deciding it, one
+    line each for the step summary: two runs that miss for no reason differ here. For
+    Rust sccache hashes every inherited CARGO_* variable (but CARGO_MAKEFLAGS,
+    CARGO_BUILD_JOBS, CARGO_ENCODED_RUSTFLAGS and CARGO_REGISTRIES_*), the working
+    directory and the compiler's files; for C and C++ the compiler."""
+    def named(label, files):
+        files = sorted(p for p in files if p.is_file())
+        return "%s: %s" % (label, " ".join(sha256_of(p)[:16] for p in files) or "absent")
+
+    env = sorted("%s=%s" % (k, v) for k, v in environ.items() if KEY_ENV.match(k))
+    mozbuild = home / ".mozbuild"
+    tarballs = list(mozbuild.glob("sysroot*.tar*")) + list(mozbuild.glob("toolchains/*sysroot*.tar*"))
+    tree = sorted(str(p.relative_to(mozbuild)) + ":%d" % p.stat().st_size
+                  for d in mozbuild.glob("sysroot*") if d.is_dir() for p in d.rglob("*") if p.is_file())
+    return ["cwd: %s" % cwd, "HOME: %s" % home,
+            "env: %s" % hashlib.sha256("\n".join(env).encode()).hexdigest()[:16],
+            named("clang", [mozbuild / "clang" / "bin" / "clang"]),
+            named("librustc_driver", list((Path(sysroot) / "lib").glob("librustc_driver-*")) if sysroot else []),
+            named("sysroot tarball", tarballs),
+            "sysroot tree: %s" % (hashlib.sha256("\n".join(tree).encode()).hexdigest()[:16] if tree else "absent")]
 
 
 def urllib_transport(method, url, headers):
@@ -120,7 +157,15 @@ def main(argv=None) -> int:
     t.add_argument("--run", required=True)
     t.add_argument("--attempt", required=True)
     t.add_argument("--ref", required=True)
+    sub.add_parser("guard")
     a = ap.parse_args(argv)
+    if a.cmd == "guard":
+        try:
+            sysroot = subprocess.run(["rustc", "--print", "sysroot"], capture_output=True, text=True).stdout.strip()
+        except OSError:
+            sysroot = ""
+        print("\n".join(["```"] + key_guard(Path.home(), Path.cwd(), dict(os.environ), sysroot) + ["```"]))
+        return 0
     if a.cmd == "worth":
         text = a.stats.read_text(encoding="utf-8", errors="replace") if a.stats.is_file() else ""
         save, why = worth_saving(text)

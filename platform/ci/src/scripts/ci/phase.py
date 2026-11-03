@@ -58,17 +58,44 @@ def summary(text: str) -> None:
             f.write(text + "\n")
 
 
+class BuildMarks:
+    """The build's own lines that cut it into phases, as events for cpu_watch.py. The
+    first of a kind, and every rust-end: the last one is the one that counts. Never in
+    a build's way: a failure here stops the marks and nothing else."""
+
+    def __init__(self, phase: str):
+        self.phase, self.seen = phase, set()
+        try:
+            import cpu_watch
+            self.mark = cpu_watch.build_mark if phase == "build" else None
+        except Exception:
+            self.mark = None
+
+    def see(self, line: str):
+        if self.mark is None:
+            return
+        try:
+            name = self.mark(line)
+            if name and (name == "rust-end" or name not in self.seen):
+                self.seen.add(name)
+                event(self.phase, "mark", mark=name)
+        except Exception:
+            self.mark = None
+
+
 def run(phase: str, argv: list) -> int:
     LOGS.mkdir(parents=True, exist_ok=True)
     log_path = LOGS / ("%s.log" % phase)
     event(phase, "start", argv=" ".join(argv))
     started = time.monotonic()
+    marks = BuildMarks(phase)
     with log_path.open("w", encoding="utf-8", errors="replace") as log:
         proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace", bufsize=1)
         for line in proc.stdout:
             sys.stdout.write(line)
             log.write(line)
+            marks.see(line)
         code = proc.wait()
     seconds = round(time.monotonic() - started)
     if code == 0:

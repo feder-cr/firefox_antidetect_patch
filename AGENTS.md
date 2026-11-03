@@ -139,7 +139,11 @@ di rete e difetti noti con il lavoro che li chiude.
 - Push: `git push origin master:main`. La CI (`.github/workflows/series.yml`) rifà
   le regole e la ricostruzione sul tag.
 - Una build di prova: `gh workflow run release.yml --ref <ramo> -f kind=candidate`
-  (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla).
+  (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla). Le due gambe
+  x86_64 compilano solo sul nodo Theta (`scripts/ci/theta_node.py`): i suoi segreti stanno
+  nell'environment `theta-builder`, limitato a `main` e `theta/*`, quindi il ramo di una
+  build di prova deve essere uno di questi. Una release si lancia solo da `main`, mai da un
+  tag: `release_plan.py` rifiuta il resto.
 - **La cache di compilazione appartiene a un ramo.** GitHub dà a una build solo le
   cache del suo ramo e quelle di `main`. Un ramo nuovo legge la cache di `main`; un
   ramo che non parte da `main` compila a freddo (ore). Le build di prova si lanciano da

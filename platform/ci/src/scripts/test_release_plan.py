@@ -11,26 +11,27 @@ refuse, each one a real way to get it wrong, and the runs it must accept:
     2. a release by hand whose tag is not firefox-N (`firefox-49-candidate-b322`,
        the run that died at the seal twice);
     3. a release by hand with no tag at all;
-    4. a pushed tag that is not firefox-N (the trigger is `firefox-*`, so
-       `firefox-49-rc` would start a release);
+    4. a pushed tag, any tag: the trigger is gone, and what a run from a tag saves
+       nothing after it can read;
     5. a kind nobody declared;
-    6. an event that is neither a pushed tag nor a run by hand;
+    6. an event that is not a run by hand;
+    7. a build dispatched from a tag ref, and a release from any branch but main;
     8. a compile cache nobody declared;
-    8b. a builder nobody declared.
+    8b. --builder: there is no such choice any more.
   known-good
     9. a candidate: nothing published, the gate's seal LOCAL, the cache on;
    10. a candidate with the cache off, a cold build;
    11. a release by hand: tag, number, previous tag, the seal under the tag,
        the cache on;
    12. a release by hand that asks for the cache off, or for it by name;
-   13. a pushed firefox-N tag, whatever the (absent) kind input says, the cache on;
-   14. the builder: theta by default for candidates, releases and pushed tags,
-       github only when asked, and either one with either kind.
+   13. a release from main, a candidate from a branch; republish.yml passes no ref
+       type and is not asked.
 
 Run it directly, like test_make_seal.py: `python3 scripts/test_release_plan.py`.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -46,47 +47,43 @@ REFUSED = [
      ("workflow_dispatch", "release", "firefox-49-candidate-b322", "x")),
     ("a release with no tag", ("workflow_dispatch", "release", "", "x")),
     ("a pushed tag that is not firefox-N", ("push", "", "", "firefox-49-rc")),
+    ("a pushed firefox-N tag: its cache entries nothing could read", ("push", "", "", "firefox-50")),
+    ("a candidate dispatched from a tag", ("workflow_dispatch", "candidate", "", "firefox-50", "", "tag")),
+    ("a release dispatched from a tag", ("workflow_dispatch", "release", "firefox-50", "firefox-50", "", "tag")),
+    ("a release dispatched from another branch", ("workflow_dispatch", "release", "firefox-50", "theta/executor", "", "branch")),
     ("an undeclared kind", ("workflow_dispatch", "nightly", "", "x")),
     ("an empty kind by hand", ("workflow_dispatch", "", "", "x")),
     ("another event", ("pull_request", "release", "firefox-49", "x")),
     ("an undeclared compile cache", ("workflow_dispatch", "candidate", "", "x", "on")),
-    ("an undeclared builder", ("workflow_dispatch", "candidate", "", "x", "", "self-hosted")),
 ]
 
 ACCEPTED = [
     ("a candidate", ("workflow_dispatch", "candidate", "", "next/firefox-49"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "gha", "builder": "theta"}),
+      "compile_cache": "gha"}),
     ("a candidate without the cache",
      ("workflow_dispatch", "candidate", "", "next/firefox-49", "off"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "off", "builder": "theta"}),
+      "compile_cache": "off"}),
     ("a release by hand", ("workflow_dispatch", "release", "firefox-49", "next/firefox-49"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "theta"}),
+      "seal_tag": "firefox-49", "compile_cache": "gha"}),
     ("a release by hand asking for the cache",
      ("workflow_dispatch", "release", "firefox-49", "next/firefox-49", "gha"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "theta"}),
+      "seal_tag": "firefox-49", "compile_cache": "gha"}),
     ("a release by hand asking for no cache",
      ("workflow_dispatch", "release", "firefox-49", "next/firefox-49", "off"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "off", "builder": "theta"}),
-    ("a pushed tag", ("push", "", "", "firefox-50"),
+      "seal_tag": "firefox-49", "compile_cache": "off"}),
+    ("a release dispatched from main",
+     ("workflow_dispatch", "release", "firefox-50", "main", "", "branch"),
      {"kind": "release", "tag": "firefox-50", "num": "50", "prevtag": "firefox-49",
-      "seal_tag": "firefox-50", "compile_cache": "gha", "builder": "theta"}),
-    ("a candidate back on GitHub's runners",
-     ("workflow_dispatch", "candidate", "", "x", "", "github"),
+      "seal_tag": "firefox-50", "compile_cache": "gha"}),
+    ("a candidate dispatched from a branch",
+     ("workflow_dispatch", "candidate", "", "theta/executor", "", "branch"),
      {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
-      "compile_cache": "gha", "builder": "github"}),
-    ("a release back on GitHub's runners",
-     ("workflow_dispatch", "release", "firefox-49", "x", "", "github"),
-     {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "github"}),
-    ("a release on the node, asked by name",
-     ("workflow_dispatch", "release", "firefox-49", "x", "", "theta"),
-     {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
-      "seal_tag": "firefox-49", "compile_cache": "gha", "builder": "theta"}),
+      "compile_cache": "gha"}),
 ]
 
 
@@ -117,7 +114,20 @@ def main() -> int:
                "--release-tag", "firefox-49-candidate-b322"]) != 1:
         print("FAIL  the command line accepted a bad release tag")
         failures += 1
-    total = len(REFUSED) + len(ACCEPTED) + 1
+    # No fallback: the choice of who compiles does not exist, so it cannot be made.
+    stderr, sys.stderr = sys.stderr, open(os.devnull, "w")
+    try:
+        p.main(["--event", "workflow_dispatch", "--kind", "candidate", "--builder", "github"])
+        took = True
+    except SystemExit as exc:
+        took = exc.code != 2
+    finally:
+        sys.stderr.close()
+        sys.stderr = stderr
+    if took:
+        print("FAIL  the command line took a builder")
+        failures += 1
+    total = len(REFUSED) + len(ACCEPTED) + 2
     print(f"{total - failures}/{total} cases as expected")
     return 1 if failures else 0
 

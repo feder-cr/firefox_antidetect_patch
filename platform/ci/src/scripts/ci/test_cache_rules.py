@@ -10,7 +10,9 @@
     5. never another ref, never another leg, never the sccache binary's entries;
     6. nothing at all when this run saved nothing for that leg;
     7. the API's own filter is not trusted: what it returns is checked again;
-    8. a failed listing is a warning, never a failed run.
+    8. a failed listing is a warning, never a failed run;
+  guard
+    9. the summary's lines on what enters a compile's key, and only that.
 
     python3 scripts/ci/test_cache_rules.py
 """
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -95,6 +98,28 @@ def cases() -> list:
     except RuntimeError:
         raised = True
     out.append(("trim: a failed listing deletes nothing and is reported", raised))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        home = Path(tmp) / "home"
+        clang, driver = home / ".mozbuild" / "clang" / "bin" / "clang", Path(tmp) / "rust" / "lib" / "librustc_driver-abc.so"
+        tarball = home / ".mozbuild" / "sysroot-x86_64-linux-gnu.tar.zst"
+        tree = home / ".mozbuild" / "sysroot-x86_64-linux-gnu" / "usr" / "include" / "a.h"
+        for path, text in ((clang, "clang"), (driver, "driver"), (tarball, "tar"), (tree, "h")):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        env = {"CARGO_HOME": "/home/runner/.cargo", "RUSTUP_HOME": "x", "SCCACHE_CACHE_SIZE": "30G", "CPATH": "y", "GITHUB_RUN_ID": "1", "SCCACHE_LOG": "debug"}
+        lines = c.key_guard(home, Path("/home/runner/work/a/a"), env, str(driver.parent.parent))
+        said = "\n".join(lines)
+        out.append(("guard: the working directory, HOME, and a line for each compiler's file",
+                    "cwd: /home/runner/work/a/a" in said and "HOME: %s" % home in said
+                    and "clang: %s" % c.sha256_of(clang)[:16] in said and "librustc_driver: %s" % c.sha256_of(driver)[:16] in said
+                    and "sysroot tarball: %s" % c.sha256_of(tarball)[:16] in said and "sysroot tree: absent" not in said))
+        moved = c.key_guard(home, Path("/x"), dict(env, CARGO_TARGET_DIR="z"), "")
+        same = c.key_guard(home, Path("/x"), dict(env, GITHUB_RUN_ID="2", SCCACHE_LOG="info"), "")
+        out.append(("guard: the environment's hash moves with a CARGO_* variable, not with one that does not enter the key",
+                    moved[2] != lines[2] and same[2] == lines[2]))
+        out.append(("guard: what is not there says so, and nothing raises", "librustc_driver: absent" in moved[4]
+                    and "clang: absent" in "\n".join(c.key_guard(Path(tmp) / "nobody", Path("/x"), {}, ""))))
     return out
 
 

@@ -10,9 +10,9 @@ deciding again from the event and the inputs.
              `asset-*` artifacts; if they are the ones to ship, republish.yml
              publishes them from this run's id, without a rebuild. The gate
              seals the binary with a LOCAL seal (tag `local`).
-  release    a pushed `firefox-N` tag, a manual run with kind=release, or a
-             republish: the seal and the DRAFT under a `firefox-N` tag, the
-             tag checked here before any build starts.
+  release    a manual run with kind=release, or a republish: the seal and the
+             DRAFT under a `firefox-N` tag, the tag checked here before any build
+             starts.
 
 The compile cache (`compile_cache`) is decided here too, for the same reason.
 Every run compiles through sccache with GitHub's Actions cache behind it, so a
@@ -22,11 +22,15 @@ since 2026-11-03 (Federico's decision): the cache's keys are the hash of the
 preprocessed source, the arguments and the compiler. `--compile-cache off` asks
 for a cold build.
 
-Who compiles (`builder`) is decided here as well. `theta`, the default for every
-run, candidates and releases alike, compiles the two x86_64 legs on the Theta
-node (scripts/ci/theta_node.py); linux-arm64 stays on GitHub, because the node is
-x86, and gates and tests always run on GitHub. `github` is the way back: the run
-is what it was before the node existed, on GitHub's runners only.
+Who compiles is no choice: the two x86_64 legs on the Theta node, every run,
+candidates and releases alike (scripts/ci/theta_node.py); linux-arm64 on GitHub,
+because the node is x86; gates and tests always on GitHub. So the plan has no say.
+
+Where a run starts from is checked here too (`--ref-type`, release.yml's own). An
+actions/cache entry belongs to its ref, and a run reads only its own ref's and the
+default branch's: what a run from a tag saves, nothing after it can read. So no build
+runs from a tag, and a release is dispatched from main, where every later run finds
+its cache.
 
 Why a plan and not a convention. Until 2026-10-17 a manual run decided only at
 its END what it was: a candidate dispatched with a release_tag that was not
@@ -38,7 +42,7 @@ that is always there stops being read. The tag rule itself stays make_seal.py's
 
     python3 scripts/release_plan.py --event <event> --kind <kind> \\
         --release-tag <tag> --ref-name <ref> [--compile-cache gha|off] \\
-        [--builder theta|github]
+        [--ref-type branch|tag]
 
 prints the outputs as `key=value` lines for $GITHUB_OUTPUT, or exits 1 naming
 what is wrong. Its known-bad inputs: scripts/test_release_plan.py.
@@ -58,8 +62,8 @@ LOCAL_SEAL_TAG = "local"
 # What the compile_cache output can say. "gha" is sccache on the GitHub Actions
 # cache; "off" is a cold build. Anything else is refused.
 COMPILE_CACHES = ("gha", "off")
-# Who compiles the x86_64 legs. The first is the default.
-BUILDERS = ("theta", "github")
+# The only branch a release's cache is readable from afterwards.
+RELEASE_BRANCH = "main"
 
 
 class PlanError(ValueError):
@@ -67,24 +71,24 @@ class PlanError(ValueError):
 
 
 def plan(event: str, kind: str, release_tag: str, ref_name: str,
-         compile_cache: str = "", builder: str = "") -> dict[str, str]:
+         compile_cache: str = "", ref_type: str = "") -> dict[str, str]:
     """The outputs of a run, or PlanError.
 
-    compile_cache and builder are the run's requests: "" takes the default, and a
-    pushed tag has no inputs, so it takes them."""
-    if event == "push":
-        # a pushed tag is a release by definition, and its name is the tag
-        kind, release_tag = "release", ref_name
-    elif event != "workflow_dispatch":
-        raise PlanError(f"release runs on a pushed tag or by hand, not on {event!r}")
+    compile_cache is the run's request: "" takes the default. ref_type is what the
+    run started from; republish.yml builds nothing, passes none and is not asked."""
+    if event != "workflow_dispatch":
+        raise PlanError(f"release runs by hand, from main for a release, not on {event!r}")
     if kind not in KINDS:
         raise PlanError(f"kind must be one of {', '.join(KINDS)}, got {kind!r}")
     if compile_cache and compile_cache not in COMPILE_CACHES:
         raise PlanError(f"compile_cache must be one of {', '.join(COMPILE_CACHES)}, "
                         f"got {compile_cache!r}")
-    if builder and builder not in BUILDERS:
-        raise PlanError(f"builder must be one of {', '.join(BUILDERS)}, got {builder!r}")
-    builder = builder or BUILDERS[0]
+    if ref_type == "tag":
+        raise PlanError(f"a build from the tag {ref_name!r} would save cache entries nothing can read: "
+                        f"dispatch it from a branch, a release from {RELEASE_BRANCH}")
+    if kind == "release" and ref_type and ref_name != RELEASE_BRANCH:
+        raise PlanError(f"a release is dispatched from {RELEASE_BRANCH}, whose cache every later run reads, "
+                        f"not from {ref_name!r}")
     if kind == "candidate":
         if release_tag:
             raise PlanError(
@@ -93,15 +97,14 @@ def plan(event: str, kind: str, release_tag: str, ref_name: str,
                 f"to publish a candidate's archives later, run republish.yml with its "
                 f"run id.")
         return {"kind": "candidate", "tag": "", "num": "", "prevtag": "",
-                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha",
-                "builder": builder}
+                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha"}
     try:
         n = check_release_tag(release_tag)
     except SealBuildError as exc:
         raise PlanError(f"a release needs a firefox-N tag: {exc}") from None
     return {"kind": "release", "tag": release_tag, "num": str(n),
             "prevtag": f"firefox-{n - 1}" if n > 0 else "", "seal_tag": release_tag,
-            "compile_cache": compile_cache or "gha", "builder": builder}
+            "compile_cache": compile_cache or "gha"}
 
 
 def main(argv=None) -> int:
@@ -111,11 +114,11 @@ def main(argv=None) -> int:
     ap.add_argument("--release-tag", default="")
     ap.add_argument("--ref-name", default="")
     ap.add_argument("--compile-cache", default="")
-    ap.add_argument("--builder", default="")
+    ap.add_argument("--ref-type", default="")
     a = ap.parse_args(argv)
     try:
         outputs = plan(a.event, a.kind, a.release_tag.strip(), a.ref_name,
-                       a.compile_cache.strip(), a.builder.strip())
+                       a.compile_cache.strip(), a.ref_type.strip())
     except PlanError as exc:
         print(f"PLAN REFUSED: {exc}", file=sys.stderr)
         return 1

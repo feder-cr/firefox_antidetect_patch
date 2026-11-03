@@ -4,6 +4,7 @@ those paths must exist, and the scripts must start from there alone.
 
     python -m pytest tools/tests
 """
+import json
 import re
 import subprocess
 import sys
@@ -21,6 +22,31 @@ def referenced():
 def test_the_workflows_name_the_node_scripts():
     assert "platform/ci/src/scripts/ci/theta_node.py" in referenced()
     assert "platform/ci/src/scripts/ci/cache_rules.py" in referenced()
+
+
+def test_the_node_scripts_travel_with_the_series():
+    scripts = ROOT / "platform/ci/src/scripts/ci"
+    assert (scripts / "node_bootstrap.sh").is_file() and (scripts / "node_runners.sh").is_file()
+
+
+def test_no_pull_request_reaches_a_runner_of_ours():
+    """The repository is public: every job a pull request or a comment can start names a
+    GitHub runner by its literal name, series.yml included, which the source tree's own
+    test cannot see. And no workflow here names self-hosted or one of our labels."""
+    import yaml
+
+    pr_events = {"pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment",
+                 "issue_comment", "issues", "workflow_run", "merge_group", "discussion", "discussion_comment"}
+    hosted = re.compile(r"^(ubuntu|windows|macos)-[\w.-]+$")
+    for wf in WORKFLOWS.glob("*.yml"):
+        doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        on = doc.get(True, doc.get("on"))
+        events = {on} if isinstance(on, str) else set(on)
+        for name, job in doc["jobs"].items():
+            where = json.dumps(job.get("runs-on", ""))
+            assert "self-hosted" not in where and "theta-" not in where, "%s: %s" % (wf.name, name)
+            if events & pr_events:
+                assert "uses" not in job and hosted.match(str(job.get("runs-on", ""))), "%s: %s" % (wf.name, name)
 
 
 def test_every_script_exists_and_starts_without_the_tree():

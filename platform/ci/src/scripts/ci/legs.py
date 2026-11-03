@@ -31,7 +31,8 @@ class Leg:
     host: str = ""
     target: str = ""
     extra_pkgs: str = ""
-    # Compiled on the Theta node when the plan's builder says so (scripts/ci/theta_node.py).
+    # Compiled on the Theta node, and nowhere else (scripts/ci/theta_node.py): such a
+    # leg names no runner, so there is nothing for it to run on without the node.
     node: bool = False
 
     def asset(self, version: str) -> str:
@@ -41,10 +42,11 @@ class Leg:
 
 
 LEGS = (
-    Leg("linux-x86_64", "ubuntu-24.04", "linux", "x86_64-unknown-linux-gnu",
+    Leg("linux-x86_64", "", "linux", "x86_64-unknown-linux-gnu",
         host="x86_64-unknown-linux-gnu", node=True),
+    # The node is x86, so this one compiles on GitHub's runners.
     Leg("linux-arm64", "ubuntu-24.04-arm", "linux", "aarch64-unknown-linux-gnu"),
-    Leg("win-x86_64", "ubuntu-24.04", "win", "x86_64-pc-windows-msvc",
+    Leg("win-x86_64", "", "win", "x86_64-pc-windows-msvc",
         host="x86_64-unknown-linux-gnu", target="x86_64-pc-windows-msvc",
         extra_pkgs="msitools p7zip-full zip", node=True),
 )

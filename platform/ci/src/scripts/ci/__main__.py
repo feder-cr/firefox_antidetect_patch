@@ -5,6 +5,8 @@
   mozconfig --leg L --compile-cache gha|off [--sccache PATH] [--pgo-dir DIR] [--parallel N]
                                   extend ./.mozconfig with the CI layers, print it
   node-parallel                   the compile jobs this machine's limits allow (the node)
+  cpu-report [--samples F] [--events F]
+                                  the CPU use of this leg's phases, for the step summary
   phase NAME -- CMD...            run CMD as phase NAME, recording its events
   report DIR                      the run's summary from the legs' events
   assets | version                every leg's asset name | the version the tree builds
@@ -52,8 +54,13 @@ def main(argv) -> int:
     m.add_argument("--sccache", default=os.environ.get("SCCACHE_PATH", ""))
     m.add_argument("--pgo-dir", type=Path, default=Path.home() / "pgo")
     # The node's job writes CI_PARALLEL; GitHub's runners never have it.
-    m.add_argument("--parallel", type=int, default=int(os.environ.get("CI_PARALLEL", "4")))
+    # An empty value is a failed step's, and is no reason to crash here: the job's own
+    # step refuses that. int("") used to stop even --help.
+    m.add_argument("--parallel", type=int, default=int(os.environ.get("CI_PARALLEL") or 4))
     sub.add_parser("node-parallel")
+    u = sub.add_parser("cpu-report")
+    u.add_argument("--samples", type=Path, default=Path("cpuwatch.jsonl"))
+    u.add_argument("--events", type=Path, default=Path("events.jsonl"))
     r = sub.add_parser("report")
     r.add_argument("dir", type=Path)
     sub.add_parser("assets")
@@ -76,7 +83,16 @@ def main(argv) -> int:
     b.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
 
-    if args.cmd == "node-parallel":
+    if args.cmd == "cpu-report":
+        # What this says is a warning at most, and never a failure.
+        try:
+            import cpu_watch
+            text = cpu_watch.report(args.samples, args.events)
+        except Exception as exc:
+            text = "**CPU:** no table for this leg: %s" % exc
+        print(text)
+        phase.summary(text)
+    elif args.cmd == "node-parallel":
         sys.path.insert(0, str(HERE.parent))
         import memory_watch
         print(mozconfig.node_parallel(memory_watch.cpu_limit(), memory_watch.memory()["MemTotal"] * 2**20))

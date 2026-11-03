@@ -4,9 +4,8 @@
 # republish.yml on another run's, and written ONCE for both: the two copies
 # had already diverged once (republish's produced no seal, 2026-07-25).
 #
-# The payload refusal was republish's alone; on every publish now, it is also
-# what stops the run that publishing a draft re-triggers (the new tag is a
-# `firefox-*` push) from overwriting the published assets with a rebuild.
+# The payload refusal was republish's alone; on every publish now: a tag's
+# payload never changes, whoever asks.
 # ─────────────────────────────────────────────────────────────────────────────
 name: publish
 

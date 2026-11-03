@@ -19,7 +19,8 @@ So every 5 seconds:
     machine. Swap counts: the first version judged memory alone and killed
     ld.lld linking libxul.so with full LTO at 14 GB (run 40500378511), a link
     that finishes in swap (run 40466778026).
-Every line also goes to --log, which the workflow uploads with build.log.
+Every line also goes to --log, which the workflow uploads with build.log. The same
+loop drives cpu_watch.py: its "[cpu]" lines and the samples behind its summary.
 
 On a machine whose container has less memory than its host (the Theta node: a
 cgroup limit of 62.5 GB, no swap possible, and a /proc/meminfo that describes the
@@ -63,24 +64,40 @@ def _cgroup_value(path: Path):
         return None
 
 
+def unreclaimable(cgroup: Path = CGROUP):
+    """Bytes the cgroup holds that reclaim cannot free: anon, shmem, kernel memory and
+    unreclaimable slab, from memory.stat. `kernel` already holds the slab on the kernels
+    that have it, so only the reclaimable part comes off; older ones have no `kernel`,
+    and its parts are added one by one. None without a usable memory.stat."""
+    stat = {}
+    try:
+        for line in (cgroup / "memory.stat").read_text().splitlines():
+            key, value = line.split()[:2]
+            stat[key] = int(value)
+    except (OSError, ValueError):
+        return None
+    if "anon" not in stat:
+        return None
+    used = stat["anon"] + stat.get("shmem", 0)
+    if "kernel" in stat:
+        return used + max(0, stat["kernel"] - stat.get("slab_reclaimable", 0))
+    return used + stat.get("kernel_stack", 0) + stat.get("pagetables", 0) + stat.get("percpu", 0) \
+        + stat.get("slab_unreclaimable", 0)
+
+
 def memory(proc: Path = Path("/proc"), cgroup: Path = CGROUP) -> dict:
     """meminfo, with the container's limits where they are lower than the host's.
 
-    Page cache counts as used in memory.current and the kernel gives it back, so
-    what is available is the limit less what cannot be reclaimed: the same sum
-    that decides the cgroup's OOM, in the working-set form of inactive_file."""
+    Page cache counts as used in memory.current, and the kernel gives it back, active
+    or not: a compile that has read the whole tree holds tens of GB of it. So what is
+    available is the limit less what cannot be reclaimed (unreclaimable())."""
     m = meminfo(proc)
     limit = _cgroup_value(cgroup / "memory.max")
     current = _cgroup_value(cgroup / "memory.current")
     if limit is not None and current is not None and limit // 2**20 < m["MemTotal"]:
-        reclaimable = 0
-        try:
-            for line in (cgroup / "memory.stat").read_text().splitlines():
-                if line.startswith("inactive_file "):
-                    reclaimable = int(line.split()[1])
-        except (OSError, ValueError, IndexError):
-            pass
-        used = max(0, current - reclaimable)
+        used = unreclaimable(cgroup)
+        if used is None:
+            used = current
         m["MemTotal"] = limit // 2**20
         m["MemAvailable"] = min(m["MemAvailable"], max(0, limit - used) // 2**20)
         swap_limit = _cgroup_value(cgroup / "memory.swap.max")
@@ -138,12 +155,39 @@ def victim(procs: list, me: int):
     return None
 
 
+def cpu_sampler(path: Path):
+    """cpu_watch.py's sampler, or None: this file's job does not depend on that one."""
+    try:
+        import cpu_watch
+        return cpu_watch.Sampler(path, available=cpu_limit())
+    except Exception as exc:
+        print("[cpu] no CPU samples: %s" % exc, flush=True)
+        return None
+
+
+def cpu_tick(sampler, say):
+    """One tick of the sampler; what to keep for the next. An error costs the CPU
+    samples and nothing else: this process keeps the runner alive."""
+    if sampler is None:
+        return None
+    try:
+        line = sampler.tick()
+        if line:
+            say(line)
+        return sampler
+    except Exception as exc:
+        say("[cpu] no more CPU samples: %s" % exc)
+        return None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", required=True)
     ap.add_argument("--every", type=float, default=5.0)
+    ap.add_argument("--cpu-samples", type=Path, default=Path("cpuwatch.jsonl"))
     args = ap.parse_args(argv)
     log = open(args.log, "a", encoding="utf-8")
+    cpu = cpu_sampler(args.cpu_samples)
 
     def say(text):
         line = "%s %s" % (time.strftime("%H:%M:%S"), text)
@@ -180,6 +224,7 @@ def main(argv=None) -> int:
                 except OSError:
                     pass
             starving = 0
+        cpu = cpu_tick(cpu, say)
         time.sleep(args.every)
 
 

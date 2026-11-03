@@ -71,19 +71,39 @@ def main() -> int:
                                       "SwapTotal: 8388608 kB\nSwapFree: 8388608 kB\n")
         (cg / "memory.max").write_text("67177832448\n")
         (cg / "memory.current").write_text("%d\n" % (40 * 2**30))
-        (cg / "memory.stat").write_text("anon 21474836480\ninactive_file %d\nfile 1\n" % (10 * 2**30))
+        # 40 GB in memory.current: 30 of anon, 10 of page cache.
+        (cg / "memory.stat").write_text("anon %d\nfile %d\nactive_file %d\ninactive_file %d\n"
+                                        % (30 * 2**30, 10 * 2**30, 7 * 2**30, 3 * 2**30))
         (cg / "memory.swap.max").write_text("0\n")
         (cg / "memory.swap.current").write_text("0\n")
         (cg / "cpu.max").write_text("4800000 100000\n")
         got = w.memory(proc, cg)
         cases.append(("the container's limit is the total, as measured on the node",
                       got["MemTotal"] == 67177832448 // 2**20))
-        cases.append(("page cache the kernel gives back is available (40 GB used, 10 of it inactive file)",
+        cases.append(("page cache the kernel gives back is available, active as well as inactive (40 GB used, 10 of it file)",
                       got["MemAvailable"] == (67177832448 - 30 * 2**30) // 2**20))
+        # The false kill: a tree read by a compile is active page cache, and the limit
+        # less anything but what cannot be reclaimed starves with memory to give back.
+        (cg / "memory.current").write_text("%d\n" % 67177832448)
+        (cg / "memory.stat").write_text("anon %d\nfile %d\nactive_file %d\ninactive_file %d\n"
+                                        % (20 * 2**30, 42 * 2**30, 41 * 2**30, 2**30))
+        cases.append(("a cgroup full of active page cache is not starving: no kill",
+                      w.left_mb(w.memory(proc, cg)) > w.thresholds(64065)[1]))
+        (cg / "memory.stat").write_text("anon %d\nshmem %d\nkernel %d\nslab_reclaimable %d\nslab_unreclaimable %d\nfile %d\n"
+                                        % (2**30, 2 * 2**30, 8 * 2**30, 3 * 2**30, 2 * 2**30, 5 * 2**30))
+        cases.append(("what cannot be reclaimed: anon + shmem + kernel, with the reclaimable slab off and the rest of it not counted twice",
+                      w.unreclaimable(cg) == (1 + 2 + 8 - 3) * 2**30))
+        (cg / "memory.stat").write_text("anon %d\nshmem %d\nkernel_stack %d\npagetables %d\npercpu %d\nslab_reclaimable %d\nslab_unreclaimable %d\n"
+                                        % (2**30, 2 * 2**30, 2**20, 2**20, 2**20, 3 * 2**30, 2 * 2**30))
+        cases.append(("an older kernel with no `kernel` line: its parts, and unreclaimable slab only",
+                      w.unreclaimable(cg) == (1 + 2 + 2) * 2**30 + 3 * 2**20))
+        (cg / "memory.stat").write_text("inactive_file 7\n")
+        cases.append(("a memory.stat that says nothing of anon is not read as zero used", w.unreclaimable(cg) is None))
+        (cg / "memory.current").write_text("%d\n" % (40 * 2**30))
         cases.append(("no swap for the container, whatever the host has",
                       got["SwapFree"] == 0 and got["SwapTotal"] == 0))
         (cg / "memory.current").write_text("%d\n" % 67177832448)
-        (cg / "memory.stat").write_text("inactive_file 0\n")
+        (cg / "memory.stat").write_text("anon %d\n" % 67177832448)
         cases.append(("a container at its limit starves, with the host's memory free",
                       w.left_mb(w.memory(proc, cg)) < w.thresholds(64065)[1]))
         cases.append(("cpu.max is the CPU limit", w.cpu_limit(cg) == min(48, __import__("os").cpu_count() or 1)))

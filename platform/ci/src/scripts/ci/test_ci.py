@@ -473,8 +473,9 @@ def main() -> int:
                    and any(st.get("with", {}).get("name") == "gtest-bin-%s" % leg.leg for st in j.get("steps", []))
                    and any("-unittest" in st.get("run", "") for st in j.get("steps", []))]
             cross_ok = cross_ok and len(ran) == 1 and ran[0].get("if") == "github.event.inputs.gtests == 'true'"
-        kept = steps.get("Keep the cross-compiled gtests for the target's OS", {})
-        cross_ok = (cross_ok and "matrix.target" in gt_step[0]["run"] and "recurse_gtest" in gt_step[0]["run"]
+        kept = steps.get("The node - keep them", {})
+        built = steps.get("The node - its gtest binaries, for a job on GitHub's runners", {})
+        cross_ok = (cross_ok and "recurse_gtest" in built.get("run", "") and "matrix.target" not in gt_step[0]["run"]
                     and kept.get("with", {}).get("name") == "gtest-bin-${{ matrix.leg }}")
         cases.append(("gtests: a cross-compiled leg's run on its target's OS (run 41232307511)", cross_ok))
         # apt has no network timeout: a stalled mirror held run 41248997155's
