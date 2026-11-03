@@ -39,7 +39,7 @@ PACKAGES=(
   tar gzip bzip2 xz-utils zstd zip unzip rsync procps psmisc
   # the win-x86_64 leg (extra_pkgs in scripts/ci/legs.py)
   # (libc6-i386: Mozilla's wine, which runs fxc.exe, opens /lib/ld-linux.so.2; the hosted image has it)
-  msitools p7zip-full libc6-i386
+  msitools p7zip-full libc6-i386 lib32gcc-s1 lib32stdc++6
   # lavapipe (scripts/ci/lavapipe_build.py)
   cmake ninja-build bison flex patchelf
   # what the runner links against

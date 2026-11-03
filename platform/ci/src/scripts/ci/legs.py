@@ -48,7 +48,7 @@ LEGS = (
     Leg("linux-arm64", "ubuntu-24.04-arm", "linux", "aarch64-unknown-linux-gnu"),
     Leg("win-x86_64", "", "win", "x86_64-pc-windows-msvc",
         host="x86_64-unknown-linux-gnu", target="x86_64-pc-windows-msvc",
-        extra_pkgs="msitools p7zip-full zip libc6-i386", node=True),
+        extra_pkgs="msitools p7zip-full zip libc6-i386 lib32gcc-s1 lib32stdc++6", node=True),
 )
 
 
