@@ -324,6 +324,9 @@ def group_turning_on():
                     and stdin[START_RUNNER] == b"JIT1\n" and not any("JIT" in c for c in commands)))
         out.append(("on, %s: a node that went well stays on" % leg, api.deleted == []))
     out.append(("prices: the ceiling is above both machines' price", t.MAX_PRICE_USD_HOUR >= 0.182))
+    got, error = provisioned(FakeTheta(), FakeGitHub(), FakeSsh({"true": (255, "", "root@<node>: Permission denied (publickey).")}))
+    out.append(("up: a node that never answers says why, with ssh's own words",
+                not got and "Permission denied (publickey)" in error and "ssh exited 255" in error))
     return out
 
 

@@ -448,15 +448,25 @@ def create_when_free(theta, name, leg, public_key, clock=time.monotonic, sleep=t
 
 def wait_up(theta, node_id, make_ssh, clock=time.monotonic, sleep=time.sleep, limit=UP_LIMIT_S):
     start = clock()
+    last = "Theta gives no address yet"
+    said = None
     while clock() - start < limit:
         address = theta.address(node_id)
         if address:
             ssh = make_ssh(*address)
-            if ssh("true", timeout=30)[0] == 0:
+            code, _, err = ssh("true", timeout=30)
+            if code == 0:
                 say("node up after %.0f s" % (clock() - start))
                 return ssh
+            last = "ssh exited %d: %s" % (code, err.strip()[-300:])
+        else:
+            last = "Theta gives no address yet"
+        # Each change as it happens: a node that never comes up has to say why.
+        if last != said:
+            say("%.0f s: %s" % (clock() - start, last))
+            said = last
         sleep(5)
-    raise ThetaError("the node did not answer on SSH within %d s" % limit)
+    raise ThetaError("the node did not answer on SSH within %d s; last: %s" % (limit, last))
 
 
 def turn_off(theta, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LIMIT_S,
