@@ -322,6 +322,8 @@ jobs:
           GIT_CONFIG_VALUE_1: '0'
         run: |
           MATERIALIZE="python .series/tools/engine.py materialize --into ."
+          # On a node the two legs fetch and apply once, in NODE_SHARED (node_runner.sh).
+          [ -z "${NODE_SHARED:-}" ] || MATERIALIZE="$MATERIALIZE --shared $NODE_SHARED"
           if [ "${{ matrix.node }}" = "true" ]; then
             python3 .series/platform/ci/src/scripts/ci/background.py start materialize -- $MATERIALIZE
           else
@@ -1003,6 +1005,7 @@ jobs:
             cpuwatch.jsonl
             linkpin.log
             inputwatch*
+            obj-rel/toolkit/library/build/libxul.so.time-trace
           if-no-files-found: ignore
           retention-days: 14
 

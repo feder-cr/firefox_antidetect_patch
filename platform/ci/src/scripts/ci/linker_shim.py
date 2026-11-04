@@ -21,6 +21,12 @@ And ld.lld caps its own threads at 16 when nothing asks (lld/ELF/Driver.cpp), wh
 last 170 s of the link peaking at 19.7 of 48 cores: `--threads`, before Mozilla's flags,
 which name none. With full LTO there is one partition whatever
 the threads (--lto-partitions), and lld writes the same bytes with any number of them.
+
+And `--time-trace`: the link's own times, LTO's optimisation and code generation among
+them, in <output>.time-trace beside the output (libxul.so.time-trace). On 04/11 the
+link spent 11 of its 14 min on one core, and whether that is the optimiser (one thread
+by design) or code generation (one partition, which --lto-partitions would split) was
+unknown. It writes no byte of the output.
 """
 from __future__ import annotations
 
@@ -47,7 +53,8 @@ def write(out: Path, clang_bin: Path = Path.home() / ".mozbuild" / "clang" / "bi
     """The stand-in for ld.lld; the lines for $GITHUB_ENV."""
     out.mkdir(parents=True, exist_ok=True)
     path = out / "ld.lld"
-    path.write_text(script(clang_bin / "ld.lld", "--threads=%d " % threads if threads > 0 else ""), encoding="utf-8", newline="\n")
+    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace "
+    path.write_text(script(clang_bin / "ld.lld", first), encoding="utf-8", newline="\n")
     path.chmod(0o755)
     print("huge pages for the link: %s, enabled: %s, defrag: %s" % (TUNABLE, _read(THP_ENABLED), _read(THP_DEFRAG)), file=sys.stderr)
     return ["COMPILER_PATH=%s" % out]

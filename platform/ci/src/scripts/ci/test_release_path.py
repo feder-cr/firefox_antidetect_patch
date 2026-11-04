@@ -425,11 +425,17 @@ def group_build_steps(doc) -> list:
         said = subprocess.run([str(tmp / "a" / "ld.lld"), "-o", "libxul.so", "a b"], env=env, capture_output=True, text=True).stdout.strip()
         out.append(("huge pages: Linux's through COMPILER_PATH, the real linker gets the arguments and the tunable, and keeps its name",
                     linux == ["COMPILER_PATH=%s" % (tmp / "a")]
-                    and said == "glibc.malloc.hugetlb=1 %s --threads=48 -o libxul.so a b" % (clang_bin / "ld.lld")))
+                    and said == "glibc.malloc.hugetlb=1 %s --threads=48 --time-trace -o libxul.so a b" % (clang_bin / "ld.lld")))
         out.append(("lld's threads: ld.lld caps itself at 16 when not asked, so it is asked, first, so a later flag would still win",
                     said.split()[2] == "--threads=48"))
+        out.append(("the link's own times: --time-trace (libxul.so.time-trace), to tell LTO's optimiser from its code generation, "
+                    "and the events artifact keeps the file",
+                    said.split()[3] == "--time-trace"
+                    and "obj-rel/toolkit/library/build/libxul.so.time-trace" in str(steps["Upload this leg's events"]["with"]["path"])))
 
     material = next(s for s in jobs["build"]["steps"] if "engine.py materialize" in s.get("run", ""))
+    out.append(("source tree: on a node, the legs share one fetch and one series (NODE_SHARED, node_runner.sh); elsewhere as before",
+                '[ -z "${NODE_SHARED:-}" ] || MATERIALIZE="$MATERIALIZE --shared $NODE_SHARED"' in material["run"]))
     pairs = {material["env"]["GIT_CONFIG_KEY_%d" % i]: material["env"]["GIT_CONFIG_VALUE_%d" % i]
              for i in range(int(material["env"]["GIT_CONFIG_COUNT"]))}
     position = [s.get("name", "") for s in jobs["build"]["steps"]]

@@ -40,6 +40,9 @@ TMP_DIR="${NODE_RUNNER_TMP:-/tmp}"
 CGROUP_DIR="${NODE_RUNNER_CGROUP:-/sys/fs/cgroup}"
 ROOT="${NODE_RUNNER_ROOT:-/srv/legs}"
 MEMINFO="${NODE_RUNNER_MEMINFO:-/proc/meminfo}"
+# The one directory both legs reach: the Mozilla tag fetched and the series applied once
+# for the node (tools/engine.py materialize --shared), each leg's files its own.
+SHARED="${NODE_RUNNER_SHARED:-/srv/shared}"
 RUNNER_PATH=/home/runner/.cargo/bin:/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN="${1:-}"
@@ -77,6 +80,7 @@ run_one() {
   install -d "$LEG_ROOT/home/work"
   chown -R "$USER_NAME:$USER_NAME" "$LEG_ROOT/home" "$LEG_ROOT/toolcache"
   chmod 1777 "$LEG_ROOT/tmp"
+  install -d -m 1777 "$SHARED"
   # A build opens far more files than a login's default of 1024; GitHub's runners allow 65536.
   ulimit -n 65536
   rm -f "$GUARD"
@@ -97,7 +101,7 @@ EOF
       umount -l "$5" || true; mount -t cgroup2 cgroup2 "$5"
       shift 5; cd "$HOME_DIR_IN/actions-runner"; exec "$@"' _ "$LEG_ROOT" "$HOME_DIR" "$TOOLCACHE" "$TMP_DIR" "$CGROUP_DIR" \
     runuser -u "$USER_NAME" -- env -i HOME="$HOME_DIR" PATH="$RUNNER_PATH" LANG=C.UTF-8 \
-      SCCACHE_SERVER_PORT="$PORT" ACTIONS_RUNNER_HOOK_JOB_STARTED="$GUARD" \
+      SCCACHE_SERVER_PORT="$PORT" ACTIONS_RUNNER_HOOK_JOB_STARTED="$GUARD" NODE_SHARED="$SHARED" \
       bash -c 'IFS= read -r ACTIONS_RUNNER_INPUT_JITCONFIG; export ACTIONS_RUNNER_INPUT_JITCONFIG; exec ./run.sh'
   code=$?
   echo "$(date -u +%FT%TZ) the runner of leg $LEG exited with $code"

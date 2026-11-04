@@ -100,3 +100,63 @@ def test_materialize_fetches_the_tag_applies_the_series_and_checks_the_tree(worl
                               "source_branch": "work", "exported_tree": "0" * 40}))
     with pytest.raises(SystemExit):
         engine.materialize(tmp_path / "runner2")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the shared path is the build nodes', which are Linux (flock)")
+def test_two_legs_share_one_fetch_and_one_series(world, tmp_path, monkeypatch, capsys):
+    """Both legs of a build node fetched the same tag from GitHub and applied the same
+    series, each for itself, 3 min each and 6.6 when GitHub was slow (04/11). With
+    --shared the first does it once and the second only borrows the objects: proved by
+    taking Mozilla's repository away before the second leg runs."""
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    shared = tmp_path / "shared"
+    first = engine.materialize(tmp_path / "leg-l", shared=shared)
+    assert "applied in" in capsys.readouterr().out
+    up.write_text(json.dumps({"mozilla_repository": str(tmp_path / "gone"), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    second = engine.materialize(tmp_path / "leg-w", shared=shared)
+    said = capsys.readouterr().out
+    assert "by another leg" in said and re.search(r"^materialize: shared .* \d+ s, apply \d+ s, checkout \d+ s$", said, re.M)
+    assert first == second == run(world, "rev-parse", "probe")
+    for leg in ("leg-l", "leg-w"):
+        assert (tmp_path / leg / "dom" / "StealthA.cpp").read_bytes() == b"// ours\n"
+        assert run(tmp_path / leg, "status", "--porcelain") == ""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="flock, as above")
+def test_a_shared_tree_that_was_never_finished_is_made_again(world, tmp_path, monkeypatch):
+    """A leg that died mid-fetch leaves a directory and no mark: the next one starts over
+    instead of borrowing half a repository."""
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    shared = tmp_path / "shared"
+    (shared / tree[:12] / "junk").mkdir(parents=True)
+    head = engine.materialize(tmp_path / "leg", shared=shared)
+    assert head == run(world, "rev-parse", "probe") and not (shared / tree[:12] / "junk").exists()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="flock, as above")
+def test_a_shared_directory_that_cannot_be_used_falls_back_to_the_leg_s_own_fetch(world, tmp_path, monkeypatch, capsys):
+    """Slower, never wrong: a shared path that is a file, not a directory, and the leg
+    still gets its tree, by fetching it itself."""
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    blocked = tmp_path / "blocked"
+    blocked.write_text("a file")
+    head = engine.materialize(tmp_path / "leg", shared=blocked)
+    said = capsys.readouterr().out
+    assert head == run(world, "rev-parse", "probe") and "this leg fetches its own" in said
+    assert re.search(r"^materialize: fetch \d+ s", said, re.M)

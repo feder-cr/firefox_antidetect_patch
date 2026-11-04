@@ -314,12 +314,7 @@ def drift(source: Path, old: str, new: str) -> int:
     return 0
 
 
-def materialize(into: Path, branch: str = "engine") -> str:
-    """For CI: makes `into` the engine's source tree, exactly as a checkout of the old
-    full-tree branch was. Fetches the Mozilla tag one commit deep from Mozilla's
-    repository, applies the series as `branch`, checks it out, and requires the tree to
-    be the one UPSTREAM.json declares. Prints the built commit."""
-    up = upstream()
+def _init_repo(into: Path) -> None:
     into.mkdir(parents=True, exist_ok=True)
     if not (into / ".git").exists():
         git(into, "init", "-q")
@@ -328,15 +323,84 @@ def materialize(into: Path, branch: str = "engine") -> str:
     rel = os.path.relpath(ROOT, into).replace("\\", "/")
     if not rel.startswith(".."):
         exclude.write_text("/%s/\n" % rel, encoding="utf-8")
+
+
+def _fetch_and_apply(into: Path, up: dict, branch: str) -> str:
+    tag = up["mozilla_tag"]
+    git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
+        "refs/tags/%s:refs/tags/%s" % (tag, tag))
+    return apply(into, tag, branch, force=True)
+
+
+def _shared_commit(shared: Path, up: dict, branch: str) -> Path:
+    """The series applied once per machine, in `shared`, by whichever leg comes first;
+    the others wait on the lock and take it. Returns the repository that holds it. A
+    leg that dies holding the lock frees it with its process (flock), and the next one
+    starts over: the commit is marked only once whole."""
+    import fcntl  # the build nodes only, which are Linux
+    key = (up.get("exported_tree") or up["mozilla_tag"])[:12]
+    repo, mark = shared / key, shared / ("%s.commit" % key)
+    shared.mkdir(parents=True, exist_ok=True)
+    # Read-only and world-readable: the other leg is another user, and flock does not
+    # need write access.
+    fd = os.open(str(shared / ("%s.lock" % key)), os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        if not mark.exists():
+            shutil.rmtree(repo, ignore_errors=True)
+            _init_repo(repo)
+            _fetch_and_apply(repo, up, branch)
+            commit = git(repo, "rev-parse", branch).decode().strip()
+            mark.write_text(commit + "\n", encoding="utf-8")
+            print("materialize: the series applied in %s, for every leg on this machine" % repo)
+        else:
+            print("materialize: the series was applied in %s by another leg" % repo)
+    finally:
+        os.close(fd)
+    return repo
+
+
+def materialize(into: Path, branch: str = "engine", shared: Path | None = None) -> str:
+    """For CI: makes `into` the engine's source tree, exactly as a checkout of the old
+    full-tree branch was. Fetches the Mozilla tag one commit deep from Mozilla's
+    repository, applies the series as `branch`, checks it out, and requires the tree to
+    be the one UPSTREAM.json declares. Prints the built commit.
+
+    With `shared`, a directory every leg of the machine can reach: the fetch and the
+    series happen once there, and `into` borrows its objects (git alternates) and checks
+    out its own files. Both legs of a build node fetched the same tag from GitHub at the
+    same time and applied the same series, 3 min each and 6.6 when GitHub was slow
+    (04/11)."""
+    up = upstream()
+    _init_repo(into)
     tag = up["mozilla_tag"]
     # Each phase timed: on a build node the Linux leg took 5.8 min here twice, Windows
     # 2.4, both starting together (04/11), and nothing said which phase it was.
     began = time.monotonic()
-    git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
-        "refs/tags/%s:refs/tags/%s" % (tag, tag))
-    fetched = time.monotonic()
-    tree = apply(into, tag, branch, force=True)
-    applied = time.monotonic()
+    repo = None
+    if shared is not None:
+        try:
+            repo = _shared_commit(shared, up, branch)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            # A leg that cannot use the shared tree builds its own, as before: slower,
+            # never wrong.
+            print("materialize: the shared tree in %s failed (%s): this leg fetches its own" % (shared, exc))
+            shared = None
+    if shared is None:
+        git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
+            "refs/tags/%s:refs/tags/%s" % (tag, tag))
+        fetched = time.monotonic()
+        tree = apply(into, tag, branch, force=True)
+        applied = time.monotonic()
+    else:
+        fetched = time.monotonic()
+        alternates = into / ".git" / "objects" / "info" / "alternates"
+        alternates.parent.mkdir(parents=True, exist_ok=True)
+        alternates.write_text(str((repo / ".git" / "objects").resolve()) + "\n", encoding="utf-8")
+        commit = (shared / ("%s.commit" % repo.name)).read_text(encoding="utf-8").strip()
+        git(into, "update-ref", "refs/heads/%s" % branch, commit)
+        tree = git(into, "rev-parse", "%s^{tree}" % branch).decode().strip()
+        applied = time.monotonic()
     expected = up.get("exported_tree")
     if expected and tree != expected:
         raise SystemExit("the series applied to %s gives tree %s, UPSTREAM.json declares %s"
@@ -346,8 +410,9 @@ def materialize(into: Path, branch: str = "engine") -> str:
     git(into, "checkout", "-q", "-f", branch)
     head = git(into, "rev-parse", "HEAD").decode().strip()
     done = time.monotonic()
-    print("materialize: fetch %.0f s, apply %.0f s, checkout %.0f s"
-          % (fetched - began, applied - fetched, done - applied))
+    print("materialize: %s %.0f s, apply %.0f s, checkout %.0f s"
+          % ("fetch" if shared is None else "shared (fetch and apply, or wait for them)",
+             fetched - began, applied - fetched, done - applied))
     print("materialized %s: %s (tree %s)" % (into, head, tree[:12]))
     return head
 
@@ -552,6 +617,9 @@ def main() -> int:
                                         "shrink-budget", "drift", "port"])
     ap.add_argument("--to", help="drift/port: the Mozilla tag to move to (a stable release, never a beta)")
     ap.add_argument("--into", type=Path, default=Path("."), help="materialize: the directory to make the tree")
+    ap.add_argument("--shared", type=Path, default=None,
+                    help="materialize: a directory every leg of this machine reaches; the tag is fetched "
+                         "and the series applied there once, and each leg borrows the objects")
     ap.add_argument("--source", type=Path, default=Path(os.environ.get("ENGINE_SOURCE", "C:/ff/source")))
     ap.add_argument("--base")
     ap.add_argument("--head", help="the source branch (apply: the branch it creates)")
@@ -566,7 +634,7 @@ def main() -> int:
             return drift(a.source, base, a.to)
         return port(a.source, base, a.to, a.head if a.head else "port/%s" % a.to, a.force)
     if a.command == "materialize":
-        materialize(a.into)
+        materialize(a.into, shared=a.shared)
         return 0
     if a.command == "apply":
         apply(a.source, base, head, a.force)

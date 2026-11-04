@@ -1140,7 +1140,8 @@ def runner_case(leaks) -> dict:
         env = dict(os.environ, PATH="%s%s%s" % (bin_dir, os.pathsep, os.environ["PATH"]), NODE_RUNNER_TEMPLATE=str(template),
                    NODE_RUNNER_HOME=str(home), NODE_RUNNER_TOOLCACHE=str(toolcache), NODE_RUNNER_TMP=str(tmp_dir),
                    NODE_RUNNER_CGROUP=str(cgroup), NODE_RUNNER_ROOT=str(root), NODE_RUNNER_MEMINFO=str(meminfo),
-                   NODE_RUNNER_LOG=str(log), NODE_RUNNER_GUARD=str(guard_dir / "job_guard"), **leaks)
+                   NODE_RUNNER_LOG=str(log), NODE_RUNNER_GUARD=str(guard_dir / "job_guard"),
+                   NODE_RUNNER_SHARED=str(tmp / "shared"), **leaks)
         script = str(HERE / "node_runner.sh")
 
         def start(config, *args):
@@ -1176,7 +1177,8 @@ def runner_case(leaks) -> dict:
                 "cgroup": str(cgroup), "root": str(root), "dirs": {leg: str((root / leg / "home" / "actions-runner").resolve()) for leg in ("l", "w")},
                 "copied_toolcache": all((root / leg / "toolcache" / "node").exists() for leg in ("l", "w")),
                 "guard_in_homes": any(root.rglob("job_guard*")) or any(template.rglob("job_guard*")),
-                "mounts_left": home.is_symlink() or toolcache.is_symlink() or tmp_dir.is_symlink()}
+                "mounts_left": home.is_symlink() or toolcache.is_symlink() or tmp_dir.is_symlink(),
+                "shared": str(tmp / "shared"), "shared_made": (tmp / "shared").is_dir()}
 
 
 def group_node_deps():
@@ -1288,7 +1290,8 @@ def group_runner():
                                "start CFG-w work=1 stale=0 dir=%s" % r["dirs"]["w"], "end CFG-w"]))
     out.append(("runner: how each ended is logged, in its own log", s["l_log"].count("exited with 3") == 1 and s["w_log"].count("exited with 3") == 1
                 and "leg l" in s["l_log"] and "leg w" in s["w_log"]))
-    allowed = {"HOME", "PATH", "LANG", "SCCACHE_SERVER_PORT", "ACTIONS_RUNNER_HOOK_JOB_STARTED", "ACTIONS_RUNNER_INPUT_JITCONFIG", "PWD", "OLDPWD", "SHLVL", "_"}
+    allowed = {"HOME", "PATH", "LANG", "SCCACHE_SERVER_PORT", "ACTIONS_RUNNER_HOOK_JOB_STARTED", "ACTIONS_RUNNER_INPUT_JITCONFIG", "NODE_SHARED",
+               "PWD", "OLDPWD", "SHLVL", "_"}
     envs = {leg: dict(l.split("=", 1) for l in text.splitlines() if "=" in l) for leg, text in r["env"].items()}
     out.append(("runner: an empty environment: nothing of root's reaches the job's start, neither CARGO_* nor anything else",
                 all(not set(e) & (set(leaks) - {"SCCACHE_SERVER_PORT"}) and set(e) <= allowed for e in envs.values())))
@@ -1297,6 +1300,12 @@ def group_runner():
                     for e in envs.values())))
     ports = [envs[leg].get("SCCACHE_SERVER_PORT") for leg in ("l", "w")]
     out.append(("runner: each leg its own sccache port, never sccache's default nor root's", all(ports) and len(set(ports)) == 2 and "4226" not in ports))
+    # Both legs fetched the same Mozilla tag and applied the same series, each for itself (04/11):
+    # one directory both reach, writable by both users, where materialize does it once.
+    runner_text = (HERE / "node_runner.sh").read_text(encoding="utf-8")
+    out.append(("runner: both legs get the same shared directory for the source tree, made writable by both users",
+                r["shared_made"] and all(envs[leg].get("NODE_SHARED") == r["shared"] for leg in ("l", "w"))
+                and 'install -d -m 1777 "$SHARED"' in runner_text))
     record = r["record"]
     useradds = [l for l in record if l.startswith("useradd ")]
     uids = [l.split("--uid ", 1)[1].split()[0] for l in useradds if "--uid " in l]
