@@ -5,8 +5,9 @@
 #     ssh ubuntu@node 'sudo -n bash -s' < scripts/ci/node_bootstrap.sh
 #
 # What a job on ubuntu-24.04 finds already installed, this installs, at fixed
-# versions: the apt packages from one dated snapshot (apt checks them against
-# the archive's signature), the rest by version and sha256. A user `runner` with
+# versions: the apt packages and glslang from one archive of ours (NODE_DEPS, made
+# by scripts/ci/node_deps_build.sh, a release asset of this repository), the rest
+# by version and sha256, all checked by sha256. A user `runner` with
 # home /home/runner, as on GitHub's runners, so the job's paths (HOME, ~/pgo,
 # ~/.mozbuild) are the same; the runner itself in ~/actions-runner, jobs in ~/work,
 # Python's in /opt/hostedtoolcache. Unlike GitHub's, this user has no sudo: what a job
@@ -20,7 +21,13 @@
 set -euo pipefail
 
 # Every version in one place.
-APT_SNAPSHOT=20261103T000000Z
+# The node's apt packages and glslang, every .deb at the version its MANIFEST lists.
+# Until 2026-11-04 the packages came from Ubuntu's snapshot service at every start: it
+# was down for most of that day (503, 502) and slow when up, and no node could start.
+# A new set: node_deps_build.sh, then the archive up as a pre-release under its name.
+NODE_DEPS=node-deps-20261104-aeaa295d91a7
+NODE_DEPS_SHA256=96b646085471d7b50e26b9756f462b22565513873f5687277db3f7cdb238f059
+NODE_DEPS_URL="${NODE_DEPS_URL:-https://github.com/feder-cr/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar}"
 RUNNER_VERSION=2.338.2
 RUNNER_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
 NODE_VERSION=22.23.4
@@ -28,10 +35,11 @@ NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
 RUSTUP_VERSION=1.29.3
 RUSTUP_SHA256=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
 # Ubuntu 24.04's, at a version of our own choosing. Lavapipe's shaders need 12.2 or later.
+# Built into NODE_DEPS from this source (node_deps_build.sh reads both lines).
 GLSLANG_VERSION=14.0.0
 GLSLANG_SHA256=80bbb916a23e94ea9cbfb1acb5d1a44a7e0c9613bcf5b5947c03f2273bdc92b0
 
-# The image's sources follow the archive, and these are one fixed day of it.
+# What apt installs, from NODE_DEPS only (node_deps_build.sh reads this list).
 PACKAGES=(
   # the job's steps; sudo is for this script's as_runner
   sudo git curl ca-certificates python3 python3-venv
@@ -62,37 +70,27 @@ fetch() { # url sha256 file
   echo "$2  $3" | sha256sum -c --quiet - || die "$1 does not match its sha256"
 }
 
-# The indexes, asked again for a few minutes: apt's own retries are seconds apart, and
-# the snapshot service answered 502 for longer than that (candidate 41824950368).
-APT_TRIES="${APT_TRIES:-6}"
-APT_WAIT_S="${APT_WAIT_S:-30}"
-apt_update() {
-  local try
-  for try in $(seq "$APT_TRIES"); do
-    apt-get update -qq -o APT::Update::Error-Mode=any && return 0
-    [ "$try" = "$APT_TRIES" ] || { echo "node_bootstrap: the apt indexes failed (try $try of $APT_TRIES), again in $APT_WAIT_S s" >&2; sleep "$APT_WAIT_S"; }
-  done
-  die "the apt indexes did not download in $APT_TRIES tries"
-}
-
-echo "== apt, snapshot $APT_SNAPSHOT"
+DEPS=/opt/node-deps
+echo "== apt, from $NODE_DEPS"
 # apt has no network timeout of its own (run 41248997155 waited 5h40 on a mirror).
 # A machine just installed may be running its own daily apt: wait for its lock.
 printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' 'DPkg::Lock::Timeout "600";' \
   > /etc/apt/apt.conf.d/80-ci-network
-# The snapshot service answers plain HTTP with a redirect to HTTPS, and the image has
-# no CA certificates: on a fresh node every index failed and only "Unable to locate
-# package" was left to read. So they come first, from the image's own sources.
-apt_update
-apt-get install -y -qq --no-install-recommends ca-certificates >/dev/null
-{
-  for pocket in noble noble-updates noble-security; do
-    echo "deb http://snapshot.ubuntu.com/ubuntu/$APT_SNAPSHOT $pocket main restricted universe multiverse"
-  done
-} > /etc/apt/sources.list
+# The download needs curl and CA certificates, and a fresh node once had no
+# certificates: then, and only then, they come from the image's own sources first.
+if ! command -v curl >/dev/null || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; then
+  apt-get update -qq -o APT::Update::Error-Mode=any
+  apt-get install -y -qq --no-install-recommends ca-certificates curl >/dev/null
+fi
+fetch "$NODE_DEPS_URL" "$NODE_DEPS_SHA256" /tmp/node-deps.tar
+rm -rf "$DEPS" && mkdir -p "$DEPS"
+tar -xf /tmp/node-deps.tar -C "$DEPS"
+rm -f /tmp/node-deps.tar
+# The archive's index and nothing else: no source on the network, so no mirror can be
+# down, slow or a day ahead. trusted=yes because the check is the sha256 above.
+echo "deb [trusted=yes] file:$DEPS/debs ./" > /etc/apt/sources.list
 rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
-# A failed index is an error here, not a warning and a package missing later.
-apt_update
+apt-get update -qq -o APT::Update::Error-Mode=any
 apt-get install -y -qq --no-install-recommends "${PACKAGES[@]}" >/dev/null
 
 echo "== the user"
@@ -121,16 +119,8 @@ if [ "$(as_runner rustup --version 2>/dev/null | awk 'NR==1{print $2}')" != "$RU
   rm -f /tmp/rustup-init
 fi
 
-echo "== glslang $GLSLANG_VERSION, in /usr/local/bin"
-if ! /usr/local/bin/glslangValidator --version 2>/dev/null | grep -q ":$GLSLANG_VERSION\$"; then
-  fetch "https://github.com/KhronosGroup/glslang/archive/refs/tags/$GLSLANG_VERSION.tar.gz" "$GLSLANG_SHA256" /tmp/glslang.tar.gz
-  rm -rf /tmp/glslang && mkdir -p /tmp/glslang
-  tar -xzf /tmp/glslang.tar.gz --strip-components=1 -C /tmp/glslang
-  cmake -S /tmp/glslang -B /tmp/glslang/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=OFF \
-    -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=/usr/local >/dev/null
-  ninja -C /tmp/glslang/build install >/dev/null
-  rm -rf /tmp/glslang /tmp/glslang.tar.gz
-fi
+echo "== glslang $GLSLANG_VERSION, in /usr/local/bin, built into $NODE_DEPS"
+cp -a "$DEPS/glslang-root/usr/local/." /usr/local/
 
 echo "== actions-runner $RUNNER_VERSION"
 R=/home/runner/actions-runner
@@ -186,4 +176,4 @@ for _ in $(seq 30); do
 done
 [ "$served" = "$host_key" ] || die "sshd does not serve the host key just made"
 echo "node_bootstrap: host key: $host_key"
-echo "node_bootstrap: ready (runner $RUNNER_VERSION, node $NODE_VERSION, rustup $RUSTUP_VERSION, glslang $GLSLANG_VERSION, apt snapshot $APT_SNAPSHOT)"
+echo "node_bootstrap: ready (runner $RUNNER_VERSION, node $NODE_VERSION, rustup $RUSTUP_VERSION, glslang $GLSLANG_VERSION, apt $NODE_DEPS)"

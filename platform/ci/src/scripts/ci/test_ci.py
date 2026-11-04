@@ -254,6 +254,14 @@ def main() -> int:
                     if "tests/test_hidden_desktop.py" in p.read_text(encoding="utf-8") and p.name != "gate.yml")
     cases.append(("the gate's guards run in gate.yml only (copies: %s)" % (", ".join(copies) or "none"), not copies))
 
+    # An edit made on Windows wrote CRLF into 13 files at once, package_linux.sh and
+    # node_deps_build.sh among them (2026-11-04): bash stops at the first line, "set:
+    # pipefail: invalid option name". What runs on Linux keeps LF.
+    scripts = HERE.parent
+    crlf = sorted(str(p.relative_to(scripts.parent)) for p in [*scripts.rglob("*.sh"), *HERE.glob("*.py")]
+                  if b"\r" in p.read_bytes())
+    cases.append(("the CI's shell scripts and Python have LF line ends (CRLF: %s)" % (", ".join(crlf) or "none"), not crlf))
+
     import payload_guard as pg
 
     def guard(view, download=(0, "", ""), published=b"SEAL", ours=b"SEAL"):

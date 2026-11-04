@@ -31,6 +31,7 @@ import http.client
 import io
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -664,15 +665,19 @@ def group_stop_node():
 def group_bootstrap():
     out = []
     bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8")
-    snapshot = bootstrap.index("snapshot.ubuntu.com")
-    out.append(("bootstrap: CA certificates before the snapshot, whose redirect to HTTPS needs them (a fresh node found no package)",
-                0 < bootstrap.index("--no-install-recommends ca-certificates") < snapshot))
-    out.append(("bootstrap: a failed index stops it, by name, both times",
-                bootstrap.count("apt-get update -qq -o APT::Update::Error-Mode=any") == 1 and bootstrap.count("\napt_update\n") == 2
-                and "apt-get update -qq\n" not in bootstrap))
+    download = bootstrap.index('fetch "$NODE_DEPS_URL"')
+    out.append(("bootstrap: curl and CA certificates from the image's sources only when missing, before the archive's download (a fresh node had none)",
+                0 < bootstrap.index("if ! command -v curl") < bootstrap.index("ca-certificates curl") < download))
+    out.append(("bootstrap: apt's one source is the archive's, on disk; nothing names a mirror (the snapshot was down most of 2026-11-04)",
+                'echo "deb [trusted=yes] file:$DEPS/debs ./" > /etc/apt/sources.list' in bootstrap
+                and "/etc/apt/sources.list.d/*.sources" in bootstrap and "ubuntu.com" not in bootstrap
+                and download < bootstrap.index("> /etc/apt/sources.list") < bootstrap.index('"${PACKAGES[@]}"')))
+    out.append(("bootstrap: a failed index stops it, by name",
+                bootstrap.count("apt-get update -qq -o APT::Update::Error-Mode=any") == 2 and "apt-get update -qq\n" not in bootstrap))
     out.append(("bootstrap: every download by version and sha256, nothing else fetched, the runner's version pinned",
-                all(v in bootstrap for v in ("RUNNER_VERSION=", "RUNNER_SHA256=", "NODE_SHA256=", "RUSTUP_SHA256=", "GLSLANG_SHA256="))
-                and bootstrap.count("  fetch ") == 0 or bootstrap.count("fetch \"https://") == 4))
+                all(v in bootstrap for v in ("RUNNER_VERSION=", "RUNNER_SHA256=", "NODE_SHA256=", "RUSTUP_SHA256=", "NODE_DEPS_SHA256="))
+                and bootstrap.count("fetch \"https://") == 3 and bootstrap.count('fetch "$NODE_DEPS_URL" "$NODE_DEPS_SHA256"') == 1
+                and "cmake -S" not in bootstrap and "KhronosGroup" not in bootstrap))
     as_runner = next(l for l in bootstrap.splitlines() if l.startswith("as_runner()"))
     out.append(("bootstrap: its checks see the PATH the job will have, where glslang 14 comes before Ubuntu's 11.8",
                 "/usr/local/bin:" in as_runner and as_runner.index("/usr/local/bin") < as_runner.index("/usr/bin")
@@ -1174,47 +1179,53 @@ def runner_case(leaks) -> dict:
                 "mounts_left": home.is_symlink() or toolcache.is_symlink() or tmp_dir.is_symlink()}
 
 
-def apt_update_case(failures, tries=6):
-    """node_bootstrap.sh's apt_update with apt-get answering 502 `failures` times, then
-    well: (exit code, how many times apt-get ran, what it said)."""
-    bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
-    section = bootstrap[bootstrap.index("APT_TRIES="):bootstrap.index('echo "== apt, snapshot')]
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        count = tmp / "count"
-        count.write_text("0")
-        fake_bin = tmp / "bin"
-        fake_bin.mkdir()
-        fakes = {"apt-get": '#!/bin/bash\nn=$(( $(cat "%s") + 1 )); echo $n > "%s"\n'
-                            '[ $n -gt %d ] || { echo "E: Failed to fetch ... 502  Bad Gateway" >&2; exit 100; }\n' % (count, count, failures),
-                 "sleep": "#!/bin/bash\nexit 0\n"}
-        for name, text in fakes.items():
-            (fake_bin / name).write_text(text, newline="\n")
-            (fake_bin / name).chmod(0o755)
-        script = 'set -euo pipefail\ndie() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }\n' + section + "\napt_update\n"
-        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
-                              env={"PATH": "%s%s%s" % (fake_bin, os.pathsep, os.environ["PATH"]), "APT_TRIES": str(tries)})
-        return done.returncode, int(count.read_text()), done.stderr
-
-
-def group_apt_retry():
-    """The snapshot service answered 502 for a while and the node job failed at once
-    (candidate 41824950368): the indexes are asked again for a few minutes."""
+def group_node_deps():
+    """The node's packages come from one archive of ours, by name and sha256: Ubuntu's
+    snapshot service, where they came from at every start, was down for most of
+    2026-11-04 (503, 502) and three candidates could not prepare their node."""
     out = []
-    if not sys.platform.startswith("linux"):
-        print("skip  apt retry: bash with the bootstrap's commands, Linux only")
-        return out
-    code, ran, said = apt_update_case(2)
-    out.append(("apt: two 502s, then the indexes come: it goes on, having asked three times, and says why it waited",
-                code == 0 and ran == 3 and "try 1 of 6" in said and "try 2 of 6" in said))
-    code, ran, said = apt_update_case(99)
-    out.append(("apt: the service never comes back: it stops after its tries, by name, not on the first 502",
-                code != 0 and ran == 6 and "did not download in 6 tries" in said))
     bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
-    out.append(("apt: both index downloads go through it, and the waits add up to minutes",
-                bootstrap.count("\napt_update\n") == 2
-                and "apt-get update" not in bootstrap.split("apt_update() {")[1].split("\n}")[1]
-                and 'APT_WAIT_S="${APT_WAIT_S:-30}"' in bootstrap and 'APT_TRIES="${APT_TRIES:-6}"' in bootstrap))
+    build = (HERE / "node_deps_build.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
+    name = re.search(r"^NODE_DEPS=(node-deps-\d{8}-[0-9a-f]{12})$", bootstrap, re.M)
+    sha = re.search(r"^NODE_DEPS_SHA256=([0-9a-f]{64})$", bootstrap, re.M)
+    out.append(("node deps: the archive is named and pinned by sha256, and its URL is this repository's release of that name",
+                bool(name and sha) and "feder-cr/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar" in bootstrap))
+    out.append(("node deps: the builder names it as the bootstrap reads it, a plain tar a fresh node can open",
+                'NAME="node-deps-$(date -u +%Y%m%d)-$HASH"' in build and '-cf "$OUT/$NAME.tar"' in build and "zstd" not in build))
+    out.append(("node deps: glslang comes built in the archive, at the version and from the source the bootstrap pins",
+                'cp -a "$DEPS/glslang-root/usr/local/." /usr/local/' in bootstrap
+                and "GLSLANG_VERSION=\"$(value GLSLANG_VERSION)\"" in build and "GLSLANG_SHA256=\"$(value GLSLANG_SHA256)\"" in build
+                and "does not match its sha256" in build))
+    if not sys.platform.startswith("linux"):
+        print("skip  node deps: bash, Linux only")
+        return out
+    # The builder reads the bootstrap's list as bash reads it: the same packages, the
+    # comments out, nothing more and nothing less.
+    read = next(line for line in build.splitlines() if line.startswith("mapfile -t PACKAGES"))
+    script = "\n".join([
+        'BOOT="%s"' % (HERE / "node_bootstrap.sh"),
+        'source <(sed -n "/^PACKAGES=(/,/^)/p" "$BOOT")',
+        'WANT=("${PACKAGES[@]}"); unset PACKAGES',
+        read,
+        '[ "${WANT[*]}" = "${PACKAGES[*]}" ] && echo "same ${#PACKAGES[@]}"'])
+    done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    said = done.stdout.split()
+    out.append(("node deps: the builder's list is the bootstrap's (%s)" % (done.stdout.strip() or done.stderr.strip()[-200:]),
+                len(said) == 2 and said[0] == "same" and int(said[1]) > 30))
+    # The bootstrap's own fetch, against an archive that is not the pinned one: it stops, by name.
+    begin = bootstrap.index("fetch() {")
+    fetch = bootstrap[begin:bootstrap.index("\n}\n", begin) + 3]
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "node-deps.tar"
+        bad.write_bytes(b"not the archive")
+        script = "\n".join([
+            "set -euo pipefail",
+            'die() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }',
+            fetch,
+            'fetch "file://%s" "%s" "%s/got.tar"' % (bad, "0" * 64, tmp)])
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    out.append(("node deps: an archive that is not the pinned one stops the bootstrap, by name",
+                done.returncode != 0 and "does not match its sha256" in done.stderr))
     return out
 
 
@@ -1989,7 +2000,7 @@ def host_key_section(serves):
             victim.wait()
 
 
-GROUPS = [group_apt_retry, group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
+GROUPS = [group_node_deps, group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
           group_lost_either_order, group_two_legs, group_relaunch, group_stuck, group_watch_stages, group_sweep, group_secrets,
           group_probe, group_runner, group_cancelled_by_hand, group_runner_clock, group_same_code,
           group_workflow_steps, group_any_shape, group_clear_verdicts, group_dispatch_once, group_lingering_and_silence,
