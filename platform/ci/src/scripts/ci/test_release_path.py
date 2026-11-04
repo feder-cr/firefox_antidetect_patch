@@ -423,6 +423,7 @@ def group_build_steps(doc) -> list:
             sys.stderr = sink
         env = {k: v for k, v in os.environ.items() if k != "GLIBC_TUNABLES"}
         said = subprocess.run([str(tmp / "a" / "ld.lld"), "-o", "libxul.so", "a b"], env=env, capture_output=True, text=True).stdout.strip()
+        other = subprocess.run([str(tmp / "a" / "ld.lld"), "-o", "../../dist/bin/libmozsandbox.so", "a"], env=env, capture_output=True, text=True).stdout.strip()
         out.append(("huge pages: Linux's through COMPILER_PATH, the real linker gets the arguments and the tunable, and keeps its name",
                     linux == ["COMPILER_PATH=%s" % (tmp / "a")]
                     and said == "glibc.malloc.hugetlb=1 %s --threads=48 --time-trace --lto-partitions=12 -o libxul.so a b" % (clang_bin / "ld.lld")))
@@ -436,6 +437,10 @@ def group_build_steps(doc) -> list:
         # generation on one thread. Federico chose partitions (04/11): as many as the threads of
         # the L3 group the link is pinned to, on both legs, and never through configure.
         link_env = steps["Build"]["env"]["_LINK_"]
+        # Partitions on every link broke libmozsandbox.so (SyscallAsm, a hidden symbol in module
+        # assembly, candidate 41918300545): libxul's link only, the one that takes minutes.
+        out.append(("lto partitions: on libxul's link only on Linux, not on libmozsandbox.so's, whose module assembly they break (%s)" % other,
+                    "--lto-partitions" not in other and other.endswith("--threads=48 --time-trace -o ../../dist/bin/libmozsandbox.so a")))
         out.append(("lto partitions: 12 on the Linux node's ld.lld and on the Windows node's lld-link (_LINK_), none on a hosted runner, none in the mozconfig",
                     said.split()[4] == "--lto-partitions=12" and linker_shim.LTO_PARTITIONS == 12
                     and e.render(link_env, win_ctx) == "/opt:lldltopartitions=12" and "time-trace" not in link_env

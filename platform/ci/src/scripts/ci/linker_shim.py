@@ -49,8 +49,17 @@ THP_ENABLED = Path("/sys/kernel/mm/transparent_hugepage/enabled")
 THP_DEFRAG = Path("/sys/kernel/mm/transparent_hugepage/defrag")
 
 
-def script(real: Path, first_args: str = "") -> str:
-    return '#!/bin/sh\nGLIBC_TUNABLES=%s\nexport GLIBC_TUNABLES\nexec "%s" %s"$@"\n' % (TUNABLE, real, first_args)
+def script(real: Path, first_args: str = "", libxul_args: str = "") -> str:
+    """The shim: the tunable, `first_args` on every link, `libxul_args` on libxul's only.
+    Partitions on every link broke libmozsandbox.so: SyscallAsm, a hidden symbol defined
+    in module-level assembly (syscall.cc), is not seen across partitions (candidate
+    41918300545, "undefined hidden symbol"). The other links are short anyway."""
+    pick = ""
+    if libxul_args:
+        pick = ('XUL=""\nprev=""\nfor a in "$@"; do\n  [ "$prev" = "-o" ] && case "$a" in *libxul.so) XUL="%s" ;; esac\n'
+                '  prev="$a"\ndone\n' % libxul_args.strip())
+    return '#!/bin/sh\nGLIBC_TUNABLES=%s\nexport GLIBC_TUNABLES\n%sexec "%s" %s%s"$@"\n' % (
+        TUNABLE, pick, real, first_args, "$XUL " if libxul_args else "")
 
 
 def _read(path: Path) -> str:
@@ -64,8 +73,8 @@ def write(out: Path, clang_bin: Path = Path.home() / ".mozbuild" / "clang" / "bi
     """The stand-in for ld.lld; the lines for $GITHUB_ENV."""
     out.mkdir(parents=True, exist_ok=True)
     path = out / "ld.lld"
-    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace --lto-partitions=%d " % LTO_PARTITIONS
-    path.write_text(script(clang_bin / "ld.lld", first), encoding="utf-8", newline="\n")
+    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace "
+    path.write_text(script(clang_bin / "ld.lld", first, "--lto-partitions=%d" % LTO_PARTITIONS), encoding="utf-8", newline="\n")
     path.chmod(0o755)
     print("huge pages for the link: %s, enabled: %s, defrag: %s" % (TUNABLE, _read(THP_ENABLED), _read(THP_DEFRAG)), file=sys.stderr)
     return ["COMPILER_PATH=%s" % out]
