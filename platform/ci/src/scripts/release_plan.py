@@ -22,9 +22,10 @@ since 2026-11-03 (Federico's decision): the cache's keys are the hash of the
 preprocessed source, the arguments and the compiler. `--compile-cache off` asks
 for a cold build.
 
-Who compiles is no choice: the two x86_64 legs on a build node, every run,
-candidates and releases alike (scripts/ci/theta_node.py); linux-arm64 on GitHub,
-because the node is x86; gates and tests always on GitHub. So the plan has no say.
+Who compiles is no choice: the two legs, Linux and Windows x86_64, on a build node,
+every run, candidates and releases alike (scripts/ci/theta_node.py); gates and tests
+always on GitHub. No linux-arm64 from firefox-56 on (Federico, 2026-11-04), and which
+legs a run builds is no choice either: always both. So the plan has no say.
 
 Where a run starts from is checked here too (`--ref-type`, release.yml's own). An
 actions/cache entry belongs to its ref, and a run reads only its own ref's and the

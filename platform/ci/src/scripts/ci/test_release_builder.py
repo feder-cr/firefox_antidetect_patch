@@ -2,8 +2,8 @@
 """Who compiles what in release.yml, read from the file itself.
 
 The x86_64 legs compile on a build node and nowhere else: no input chooses, no
-expression falls back, no leg names a hosted runner. linux-arm64 stays on GitHub's
-runners, because the node is x86. Gates and tests stay on GitHub's runners. And the
+expression falls back, no leg names a hosted runner. No linux-arm64 from firefox-56 on
+(Federico, 2026-11-04): two legs, always both. Gates and tests stay on GitHub's runners. And the
 guards around that: secrets behind an environment, labels of one run and one leg, no
 workflow on our branches that a pull request starts reaching them, no cache entry the
 node writes and GitHub's runners read.
@@ -177,12 +177,6 @@ def printed_names(source: str) -> list:
     return found
 
 
-def same_entry(a: str, b: str) -> bool:
-    """Whether a key or prefix can reach an entry of the other: up to the first expression."""
-    a, b = a.split("*")[0], b.split("*")[0]
-    return a.startswith(b) or b.startswith(a)
-
-
 def group_no_fallback(doc, jobs, build, steps) -> list:
     out = []
     inputs = doc[True]["workflow_dispatch"]["inputs"]
@@ -191,9 +185,9 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
     text = WORKFLOW.read_text(encoding="utf-8")
     out.append(("no fallback: nothing in the workflow reads one", "outputs.builder" not in text and "inputs.builder" not in text and "--builder" not in text))
     out.append(("no fallback: an x86_64 leg names no runner at all, so there is nothing for it to fall back to",
-                {l.leg: l.runner for l in legs.LEGS} == {"linux-x86_64": "", "linux-arm64": "ubuntu-24.04-arm", "win-x86_64": ""}))
-    out.append(("no fallback: x86_64 is on the node, arm64 is not, and the matrix tells the job",
-                {l.leg: l.node for l in legs.LEGS} == {"linux-x86_64": True, "linux-arm64": False, "win-x86_64": True}
+                {l.leg: l.runner for l in legs.LEGS} == {"linux-x86_64": "", "win-x86_64": ""}))
+    out.append(("no fallback: both legs on the node, no arm64, and the matrix tells the job",
+                {l.leg: l.node for l in legs.LEGS} == {"linux-x86_64": True, "win-x86_64": True}
                 and all("node" in e for e in json.loads(legs.matrix("1.0"))["include"])))
     out.append(("no fallback: the legs' runs-on has one way to a hosted runner: the matrix's own, which the x86_64 legs do not have, and it ends empty",
                 build.get("runs-on") == RUNS_ON))
@@ -206,9 +200,9 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
         for attempt in ("1", "2"):
             results[(leg.leg, attempt)] = leg.runner or (attempt == "1" and "%s-%s" % (prefix, leg.leg)) or ""
     out.append(("no fallback: an x86_64 leg gets the label its runner was registered with, or nothing on a rerun, never a hosted runner",
-                all(not HOSTED.match(v) for (leg, _), v in results.items() if leg != "linux-arm64")
+                all(not HOSTED.match(v) for v in results.values())
                 and all(results[(leg, "1")] == theta_node.leg_label("5", "1", leg) for leg in theta_node.node_legs())
-                and results[("win-x86_64", "2")] == "" and results[("linux-arm64", "2")] == "ubuntu-24.04-arm"))
+                and results[("win-x86_64", "2")] == "" and results[("linux-x86_64", "2")] == ""))
     out.append(("runs-on: reads no output of a matrix job, which overwrite each other: nothing in the workflow does",
                 "needs.node.outputs" not in text and "outputs" not in jobs["node"]
                 and jobs["plan"]["outputs"].get("attempt") == "${{ github.run_attempt }}"))
@@ -235,20 +229,18 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
 
 
 def group_cache_sharing(doc, jobs, build, steps) -> list:
-    """Finding 4: is anything the node writes read by the hosted arm64 leg?"""
+    """Finding 4: is anything the node writes read on GitHub's runners? No build leg runs
+    there since linux-arm64 left (firefox-56), and no other workflow restores a cache."""
     out = []
-    arm = next(l for l in legs.LEGS if not l.node)
-    arm_keys = cache_keys(doc, arm, "ARM64", False)
     node_keys = set()
     for leg in legs.LEGS:
-        if leg.node:
-            node_keys |= cache_keys(doc, leg, "X64", True)
-    out.append(("cache: both sides have keys to compare", len(arm_keys) >= 2 and len(node_keys) >= 4))
+        node_keys |= cache_keys(doc, leg, "X64", True)
+    out.append(("cache: the node legs have their keys", len(node_keys) >= 4))
     out.append(("cache: the keys a step computes start with their kind and their leg",
                 'key=toolchains-${{ matrix.leg }}-' in steps.get("Toolchains - their versions", {}).get("run", "")
                 and 'key=lavapipe-${{ matrix.leg }}-' in steps.get("WebGPU's Vulkan driver (linux-x86_64) - its inputs", {}).get("run", "")))
-    clash = [(a, n) for a in arm_keys for n in node_keys if same_entry(a, n)]
-    out.append(("cache: the arm64 leg, on GitHub's runners, reads and writes no entry the node reads or writes: no executable of the node's runs there (%s)" % clash, not clash))
+    out.append(("cache: no build leg on GitHub's runners, so none reads an entry the node writes: no executable of the node's runs there",
+                not [l.leg for l in legs.LEGS if not l.node]))
     all_files = "\n".join(p.read_text(encoding="utf-8") for p in WORKFLOWS.glob("*.yml") if p.name != "release.yml")
     out.append(("cache: and no other workflow restores a cache at all", "actions/cache" not in all_files))
     lavapipe = steps.get("WebGPU's Vulkan driver (linux-x86_64) - built before", {})
@@ -267,8 +259,7 @@ def group_cache_sharing(doc, jobs, build, steps) -> list:
                 and "cache_rules.py worth" in steps.get("Compile cache - is this leg's upload worth it", {}).get("run", "")))
     binary = steps.get("Compile cache - the sccache binary, if built before", {})
     out.append(("cache: the node's sccache binary is its own entry: glibc 2.35 cannot run one built on 24.04",
-                any(k.startswith("sccache-bin-") and "-node" in k for k in node_keys)
-                and any(k.startswith("sccache-bin-") and "-node" not in k for k in arm_keys)))
+                any(k.startswith("sccache-bin-") and "-node" in k for k in node_keys)))
     text = WORKFLOW.read_text(encoding="utf-8")
     out.append(("cache: the comment on sccache's key says what its source does", "sccache's version\n          # enters their key" not in text.replace("\r\n", "\n")
                 and "neither sccache's version nor" in text))
@@ -424,7 +415,7 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
     out.append(("watch: each survives a cancel and a crash of the one before; none follows a verdict",
                 all(jobs[n]["if"].startswith("always()") and "needs.node.result == 'success'" in jobs[n]["if"] for n in WATCHES)
                 and "needs.watch-1.outputs.verdict" in jobs["watch-2"]["if"]))
-    out.append(("watch: it needs the node job only, so it does not wait for arm64", jobs["watch-1"]["needs"] == ["plan", "node"]))
+    out.append(("watch: it needs the node job only, so it does not wait for the gates", jobs["watch-1"]["needs"] == ["plan", "node"]))
     step = next(s for s in jobs["watch-1"]["steps"] if s.get("id") == "watch")
     out.append(("watch: its verdict survives its failure, and a crash is not swallowed", step.get("shell") == "bash" and 'tee -a "$GITHUB_OUTPUT"' in step["run"]))
     env = step["env"]
@@ -437,7 +428,7 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
                 theta_node.relaunch_title("{0}") in doc.get("run-name", "") and "relaunch_of" in doc[True]["workflow_dispatch"]["inputs"]))
     stop = jobs["stop-node"]
     delete = next(s for s in stop["steps"] if " off " in s.get("run", ""))
-    out.append(("stop: follows a cancel and every watch, and does not wait for arm64",
+    out.append(("stop: follows a cancel and every watch, and does not wait for the gates",
                 stop["if"].startswith("always()") and stop["needs"] == ["plan", "node"] + list(WATCHES) and delete["if"] == "always()"))
     out.append(("stop (finding 1): a watch that crashed is no reason to delete: with the node job done, only if the legs have finished",
                 delete["env"]["ONLY_IF"] == "${{ needs.node.result == 'success' && '--if-legs-done' || '' }}" and "$ONLY_IF" in delete["run"]))

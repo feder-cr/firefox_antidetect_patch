@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# release.yml — build all 3 patched-Firefox targets (Win + Linux x2) at $0 and publish them as
+# release.yml — build both patched-Firefox targets (Windows and Linux, x86_64) and publish them as
 # DRAFT GitHub Release assets, named per the wrapper contract (constants.ARCHIVE_NAME).
 # DRAFT on purpose: a human runs the realness gate and only THEN un-drafts + bumps
 # BINARY_VERSION. Nothing auto-ships (issue #14 lesson).
@@ -23,8 +23,8 @@
 # (scripts/release_plan.py), and every job reads its outputs.
 #
 # WHO COMPILES: the two x86_64 legs ONLY on Latitude.sh servers, at the same time, each on its
-# own, on a single-job runner with a label of its own. linux-arm64 on GitHub's
-# runners, because the nodes are x86. Gates and tests stay on GitHub's runners, with the
+# own, on a single-job runner with a label of its own. No linux-arm64 from firefox-56 on
+# (Federico, 2026-11-04): always both legs, no choice. Gates and tests stay on GitHub's runners, with the
 # binaries from the artifacts. `node` turns the nodes on: if either cannot, the run fails.
 # `watch-*` turn each node off as its leg ends, and re-launch the run once if a machine is
 # lost; `stop-node` makes sure both are off. All on GitHub's runners with the API key, which
@@ -164,8 +164,8 @@ jobs:
           echo "matrix=$(python3 scripts/ci matrix)" | tee -a "$GITHUB_OUTPUT"
 
   # Turns each leg's node on, on its own machine (scripts/ci/theta_node.py). If either
-  # cannot, the run fails: nothing else compiles an x86_64 leg, the build is skipped, the
-  # arm64 leg with it, and stop-node turns off what did come up. fail-fast is off so that
+  # cannot, the run fails: nothing else compiles a leg, the build is skipped, and
+  # stop-node turns off what did come up. fail-fast is off so that
   # the run names every machine it could not have. The legs are test_release_builder.py's
   # to hold to scripts/ci/legs.py.
   node:
@@ -194,11 +194,10 @@ jobs:
   build:
     name: build-${{ matrix.leg }}
     needs: [plan, node]
-    # The label of this run and attempt, one per leg, or the matrix's own runner for
-    # linux-arm64. An x86_64 leg names no runner (scripts/ci/legs.py), so there is
-    # nothing else for it to run on. A rerun of failed jobs reuses the plan's outputs, with
-    # the nodes deleted: empty, and GitHub drops the whole matrix, the arm64 leg and the legs
-    # that were green too. `rerun-refused` says so. A leg that failed is run again with a
+    # The label of this run and attempt, one per leg. A leg names no runner
+    # (scripts/ci/legs.py), so there is nothing else for it to run on. A rerun of failed
+    # jobs reuses the plan's outputs, with the nodes deleted: empty, and GitHub drops the
+    # whole matrix, the legs that were green too. `rerun-refused` says so. A leg that failed is run again with a
     # full re-run, which turns new nodes on.
     runs-on: ${{ matrix.runner || (needs.plan.outputs.attempt == github.run_attempt && format('{0}-{1}', needs.plan.outputs.node_label, matrix.leg)) || '' }}
     timeout-minutes: 350
@@ -559,8 +558,7 @@ jobs:
         with:
           path: ~/.cache/sccache-bin
           # The node's binary has an entry of its own, even on the same Ubuntu as GitHub's runners. Compile hits do not depend on it: neither sccache's version nor
-          # its path enters their key. No key here is one the arm64 leg reads
-          # (test_release_builder.py), so nothing the node writes runs on GitHub's runners.
+          # its path enters their key.
           key: sccache-bin-${{ runner.os }}-${{ runner.arch }}${{ runner.environment != 'github-hosted' && '-node' || '' }}-v0.18.0-${{ hashFiles('scripts/ci/sccache/*.patch') }}
       - name: Compile cache - build the one sccache this build uses
         if: needs.plan.outputs.compile_cache == 'gha'
@@ -712,8 +710,7 @@ jobs:
       # version decided limits and raster bytes. Built from pinned sources and
       # our patches with this build's clang and sysroot, into dist/bin before
       # the gtests and the package; it is kept by its inputs, unless the run asks
-      # for a cold build. x86_64 only: arm64 is not a priority, and without the
-      # file WebGPU answers null there, never with a host driver.
+      # for a cold build. Linux only: Windows has its own WARP.
       # It needs nothing of the build but its clang and sysroot, so it starts when the
       # compiles are over and libxul links: on the 47 cores the link does not use, at nice
       # 19 so the link wins, 24 GB of link and 9.5 of it. Beside the compile it would add
@@ -1108,7 +1105,7 @@ jobs:
         env:
           SAID: >-
             A re-run of failed jobs cannot bring a leg back: its node is gone, so the
-            build matrix vanished, arm64 and the green legs too. Re-run ALL jobs, which
+            build matrix vanished, the green legs too. Re-run ALL jobs, which
             turns a new node on and rebuilds from the cache:
             gh run rerun ${{ github.run_id }}
         run: |
@@ -1116,7 +1113,7 @@ jobs:
           echo "**$SAID**" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
-  # Follows both legs. It needs `node` only, so it does not wait for the arm64 leg, and
+  # Follows both legs. It needs `node` only, so it does not wait for the gates, and
   # survives a cancel. It turns each node off as its leg ends. A machine lost mid-build
   # leaves the other leg to finish and save its cache, then re-launches the whole run once.
   # Two jobs in a row, each stopping by itself in time: GitHub ends one of its jobs at 6
@@ -1191,7 +1188,7 @@ jobs:
             --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
 
   # Makes sure both nodes are off once the watch is over, not when the whole run is: the
-  # arm64 leg on GitHub's runners may take hours more, and a node is paid by the hour. Each
+  # gates and tests on GitHub's runners take longer, and a node is paid by the hour. Each
   # goes whatever happens to the other. When the node job did its work this asks GitHub
   # first: a watch that crashed says nothing about a leg, and a healthy build is not deleted
   # for that. A node it leaves on, the sweeper deletes as soon as its leg has finished.

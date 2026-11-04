@@ -43,13 +43,13 @@ UPSTREAM_SOURCE = ROOT / "browser" / "config" / "upstream_source.txt"
 TC = "https://firefox-ci-tc.services.mozilla.com/api"
 
 #: release.yml's legs -> Mozilla's build platform names.
-PLATFORMS = {"win-x86_64": "win64", "linux-x86_64": "linux64", "linux-arm64": "linux64-aarch64"}
+PLATFORMS = {"win-x86_64": "win64", "linux-x86_64": "linux64"}
 
 #: What Mozilla's own CI builds with LTO: lto-pgo.configure turns MOZ_LTO=cross
 #: into FULL LTO when PGO and MOZ_AUTOMATION are on and the target is x86_64
 #: Windows or Linux, and into thin LTO otherwise. We do not set MOZ_AUTOMATION
 #: (it changes far more than LTO), so the mode the retail got is asked for.
-LTO = {"win-x86_64": "full,cross", "linux-x86_64": "full,cross", "linux-arm64": "cross"}
+LTO = {"win-x86_64": "full,cross", "linux-x86_64": "full,cross"}
 
 
 class UpstreamError(Exception):

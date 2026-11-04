@@ -1,4 +1,7 @@
-"""The three legs, as data.
+"""The two legs, as data: Linux and Windows, x86_64, both on the build node.
+
+linux-arm64 is gone from firefox-56 on (Federico, 2026-11-04): no arm64 archive is
+built or published. The seal still reads an arm64 name, for the old tags that have one.
 
 Every leg runs the same steps; what differs is here and nowhere else. The
 asset names are derived from browser/config/version_display.txt, the version
@@ -27,7 +30,7 @@ class Leg:
     # ubuntu-24.04 declares it, or configure stops with "Don't know how to
     # translate x86_64-pc-linux-gnu for rustc" (the image's C compiler reports
     # that name). win-x86_64 cross-compiles from that runner, so it needs it
-    # too; ubuntu-24.04-arm reports aarch64, which translates by itself.
+    # too.
     host: str = ""
     target: str = ""
     extra_pkgs: str = ""
@@ -44,8 +47,6 @@ class Leg:
 LEGS = (
     Leg("linux-x86_64", "", "linux", "x86_64-unknown-linux-gnu",
         host="x86_64-unknown-linux-gnu", node=True),
-    # The node is x86, so this one compiles on GitHub's runners.
-    Leg("linux-arm64", "ubuntu-24.04-arm", "linux", "aarch64-unknown-linux-gnu"),
     Leg("win-x86_64", "", "win", "x86_64-pc-windows-msvc",
         host="x86_64-unknown-linux-gnu", target="x86_64-pc-windows-msvc",
         extra_pkgs="msitools p7zip-full zip libc6-i386 lib32gcc-s1 lib32stdc++6", node=True),

@@ -59,7 +59,7 @@ ac_add_options --disable-debug-symbols
 
 
 def fake_pgo(leg, out):
-    lto = {"win-x86_64": "full,cross", "linux-x86_64": "full,cross", "linux-arm64": "cross"}[leg]
+    lto = {"win-x86_64": "full,cross", "linux-x86_64": "full,cross"}[leg]
     return ["ac_add_options --enable-profile-use=cross",
             "ac_add_options --with-pgo-profile-path=%s/merged.profdata" % out,
             "ac_add_options --with-pgo-jarlog=%s/en-US.log" % out,
@@ -75,7 +75,6 @@ def expected(leg, cache):
     lines += fake_pgo(leg, "pgo")
     lines += ["export CFLAGS=-Wno-backend-plugin", "export CXXFLAGS=-Wno-backend-plugin"]
     lines += {"linux-x86_64": ["ac_add_options --host=x86_64-unknown-linux-gnu"],
-              "linux-arm64": [],
               "win-x86_64": ["ac_add_options --target=x86_64-pc-windows-msvc",
                              "ac_add_options --host=x86_64-unknown-linux-gnu",
                              "ac_add_options --with-redist"]}[leg]
@@ -154,14 +153,16 @@ def main() -> int:
     names = {l.leg: l.asset("157.0.1") for l in legs.LEGS}
     cases.append(("asset names as the release has always published them", names == {
         "linux-x86_64": "firefox-157.0.1-stealth-linux-x86_64.tar.gz",
-        "linux-arm64": "firefox-157.0.1-stealth-linux-arm64.tar.gz",
         "win-x86_64": "firefox-157.0.1-stealth-win-x86_64.zip"}))
+    # Federico, 2026-11-04: no linux-arm64 from firefox-56 on, and always both legs.
+    cases.append(("two legs, Linux and Windows x86_64, both on the node, no arm64",
+                  [l.leg for l in legs.LEGS] == ["linux-x86_64", "win-x86_64"] and all(l.node and not l.runner for l in legs.LEGS)))
     inc = json.loads(legs.matrix("157.0.1"))["include"]
     need = {"leg", "runner", "family", "host", "target", "rust_target", "extra_pkgs", "asset"}
     cases.append(("the matrix carries every field release.yml reads",
-                  len(inc) == 3 and all(need <= set(e) for e in inc)))
+                  len(inc) == 2 and all(need <= set(e) for e in inc)))
 
-    for leg in ("linux-x86_64", "linux-arm64", "win-x86_64"):
+    for leg in ("linux-x86_64", "win-x86_64"):
         for cache in ("gha", "off"):
             got = mozconfig.active(compose(leg, cache))
             cases.append(("the decided flags, %s, compile_cache=%s" % (leg, cache), got == expected(leg, cache)))
@@ -236,7 +237,9 @@ def main() -> int:
         cases.append(("a phase that never ended is a row",
                       table[("linux-x86_64", "package")][2].startswith("⏹️")))
         cases.append(("a failed phase names why", "KILLED" in table[("win-x86_64", "build")][2]))
-        cases.append(("a leg that never started is a row", table[("linux-arm64", "-")][2] == "⚪ never started"))
+        (bad / "events.jsonl").unlink()
+        cases.append(("a leg that never started is a row",
+                      {(r[0], r[1]): r for r in report.rows(root)}[("win-x86_64", "-")][2] == "⚪ never started"))
 
     import re
     literal = re.compile(r"firefox-\d+(\.\d+)*-stealth-")

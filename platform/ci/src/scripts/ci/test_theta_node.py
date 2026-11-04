@@ -452,7 +452,7 @@ def group_no_fallback():
         refused = False
     except SystemExit as exc:
         refused = exc.code != 0
-    out.append(("no fallback: the command takes no leg, so nothing can ask it for an arm64 node, and the node's legs are the x86_64 ones",
+    out.append(("no fallback: the command takes no leg, so nothing can ask it for another (no linux-arm64 from firefox-56 on), and the node's legs are the two x86_64 ones",
                 refused and t.node_legs() == [L, W]))
     source = (HERE / "theta_node.py").read_text(encoding="utf-8")
     out.append(("no fallback: nothing in the script names a builder or sends a leg to GitHub's runners",
@@ -1008,7 +1008,7 @@ def group_sweep():
     gone, api = swept([node], {"5": "in_progress"}, jobs=[RUN_L, GREEN_W])
     out.append(("sweep: the same the other way round", gone == [] and api.deleted == []))
     gone, api = swept([node], {"5": "in_progress"}, jobs=[GREEN_L, GREEN_W])
-    out.append(("sweep: both legs over, the run still going on with arm64: the node goes", gone == ["ci5a1x"] and api.deleted == ["d1"]))
+    out.append(("sweep: both legs over, the run still going on with its gates: the node goes", gone == ["ci5a1x"] and api.deleted == ["d1"]))
     gone, api = swept([node], {"5": "in_progress"}, jobs=[])
     out.append(("sweep: no legs listed yet is not legs finished", gone == [] and api.deleted == []))
     gone, api = swept([node], {"5": 500})
@@ -1345,8 +1345,8 @@ def group_cancelled_by_hand():
     result, gh, api, _, _, clock = watched([[DEAD_L, QUEUE_CANCELLED_W]], answering=False)
     out.append(("cancel: a machine lost before it and a leg cancelled in the queue: the same, at once, the node off",
                 result == "done" and gh.dispatches == [] and clock.now == 0 and api.deleted == ["dpl_x"]))
-    arm = job("build-linux-arm64", conclusion="cancelled", steps=("cancelled",), runner="GitHub Actions 7")
-    result, gh, _, _, _, clock = watched([[GREEN_L, DEAD_W, arm]], answering=False)
+    hosted = job("gtest-linux-x86_64", conclusion="cancelled", steps=("cancelled",), runner="GitHub Actions 7")
+    result, gh, _, _, _, clock = watched([[GREEN_L, DEAD_W, hosted]], answering=False)
     out.append(("cancel: only a job on GitHub's runners shows it: no re-launch, at once", result == "done" and gh.dispatches == [] and clock.now == 0))
     result, gh, api, _, _, _ = watched([[RUN_L, QUEUE_CANCELLED_W]], nodes="", answering=False)
     out.append(("cancel: a leg still running at the limit, the other cancelled: no re-launch, the nodes off",

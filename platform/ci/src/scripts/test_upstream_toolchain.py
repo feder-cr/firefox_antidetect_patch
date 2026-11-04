@@ -10,7 +10,7 @@
   known-good (and 8-10: Taskcluster busy is asked again, a 404 is not)
     6. the Rust release of the toolchain the retail build fetched;
     7. the profile unpacked, and the mozconfig lines with the retail's LTO mode
-       (full on x86_64, thin on arm64).
+       (full on both legs; no linux-arm64 from firefox-56 on).
 
 Run it directly: `python3 scripts/test_upstream_toolchain.py`.
 """
@@ -125,12 +125,14 @@ def main() -> int:
              refuses_http(lambda: busy_then(404, 1))),
         ]
         lines = u.pgo("win-x86_64", out, fake(), SOURCE)
-        arm = u.pgo("linux-arm64", out, fake(), SOURCE)
+        linux = u.pgo("linux-x86_64", out, fake(), SOURCE)
         cases.append(("the profile unpacked, with the retail's LTO mode",
                       (out / "merged.profdata").read_bytes() == b"PROF"
                       and (out / "en-US.log").read_bytes() == b"LOG"
                       and lines[-1] == "ac_add_options --enable-lto=full,cross"
-                      and arm[-1] == "ac_add_options --enable-lto=cross"))
+                      and linux[-1] == "ac_add_options --enable-lto=full,cross"))
+        cases.append(("no linux-arm64 leg from firefox-56 on: nothing to ask the retail for",
+                      sorted(u.PLATFORMS) == ["linux-x86_64", "win-x86_64"] and sorted(u.LTO) == sorted(u.PLATFORMS)))
     failures = 0
     for name, ok in cases:
         print(("ok    " if ok else "FAIL  ") + name)

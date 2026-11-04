@@ -269,7 +269,7 @@ def group_build_steps(doc) -> list:
                 lavapipe_jobs(steps["WebGPU's Vulkan driver (linux-x86_64) - build"]["run"]) == "${CI_PARALLEL:-4}"
                 and "CI_PARALLEL=$PARALLEL" in steps["The node - compile jobs from its limits"]["run"]))
     key = steps["Compile cache - the sccache binary, if built before"]["with"]["key"]
-    hosted = e.render(key, context(environment="github-hosted", node=False, leg="linux-arm64"))
+    hosted = e.render(key, context(environment="github-hosted", node=False, leg="linux-x86_64"))
     node = e.render(key, context(environment="self-hosted"))
     out.append(("sccache binary: -node on the node, and not on GitHub's runners (%s)" % hosted, "-node" in node and "-node" not in hosted))
 
@@ -374,13 +374,14 @@ def group_build_steps(doc) -> list:
         c = context(node=node, leg=leg, environment="self-hosted" if node else "github-hosted")
         c["matrix"]["family"] = "win" if leg.startswith("win") else "linux"
         return c
-    linux_ctx, win_ctx, arm_ctx = leg_ctx("linux-x86_64", True), leg_ctx("win-x86_64", True), leg_ctx("linux-arm64", False)
+    # A Linux job on GitHub's runners: no build leg runs there since firefox-56, and none may get the stand-in.
+    linux_ctx, win_ctx, hosted_ctx = leg_ctx("linux-x86_64", True), leg_ctx("win-x86_64", True), leg_ctx("linux-x86_64", False)
     out.append(("huge pages: the stand-in on the Linux node only, before anything links",
-                e.step_runs(shim, linux_ctx) and not e.step_runs(shim, win_ctx) and not e.step_runs(shim, arm_ctx)
+                e.step_runs(shim, linux_ctx) and not e.step_runs(shim, win_ctx) and not e.step_runs(shim, hosted_ctx)
                 and names.index("The node - its linker asks for huge pages") < names.index("Build")))
     tunable = steps["Build"]["env"]["GLIBC_TUNABLES"]
     out.append(("huge pages: in the build's environment on Windows only: Linux's has it from its stand-in, GitHub's runners do not",
-                e.render(tunable, win_ctx) == "glibc.malloc.hugetlb=1" and e.render(tunable, linux_ctx) == "" and e.render(tunable, arm_ctx) == ""))
+                e.render(tunable, win_ctx) == "glibc.malloc.hugetlb=1" and e.render(tunable, linux_ctx) == "" and e.render(tunable, hosted_ctx) == ""))
     gathered = set(jobs["build"].get("env", {}))
     for s in jobs["build"]["steps"]:
         gathered |= set(s.get("env", {}))
@@ -488,7 +489,7 @@ def group_beside(doc) -> list:
     c["needs"] = {"plan": {"outputs": {"compile_cache": "gha"}}}
     out.append(("beside the link: its step waits on the node, not on GitHub's runners, not on a cancel",
                 e.step_runs(end, c, failed=True) and not e.step_runs(end, c, cancelled=True)
-                and not e.step_runs(end, dict(c, matrix={"node": False, "leg": "linux-arm64"}))))
+                and not e.step_runs(end, dict(c, matrix={"node": False, "leg": "linux-x86_64"}))))
     out.append(("beside the link: toolchains saved only once they have compiled the whole build",
                 not e.step_runs(tools, c) and e.step_runs(tools, dict(c, steps=dict(c["steps"], build={"outcome": "success", "outputs": {"compiled": "true"}})))))
     stop = steps["The node - a cancel or a failure ends what runs beside the steps"]
@@ -510,7 +511,7 @@ def group_beside(doc) -> list:
                 and at(start["name"]) < at(end["name"]) and words[words.index("--nice") + 1] == "19"
                 and words[words.index("--") + 1:words.index("--") + 5] == ["python3", "scripts/ci", "phase", "lavapipe"]))
     def lava(compiled, leg="linux-x86_64"):
-        l = dict(c, matrix={"node": leg != "linux-arm64", "leg": leg})
+        l = dict(c, matrix={"node": True, "leg": leg})
         l["steps"] = dict(c["steps"], build={"outcome": "success", "outputs": {"compiled": compiled}})
         return l
     out.append(("lavapipe: a build that stops before the link does not start it; only on the Linux leg",

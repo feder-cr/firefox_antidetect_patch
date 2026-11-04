@@ -30,8 +30,8 @@ Firefox maps it under the loader's name (SONAME
 libvulkan.so.1) and asks it for vkGetInstanceProcAddr directly
 (dom/webgpu/StealthWebGPUDeclaration.cpp).
 
-x86_64 only: arm64 is not a priority, and without the file WebGPU answers null
-there (it never falls back to a host driver).
+Linux only (Windows has WARP). Without the file WebGPU answers null (it never falls
+back to a host driver).
 """
 from __future__ import annotations
 

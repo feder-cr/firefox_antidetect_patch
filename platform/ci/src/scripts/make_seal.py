@@ -69,9 +69,11 @@ ENTRY_REL = {
 # tag STORICI (firefox-20 e giu') che il mac ce l'avevano, e senza saperlo
 # leggere quel workflow si romperebbe. Si smette di PRETENDERE il mac, non di
 # saperlo leggere.
+# linux-arm64 uscito il 2026-11-04 (Federico): da firefox-56 DUE gambe, Linux e
+# Windows x86_64. Come per il mac, arm64 resta in NAME_RE: i tag vecchi che lo hanno
+# si leggono ancora. Si smette di pretenderlo, non di saperlo leggere.
 EXPECTED = {
     ("linux", "x86_64"): "-linux-x86_64.tar.gz",
-    ("linux", "arm64"): "-linux-arm64.tar.gz",
     ("win32", "x86_64"): "-win-x86_64.zip",
 }
 NAME_RE = re.compile(r"^firefox-(?P<ver>[0-9.]+)-stealth-(?P<os>win|linux|macos)-(?P<arch>x86_64|arm64)\.(zip|tar\.gz)$")
