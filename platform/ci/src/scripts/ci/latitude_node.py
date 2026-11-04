@@ -192,8 +192,13 @@ class Client:
 
 
 class Latitude:
-    def __init__(self, project, key, transport=urllib_transport, sleep=time.sleep):
+    def __init__(self, project, key, transport=urllib_transport, sleep=time.sleep, exclude=()):
         self.project = project
+        # Sites not to take for now, from the environment's LATITUDE_EXCLUDE_SITES: on
+        # 04/11 nodes in Dallas fetched from GitHub at 1.5-2 MB/s and three candidates
+        # died or crawled there, while San Jose, at the same price, ran at full speed.
+        # A knob of the environment, so that it goes without a change of code.
+        self.exclude = {s.strip().upper() for s in exclude if s.strip()}
         self.http = Client(API, {"Authorization": "Bearer %s" % key, "Accept": "application/json",
                                  "Content-Type": "application/json", "User-Agent": "firefox-ci"},
                            [project, key], transport, sleep)
@@ -226,7 +231,7 @@ class Latitude:
             for region in (plan.get("attributes") or {}).get("regions") or []:
                 price = ((region.get("pricing") or {}).get("USD") or {}).get("hour")
                 for site in (region.get("locations") or {}).get("in_stock") or []:
-                    if price is not None:
+                    if price is not None and site.upper() not in self.exclude:
                         found.append((float(price), region.get("name") != "United States", site))
         return [(price, site) for price, _, site in sorted(found)]
 
@@ -1063,7 +1068,10 @@ def from_env():
     missing = [v for v in ("LATITUDE_API_KEY", "LATITUDE_PROJECT") if not os.environ.get(v)]
     if missing:
         raise NodeError("missing from the environment: %s" % ", ".join(missing))
-    return Latitude(os.environ["LATITUDE_PROJECT"], os.environ["LATITUDE_API_KEY"])
+    exclude = os.environ.get("LATITUDE_EXCLUDE_SITES", "").replace(",", " ").split()
+    if exclude:
+        say("sites left out by LATITUDE_EXCLUDE_SITES: %s" % ", ".join(exclude))
+    return Latitude(os.environ["LATITUDE_PROJECT"], os.environ["LATITUDE_API_KEY"], exclude=exclude)
 
 
 def github_from_env():

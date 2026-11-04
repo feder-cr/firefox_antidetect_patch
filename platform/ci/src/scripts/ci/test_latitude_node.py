@@ -340,6 +340,21 @@ def group_turning_on():
                 and sent.get("project") == PROJECT and [n["name"] for n in api.nodes] == ["ci5a1x"]))
     out.append(("on: with this run's key, which is dropped once the node has answered",
                 sent.get("ssh_keys") == ["key_ci5a1x"] and api.keys == [] and api.keys_deleted == ["key_ci5a1x"]))
+    # Dallas fetched from GitHub at 1.5-2 MB/s on 04/11 while San Jose, at the same price,
+    # ran at full speed: LATITUDE_EXCLUDE_SITES leaves sites out, and nothing else changes.
+    from unittest import mock
+    api_x = FakeLatitude()
+    api_x.regions = [("United States", 1.09, ["DAL", "SJC2"]), ("Netherlands", 1.09, ["AMS"])]
+    clock = Clock()
+    plain = t.Latitude(PROJECT, KEY, api_x, clock.sleep).sites()
+    left_out = t.Latitude(PROJECT, KEY, api_x, clock.sleep, exclude=[" dal "]).sites()
+    with mock.patch.dict(os.environ, {"LATITUDE_PROJECT": PROJECT, "LATITUDE_API_KEY": KEY, "LATITUDE_EXCLUDE_SITES": "DAL,LON2"}):
+        from_env, said = quiet(t.from_env)
+    with mock.patch.dict(os.environ, {"LATITUDE_PROJECT": PROJECT, "LATITUDE_API_KEY": KEY, "LATITUDE_EXCLUDE_SITES": ""}):
+        none_out, _ = quiet(t.from_env)
+    out.append(("sites: LATITUDE_EXCLUDE_SITES leaves sites out, the cheapest of the rest first, and says so; empty, nothing changes",
+                [s for _, s in plain] == ["DAL", "SJC2", "AMS"] and [s for _, s in left_out] == ["SJC2", "AMS"]
+                and from_env.exclude == {"DAL", "LON2"} and "DAL, LON2" in said and none_out.exclude == set()))
     out.append(("on: one runner per leg, each its own name and its own label, online",
                 [j["name"] for j in gh.jits] == ["ci5a1l", "ci5a1w"] and [j["labels"] for j in gh.jits] == [[t.leg_label(5, 1, L)], [t.leg_label(5, 1, W)]]
                 and all(j["work_folder"] == "../work" for j in gh.jits)))
@@ -1488,7 +1503,7 @@ RUNNER_ENV = {"GITHUB_RUN_ID": "5", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_REF_NAME"
               "GITHUB_REPOSITORY": "o/r", "GITHUB_OUTPUT": os.devnull}
 STEP_VALUES = {"LATITUDE_API_KEY": KEY, "LATITUDE_PROJECT": PROJECT, "RUNNER_ADMIN_TOKEN": "ADMIN", "GH_TOKEN": "TOKEN", "KIND": "release",
                "TAG": "firefox-99", "COMPILE_CACHE": "gha", "CORE_REF": "core-x", "WRAPPER_REF": "wrap-y", "GTESTS": "true",
-               "GTEST_FILTER_INPUT": "X*", "RELAUNCH_OF": "", "ONLY_IF": "--if-legs-done"}
+               "GTEST_FILTER_INPUT": "X*", "RELAUNCH_OF": "", "ONLY_IF": "--if-legs-done", "LATITUDE_EXCLUDE_SITES": ""}
 
 
 def workflow():

@@ -185,6 +185,8 @@ jobs:
         env:
           LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
           LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
+          # Sites not to take for now (latitude_node.py): a variable of the environment, empty normally.
+          LATITUDE_EXCLUDE_SITES: ${{ vars.LATITUDE_EXCLUDE_SITES }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: |
