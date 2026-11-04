@@ -438,7 +438,7 @@ def group_build_steps(doc) -> list:
         link_env = steps["Build"]["env"]["_LINK_"]
         out.append(("lto partitions: 12 on the Linux node's ld.lld and on the Windows node's lld-link (_LINK_), none on a hosted runner, none in the mozconfig",
                     said.split()[4] == "--lto-partitions=12" and linker_shim.LTO_PARTITIONS == 12
-                    and e.render(link_env, win_ctx) == "/opt:lldltopartitions=12 /time-trace"
+                    and e.render(link_env, win_ctx) == "/opt:lldltopartitions=12" and "time-trace" not in link_env
                     and e.render(link_env, linux_ctx) == "" and e.render(link_env, hosted_ctx) == ""
                     and "partitions" not in (HERE / "mozconfig.py").read_text(encoding="utf-8")))
 
