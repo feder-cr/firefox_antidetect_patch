@@ -107,6 +107,30 @@ def links(uid: int, proc: Path = PROC) -> list:
     return found
 
 
+def describe(pid: int, proc: Path = PROC) -> str:
+    """Which binary runs the link, its parent, and its options: on 04/11 the Linux link
+    ran with --time-trace and wrote no trace where lld writes one, and two processes
+    named ld.lld linked libxul at once. Object files and libraries left out, they are
+    thousands."""
+    d = proc / str(pid)
+    try:
+        exe = os.readlink(str(d / "exe"))
+    except OSError:
+        exe = "unreadable"
+    try:
+        ppid = (d / "stat").read_text(encoding="utf-8", errors="replace").rsplit(")", 1)[1].split()[1]
+    except (OSError, IndexError):
+        ppid = "?"
+    try:
+        words = [a.decode("utf-8", "replace") for a in (d / "cmdline").read_bytes().split(b"\0") if a]
+    except OSError:
+        words = []
+    options = [w for w in words[1:] if w.startswith("-") or w.startswith("/")
+               and not w.endswith((".o", ".a", ".obj", ".lib", ".rlib"))]
+    return "exe %s, parent %s, argv[0] %s, %d words, options: %s" % (
+        exe, ppid, words[0] if words else "?", len(words), " ".join(options)[:1500])
+
+
 def pin(pid: int, cpus: list, proc: Path = PROC, setaffinity=os.sched_setaffinity, getaffinity=os.sched_getaffinity) -> int:
     """Every thread of pid on cpus; how many were moved."""
     moved = 0
@@ -153,6 +177,7 @@ def main(argv=None) -> int:
             if pid not in seen:
                 seen[pid] = time.time()
                 say("pid %d links libxul: on cpus %s from now (%d threads moved)" % (pid, ",".join(map(str, target)), moved))
+                say("pid %d: %s" % (pid, describe(pid)))
         for pid in [p for p in seen if not (PROC / str(p)).exists()]:
             say("pid %d done after %.1f min" % (pid, (time.time() - seen.pop(pid)) / 60))
             if not seen:

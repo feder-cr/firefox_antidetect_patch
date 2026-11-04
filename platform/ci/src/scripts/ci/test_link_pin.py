@@ -62,6 +62,14 @@ def cases() -> list:
         found = sorted(lp.links(os.getuid(), p))
         out.append(("link pin: the libxul and xul.dll links of this user, nothing else", found == [101, 103, 105]))
         out.append(("link pin: another user's link is the other leg's, never touched", lp.links(os.getuid() + 12345, p) == []))
+        proc(p, 106, ["/opt/clang/bin/ld.lld", "--threads=24", "--time-trace", "-o", "libxul.so", "/w/a.o", "/w/libb.a", "-z", "now"])
+        (p / "106" / "stat").write_text("106 (ld.lld) R 77 106 106 0 -1\n", encoding="utf-8")
+        os.symlink("/opt/clang/bin/ld.lld", p / "106" / "exe")
+        said = lp.describe(106, p)
+        out.append(("link pin: it says which binary links, its parent and its options, not its objects (%s)" % said,
+                    said.startswith("exe /opt/clang/bin/ld.lld, parent 77, argv[0] /opt/clang/bin/ld.lld, 9 words")
+                    and "--threads=24 --time-trace -o" in said and "/w/a.o" not in said and "/w/libb.a" not in said and "-z" in said))
+        out.append(("link pin: a process it cannot read is said so, not guessed", lp.describe(999, p).startswith("exe unreadable, parent ?")))
         moved = []
         n = lp.pin(101, [0, 1], p, lambda tid, cpus: moved.append((tid, list(cpus))), lambda tid: set())
         out.append(("link pin: every thread of the link is moved", n == 1 and moved == [(101, [0, 1])]))

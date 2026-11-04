@@ -160,3 +160,25 @@ def test_a_shared_directory_that_cannot_be_used_falls_back_to_the_leg_s_own_fetc
     said = capsys.readouterr().out
     assert head == run(world, "rev-parse", "probe") and "this leg fetches its own" in said
     assert re.search(r"^materialize: fetch \d+ s", said, re.M)
+
+
+def test_the_lock_of_another_leg_is_opened_without_creating_it(tmp_path, monkeypatch):
+    """Linux refuses O_CREAT on another user's file in a sticky, world-writable directory
+    (fs.protected_regular), even to read it: the second leg of candidate 41892772401 got
+    Permission denied on the first leg's lock and fetched its own tree. Shown with an
+    os.open that refuses O_CREAT on a file that exists, as that kernel does."""
+    import os
+    lock = tmp_path / "x.lock"
+    lock.write_text("")
+    real = os.open
+
+    def kernel(path, flags, *mode):
+        if flags & os.O_CREAT and os.path.exists(path):
+            raise PermissionError(13, "Permission denied", path)
+        return real(path, flags, *mode)
+
+    monkeypatch.setattr(os, "open", kernel)
+    os.close(engine._open_lock(lock))
+    fresh = tmp_path / "y.lock"
+    os.close(engine._open_lock(fresh))
+    assert fresh.exists()

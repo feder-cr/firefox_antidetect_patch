@@ -332,6 +332,20 @@ def _fetch_and_apply(into: Path, up: dict, branch: str) -> str:
     return apply(into, tag, branch, force=True)
 
 
+def _open_lock(path: Path) -> int:
+    """The lock, read-only and world-readable: the other leg is another user, and flock
+    needs no write access. Never O_CREAT on a file that exists: in a sticky, world-writable
+    directory Linux refuses that on another user's file (fs.protected_regular), even to
+    read it, and the second leg of candidate 41892772401 fetched its own tree for it."""
+    try:
+        return os.open(str(path), os.O_RDONLY)
+    except FileNotFoundError:
+        try:
+            return os.open(str(path), os.O_RDONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError:  # the other leg made it in between
+            return os.open(str(path), os.O_RDONLY)
+
+
 def _shared_commit(shared: Path, up: dict, branch: str) -> Path:
     """The series applied once per machine, in `shared`, by whichever leg comes first;
     the others wait on the lock and take it. Returns the repository that holds it. A
@@ -341,9 +355,7 @@ def _shared_commit(shared: Path, up: dict, branch: str) -> Path:
     key = (up.get("exported_tree") or up["mozilla_tag"])[:12]
     repo, mark = shared / key, shared / ("%s.commit" % key)
     shared.mkdir(parents=True, exist_ok=True)
-    # Read-only and world-readable: the other leg is another user, and flock does not
-    # need write access.
-    fd = os.open(str(shared / ("%s.lock" % key)), os.O_RDONLY | os.O_CREAT, 0o644)
+    fd = _open_lock(shared / ("%s.lock" % key))
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         if not mark.exists():

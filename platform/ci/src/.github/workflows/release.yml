@@ -1005,7 +1005,7 @@ jobs:
             cpuwatch.jsonl
             linkpin.log
             inputwatch*
-            obj-rel/toolkit/library/build/libxul.so.time-trace
+            obj-rel/**/*.time-trace
           if-no-files-found: ignore
           retention-days: 14
 

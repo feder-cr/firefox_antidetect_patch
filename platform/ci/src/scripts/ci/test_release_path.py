@@ -431,7 +431,7 @@ def group_build_steps(doc) -> list:
         out.append(("the link's own times: --time-trace (libxul.so.time-trace), to tell LTO's optimiser from its code generation, "
                     "and the events artifact keeps the file",
                     said.split()[3] == "--time-trace"
-                    and "obj-rel/toolkit/library/build/libxul.so.time-trace" in str(steps["Upload this leg's events"]["with"]["path"])))
+                    and "obj-rel/**/*.time-trace" in str(steps["Upload this leg's events"]["with"]["path"])))
 
     material = next(s for s in jobs["build"]["steps"] if "engine.py materialize" in s.get("run", ""))
     out.append(("source tree: on a node, the legs share one fetch and one series (NODE_SHARED, node_runner.sh); elsewhere as before",
