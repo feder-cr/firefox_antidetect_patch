@@ -668,7 +668,8 @@ def group_bootstrap():
     out.append(("bootstrap: CA certificates before the snapshot, whose redirect to HTTPS needs them (a fresh node found no package)",
                 0 < bootstrap.index("--no-install-recommends ca-certificates") < snapshot))
     out.append(("bootstrap: a failed index stops it, by name, both times",
-                bootstrap.count("apt-get update -qq -o APT::Update::Error-Mode=any") == 2 and "apt-get update -qq\n" not in bootstrap))
+                bootstrap.count("apt-get update -qq -o APT::Update::Error-Mode=any") == 1 and bootstrap.count("\napt_update\n") == 2
+                and "apt-get update -qq\n" not in bootstrap))
     out.append(("bootstrap: every download by version and sha256, nothing else fetched, the runner's version pinned",
                 all(v in bootstrap for v in ("RUNNER_VERSION=", "RUNNER_SHA256=", "NODE_SHA256=", "RUSTUP_SHA256=", "GLSLANG_SHA256="))
                 and bootstrap.count("  fetch ") == 0 or bootstrap.count("fetch \"https://") == 4))
@@ -1171,6 +1172,50 @@ def runner_case(leaks) -> dict:
                 "copied_toolcache": all((root / leg / "toolcache" / "node").exists() for leg in ("l", "w")),
                 "guard_in_homes": any(root.rglob("job_guard*")) or any(template.rglob("job_guard*")),
                 "mounts_left": home.is_symlink() or toolcache.is_symlink() or tmp_dir.is_symlink()}
+
+
+def apt_update_case(failures, tries=6):
+    """node_bootstrap.sh's apt_update with apt-get answering 502 `failures` times, then
+    well: (exit code, how many times apt-get ran, what it said)."""
+    bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
+    section = bootstrap[bootstrap.index("APT_TRIES="):bootstrap.index('echo "== apt, snapshot')]
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        count = tmp / "count"
+        count.write_text("0")
+        fake_bin = tmp / "bin"
+        fake_bin.mkdir()
+        fakes = {"apt-get": '#!/bin/bash\nn=$(( $(cat "%s") + 1 )); echo $n > "%s"\n'
+                            '[ $n -gt %d ] || { echo "E: Failed to fetch ... 502  Bad Gateway" >&2; exit 100; }\n' % (count, count, failures),
+                 "sleep": "#!/bin/bash\nexit 0\n"}
+        for name, text in fakes.items():
+            (fake_bin / name).write_text(text, newline="\n")
+            (fake_bin / name).chmod(0o755)
+        script = 'set -euo pipefail\ndie() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }\n' + section + "\napt_update\n"
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
+                              env={"PATH": "%s%s%s" % (fake_bin, os.pathsep, os.environ["PATH"]), "APT_TRIES": str(tries)})
+        return done.returncode, int(count.read_text()), done.stderr
+
+
+def group_apt_retry():
+    """The snapshot service answered 502 for a while and the node job failed at once
+    (candidate 41824950368): the indexes are asked again for a few minutes."""
+    out = []
+    if not sys.platform.startswith("linux"):
+        print("skip  apt retry: bash with the bootstrap's commands, Linux only")
+        return out
+    code, ran, said = apt_update_case(2)
+    out.append(("apt: two 502s, then the indexes come: it goes on, having asked three times, and says why it waited",
+                code == 0 and ran == 3 and "try 1 of 6" in said and "try 2 of 6" in said))
+    code, ran, said = apt_update_case(99)
+    out.append(("apt: the service never comes back: it stops after its tries, by name, not on the first 502",
+                code != 0 and ran == 6 and "did not download in 6 tries" in said))
+    bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
+    out.append(("apt: both index downloads go through it, and the waits add up to minutes",
+                bootstrap.count("\napt_update\n") == 2
+                and "apt-get update" not in bootstrap.split("apt_update() {")[1].split("\n}")[1]
+                and 'APT_WAIT_S="${APT_WAIT_S:-30}"' in bootstrap and 'APT_TRIES="${APT_TRIES:-6}"' in bootstrap))
+    return out
 
 
 def group_runner_isolated():
@@ -1944,7 +1989,7 @@ def host_key_section(serves):
             victim.wait()
 
 
-GROUPS = [group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
+GROUPS = [group_apt_retry, group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
           group_lost_either_order, group_two_legs, group_relaunch, group_stuck, group_watch_stages, group_sweep, group_secrets,
           group_probe, group_runner, group_cancelled_by_hand, group_runner_clock, group_same_code,
           group_workflow_steps, group_any_shape, group_clear_verdicts, group_dispatch_once, group_lingering_and_silence,

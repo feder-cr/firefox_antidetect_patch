@@ -62,6 +62,19 @@ fetch() { # url sha256 file
   echo "$2  $3" | sha256sum -c --quiet - || die "$1 does not match its sha256"
 }
 
+# The indexes, asked again for a few minutes: apt's own retries are seconds apart, and
+# the snapshot service answered 502 for longer than that (candidate 41824950368).
+APT_TRIES="${APT_TRIES:-6}"
+APT_WAIT_S="${APT_WAIT_S:-30}"
+apt_update() {
+  local try
+  for try in $(seq "$APT_TRIES"); do
+    apt-get update -qq -o APT::Update::Error-Mode=any && return 0
+    [ "$try" = "$APT_TRIES" ] || { echo "node_bootstrap: the apt indexes failed (try $try of $APT_TRIES), again in $APT_WAIT_S s" >&2; sleep "$APT_WAIT_S"; }
+  done
+  die "the apt indexes did not download in $APT_TRIES tries"
+}
+
 echo "== apt, snapshot $APT_SNAPSHOT"
 # apt has no network timeout of its own (run 41248997155 waited 5h40 on a mirror).
 # A machine just installed may be running its own daily apt: wait for its lock.
@@ -70,7 +83,7 @@ printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Ac
 # The snapshot service answers plain HTTP with a redirect to HTTPS, and the image has
 # no CA certificates: on a fresh node every index failed and only "Unable to locate
 # package" was left to read. So they come first, from the image's own sources.
-apt-get update -qq -o APT::Update::Error-Mode=any
+apt_update
 apt-get install -y -qq --no-install-recommends ca-certificates >/dev/null
 {
   for pocket in noble noble-updates noble-security; do
@@ -79,7 +92,7 @@ apt-get install -y -qq --no-install-recommends ca-certificates >/dev/null
 } > /etc/apt/sources.list
 rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
 # A failed index is an error here, not a warning and a package missing later.
-apt-get update -qq -o APT::Update::Error-Mode=any
+apt_update
 apt-get install -y -qq --no-install-recommends "${PACKAGES[@]}" >/dev/null
 
 echo "== the user"
