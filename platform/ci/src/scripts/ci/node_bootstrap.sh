@@ -162,7 +162,7 @@ done
 [ "${#missing[@]}" = 0 ] || die "missing: ${missing[*]}"
 
 echo "== a host key of this node's own"
-# theta_node.py pins this one, read from this session, for every later connection.
+# latitude_node.py pins this one, read from this session, for every later connection.
 rm -f /etc/ssh/ssh_host_*
 ssh-keygen -A >/dev/null
 kill -HUP "$(pgrep -o -x sshd)"

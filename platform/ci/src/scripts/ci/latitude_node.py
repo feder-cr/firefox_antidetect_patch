@@ -34,7 +34,7 @@ LATITUDE_PROJECT; for what talks to GitHub GITHUB_REPOSITORY, GH_TOKEN, and
 RUNNER_ADMIN_TOKEN (the runners' registration). No secret reaches a node except its one
 single-job runner configuration, and none reaches a log.
 
-Its cases: scripts/ci/test_theta_node.py.
+Its cases: scripts/ci/test_latitude_node.py.
 """
 from __future__ import annotations
 
@@ -128,11 +128,11 @@ HOST_ALIAS = "build-node"
 USER = "ubuntu"
 
 
-class ThetaError(Exception):
+class NodeError(Exception):
     pass
 
 
-class NoAnswer(ThetaError):
+class NoAnswer(NodeError):
     """A service or the machine gave no usable answer, whatever its shape. It says nothing
     about what they would have answered, so it is never read as a refusal."""
 
@@ -187,7 +187,7 @@ class Client:
                 return answer, status
             problem = "%s %s: HTTP %d %s" % (method, path, status, raw[:300].decode("utf-8", "replace"))
             if status < 500 and status != 429 and not (status == 403 and b"rate limit" in raw.lower()):
-                raise ThetaError(self.scrub(problem))
+                raise NodeError(self.scrub(problem))
         raise NoAnswer(self.scrub(problem))
 
 
@@ -235,7 +235,7 @@ class Latitude:
         one exists: it goes up, and the delete goes by name."""
         sites = self.sites()
         if not sites:
-            raise ThetaError("no location has the plan %s now" % PLAN)
+            raise NodeError("no location has the plan %s now" % PLAN)
         body, _ = self.http.call("POST", "/projects/%s/ssh_keys" % self.project, {
             "data": {"type": "ssh_keys", "attributes": {"name": name, "public_key": public_key}}})
         key_id = body["data"]["id"]
@@ -250,7 +250,7 @@ class Latitude:
                     "hostname": name, "ssh_keys": [key_id], "billing": "hourly"}}})
             except NoAnswer:
                 raise
-            except ThetaError as exc:
+            except NodeError as exc:
                 if not any(code in str(exc) for code in TRY_NEXT_SITE):
                     raise
                 refused.append("%s: %s" % (site, exc))
@@ -258,7 +258,7 @@ class Latitude:
             self.keep_quiet_about(body["data"]["id"])
             say("%s: at %s, $%.2f an hour" % (name, site, price))
             return body["data"]["id"]
-        raise ThetaError("no location took the order for %s: %s" % (PLAN, "; ".join(refused)))
+        raise NodeError("no location took the order for %s: %s" % (PLAN, "; ".join(refused)))
 
     def delete(self, node_id):
         self.keep_quiet_about(node_id)
@@ -410,12 +410,12 @@ def clamp_path(host, run=subprocess.run):
     found = run(["ip", "route", "get", str(host)], capture_output=True, text=True)
     words = found.stdout.split()
     if found.returncode != 0 or "dev" not in words:
-        raise ThetaError("no route to the node to size")
+        raise NodeError("no route to the node to size")
     via = ["via", words[words.index("via") + 1]] if "via" in words else []
     set_it = run(["sudo", "-n", "ip", "route", "replace", "%s/32" % host, *via, "dev", words[words.index("dev") + 1],
                   "mtu", "lock", str(PATH_MTU)], capture_output=True, text=True)
     if set_it.returncode != 0:
-        raise ThetaError("could not size the path to the node: ssh would hang on it")
+        raise NodeError("could not size the path to the node: ssh would hang on it")
 
 
 def new_key(directory: Path) -> Path:
@@ -449,7 +449,7 @@ def runner_name(run, attempt, leg) -> str:
 def leg_label(run, attempt, leg) -> str:
     """One label, one leg, one single-job runner. release.yml's plan and runs-on say the
     same (test_release_builder.py holds them together)."""
-    return "theta-%s-%s-%s" % (run, attempt, leg)
+    return "latitude-%s-%s-%s" % (run, attempt, leg)
 
 
 def relaunch_title(run) -> str:
@@ -470,12 +470,12 @@ def script_bytes(name) -> bytes:
     return (HERE / name).read_bytes().replace(b"\r\n", b"\n")
 
 
-def wait_up(theta, node_id, make_ssh, clock=time.monotonic, sleep=time.sleep, limit=UP_LIMIT_S):
+def wait_up(latitude, node_id, make_ssh, clock=time.monotonic, sleep=time.sleep, limit=UP_LIMIT_S):
     start = clock()
     last = "the API gives no address yet"
     said = None
     while clock() - start < limit:
-        address = theta.address(node_id)
+        address = latitude.address(node_id)
         if address:
             ssh = make_ssh(*address)
             code, _, err = ssh("true", timeout=30)
@@ -490,14 +490,14 @@ def wait_up(theta, node_id, make_ssh, clock=time.monotonic, sleep=time.sleep, li
             say("%.0f s: %s" % (clock() - start, last))
             said = last
         sleep(5)
-    raise ThetaError("the node did not answer on SSH within %d s; last: %s" % (limit, last))
+    raise NodeError("the node did not answer on SSH within %d s; last: %s" % (limit, last))
 
 
-def turn_off(theta, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LIMIT_S,
+def turn_off(latitude, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LIMIT_S,
              answer_limit=OFF_ANSWER_LIMIT_S) -> list:
     """Delete the nodes of these names and see them gone, each whatever happens to the
     other. By name, so a node whose id nobody kept (a cancel during the create) goes too.
-    The API's failures are asked again up to answer_limit, then ThetaError naming what may
+    The API's failures are asked again up to answer_limit, then NodeError naming what may
     still be on. A delete it accepted and a node it goes on listing is a warning, never
     seen: what comes next waits by itself."""
     deleted, accepted, left = [], set(), set(names)
@@ -506,26 +506,26 @@ def turn_off(theta, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LI
     while True:
         problem = None
         try:
-            mine = [n for n in theta.nodes() if n.get("name") in names]
+            mine = [n for n in latitude.nodes() if n.get("name") in names]
             left = {n.get("name") for n in mine}
             if not mine:
                 return deleted
-        except ThetaError as exc:
+        except NodeError as exc:
             problem, mine = exc, []
         for node in mine:
             try:
-                theta.delete(node["id"])
+                latitude.delete(node["id"])
                 accepted.add(node.get("name"))
                 if node["id"] not in deleted:
                     deleted.append(node["id"])
-            except ThetaError as exc:
+            except NodeError as exc:
                 problem = exc
         if problem:
             say("the API did not do it, asking again: %s" % problem)
             if clock() - start >= answer_limit:
                 refused = sorted(left - accepted)
                 if refused:
-                    raise ThetaError("%s could not be deleted, the API failed for %d s: %s"
+                    raise NodeError("%s could not be deleted, the API failed for %d s: %s"
                                      % (", ".join(refused), answer_limit, problem)) from None
                 say("::warning::%s: delete accepted, and the API does not answer to say it is gone: %s" % (", ".join(sorted(accepted)), problem))
                 return deleted
@@ -537,41 +537,41 @@ def turn_off(theta, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LI
         sleep(10)
 
 
-def off_now(theta, name) -> bool:
+def off_now(latitude, name) -> bool:
     """One pass and no waiting, for legs that have ended: what confirms it is the
     turn_off at the end."""
     try:
-        for node in theta.nodes():
+        for node in latitude.nodes():
             if node.get("name") == name:
-                theta.delete(node["id"])
+                latitude.delete(node["id"])
         return True
-    except ThetaError as exc:
+    except NodeError as exc:
         say("%s: the API did not delete it, asking again at the next poll: %s" % (name, exc))
         return False
 
 
-def clear_leftovers(theta, github, run, attempt):
+def clear_leftovers(latitude, github, run, attempt):
     """What no run needs any more goes. That covers an earlier attempt of this run, a node
     of this one a failed provision left, and a run already re-launched, whose watch has
     deleted the node, whatever the list still says. Another run's live node is that run's:
     there is no fixed machine to share, so two runs do not get in each other's way. A node
     made by hand has another name and is never touched."""
-    for node in theta.nodes():
+    for node in latitude.nodes():
         name = node.get("name") or ""
         ours = NAME.match(name)
         if ours and ours.group(1) == str(run):
             say("an earlier attempt of this run left %s: deleting it" % name)
-            theta.delete(node["id"])
+            latitude.delete(node["id"])
         elif ours and (github.run_finished(ours.group(1)) or github.relaunched(ours.group(1))):
             say("run %s needs nothing any more and left %s: deleting it" % (ours.group(1), name))
-            theta.delete(node["id"])
+            latitude.delete(node["id"])
 
 
 def start_runner(github, ssh, run, attempt, leg):
     config = github.jit_config(runner_name(run, attempt, leg), leg_label(run, attempt, leg))
     code, out, err = ssh("bash /usr/local/sbin/node_runner.sh %s %s" % (run, leg[0]), stdin=(config + "\n").encode(), timeout=120)
     if code != 0:
-        raise ThetaError("node_runner.sh exited %d: %s" % (code, (err or out)[-300:]))
+        raise NodeError("node_runner.sh exited %d: %s" % (code, (err or out)[-300:]))
     say("runner started, for %s" % leg)
 
 
@@ -581,48 +581,48 @@ def wait_online(github, name, clock=time.monotonic, sleep=time.sleep, limit=RUNN
         if github.runner_status(name) == "online":
             return
         if clock() - start >= limit:
-            raise ThetaError("the runner %s did not come online within %d s: the leg would wait for it up to GitHub's "
+            raise NodeError("the runner %s did not come online within %d s: the leg would wait for it up to GitHub's "
                              "24-hour limit" % (name, limit))
         sleep(10)
 
 
-def provision(theta, github, run, attempt, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep):
-    """The run's node ready with one runner per leg online, or ThetaError with the node off."""
-    clear_leftovers(theta, github, run, attempt)
+def provision(latitude, github, run, attempt, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep):
+    """The run's node ready with one runner per leg online, or NodeError with the node off."""
+    clear_leftovers(latitude, github, run, attempt)
     name = node_name(run, attempt)
     key = make_key()
     public_key = Path(str(key) + ".pub").read_text(encoding="utf-8").strip()
     # The create inside the try: a lost answer can mean a node exists, and the
     # delete goes by name.
     try:
-        node_id = theta.create(name, public_key)
-        ssh = wait_up(theta, node_id, make_ssh, clock, sleep)
-        drop_key_of(theta, name)
+        node_id = latitude.create(name, public_key)
+        ssh = wait_up(latitude, node_id, make_ssh, clock, sleep)
+        drop_key_of(latitude, name)
         code, out, err = ssh("bash -s", stdin=script_bytes("node_bootstrap.sh"), timeout=BOOTSTRAP_LIMIT_S)
         if code != 0:
-            raise ThetaError("node_bootstrap.sh exited %d: %s" % (code, (err or out)[-600:]))
+            raise NodeError("node_bootstrap.sh exited %d: %s" % (code, (err or out)[-600:]))
         say(out.strip().splitlines()[-1] if out.strip() else "prepared")
         host_key = HOST_KEY_LINE.search(out)
         if not host_key:
-            raise ThetaError("node_bootstrap.sh named no host key: the runner's configuration would go to an unverified host")
+            raise NodeError("node_bootstrap.sh named no host key: the runner's configuration would go to an unverified host")
         ssh = ssh.pin(host_key.group(1))
         code, out, err = ssh("cat > /usr/local/sbin/node_runner.sh", stdin=script_bytes("node_runner.sh"), timeout=60)
         if code != 0:
-            raise ThetaError("could not put node_runner.sh on the node: %s" % err[-300:])
+            raise NodeError("could not put node_runner.sh on the node: %s" % err[-300:])
         for leg in node_legs():
             start_runner(github, ssh, run, attempt, leg)
         for leg in node_legs():
             wait_online(github, runner_name(run, attempt, leg), clock, sleep)
     except Exception:
-        off_after_failure(theta, github, run, attempt, clock, sleep)
+        off_after_failure(latitude, github, run, attempt, clock, sleep)
         raise
 
 
-def drop_key_of(theta, name):
+def drop_key_of(latitude, name):
     """Housekeeping, like the runners: the sweeper finds what this leaves."""
     try:
-        theta.drop_keys(lambda key: key == name)
-    except (ThetaError, OSError, ValueError, KeyError) as exc:
+        latitude.drop_keys(lambda key: key == name)
+    except (NodeError, OSError, ValueError, KeyError) as exc:
         say("::warning::the node's public key stays registered: %s" % exc)
 
 
@@ -631,15 +631,15 @@ def remove_runners(github, labels) -> list:
     failure never makes a deleted node look like a failed delete."""
     try:
         return github.remove_runners(labels)
-    except (ThetaError, OSError, ValueError, KeyError) as exc:
+    except (NodeError, OSError, ValueError, KeyError) as exc:
         say("::warning::runners left registered: %s" % exc)
         return []
 
 
-def off_after_failure(theta, github, run, attempt, clock, sleep):
+def off_after_failure(latitude, github, run, attempt, clock, sleep):
     try:
-        turn_off(theta, node_names(run, attempt), clock, sleep)
-    except (ThetaError, OSError, ValueError, KeyError) as exc:
+        turn_off(latitude, node_names(run, attempt), clock, sleep)
+    except (NodeError, OSError, ValueError, KeyError) as exc:
         say("::warning::the node could not be deleted, stop-node and the sweeper will: %s" % exc)
     remove_runners(github, [leg_label(run, attempt, leg) for leg in node_legs()])
 
@@ -694,7 +694,7 @@ def cancel_marks(jobs) -> bool:
 def stuck(jobs, now, limit=STUCK_S) -> bool:
     """A leg queued on one of our labels for too long, and no leg running that a cancel
     would cut. From GitHub's times alone, for the sweeper, which has nothing else."""
-    mine = [j for j in jobs_by_leg(jobs).values() if any(str(l).startswith("theta-") for l in j.get("labels") or [])]
+    mine = [j for j in jobs_by_leg(jobs).values() if any(str(l).startswith("latitude-") for l in j.get("labels") or [])]
     queued = [j for j in mine if j.get("status") in WAITING]
     if not queued or any(j.get("status") == "in_progress" for j in mine):
         return False
@@ -743,11 +743,11 @@ class Machine:
         return now - self.runner_since if self.runner_since is not None else -1
 
 
-def look_at_machines(theta, run, attempt, machines, by_leg, probe, now):
+def look_at_machines(latitude, run, attempt, machines, by_leg, probe, now):
     rows = None
     try:
-        rows = {n.get("name"): n for n in theta.nodes()}
-    except ThetaError as exc:
+        rows = {n.get("name"): n for n in latitude.nodes()}
+    except NodeError as exc:
         say("the API did not answer, not read as a lost node: %s" % exc)
     for leg, machine in machines.items():
         listed = None
@@ -756,10 +756,10 @@ def look_at_machines(theta, run, attempt, machines, by_leg, probe, now):
                 row = rows.get(node_name(run, attempt))
                 listed = bool(row) and str(row.get("status", "")).lower() == RUNNING
                 if row:
-                    address = theta.address(row["id"])
+                    address = latitude.address(row["id"])
                     machine.address = address or machine.address
                     listed = listed and address is not None
-            except ThetaError as exc:
+            except NodeError as exc:
                 listed = None
                 say("the API did not answer, not read as a lost node: %s" % exc)
         answers = probe(*machine.address) if machine.address else None
@@ -796,7 +796,7 @@ def relaunch_inputs(run, kind, tag, compile_cache, core_ref, wrapper_ref, gtests
     """The same run, once more: every input it ran with, by value, and its mark. Never
     a default left to chance: the refs are what its gate would have run against."""
     if not core_ref or not wrapper_ref:
-        raise ThetaError("a re-launch must name core_ref and wrapper_ref (got %r and %r)" % (core_ref, wrapper_ref))
+        raise NodeError("a re-launch must name core_ref and wrapper_ref (got %r and %r)" % (core_ref, wrapper_ref))
     inputs = {"kind": kind, "compile_cache": compile_cache, "core_ref": core_ref, "wrapper_ref": wrapper_ref,
               "relaunch_of": str(run)}
     for key, value in (("release_tag", tag), ("gtests", gtests), ("gtest_filter", gtest_filter)):
@@ -850,12 +850,12 @@ def named(row) -> str:
     return "run %s (%s)" % (row.get("id"), row.get("html_url"))
 
 
-def after_loss(theta, github, run, attempt, lost, ref, sha, inputs, relaunch_of, clock, sleep) -> str:
+def after_loss(latitude, github, run, attempt, lost, ref, sha, inputs, relaunch_of, clock, sleep) -> str:
     """Both legs have ended or are lost. The nodes go first, seen gone: This run's cancel comes last. A failure on the way comes back
     at the next poll, then at the next watch job: each step here looks at what the last one
     did. A cancel by a person is looked for after the nodes have gone and again right
     before the dispatch, and a re-launch happens only if GitHub says there was none."""
-    turn_off(theta, node_names(run, attempt), clock, sleep)
+    turn_off(latitude, node_names(run, attempt), clock, sleep)
     which = "the machine of %s" % " and ".join(lost)
     cancelled = "%s is silent and someone cancelled this run: the nodes are off, and no re-launch" % which
     if github.cancelled(run, attempt):
@@ -884,7 +884,7 @@ def after_loss(theta, github, run, attempt, lost, ref, sha, inputs, relaunch_of,
             row = dispatch_once(github, run, ref, inputs, clock, sleep)
         except NoAnswer:
             raise
-        except ThetaError as exc:
+        except NodeError as exc:
             say("::error::%s was lost, and GitHub refuses the re-launch: %s. %s" % (which, exc, NOT_A_CANCEL))
             github.cancel(run)
             return "failed"
@@ -894,11 +894,11 @@ def after_loss(theta, github, run, attempt, lost, ref, sha, inputs, relaunch_of,
     return "lost"
 
 
-def give_up(theta, github, run, attempt, why, clock, sleep) -> str:
+def give_up(latitude, github, run, attempt, why, clock, sleep) -> str:
     say("::error::%s: the run fails. %s" % (why, NOT_A_CANCEL))
     try:
-        turn_off(theta, node_names(run, attempt), clock, sleep)
-    except ThetaError as exc:
+        turn_off(latitude, node_names(run, attempt), clock, sleep)
+    except NodeError as exc:
         say("::warning::the nodes could not be deleted, the sweeper will: %s" % exc)
     github.cancel(run)
     return "failed"
@@ -909,12 +909,12 @@ def why_not_coming(github, run, attempt, stuck_legs) -> str:
     try:
         if any(github.runner_status(runner_name(run, attempt, leg)) is None for leg in stuck_legs):
             why += ", and the runner has gone without taking it, as one does when the node refuses another run's job: that uses it up"
-    except ThetaError as exc:
+    except NodeError as exc:
         say("the list of runners did not answer: %s" % exc)
     return why
 
 
-def conclude(theta, github, run, attempt, settled, by_leg, cancelled, ref, sha, inputs, relaunch_of, clock, sleep) -> str:
+def conclude(latitude, github, run, attempt, settled, by_leg, cancelled, ref, sha, inputs, relaunch_of, clock, sleep) -> str:
     """Every leg has ended or is lost or stuck: what becomes of the run. A healthy leg has
     had its time, and its cache: nothing here runs before it has ended."""
     lost = [leg for leg in node_legs() if settled[leg] == "lost"]
@@ -929,15 +929,15 @@ def conclude(theta, github, run, attempt, settled, by_leg, cancelled, ref, sha, 
         say("::notice::someone cancelled this run: no re-launch")
         return "done"
     if stuck_legs:
-        return give_up(theta, github, run, attempt, why_not_coming(github, run, attempt, stuck_legs), clock, sleep)
+        return give_up(latitude, github, run, attempt, why_not_coming(github, run, attempt, stuck_legs), clock, sleep)
     red = [leg for leg in ended if by_leg[leg].get("conclusion") not in ("success", "skipped")]
     if red:
-        return give_up(theta, github, run, attempt, "the machine of %s was lost, and %s ended red, which a new run would not "
+        return give_up(latitude, github, run, attempt, "the machine of %s was lost, and %s ended red, which a new run would not "
                        "change: no re-launch" % (" and ".join(lost), " and ".join(red)), clock, sleep)
-    return after_loss(theta, github, run, attempt, lost, ref, sha, inputs, relaunch_of, clock, sleep)
+    return after_loss(latitude, github, run, attempt, lost, ref, sha, inputs, relaunch_of, clock, sleep)
 
 
-def watch(theta, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_answers,
+def watch(latitude, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_answers,
           clock=time.time, sleep=time.sleep, poll=60, limit=STAGE_LIMIT_S, sha="") -> str:
     """Until both legs are settled, or this job's share of the time has run out. Returns
     done, lost (re-launched), failed, or continue for the next watch job, which reads the
@@ -959,7 +959,7 @@ def watch(theta, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_an
             return "done"
         cancelled = cancel_marks(jobs)
         open_legs = {leg: machine for leg, machine in machines.items() if leg not in settled}
-        look_at_machines(theta, run, attempt, open_legs, by_leg, probe, clock())
+        look_at_machines(latitude, run, attempt, open_legs, by_leg, probe, clock())
         for leg, machine in open_legs.items():
             job = by_leg.get(leg)
             state = leg_state(job, machine, clock(), cancelled)
@@ -973,11 +973,11 @@ def watch(theta, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_an
                 machine.expect_runner(bool(job) and job.get("status") in WAITING, clock())
         # One node for every leg: it goes once all of them are done with it.
         if to_turn_off and to_turn_off >= set(machines):
-            if off_now(theta, node_name(run, attempt)):
+            if off_now(latitude, node_name(run, attempt)):
                 to_turn_off.clear()
         if len(settled) < len(machines):
             return None
-        return conclude(theta, github, run, attempt, settled, by_leg, cancelled, ref, sha, inputs, relaunch_of, clock, sleep)
+        return conclude(latitude, github, run, attempt, settled, by_leg, cancelled, ref, sha, inputs, relaunch_of, clock, sleep)
 
     while clock() - begun < limit:
         try:
@@ -992,7 +992,7 @@ def watch(theta, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_an
                 machine.runner_since = None
             what = "%s: %s" % (type(exc).__name__, exc)
             say("this poll saw nothing (%d in a row): %s" % (blind, what))
-            if not isinstance(exc, ThetaError):
+            if not isinstance(exc, NodeError):
                 say("::warning::an error that is not a service's:\n%s" % traceback.format_exc())
             if blind >= BLIND_POLLS:
                 raise WatchBlind("nothing usable for %d polls, the last: %s" % (blind, what)) from None
@@ -1005,13 +1005,13 @@ def finished_legs(github, run, attempt) -> list:
     return [leg for leg in node_legs() if leg in by_leg and by_leg[leg].get("status") == "completed"]
 
 
-def sweep(theta, github, now, max_age_hours=GUARD_HOURS, dry_run=False) -> list:
+def sweep(latitude, github, now, max_age_hours=GUARD_HOURS, dry_run=False) -> list:
     """Delete the nodes we started that no run needs: our name, and older than the
     limit, or owned by a run that has finished, or whose legs have all finished (what a
     watch that died leaves behind). A node with any other name was made by hand and is
     never touched. Without GitHub, the age alone."""
     deleted = []
-    listed = theta.nodes()
+    listed = latitude.nodes()
     for node in listed:
         m = NAME.match(node.get("name") or "")
         if not m:
@@ -1025,17 +1025,17 @@ def sweep(theta, github, now, max_age_hours=GUARD_HOURS, dry_run=False) -> list:
                     why = "its run has finished"
                 elif set(node_legs()) <= set(finished_legs(github, m.group(1), m.group(2))):
                     why = "its legs have finished"
-            except (ThetaError, OSError, ValueError, KeyError) as exc:
+            except (NodeError, OSError, ValueError, KeyError) as exc:
                 say("run %s unknown for now, its node stays: %s" % (m.group(1), exc))
         if why:
             say("%s %s: %s" % ("would delete" if dry_run else "deleting", node["name"], why))
             if not dry_run:
-                theta.delete(node["id"])
+                latitude.delete(node["id"])
             deleted.append(node["name"])
     if not dry_run:
         # A key whose node never came up, or was lost before provision got to it.
         on = {node.get("name") for node in listed} - set(deleted)
-        for name in theta.drop_keys(lambda key: bool(NAME.match(key)) and key not in on):
+        for name in latitude.drop_keys(lambda key: bool(NAME.match(key)) and key not in on):
             say("the public key of %s: dropped" % name)
     return deleted
 
@@ -1062,7 +1062,7 @@ def cancel_stuck(github, now, dry_run=False, limit=SWEEP_STUCK_S) -> list:
 def from_env():
     missing = [v for v in ("LATITUDE_API_KEY", "LATITUDE_PROJECT") if not os.environ.get(v)]
     if missing:
-        raise ThetaError("missing from the environment: %s" % ", ".join(missing))
+        raise NodeError("missing from the environment: %s" % ", ".join(missing))
     return Latitude(os.environ["LATITUDE_PROJECT"], os.environ["LATITUDE_API_KEY"])
 
 
@@ -1083,11 +1083,11 @@ def node_ssh(work: Path, clamp=clamp_path):
 def run_provision(a) -> int:
     work = Path(tempfile.mkdtemp(prefix="build-node-"))
     try:
-        theta, github = from_env(), github_from_env()
+        latitude, github = from_env(), github_from_env()
         if github is None:
-            raise ThetaError("GITHUB_REPOSITORY is not set")
-        provision(theta, github, a.run, a.attempt, node_ssh(work), lambda: new_key(work))
-    except (ThetaError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
+            raise NodeError("GITHUB_REPOSITORY is not set")
+        provision(latitude, github, a.run, a.attempt, node_ssh(work), lambda: new_key(work))
+    except (NodeError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         # Without its node the leg has nowhere to run: the run has failed.
         print("::error::no node for %s, the run fails: %s" % (" and ".join(node_legs()), exc), file=sys.stderr)
         return 1
@@ -1097,14 +1097,14 @@ def run_provision(a) -> int:
 
 
 def run_watch(a) -> int:
-    theta, github = from_env(), github_from_env()
+    latitude, github = from_env(), github_from_env()
     if github is None:
-        raise ThetaError("GITHUB_REPOSITORY is not set")
+        raise NodeError("GITHUB_REPOSITORY is not set")
     env = os.environ.get
     inputs = relaunch_inputs(a.run, env("KIND", ""), env("TAG", ""), env("COMPILE_CACHE", ""), env("CORE_REF", ""),
                              env("WRAPPER_REF", ""), env("GTESTS", ""), env("GTEST_FILTER_INPUT", ""))
     try:
-        verdict = watch(theta, github, a.run, a.attempt, a.ref, inputs, env("RELAUNCH_OF", ""), sha=env("GITHUB_SHA", ""))
+        verdict = watch(latitude, github, a.run, a.attempt, a.ref, inputs, env("RELAUNCH_OF", ""), sha=env("GITHUB_SHA", ""))
     except WatchBlind as exc:
         # No verdict: the legs may be running, so nothing here deletes a node. The
         # next watch job takes over, and the sweeper is behind it.
@@ -1115,7 +1115,7 @@ def run_watch(a) -> int:
 
 
 def run_off(a) -> int:
-    theta, github = from_env(), github_from_env()
+    latitude, github = from_env(), github_from_env()
     going = node_legs()
     if a.if_legs_done:
         # The watch has ended, in whatever way; only this says a leg has too. An
@@ -1136,8 +1136,8 @@ def run_off(a) -> int:
         if not names:
             print("deleted: nothing, the node stays for the legs still on it")
         else:
-            print("deleted: %s" % (", ".join(names) if turn_off(theta, names) else "nothing was on"))
-    except ThetaError as exc:
+            print("deleted: %s" % (", ".join(names) if turn_off(latitude, names) else "nothing was on"))
+    except NodeError as exc:
         # Red, because it may be billing and only a person reading this can know. Nothing
         # needs this job: the legs, the gate and the publish keep their own results.
         print("::error::a node may still be on, and billing; the sweeper tries again every 30 minutes. This job says "
@@ -1172,16 +1172,16 @@ def main(argv=None) -> int:
             return run_off(a)
         if a.cmd == "watch":
             return run_watch(a)
-        theta, github = from_env(), github_from_env()
+        latitude, github = from_env(), github_from_env()
         if a.cmd == "sweep":
             now = time.time()
-            print("deleted: %s" % (", ".join(sweep(theta, github, now, a.max_age_hours, a.dry_run)) or "nothing"))
+            print("deleted: %s" % (", ".join(sweep(latitude, github, now, a.max_age_hours, a.dry_run)) or "nothing"))
             if github:
                 print("cancelled: %s" % (", ".join(str(r) for r in cancel_stuck(github, now, a.dry_run)) or "nothing"))
         elif a.cmd == "status":
-            for node in theta.nodes():
+            for node in latitude.nodes():
                 print("%s %s %s" % (node.get("name"), node.get("status"), node.get("created_at")))
-    except ThetaError as exc:
+    except NodeError as exc:
         print("ERROR: %s" % exc, file=sys.stderr)
         return 1
     return 0

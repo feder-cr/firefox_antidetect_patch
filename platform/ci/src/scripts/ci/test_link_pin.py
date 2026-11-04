@@ -44,10 +44,15 @@ def cases() -> list:
         out.append(("link pin: the largest L3 first, each group with its cpus",
                     [kb for kb, _ in g] == [98304, 32768] and g[0][1] == list(range(0, 6)) + list(range(12, 18))
                     and g[1][1] == list(range(6, 12)) + list(range(18, 24))))
-        lines = lp.machine(root)
-        out.append(("link pin: it says the groups, the driver and the governor",
-                    "96 MB on cpus 0,1,2,3,4,5,12" in lines[0] and "scaling_governor: powersave" in lines
+        info = Path(tmp) / "cpuinfo"
+        info.write_text("processor\t: 0\nvendor_id\t: AuthenticAMD\nmodel name\t: AMD EPYC 4484PX 12-Core Processor\n",
+                        encoding="utf-8")
+        lines = lp.machine(root, info)
+        out.append(("link pin: it says the CPU, the groups, the driver and the governor",
+                    lines[0] == "cpu: AMD EPYC 4484PX 12-Core Processor"
+                    and "96 MB on cpus 0,1,2,3,4,5,12" in lines[1] and "scaling_governor: powersave" in lines
                     and "scaling_driver: amd-pstate-epp" in lines))
+        out.append(("link pin: no cpuinfo is said, not guessed", lp.cpu_model(Path(tmp) / "none") == "not exposed"))
         p = Path(tmp) / "proc"
         proc(p, 101, ["/home/runner/.mozbuild/clang/bin/ld.lld", "-o", "libxul.so", "a.o"])
         proc(p, 102, ["/home/runner/.mozbuild/clang/bin/ld.lld", "-o", "libmozgtk.so", "a.o"])

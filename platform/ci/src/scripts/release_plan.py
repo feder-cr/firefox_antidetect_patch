@@ -23,7 +23,7 @@ preprocessed source, the arguments and the compiler. `--compile-cache off` asks
 for a cold build.
 
 Who compiles is no choice: the two legs, Linux and Windows x86_64, on a build node,
-every run, candidates and releases alike (scripts/ci/theta_node.py); gates and tests
+every run, candidates and releases alike (scripts/ci/latitude_node.py); gates and tests
 always on GitHub. No linux-arm64 from firefox-56 on (Federico, 2026-11-04), and which
 legs a run builds is no choice either: always both. So the plan has no say.
 

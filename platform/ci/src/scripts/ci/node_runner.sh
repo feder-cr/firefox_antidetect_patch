@@ -27,7 +27,7 @@
 # (measured). The node is only ever for this run's legs. A failed step alone would
 # not do: the steps after it still evaluate their own `if`, and `always()` runs. So the
 # script kills every process of the leg's user, the Worker that would run them included.
-# The leg stays queued with no runner, and the watch fails the run (STUCK_S in theta_node.py).
+# The leg stays queued with no runner, and the watch fails the run (STUCK_S in latitude_node.py).
 #
 # The configuration comes on stdin so that no command line shows it. It returns as
 # soon as it has read it; the runner goes on detached, with its log on the node.

@@ -33,7 +33,7 @@ sys.path.insert(0, str(HERE))
 
 import gh_expr  # noqa: E402
 import legs  # noqa: E402
-import theta_node  # noqa: E402
+import latitude_node  # noqa: E402
 
 WORKFLOWS = HERE.parent.parent / ".github" / "workflows"
 WORKFLOW = WORKFLOWS / "release.yml"
@@ -52,7 +52,7 @@ SENSITIVE = ("LATITUDE_API_KEY", "LATITUDE_PROJECT", "RUNNER_ADMIN_TOKEN", "GH_T
 PRINTED = re.compile(r"\b(?:echo|printf|print|tee|cat)\b.*\b(?:%s)\b" % "|".join(SENSITIVE))
 TRACED = re.compile(r"\bset\s+-\w*x|\bset\s+-o\s+xtrace\b|\b(?:ba)?sh\s+-\w*x\b")
 DUMPED = re.compile(r"^\s*(?:env|printenv|export(?:\s+-p)?|declare\s+-p|set)\s*(?:$|[|>])", re.M)
-# Names in theta_node.py that hold the address or a secret: none is an argument of say() or print().
+# Names in latitude_node.py that hold the address or a secret: none is an argument of say() or print().
 HOLDS_SECRET_OR_ADDRESS = {"address", "host", "port", "key", "config", "api_key", "token", "admin_token", "secret", "private_key"}
 # What a job on the node would otherwise install with sudo: the bootstrap's to install.
 NODE_JOB_PACKAGES = {"util-linux", "binutils", "cmake", "ninja-build", "bison", "flex", "patchelf"}
@@ -164,7 +164,7 @@ def printed_secrets(workflows: dict) -> list:
 
 
 def printed_names(source: str) -> list:
-    """say() and print() calls of theta_node.py given something that holds the address or a secret."""
+    """say() and print() calls of latitude_node.py given something that holds the address or a secret."""
     found = []
     for call in ast.walk(ast.parse(source)):
         if isinstance(call, ast.Call) and getattr(call.func, "id", "") in ("say", "print"):
@@ -201,7 +201,7 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
             results[(leg.leg, attempt)] = leg.runner or (attempt == "1" and "%s-%s" % (prefix, leg.leg)) or ""
     out.append(("no fallback: an x86_64 leg gets the label its runner was registered with, or nothing on a rerun, never a hosted runner",
                 all(not HOSTED.match(v) for v in results.values())
-                and all(results[(leg, "1")] == theta_node.leg_label("5", "1", leg) for leg in theta_node.node_legs())
+                and all(results[(leg, "1")] == latitude_node.leg_label("5", "1", leg) for leg in latitude_node.node_legs())
                 and results[("win-x86_64", "2")] == "" and results[("linux-x86_64", "2")] == ""))
     out.append(("runs-on: reads no output of a matrix job, which overwrite each other: nothing in the workflow does",
                 "needs.node.outputs" not in text and "outputs" not in jobs["node"]
@@ -210,15 +210,15 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
     command = " ".join(s.get("run", "") for s in node["steps"])
     out.append(("node: one job for the run's one node, which serves every leg that compiles on a node: no matrix, no leg to choose",
                 "strategy" not in node and node["name"] == "node" and "matrix." not in json.dumps(node)
-                and "theta_node.py provision" in command and "--leg" not in command
+                and "latitude_node.py provision" in command and "--leg" not in command
                 and not any("LEG" in s.get("env", {}) for s in node["steps"])))
     out.append(("no fallback: a node job that fails fails the run: nothing swallows it, and the build needs it, so the matrix does not run at all",
                 "continue-on-error" not in node and "node" in build["needs"] and "if" not in build))
     out.append(("node: a rerun of failed jobs turns nothing on: it could not run on it",
                 node["if"] == "needs.plan.outputs.attempt == github.run_attempt"))
     out.append(("no fallback: the node job's steps always run", not any("if" in s for s in node["steps"])))
-    theta = (HERE / "theta_node.py").read_text(encoding="utf-8")
-    out.append(("no fallback: nor does the re-launch ask for one", "builder" not in theta.replace("test_release_builder", "")))
+    source = (HERE / "latitude_node.py").read_text(encoding="utf-8")
+    out.append(("no fallback: nor does the re-launch ask for one", "builder" not in source.replace("test_release_builder", "")))
     gate = jobs["gate"]
     out.append(("gates and tests on GitHub: nothing else runs on a label of ours",
                 all(j.get("runs-on") in ("ubuntu-24.04", "windows-latest") for n, j in jobs.items() if n != "build" and "runs-on" in j)
@@ -307,18 +307,18 @@ def group_secrets_and_labels(doc, jobs, build, steps) -> list:
         def __call__(self, method, url, headers, body):
             clock.append(json.loads(body))
             return 201, b'{"encoded_jit_config":"X"}'
-    hub = theta_node.GitHub("o/r", "T", "A", Hub(), lambda s: None)
+    hub = latitude_node.GitHub("o/r", "T", "A", Hub(), lambda s: None)
     sink = sys.stderr
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
     try:
-        hub.jit_config("ci5a1-1", theta_node.leg_label(5, 1, "linux-x86_64"))
+        hub.jit_config("ci5a1-1", latitude_node.leg_label(5, 1, "linux-x86_64"))
     finally:
         sys.stderr.close()
         sys.stderr = sink
     out.append(("runner: its one label is this run's, this attempt's, this leg's, with no self-hosted among them",
-                clock and clock[0]["labels"] == ["theta-5-1-linux-x86_64"]))
+                clock and clock[0]["labels"] == ["latitude-5-1-linux-x86_64"]))
     out.append(("runner: a new attempt never matches an old runner, and two legs never share one",
-                theta_node.leg_label(5, 1, "a") != theta_node.leg_label(5, 2, "a") != theta_node.leg_label(5, 2, "b")))
+                latitude_node.leg_label(5, 1, "a") != latitude_node.leg_label(5, 2, "a") != latitude_node.leg_label(5, 2, "b")))
     provision = jobs["node"]["steps"][-1]
     out.append(("provision: its failure fails the step, with nothing behind a pipe to hide it", "|" not in provision.get("run", "")))
     out.append(("provision: its token can read a run's state, which is how it tells a live run's node from a leftover",
@@ -339,7 +339,7 @@ def group_pull_requests(doc, jobs, build, steps) -> list:
     reachable = jobs_of_pull_requests(live)
     out.append(("pull requests: every job those start names a hosted runner, literally (%s)" % reachable, not reachable))
     out.append(("pull requests: the check sees a job on a label of ours",
-                jobs_of_pull_requests({"x.yml": {"on": ["pull_request"], "jobs": {"j": {"runs-on": "theta-5-1-a"}}}}) == ["x.yml:j:theta-5-1-a"]))
+                jobs_of_pull_requests({"x.yml": {"on": ["pull_request"], "jobs": {"j": {"runs-on": "latitude-5-1-a"}}}}) == ["x.yml:j:latitude-5-1-a"]))
     out.append(("pull requests: release.yml, the sweeper and the workflows they call start by hand or by schedule only",
                 triggers(doc) == {"workflow_dispatch"} and triggers(live["theta-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
                 and triggers(live["gate.yml"]) <= {"workflow_call", "workflow_dispatch"} and triggers(live["publish.yml"]) == {"workflow_call"}))
@@ -347,7 +347,7 @@ def group_pull_requests(doc, jobs, build, steps) -> list:
     for name, wf in live.items():
         for job_name, job in wf["jobs"].items():
             runs_on = json.dumps(job.get("runs-on", ""))
-            if "self-hosted" in runs_on or "theta-" in runs_on:
+            if "self-hosted" in runs_on or "latitude-" in runs_on:
                 with_label.append("%s:%s" % (name, job_name))
     out.append(("pull requests: no workflow on the branches names self-hosted or one of our labels (%s)" % with_label, not with_label))
     return out
@@ -369,9 +369,9 @@ def group_exposure(doc, jobs, build, steps) -> list:
     out.append(("logs: the check sees each kind of it, and not a step that only uses one",
                 all(printed_secrets({"x.yml": {"jobs": {"j": {"steps": [step]}}}}) for step in bad)
                 and not printed_secrets({"x.yml": {"jobs": {"j": {"steps": [{"env": secret, "run": "python3 a.py --run 5 | tee -a out"}]}}}})))
-    theta = (HERE / "theta_node.py").read_text(encoding="utf-8")
-    named = printed_names(theta)
-    out.append(("logs: theta_node.py gives say() and print() neither the address nor a secret (%s)" % named, not named))
+    source = (HERE / "latitude_node.py").read_text(encoding="utf-8")
+    named = printed_names(source)
+    out.append(("logs: latitude_node.py gives say() and print() neither the address nor a secret (%s)" % named, not named))
     out.append(("logs: the check sees that", sorted(printed_names("say('at %s:%d' % (address[0], port))\nprint(access['key'])\nsay('fine %s' % exc)")) ==
                 ["line 1: address", "line 1: port", "line 2: key"]))
     runners = (HERE / "node_runner.sh").read_text(encoding="utf-8")
@@ -385,7 +385,7 @@ def group_exposure(doc, jobs, build, steps) -> list:
     sudo = [s.get("name") for s in build["steps"] if gated not in str(s.get("if", "")) and re.search(r"\bsudo\b", s.get("run") or "")]
     out.append(("node: no step that can run on it uses sudo, which it does not have (%s)" % sudo, not sudo))
     scripts = [p for p in list(HERE.glob("*.py")) + list(HERE.glob("*.sh")) + list(HERE.parent.glob("*.py"))
-               if not p.name.startswith("test_") and p.name not in ("node_bootstrap.sh", "theta_node.py")]
+               if not p.name.startswith("test_") and p.name not in ("node_bootstrap.sh", "latitude_node.py")]
     calling = [p.name for p in scripts if re.search(r"\bsudo\b", p.read_text(encoding="utf-8"))]
     out.append(("node: nor does a script its steps call (%s)" % calling, not calling))
     block = bootstrap.split("PACKAGES=(", 1)[1].split("\n)", 1)[0]
@@ -402,16 +402,16 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
     if missing:
         return out
     out.append(("watch: the same steps in each", jobs["watch-1"]["steps"] == jobs["watch-2"]["steps"]))
-    per_job = theta_node.STAGE_LIMIT_S // 60
+    per_job = latitude_node.STAGE_LIMIT_S // 60
     timeouts = [jobs[n]["timeout-minutes"] for n in WATCHES]
     build_limit = build["timeout-minutes"]
     out.append(("watch (finding 11): each stops by itself inside its job's limit and GitHub's 360 minutes",
                 all(per_job < limit <= 355 for limit in timeouts)))
-    stuck = theta_node.STUCK_S // 60
+    stuck = latitude_node.STUCK_S // 60
     out.append(("watch (finding 11): together they outlast a leg at its limit that started as late as its runner may, and one alone would not",
                 2 * per_job >= build_limit + stuck + 30 and per_job < build_limit))
     out.append(("watch: a leg's limit and a node job fit the age at which the sweeper deletes a node",
-                build_limit + jobs["node"]["timeout-minutes"] + stuck <= theta_node.GUARD_HOURS * 60))
+                build_limit + jobs["node"]["timeout-minutes"] + stuck <= latitude_node.GUARD_HOURS * 60))
     out.append(("watch: each survives a cancel and a crash of the one before; none follows a verdict",
                 all(jobs[n]["if"].startswith("always()") and "needs.node.result == 'success'" in jobs[n]["if"] for n in WATCHES)
                 and "needs.watch-1.outputs.verdict" in jobs["watch-2"]["if"]))
@@ -425,7 +425,7 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
                 and "GTESTS" in env and "GTEST_FILTER_INPUT" in env))
     out.append(("re-launch: refs as the gate reads them", jobs["gate"]["with"]["core_ref"] == "${{ inputs.core_ref || 'main' }}"))
     out.append(("re-launch: the run says so in its name, as the watch looks for it",
-                theta_node.relaunch_title("{0}") in doc.get("run-name", "") and "relaunch_of" in doc[True]["workflow_dispatch"]["inputs"]))
+                latitude_node.relaunch_title("{0}") in doc.get("run-name", "") and "relaunch_of" in doc[True]["workflow_dispatch"]["inputs"]))
     stop = jobs["stop-node"]
     delete = next(s for s in stop["steps"] if " off " in s.get("run", ""))
     out.append(("stop: follows a cancel and every watch, and does not wait for the gates",
@@ -433,7 +433,7 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
     out.append(("stop (finding 1): a watch that crashed is no reason to delete: with the node job done, only if the legs have finished",
                 delete["env"]["ONLY_IF"] == "${{ needs.node.result == 'success' && '--if-legs-done' || '' }}" and "$ONLY_IF" in delete["run"]))
     out.append(("stop: its step outlasts the API's silence and one last slow call, and fits in its job, so the script speaks and not a timeout",
-                delete["timeout-minutes"] * 60 >= theta_node.OFF_ANSWER_LIMIT_S + 4 * 60 + 30
+                delete["timeout-minutes"] * 60 >= latitude_node.OFF_ANSWER_LIMIT_S + 4 * 60 + 30
                 and delete["timeout-minutes"] < stop["timeout-minutes"]))
     out.append(("stop: a stop-node gone red holds nothing up: neither the gate nor the publish needs it",
                 "stop-node" not in jobs["gate"]["needs"] and "stop-node" not in jobs["publish"]["needs"]))
@@ -472,7 +472,7 @@ def group_node_steps(doc, jobs, build, steps) -> list:
                 and any(s.get("with", {}).get("name") == "gtest-bin-linux-x86_64" for s in jobs.get("gtest-linux", {}).get("steps", []))))
     sweeper = load((WORKFLOWS / "theta-sweeper.yml").read_text(encoding="utf-8"))
     out.append(("sweeper: scheduled, and only the sweep", "schedule" in sweeper[True]
-                and "theta_node.py sweep" in sweeper["jobs"]["sweep"]["steps"][-1]["run"]))
+                and "latitude_node.py sweep" in sweeper["jobs"]["sweep"]["steps"][-1]["run"]))
     publish = (WORKFLOWS / "publish.yml").read_text(encoding="utf-8")
     out.append(("publish: no refusal of a cached build, and nothing reads a builder record",
                 "compile-cache" not in publish and "builder.txt" not in publish))

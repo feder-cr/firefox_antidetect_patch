@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -328,9 +329,14 @@ def materialize(into: Path, branch: str = "engine") -> str:
     if not rel.startswith(".."):
         exclude.write_text("/%s/\n" % rel, encoding="utf-8")
     tag = up["mozilla_tag"]
+    # Each phase timed: on a build node the Linux leg took 5.8 min here twice, Windows
+    # 2.4, both starting together (04/11), and nothing said which phase it was.
+    began = time.monotonic()
     git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
         "refs/tags/%s:refs/tags/%s" % (tag, tag))
+    fetched = time.monotonic()
     tree = apply(into, tag, branch, force=True)
+    applied = time.monotonic()
     expected = up.get("exported_tree")
     if expected and tree != expected:
         raise SystemExit("the series applied to %s gives tree %s, UPSTREAM.json declares %s"
@@ -339,6 +345,9 @@ def materialize(into: Path, branch: str = "engine") -> str:
     # actions/checkout this replaces did: the Windows legs build what they built before.
     git(into, "checkout", "-q", "-f", branch)
     head = git(into, "rev-parse", "HEAD").decode().strip()
+    done = time.monotonic()
+    print("materialize: fetch %.0f s, apply %.0f s, checkout %.0f s"
+          % (fetched - began, applied - fetched, done - applied))
     print("materialized %s: %s (tree %s)" % (into, head, tree[:12]))
     return head
 

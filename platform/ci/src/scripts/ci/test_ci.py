@@ -636,8 +636,8 @@ def main() -> int:
     import test_link_pin
     import test_release_builder
     import test_release_path
-    import test_theta_node
-    cases += test_theta_node.cases() + test_link_pin.cases() + test_cache_rules.cases() + test_release_builder.cases() + test_release_path.cases()
+    import test_latitude_node
+    cases += test_latitude_node.cases() + test_link_pin.cases() + test_cache_rules.cases() + test_release_builder.cases() + test_release_path.cases()
 
     failures = 0
     for name, ok in cases:

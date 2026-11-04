@@ -25,6 +25,7 @@ from pathlib import Path
 
 CPUS = Path("/sys/devices/system/cpu")
 PROC = Path("/proc")
+CPUINFO = PROC / "cpuinfo"
 LINKERS = ("ld.lld", "lld-link")
 OUTPUTS = re.compile(r"(^|[/\\:])(libxul\.so|xul\.dll)$")
 
@@ -63,9 +64,19 @@ def groups(cpus: Path = CPUS) -> list:
     return sorted(((kb, parse_list(shared)) for shared, kb in found.items()), key=lambda g: (-g[0], g[1]))
 
 
-def machine(cpus: Path = CPUS) -> list:
+def cpu_model(cpuinfo: Path = CPUINFO) -> str:
+    """The CPU's name: the link took 13.9-16 min across nodes of one plan (04/11), and the
+    plan does not say which CPU it gives."""
+    for line in read(cpuinfo).splitlines():
+        if line.lower().startswith("model name"):
+            return line.split(":", 1)[1].strip()
+    return "not exposed"
+
+
+def machine(cpus: Path = CPUS, cpuinfo: Path = CPUINFO) -> list:
     """What decides a single thread's speed, one line each."""
-    lines = ["L3 groups: %s" % "; ".join("%d MB on cpus %s" % (kb // 1024, ",".join(map(str, c))) for kb, c in groups(cpus))]
+    lines = ["cpu: %s" % cpu_model(cpuinfo),
+             "L3 groups: %s" % "; ".join("%d MB on cpus %s" % (kb // 1024, ",".join(map(str, c))) for kb, c in groups(cpus))]
     for name in ("scaling_driver", "scaling_governor", "energy_performance_preference", "cpuinfo_max_freq", "scaling_max_freq"):
         values = sorted({read(c / "cpufreq" / name) for c in cpus.glob("cpu[0-9]*")} - {""})
         lines.append("%s: %s" % (name, ", ".join(values) or "not exposed"))

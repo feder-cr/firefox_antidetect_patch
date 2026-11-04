@@ -9,6 +9,7 @@ branch may carry work that was never exported.
     python -m pytest tools/tests
 """
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -78,7 +79,7 @@ def test_what_apply_builds_is_what_verify_accepts(world, capsys):
     assert engine.verify(world, "TAG", "work") == 0
 
 
-def test_materialize_fetches_the_tag_applies_the_series_and_checks_the_tree(world, tmp_path, monkeypatch):
+def test_materialize_fetches_the_tag_applies_the_series_and_checks_the_tree(world, tmp_path, monkeypatch, capsys):
     engine.apply(world, "TAG", "probe", force=False)
     tree = run(world, "rev-parse", "probe^{tree}")
     up = tmp_path / "UPSTREAM.json"
@@ -87,6 +88,8 @@ def test_materialize_fetches_the_tag_applies_the_series_and_checks_the_tree(worl
     monkeypatch.setattr(engine, "UPSTREAM", up)
     into = tmp_path / "runner"
     head = engine.materialize(into)
+    # each phase says how long it took: the Linux leg's 5.8 min (04/11) said nothing of where
+    assert re.search(r"^materialize: fetch \d+ s, apply \d+ s, checkout \d+ s$", capsys.readouterr().out, re.M)
     # the checkout follows the machine's line-ending setting, as actions/checkout does;
     # what git stores is the series' bytes exactly
     assert (into / "dom" / "StealthA.cpp").read_bytes().replace(b"\r\n", b"\n") == b"// ours\n"

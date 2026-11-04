@@ -54,7 +54,7 @@ def context(gtests="true", attempt="1", gtest_filter=GREEN_FILTER, environment="
 
 
 def outcome(jobs, forced, gtests="true", kind="release", cancelled=False, attempt="1", plan_attempt="1"):
-    outputs = {"plan": {"kind": kind, "attempt": plan_attempt, "node_label": "theta-7-%s" % plan_attempt}}
+    outputs = {"plan": {"kind": kind, "attempt": plan_attempt, "node_label": "latitude-7-%s" % plan_attempt}}
     base = {"plan": "success", "node": "success", "build": "success"}
     return e.jobs_after(jobs, dict(base, **forced), context(gtests, attempt), outputs, cancelled)
 
@@ -311,7 +311,7 @@ def group_build_steps(doc) -> list:
                 and names.index("Compile cache - the build used the pinned sccache") < names.index("Compile cache - cold or warm, from its hits")))
 
     runs_on = jobs["build"]["runs-on"]
-    x86 = dict(context(attempt="2"), needs={"plan": {"outputs": {"attempt": "1", "node_label": "theta-7-1"}}})
+    x86 = dict(context(attempt="2"), needs={"plan": {"outputs": {"attempt": "1", "node_label": "latitude-7-1"}}})
     x86["matrix"] = {"runner": "", "leg": "linux-x86_64"}
     out.append(("rerun: of failed jobs, an x86 leg's runs-on is empty, with no runner to fall back to", e.render(runs_on, x86) == ""))
     refused = outcome(jobs, {"build": "failure"}, attempt="2", plan_attempt="1")
@@ -319,8 +319,8 @@ def group_build_steps(doc) -> list:
     full = outcome(jobs, {"build": "failure"}, attempt="2", plan_attempt="2")
     out.append(("rerun: rerun-refused speaks on a re-run of failed jobs, not on the first attempt, not on a full re-run",
                 refused["rerun-refused"] == "success" and first["rerun-refused"] == "skipped" and full["rerun-refused"] == "skipped"))
-    x86["needs"]["plan"]["outputs"].update(attempt="2", node_label="theta-7-2")
-    out.append(("rerun: a full re-run gets the new node's label", e.render(runs_on, x86) == "theta-7-2-linux-x86_64"))
+    x86["needs"]["plan"]["outputs"].update(attempt="2", node_label="latitude-7-2")
+    out.append(("rerun: a full re-run gets the new node's label", e.render(runs_on, x86) == "latitude-7-2-linux-x86_64"))
     job = jobs["rerun-refused"]
     said = json.dumps(job["steps"])
     out.append(("rerun: it is GitHub's runner, it needs the build so that it is re-run with it, and it fails saying how",

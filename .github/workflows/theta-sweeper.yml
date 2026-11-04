@@ -8,7 +8,7 @@
 # past GUARD_HOURS, or with their run or their own leg finished. It cancels a run whose leg waits on a label no
 # runner will come for, long after that run's own watch would have. A schedule runs on
 # the default branch only: on any other branch this does not exist yet. A node made by hand has another
-# name and is never touched. Rules and cases: scripts/ci/theta_node.py, sweep().
+# name and is never touched. Rules and cases: scripts/ci/latitude_node.py, sweep().
 # ─────────────────────────────────────────────────────────────────────────────
 name: theta-sweeper
 
@@ -35,4 +35,4 @@ jobs:
           LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
           LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
           GH_TOKEN: ${{ github.token }}
-        run: python3 .series/platform/ci/src/scripts/ci/theta_node.py sweep
+        run: python3 .series/platform/ci/src/scripts/ci/latitude_node.py sweep

@@ -34,7 +34,7 @@ class Leg:
     host: str = ""
     target: str = ""
     extra_pkgs: str = ""
-    # Compiled on a build node, and nowhere else (scripts/ci/theta_node.py): such a
+    # Compiled on a build node, and nowhere else (scripts/ci/latitude_node.py): such a
     # leg names no runner, so there is nothing for it to run on without the node.
     node: bool = False
 
