@@ -207,3 +207,29 @@ def test_a_fetch_that_fails_is_asked_again_and_the_last_failure_is_the_error(tmp
     with pytest.raises(subprocess.CalledProcessError):
         engine._fetch_tag(tmp_path, up, sleep=waits.append)
     assert len(calls) == 3 and waits == list(engine.FETCH_WAITS)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="flock, as above")
+def test_a_leg_that_borrows_the_shared_tree_knows_where_its_history_stops(world, tmp_path, monkeypatch):
+    """The tag comes one commit deep, so the shared repository is shallow. A leg that
+    borrowed its objects without knowing that looked for the tag's parent on `git log`,
+    which the build runs on config/milestone.txt: the Windows leg of candidate
+    41912498170 died on "Could not read" that commit. Shown with a tag that has a parent."""
+    run(world, "tag", "-d", "TAG")
+    (world / "other.txt").write_bytes(b"x\n")
+    run(world, "add", "other.txt")
+    run(world, "commit", "-qm", "a second upstream commit")
+    run(world, "tag", "TAG")
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": "file://" + str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    shared = tmp_path / "shared"
+    engine.materialize(tmp_path / "leg-l", shared=shared)
+    engine.materialize(tmp_path / "leg-w", shared=shared)
+    assert (shared / tree[:12] / ".git" / "shallow").exists(), "the test needs a shallow shared repository"
+    for leg in ("leg-l", "leg-w"):
+        # a file the series does not touch, as config/milestone.txt: git walks down to the tag
+        assert run(tmp_path / leg, "log", "-1", "--format=%ad", "--date=iso", "--", "other.txt")

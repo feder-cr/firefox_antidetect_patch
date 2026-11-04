@@ -426,6 +426,13 @@ def materialize(into: Path, branch: str = "engine", shared: Path | None = None) 
         alternates = into / ".git" / "objects" / "info" / "alternates"
         alternates.parent.mkdir(parents=True, exist_ok=True)
         alternates.write_text(str((repo / ".git" / "objects").resolve()) + "\n", encoding="utf-8")
+        # The tag came one commit deep: the borrowing repository must know where history
+        # stops too, or `git log` looks for the tag's parent. The build asks for one
+        # (config/milestone.txt's date, for the .rc files) and the Windows leg of
+        # candidate 41912498170 died on "Could not read" that commit.
+        shallow = repo / ".git" / "shallow"
+        if shallow.exists():
+            shutil.copyfile(shallow, into / ".git" / "shallow")
         commit = (shared / ("%s.commit" % repo.name)).read_text(encoding="utf-8").strip()
         git(into, "update-ref", "refs/heads/%s" % branch, commit)
         tree = git(into, "rev-parse", "%s^{tree}" % branch).decode().strip()
