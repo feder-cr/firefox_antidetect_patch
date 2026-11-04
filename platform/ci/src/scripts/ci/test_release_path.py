@@ -425,13 +425,22 @@ def group_build_steps(doc) -> list:
         said = subprocess.run([str(tmp / "a" / "ld.lld"), "-o", "libxul.so", "a b"], env=env, capture_output=True, text=True).stdout.strip()
         out.append(("huge pages: Linux's through COMPILER_PATH, the real linker gets the arguments and the tunable, and keeps its name",
                     linux == ["COMPILER_PATH=%s" % (tmp / "a")]
-                    and said == "glibc.malloc.hugetlb=1 %s --threads=48 --time-trace -o libxul.so a b" % (clang_bin / "ld.lld")))
+                    and said == "glibc.malloc.hugetlb=1 %s --threads=48 --time-trace --lto-partitions=12 -o libxul.so a b" % (clang_bin / "ld.lld")))
         out.append(("lld's threads: ld.lld caps itself at 16 when not asked, so it is asked, first, so a later flag would still win",
                     said.split()[2] == "--threads=48"))
         out.append(("the link's own times: --time-trace (libxul.so.time-trace), to tell LTO's optimiser from its code generation, "
                     "and the events artifact keeps the file",
                     said.split()[3] == "--time-trace"
                     and "obj-rel/**/*.time-trace" in str(steps["Upload this leg's events"]["with"]["path"])))
+        # The trace of candidate 41912498170: 320 s of serial optimisation, then 428 s of code
+        # generation on one thread. Federico chose partitions (04/11): as many as the threads of
+        # the L3 group the link is pinned to, on both legs, and never through configure.
+        link_env = steps["Build"]["env"]["_LINK_"]
+        out.append(("lto partitions: 12 on the Linux node's ld.lld and on the Windows node's lld-link (_LINK_), none on a hosted runner, none in the mozconfig",
+                    said.split()[4] == "--lto-partitions=12" and linker_shim.LTO_PARTITIONS == 12
+                    and e.render(link_env, win_ctx) == "/opt:lldltopartitions=12 /time-trace"
+                    and e.render(link_env, linux_ctx) == "" and e.render(link_env, hosted_ctx) == ""
+                    and "partitions" not in (HERE / "mozconfig.py").read_text(encoding="utf-8")))
 
     material = next(s for s in jobs["build"]["steps"] if "engine.py materialize" in s.get("run", ""))
     out.append(("source tree: on a node, the legs share one fetch and one series (NODE_SHARED, node_runner.sh); elsewhere as before",

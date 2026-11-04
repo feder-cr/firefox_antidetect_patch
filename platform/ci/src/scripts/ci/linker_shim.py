@@ -27,6 +27,15 @@ them, in <output>.time-trace beside the output (libxul.so.time-trace). On 04/11 
 link spent 11 of its 14 min on one core, and whether that is the optimiser (one thread
 by design) or code generation (one partition, which --lto-partitions would split) was
 unknown. It writes no byte of the output.
+
+And `--lto-partitions`: the trace of candidate 41912498170 said 320 s of LTO's optimiser,
+serial by design, then 428 s of code generation on one thread, the default partition.
+Code generation in LTO_PARTITIONS pieces runs on as many threads, one per thread of the
+L3 group link_pin.py keeps the link on (12 on the node's 4484PX). Federico chose it on
+04/11 knowing the cost: the same optimisation, full LTO and PGO, but the code is laid out
+by partition and not as the retail's single one, and calls between partitions lose what
+code generation alone would have done across them. The Windows leg asks the same of
+lld-link through _LINK_ (release.yml's Build step).
 """
 from __future__ import annotations
 
@@ -34,6 +43,8 @@ import sys
 from pathlib import Path
 
 TUNABLE = "glibc.malloc.hugetlb=1"
+#: One per thread of the L3 group link_pin.py pins the link to (6 cores, 12 threads).
+LTO_PARTITIONS = 12
 THP_ENABLED = Path("/sys/kernel/mm/transparent_hugepage/enabled")
 THP_DEFRAG = Path("/sys/kernel/mm/transparent_hugepage/defrag")
 
@@ -53,7 +64,7 @@ def write(out: Path, clang_bin: Path = Path.home() / ".mozbuild" / "clang" / "bi
     """The stand-in for ld.lld; the lines for $GITHUB_ENV."""
     out.mkdir(parents=True, exist_ok=True)
     path = out / "ld.lld"
-    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace "
+    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace --lto-partitions=%d " % LTO_PARTITIONS
     path.write_text(script(clang_bin / "ld.lld", first), encoding="utf-8", newline="\n")
     path.chmod(0o755)
     print("huge pages for the link: %s, enabled: %s, defrag: %s" % (TUNABLE, _read(THP_ENABLED), _read(THP_DEFRAG)), file=sys.stderr)

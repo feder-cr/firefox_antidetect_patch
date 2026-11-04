@@ -641,6 +641,10 @@ jobs:
           # Windows's link cannot be reached alone, so its whole build asks for huge pages.
           # No configure option reads this (scripts/ci/test_release_path.py).
           GLIBC_TUNABLES: ${{ matrix.node && matrix.family == 'win' && 'glibc.malloc.hugetlb=1' || '' }}
+          # lld-link reads _LINK_ by itself: LTO's code generation in 12 partitions, as the Linux
+          # node's ld.lld (scripts/ci/linker_shim.py says why), and the link's own times.
+          # Not LDFLAGS: about:buildconfig would print it.
+          _LINK_: ${{ matrix.node && matrix.family == 'win' && '/opt:lldltopartitions=12 /time-trace' || '' }}
           # Which objects miss, by name: sccache compiles in its clients here (configure's
           # SCCACHE_CLIENT_SIDE without MOZ_AUTOMATION), so the server's debug log never saw a
           # compile and sccache-misses.txt came out empty on every run. The one module that
