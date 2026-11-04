@@ -1173,6 +1173,47 @@ def runner_case(leaks) -> dict:
                 "mounts_left": home.is_symlink() or toolcache.is_symlink() or tmp_dir.is_symlink()}
 
 
+def group_runner_isolated():
+    """node_runner.sh for real: systemd-run, unshare and the mounts, as root. Faked commands
+    cannot see a mount the kernel refuses: candidate 41810835741 had both runners offline
+    because the cgroup2 remount failed ("already mounted") and the runner never started."""
+    out = []
+    if not sys.platform.startswith("linux") or os.geteuid() != 0 or not shutil_which("systemd-run"):
+        print("skip  runner, isolated: needs Linux, root and systemd")
+        return out
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        # The leg's user has to cross it, as it crosses /srv and /home on the node.
+        tmp.chmod(0o755)
+        for d in ("template/actions-runner", "jobhome", "tc", "tmpview"):
+            (tmp / d).mkdir(parents=True)
+        seen = tmp / "seen"
+        seen.touch()
+        seen.chmod(0o666)
+        run = tmp / "template" / "actions-runner" / "run.sh"
+        run.write_text("#!/bin/bash\n"
+                       'echo "$(id -un) $HOME $(pwd) $SCCACHE_SERVER_PORT $ACTIONS_RUNNER_INPUT_JITCONFIG '
+                       '$(cat /proc/self/cgroup) $(cat /sys/fs/cgroup/memory.max)" > "%s"\n' % seen, newline="\n")
+        run.chmod(0o755)
+        env = dict(os.environ, NODE_RUNNER_TEMPLATE=str(tmp / "template"), NODE_RUNNER_HOME=str(tmp / "jobhome"),
+                   NODE_RUNNER_TOOLCACHE=str(tmp / "tc"), NODE_RUNNER_TMP=str(tmp / "tmpview"), NODE_RUNNER_ROOT=str(tmp / "legs"),
+                   NODE_RUNNER_GUARD=str(tmp / "guard"), NODE_RUNNER_LOG=str(tmp / "log"))
+        try:
+            subprocess.run(["bash", str(HERE / "node_runner.sh"), "7", "q"], input="CFGQ\n", env=env, capture_output=True, text=True, timeout=60)
+            for _ in range(200):
+                if seen.exists() and seen.read_text().strip():
+                    break
+                subprocess.run(["sleep", "0.1"])
+            got = seen.read_text().split() if seen.exists() else []
+            log = (tmp / "log-q.log").read_text() if (tmp / "log-q.log").exists() else ""
+        finally:
+            subprocess.run(["userdel", "runner-q"], capture_output=True)
+        out.append(("runner, isolated: it starts, as its leg's user, in its leg's home at the job's path, with its own port, its own cgroup and a memory ceiling (%s)" % (got or log[-200:]),
+                    len(got) >= 7 and got[0] == "runner-q" and got[1] == str(tmp / "jobhome") and got[2] == str(tmp / "jobhome" / "actions-runner")
+                    and got[3] == str(4300 + 17) and got[4] == "CFGQ" and got[5] == "0::/" and got[6].isdigit()))
+    return out
+
+
 def group_runner():
     out = []
     if not sys.platform.startswith("linux"):
@@ -1903,7 +1944,7 @@ def host_key_section(serves):
             victim.wait()
 
 
-GROUPS = [group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
+GROUPS = [group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
           group_lost_either_order, group_two_legs, group_relaunch, group_stuck, group_watch_stages, group_sweep, group_secrets,
           group_probe, group_runner, group_cancelled_by_hand, group_runner_clock, group_same_code,
           group_workflow_steps, group_any_shape, group_clear_verdicts, group_dispatch_once, group_lingering_and_silence,

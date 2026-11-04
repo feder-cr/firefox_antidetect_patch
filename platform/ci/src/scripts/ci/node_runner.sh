@@ -92,7 +92,9 @@ EOF
     unshare --mount --cgroup --propagation private -- \
     bash -c 'set -e
       mount --bind "$1/home" "$2"; mount --bind "$1/toolcache" "$3"; mount --bind "$1/tmp" "$4"
-      mount -t cgroup2 cgroup2 "$5"
+      # The cgroup2 of the host is already mounted there: lifted first, in this namespace only,
+      # or the mount fails and the runner never starts (candidate 41810835741).
+      umount -l "$5" || true; mount -t cgroup2 cgroup2 "$5"
       shift 5; cd "$HOME_DIR_IN/actions-runner"; exec "$@"' _ "$LEG_ROOT" "$HOME_DIR" "$TOOLCACHE" "$TMP_DIR" "$CGROUP_DIR" \
     runuser -u "$USER_NAME" -- env -i HOME="$HOME_DIR" PATH="$RUNNER_PATH" LANG=C.UTF-8 \
       SCCACHE_SERVER_PORT="$PORT" ACTIONS_RUNNER_HOOK_JOB_STARTED="$GUARD" \
