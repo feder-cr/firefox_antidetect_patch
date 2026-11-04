@@ -878,6 +878,9 @@ jobs:
           # of dist/firefox. With PGO its command line says -9e, 192 MiB blocks: too few for
           # threads to matter. xz reads this, and counts 12.3 GiB for it, with the build over.
           XZ_OPT: ${{ matrix.node && '-T16 --block-size=32MiB --memlimit-compress=16GiB' || '' }}
+          # Once, on the candidate that proves stage_package.sh: mach package after it, and
+          # dist/firefox compared byte for byte. Empty from then on.
+          CI_PACKAGE_PROVE: '1'
         run: python3 scripts/ci phase package -- bash scripts/ci/package_${{ matrix.family }}.sh
 
       - name: Upload build artifact

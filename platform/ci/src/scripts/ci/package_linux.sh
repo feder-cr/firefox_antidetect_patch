@@ -8,7 +8,8 @@ set -euo pipefail
 # obj-rel/dist/bin, the development tree: the test binaries and TLS test
 # servers went out with it, and the 44 locale .properties a page can read
 # kept the comments the packager strips, so they differed from the retail's.
-./mach package
+# dist/firefox only: the archives `mach package` makes after it are not shipped.
+bash scripts/ci/stage_package.sh
 DIST=obj-rel/dist/firefox
 [ -x "$DIST/firefox" ] || { echo "ERROR: mach package did not produce $DIST/firefox"; exit 1; }
 STAGING=staging

@@ -662,6 +662,52 @@ def group_beside(doc) -> list:
     return out
 
 
+def stage_case(differ: bool, prove: bool):
+    """stage_package.sh with a make that stages a tree and a mach whose package stages
+    it again, the same or one byte apart: (exit code, what it said, what ran)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        ran = tmp / "ran"
+        make = tmp / "make"
+        make.write_text('#!/bin/bash\necho "make $*" >> "%s"\nd="$2/dist/firefox"; mkdir -p "$d/sub"\n'
+                        'printf "one" > "$d/firefox"; printf "two" > "$d/sub/omni.ja"; ln -sfn firefox "$d/link"\n' % ran,
+                        encoding="utf-8", newline="\n")
+        mach = tmp / "mach"
+        mach.write_text('#!/bin/bash\necho "mach $*" >> "%s"\n%s\n'
+                        % (ran, 'printf "TWO" > "%s/dist/firefox/sub/omni.ja"' % (tmp / "obj") if differ else "true"),
+                        encoding="utf-8", newline="\n")
+        for f in (make, mach):
+            f.chmod(0o755)
+        env = dict(os.environ, CI_OBJDIR=str(tmp / "obj"), CI_MAKE=str(make), CI_MACH=str(mach),
+                   CI_PACKAGE_PROVE="1" if prove else "")
+        done = subprocess.run(["bash", str(HERE / "stage_package.sh")], env=env, capture_output=True, text=True, timeout=60)
+        return done.returncode, done.stdout + done.stderr, ran.read_text(encoding="utf-8").splitlines() if ran.exists() else []
+
+
+def group_stage_package(doc) -> list:
+    """Both legs ship their own archive of dist/firefox. `mach package` staged it and then
+    made archives nobody ships: on Windows a zip (32 s) and the installer's 7z on one
+    core (89 s), on Linux a tar.xz (candidate 41892772401). stage_package.sh stages the
+    tree only, and proves once that the tree is the same."""
+    out = []
+    scripts = {name: (HERE / name).read_text(encoding="utf-8") for name in ("package_linux.sh", "package_win.sh")}
+    out.append(("package: both legs stage dist/firefox only, through stage_package.sh, and run no mach package themselves",
+                all("bash scripts/ci/stage_package.sh" in s and "\n./mach package\n" not in s for s in scripts.values())))
+    if not sys.platform.startswith("linux"):
+        print("skip  stage_package.sh: bash, Linux only")
+        return out
+    code, said, ran = stage_case(differ=False, prove=False)
+    out.append(("package: it runs stage-package in the objdir, and nothing else (%s)" % ran,
+                code == 0 and ran == ["make -C %s stage-package" % ran[0].split()[2]] if ran else False))
+    code, said, ran = stage_case(differ=False, prove=True)
+    out.append(("package: the proof runs mach package after it and passes on the same tree, file for file and link for link",
+                code == 0 and [r.split()[0] for r in ran] == ["make", "mach"] and "proved" in said and "3 entries" in said))
+    code, said, ran = stage_case(differ=True, prove=True)
+    out.append(("package: one byte apart, the proof fails, and says which file",
+                code != 0 and "omni.ja" in said and "differs" in said))
+    return out
+
+
 def cases() -> list:
     try:
         import yaml
@@ -669,7 +715,8 @@ def cases() -> list:
         return [("release path: the workflow can be read (PyYAML is missing)", False)]
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     out = []
-    for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,))):
+    for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
+                        (group_stage_package, (doc,))):
         try:
             out += group(*args)
         except Exception as exc:

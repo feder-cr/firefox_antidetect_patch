@@ -46,6 +46,7 @@
   "scripts/ci/report.py": "100644",
   "scripts/ci/sccache/0001-rust-profile-use-is-an-input.patch": "100644",
   "scripts/ci/sccache_build.py": "100644",
+  "scripts/ci/stage_package.sh": "100644",
   "scripts/ci/symbols_match.py": "100644",
   "scripts/ci/test_cache_rules.py": "100644",
   "scripts/ci/test_ci.py": "100644",

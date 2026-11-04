@@ -7,7 +7,8 @@ set -euo pipefail
 # A release MUST come from the clean dist/firefox; dist/bin is the dev tree
 # (cruft + loose juggler that masked the firefox-7/8 packaging bugs). A
 # failing `mach package` fails the leg, never falls through to a stale tree.
-./mach package
+# dist/firefox only: the archives `mach package` makes after it are not shipped.
+bash scripts/ci/stage_package.sh
 WIN_APP=obj-rel/dist/firefox
 [ -f "$WIN_APP/firefox.exe" ] || { echo "ERROR: mach package did not produce a clean dist/firefox tree"; exit 1; }
 echo "packaging from: $WIN_APP"
