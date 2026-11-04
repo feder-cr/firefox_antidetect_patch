@@ -329,9 +329,15 @@ def group_build_steps(doc) -> list:
 
     disk = steps["Compile cache - sccache keeps it on the runner's disk"]["run"]
     server = steps["Compile cache - the node's server, which alone logs"]
-    env_text = json.dumps(jobs["build"].get("env", {})) + json.dumps([s.get("env", {}) for s in jobs["build"]["steps"]])
-    out.append(("sccache log: nothing gives the clients SCCACHE_LOG, or the job's environment SCCACHE_ERROR_LOG",
-                "SCCACHE_LOG" not in disk and "SCCACHE_ERROR_LOG" not in disk and "SCCACHE_LOG" not in env_text))
+    others = json.dumps(jobs["build"].get("env", {})) + json.dumps([s.get("env", {}) for s in jobs["build"]["steps"] if s.get("name") != "Build"])
+    build_log = (steps["Build"].get("env") or {}).get("SCCACHE_LOG", "")
+    # The clients compile here (SCCACHE_CLIENT_SIDE without MOZ_AUTOMATION), so the names of
+    # the misses can only come from them: the Build step alone, the one module that says hit
+    # or miss, on the node; never all of sccache's debug in the build's output.
+    out.append(("sccache log: the clients get the hit-or-miss lines alone, in the Build step alone, and no step SCCACHE_ERROR_LOG",
+                "SCCACHE_LOG" not in disk and "SCCACHE_ERROR_LOG" not in disk and "SCCACHE_LOG" not in others
+                and "SCCACHE_ERROR_LOG" not in others and "sccache::compiler::compiler=debug" in build_log and "matrix.node" in build_log
+                and "'debug'" not in build_log))
     words = shlex.split(server["run"])
     out.append(("sccache log: the server alone, on the node, started with them, by the pinned path",
                 words[:2] == ["SCCACHE_LOG=debug", 'SCCACHE_ERROR_LOG=$RUNNER_TEMP/sccache-debug.log'] and words[2:] == ["$SCCACHE_PATH", "--start-server"]

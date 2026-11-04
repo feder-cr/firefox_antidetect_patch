@@ -622,10 +622,11 @@ def main() -> int:
                       and "series-commit.txt" in every and "--series-commit-file" in every))
 
     import test_cache_rules
+    import test_link_pin
     import test_release_builder
     import test_release_path
     import test_theta_node
-    cases += test_theta_node.cases() + test_cache_rules.cases() + test_release_builder.cases() + test_release_path.cases()
+    cases += test_theta_node.cases() + test_link_pin.cases() + test_cache_rules.cases() + test_release_builder.cases() + test_release_path.cases()
 
     failures = 0
     for name, ok in cases:
