@@ -45,9 +45,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import legs  # noqa: E402
 
-# Objects compiled by this build, below which its entry is not worth the upload.
-# A leg has about 5,500; change this after the first real runs.
-NEW_OBJECTS_WORTH_SAVING = 300
+# Objects compiled by this build, below which its entry is not worth the upload: one.
+# It was 300 when a node uploaded at about 5 MB/s, and a set that misses on every run
+# and stays below it is never saved, so every run compiles it again: the Windows leg
+# compiled the same 284 objects, mostly Rust, on every run from 2026-11-03 to 11-04
+# (Rust hits 76.5%), the Linux leg the same 60. A Latitude node uploads a 2.1 GB entry
+# in 12 s (about 300 MB/s, run 41819266470), while its link goes on.
+NEW_OBJECTS_WORTH_SAVING = 1
 NEW_BYTES_WORTH_SAVING = 2**30
 # A whole leg has about 5,500. Fewer than this is a build that stopped early.
 ENTRY_OBJECTS_FLOOR = 1000

@@ -687,9 +687,11 @@ jobs:
           # its whole output goes to logs/build.log.
           python3 -u scripts/memory_watch.py --log memwatch.log &
           # The libxul link on one group of cores (scripts/ci/link_pin.py), the two legs on
-          # the two groups, and the machine's topology and frequency policy in its log.
+          # the two groups, and the machine's topology and frequency policy in its log. The
+          # large L3 to the Windows leg, which usually ends last: on it a link took 13.8 min,
+          # on the small one 14.8, both on the node at once (run 41819266470).
           if [ "${{ matrix.node }}" = "true" ]; then
-            python3 -u scripts/ci/link_pin.py --mode "${{ matrix.leg == 'linux-x86_64' && 'large-l3' || 'small-l3' }}" --log linkpin.log &
+            python3 -u scripts/ci/link_pin.py --mode "${{ matrix.leg == 'win-x86_64' && 'large-l3' || 'small-l3' }}" --log linkpin.log &
           fi
           # The PGO profile is an input and nothing may move it (scripts/ci/input_watch.py):
           # run 40619608072 found its mtime 18 minutes into this step, and cargo

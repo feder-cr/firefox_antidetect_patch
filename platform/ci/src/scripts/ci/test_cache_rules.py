@@ -133,9 +133,12 @@ def cases() -> list:
     out.append(("trim: entries of a like size keep the newest 2 and no more", sorted(c.to_delete(even, MAIN, "l", 400, 1)) == [1, 2]))
     out.append(("worth: the threshold is a real number of objects", 0 < t < 5500))
     out.append(("worth: at the threshold it saves", c.worth_saving(STATS % (t, 0))[0] is True))
+    out.append(("worth: a set that misses on every run is saved, however small (the Windows leg's 284, the Linux leg's 60)",
+                all(c.worth_saving(STATS % (n, 0))[0] is True for n in (284, 60, 1))
+                and c.worth_saving(STATS % (284, 0), now=disk(range(5000)), restored=set(disk(range(5000 - 284))))[0] is True))
     out.append(("worth: one below it does not", c.worth_saving(STATS % (t - 1, 0))[0] is False))
     out.append(("worth: the count is in what it says", str(t - 1) in c.worth_saving(STATS % (t - 1, 0))[1]))
-    out.append(("worth: objects it failed to store do not count", c.new_objects(STATS % (t + 5, 10)) == t - 5))
+    out.append(("worth: objects it failed to store do not count", c.new_objects(STATS % (305, 10)) == 295))
     out.append(("worth: the total, not the C/C++ line", c.new_objects(STATS % (7, 0)) == 7))
     out.append(("worth: statistics with no count save", c.worth_saving("")[0] is True and c.worth_saving("garbage\n")[0] is True))
 
