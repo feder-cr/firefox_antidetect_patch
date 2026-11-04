@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Prepare a Theta node to run release.yml's build job, as root, on the image's
-# Ubuntu 22.04:
+# Prepare a node to run release.yml's build job, as root, on the image's Ubuntu 24.04,
+# the same as GitHub's runners:
 #
-#     ssh root@node 'bash -s' < scripts/ci/node_bootstrap.sh
+#     ssh ubuntu@node 'sudo -n bash -s' < scripts/ci/node_bootstrap.sh
 #
 # What a job on ubuntu-24.04 finds already installed, this installs, at fixed
 # versions: the apt packages from one dated snapshot (apt checks them against
@@ -27,11 +27,11 @@ NODE_VERSION=22.23.4
 NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
 RUSTUP_VERSION=1.29.3
 RUSTUP_SHA256=b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
-# Ubuntu 24.04's. 22.04's is 11.8, and lavapipe's shaders need 12.2.
+# Ubuntu 24.04's, at a version of our own choosing. Lavapipe's shaders need 12.2 or later.
 GLSLANG_VERSION=14.0.0
 GLSLANG_SHA256=80bbb916a23e94ea9cbfb1acb5d1a44a7e0c9613bcf5b5947c03f2273bdc92b0
 
-# The image's sources.list carries no security pocket and follows the archive.
+# The image's sources follow the archive, and these are one fixed day of it.
 PACKAGES=(
   # the job's steps; sudo is for this script's as_runner
   sudo git curl ca-certificates python3 python3-venv
@@ -43,18 +43,18 @@ PACKAGES=(
   # lavapipe (scripts/ci/lavapipe_build.py)
   cmake ninja-build bison flex patchelf
   # what the runner links against
-  libicu70 libkrb5-3 liblttng-ust1 libssl3 zlib1g
+  libicu74 libkrb5-3 liblttng-ust1t64 libssl3t64 zlib1g
   # what `mach package` starts: xpcshell loads a libxul linked against these
-  libgtk-3-0 libasound2 libdbus-glib-1-2 libx11-xcb1 libxt6 libxtst6 libpci3
+  libgtk-3-0t64 libasound2t64 libdbus-glib-1-2 libx11-xcb1 libxt6t64 libxtst6 libpci3
 )
 
 die() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run it as root"
 . /etc/os-release
-[ "${VERSION_CODENAME:-}" = jammy ] || die "written for Ubuntu 22.04 (jammy), this is ${PRETTY_NAME:-unknown}"
+[ "${VERSION_CODENAME:-}" = noble ] || die "written for Ubuntu 24.04 (noble), this is ${PRETTY_NAME:-unknown}"
 
-export DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a LANG=C.UTF-8
 
 fetch() { # url sha256 file
   [ -f "$3" ] && echo "$2  $3" | sha256sum -c --quiet - 2>/dev/null && return 0
@@ -64,7 +64,8 @@ fetch() { # url sha256 file
 
 echo "== apt, snapshot $APT_SNAPSHOT"
 # apt has no network timeout of its own (run 41248997155 waited 5h40 on a mirror).
-printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' \
+# A machine just installed may be running its own daily apt: wait for its lock.
+printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' 'DPkg::Lock::Timeout "600";' \
   > /etc/apt/apt.conf.d/80-ci-network
 # The snapshot service answers plain HTTP with a redirect to HTTPS, and the image has
 # no CA certificates: on a fresh node every index failed and only "Unable to locate
@@ -72,11 +73,11 @@ printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Ac
 apt-get update -qq -o APT::Update::Error-Mode=any
 apt-get install -y -qq --no-install-recommends ca-certificates >/dev/null
 {
-  for pocket in jammy jammy-updates jammy-security; do
+  for pocket in noble noble-updates noble-security; do
     echo "deb http://snapshot.ubuntu.com/ubuntu/$APT_SNAPSHOT $pocket main restricted universe multiverse"
   done
 } > /etc/apt/sources.list
-rm -f /etc/apt/sources.list.d/*.list
+rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
 # A failed index is an error here, not a warning and a package missing later.
 apt-get update -qq -o APT::Update::Error-Mode=any
 apt-get install -y -qq --no-install-recommends "${PACKAGES[@]}" >/dev/null
@@ -153,8 +154,7 @@ as_runner test -w /opt/hostedtoolcache || missing+=("a writable tool cache")
 [ "${#missing[@]}" = 0 ] || die "missing: ${missing[*]}"
 
 echo "== a host key of this node's own"
-# The image's is the same on every node (measured). theta_node.py pins this one, read
-# from this session, for every later connection.
+# theta_node.py pins this one, read from this session, for every later connection.
 rm -f /etc/ssh/ssh_host_*
 ssh-keygen -A >/dev/null
 kill -HUP "$(pgrep -o -x sshd)"

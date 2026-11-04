@@ -22,8 +22,8 @@
 # unless it says kind=release; the `plan` job decides, once, before any build
 # (scripts/release_plan.py), and every job reads its outputs.
 #
-# WHO COMPILES: the two x86_64 legs ONLY on Theta nodes, at the same time, each on its own
-# fixed machine, on a single-job runner with a label of its own. linux-arm64 on GitHub's
+# WHO COMPILES: the two x86_64 legs ONLY on Latitude.sh servers, at the same time, each on its
+# own, on a single-job runner with a label of its own. linux-arm64 on GitHub's
 # runners, because the nodes are x86. Gates and tests stay on GitHub's runners, with the
 # binaries from the artifacts. `node` turns the nodes on: if either cannot, the run fails.
 # `watch-*` turn each node off as its leg ends, and re-launch the run once if a machine is
@@ -187,8 +187,8 @@ jobs:
         with: { path: .series, fetch-depth: 1 }
       - name: Turn this leg's node on, prepare it, start its runner
         env:
-          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
-          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+          LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
+          LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           LEG: ${{ matrix.leg }}
@@ -234,7 +234,7 @@ jobs:
           printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' \
             | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
       - name: Free disk + 32G swap (Linux runners)
-        # The node has 700 GB free, and a container cannot have swap.
+        # The node has 800 GB free and 96 GB of memory, and its link fits with no swap.
         if: runner.environment == 'github-hosted'
         run: |
           # The GH-hosted 14GB-free disk is tight for a full Firefox build: objdir
@@ -563,8 +563,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/sccache-bin
-          # The node is Ubuntu 22.04 and a binary built on 24.04 wants a newer glibc: its
-          # own entry. Compile hits do not depend on it: neither sccache's version nor
+          # The node's binary has an entry of its own, even on the same Ubuntu as GitHub's runners. Compile hits do not depend on it: neither sccache's version nor
           # its path enters their key. No key here is one the arm64 leg reads
           # (test_release_builder.py), so nothing the node writes runs on GitHub's runners.
           key: sccache-bin-${{ runner.os }}-${{ runner.arch }}${{ runner.environment != 'github-hosted' && '-node' || '' }}-v0.18.0-${{ hashFiles('scripts/ci/sccache/*.patch') }}
@@ -1132,8 +1131,8 @@ jobs:
         id: watch
         shell: bash
         env:
-          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
-          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+          LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
+          LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           # The same run again if a machine is lost: every input by value.
@@ -1166,8 +1165,8 @@ jobs:
         id: watch
         shell: bash
         env:
-          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
-          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+          LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
+          LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           # The same run again if a machine is lost: every input by value.
@@ -1204,8 +1203,8 @@ jobs:
         if: always()
         timeout-minutes: 12
         env:
-          THETA_API_KEY: ${{ secrets.THETA_API_KEY }}
-          THETA_PROJECT: ${{ secrets.THETA_PROJECT }}
+          LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
+          LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
           ONLY_IF: ${{ needs.node.result == 'success' && '--if-legs-done' || '' }}

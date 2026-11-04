@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""theta_node.py against a fake Theta API, a fake GitHub API and a fake SSH.
+"""theta_node.py against a fake Latitude.sh API, a fake GitHub API and a fake SSH.
 
 Each group runs on its own: an exception is that group's failure, not the file's.
 
@@ -56,56 +56,80 @@ START_RUNNER = "bash /usr/local/sbin/node_runner.sh 5"
 PUT_RUNNER = "cat > /usr/local/sbin/node_runner.sh"
 
 
-def listed(marks="lw", status="running", run=5, attempt=1):
+def listed(marks="lw", status=t.RUNNING, run=5, attempt=1):
     return [{"id": "dpl_%s" % m, "name": "ci%sa%s%s" % (run, attempt, m), "status": status} for m in marks]
 
 
-class FakeTheta:
-    def __init__(self, balance=10.5, create_status=201, create_lost=False, rows=(ROW_L, ROW_W), delete_takes=True, log=None):
-        self.balance, self.create_status, self.create_lost = balance, create_status, create_lost
+class FakeLatitude:
+    """The API as measured on 2026-11-04: JSON:API, the server's hostname as its name."""
+
+    def __init__(self, create_status=201, create_lost=False, rows=(ROW_L, ROW_W), delete_takes=True, log=None, refuse_sites=()):
+        self.create_status, self.create_lost = create_status, create_lost
         self.rows, self.delete_takes = list(rows), delete_takes
         self.nodes, self.created, self.deleted = [], [], []
         self.log = log if log is not None else []
         self.list_status = 200
         self.outage = None  # a function: true while everything answers 503
         self.list_body = None  # what the list of nodes answers instead, as raw bytes
-        self.resources = list(t.MACHINES.values())  # who gpu-resources lists, or "down"
+        self.refuse_sites = list(refuse_sites)
+        self.keys, self.keys_deleted = [], []
+        # (region, USD an hour, the sites that have it)
+        self.regions = [("Mexico", 1.48, ["MEX2"]), ("Netherlands", 1.09, ["AMS"]), ("United States", 1.09, ["DAL", "NYC"])]
 
     def __call__(self, method, url, headers, body):
-        assert headers["x-api-key"] == KEY
-        path = url.split("controller.thetaedgecloud.com", 1)[1]
+        assert {k.lower(): v for k, v in headers.items()}["authorization"] == "Bearer " + KEY
+        path = url.split("api.latitude.sh", 1)[1]
         if self.outage and self.outage():
             return 503, b"busy"
-        if path.endswith("/gpu-resources"):
-            if self.resources == "down":
-                return 503, b"busy"
-            return 200, json.dumps({"body": {"resources": [{"resource_id": r} for r in self.resources]}}).encode()
-        if path.endswith("/billing/balance"):
-            return 200, json.dumps({"body": {"balance_usd": self.balance}}).encode()
-        if path.startswith("/deployments/list"):
-            return self.list_status, json.dumps({"body": self.rows}).encode()
-        if path.endswith("/gpu-deployments") and method == "GET" and self.list_body is not None:
+        if path.startswith("/plans"):
+            assert t.PLAN in path
+            regions = [{"name": name, "pricing": {"USD": {"hour": price}}, "locations": {"in_stock": sites}} for name, price, sites in self.regions]
+            return 200, json.dumps({"data": [{"attributes": {"regions": regions}}]}).encode()
+        if path.endswith("/ssh_keys") and method == "POST":
+            sent = json.loads(body)["data"]["attributes"]
+            self.keys.append({"id": "key_" + sent["name"], "attributes": sent})
+            return 201, json.dumps({"data": {"id": "key_" + sent["name"]}}).encode()
+        if path.endswith("/ssh_keys"):
+            return 200, json.dumps({"data": self.keys}).encode()
+        if "/ssh_keys/" in path:
+            key_id = path.rsplit("/", 1)[1]
+            self.keys_deleted.append(key_id)
+            self.keys = [k for k in self.keys if k["id"] != key_id]
+            return 204, b""
+        if path.startswith("/servers?") and self.list_body is not None:
             return 200, self.list_body
-        if path.endswith("/gpu-deployments") and method == "GET":
-            return self.list_status, json.dumps({"body": {"deployments": self.nodes}}).encode()
-        if path.endswith("/gpu-deployments") and method == "POST":
-            sent = json.loads(body)
+        if path.startswith("/servers?"):
+            data = [{"id": n["id"], "attributes": {"hostname": n["name"], "status": n.get("status"), "created_at": n.get("created_at")}} for n in self.nodes]
+            return self.list_status, json.dumps({"data": data}).encode()
+        if path == "/servers" and method == "POST":
+            sent = json.loads(body)["data"]["attributes"]
             self.created.append(sent)
-            node_id = "dpl_" + sent["name"][-1]
+            node_id = "dpl_" + sent["hostname"][-1]
             if self.create_lost:
-                self.nodes.append({"id": node_id, "name": sent["name"], "status": "unknown"})
+                self.nodes.append({"id": node_id, "name": sent["hostname"], "status": "unknown"})
                 raise OSError("connection reset")
+            if sent["site"] in self.refuse_sites:
+                return 422, b'{"errors":[{"detail":"not available"}]}'
             if self.create_status != 201:
-                return self.create_status, b'{"message":"GPU resource not found"}'
-            self.nodes.append({"id": node_id, "name": sent["name"], "status": "running", "machine_type": sent["resource_id"]})
-            return 201, json.dumps({"body": {"deployment": {"id": node_id}}}).encode()
+                return self.create_status, b'{"errors":[{"detail":"refused"}]}'
+            self.nodes.append({"id": node_id, "name": sent["hostname"], "status": t.RUNNING})
+            return 201, json.dumps({"data": {"id": node_id}}).encode()
+        if path.startswith("/servers/") and method == "GET":
+            node_id = path.rsplit("/", 1)[1]
+            for row in self.rows:
+                if row["BaseID"] == node_id:
+                    if self.list_status != 200:
+                        return self.list_status, b"busy"
+                    host = row["NodePublicIP"] if row["PodPhase"].endswith(": Running") else None
+                    return 200, json.dumps({"data": {"id": node_id, "attributes": {"primary_ipv4": host}}}).encode()
+            return 404, b"{}"
         if method == "DELETE":
             node_id = path.rsplit("/", 1)[1]
             self.deleted.append(node_id)
             self.log.append("delete " + node_id)
             if self.delete_takes:
                 self.nodes = [n for n in self.nodes if n["id"] != node_id]
-            return 200, b"{}"
+            return 204, b""
         raise AssertionError("unexpected %s %s" % (method, path))
 
 
@@ -227,7 +251,7 @@ def quiet(fn, *args, **kwargs):
 def provisioned(api, gh, ssh, leg=L):
     """provision() of one leg: (True or None, error text)."""
     clock = Clock()
-    theta = t.Theta(PROJECT, KEY, api, clock.sleep)
+    theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
     github = t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
     with tempfile.TemporaryDirectory() as tmp:
         key = Path(tmp) / "node_key"
@@ -275,18 +299,18 @@ LOSE_L = {"l": False, "w": True}
 LOSE_W = {"l": True, "w": False}
 
 
-def watched(answers, nodes="lw", status="running", answering=True, relaunch_of="", limit=6 * 3600, past_runs=(), gh=None,
+def watched(answers, nodes="lw", status=t.RUNNING, answering=True, relaunch_of="", limit=6 * 3600, past_runs=(), gh=None,
             rows=(ROW_L, ROW_W), api=None, sha=HEAD, probe=None):
     """watch() to its verdict, on a clock that only moves when it sleeps. answering: is sshd
     there: a bool, a function of the seconds since the start, or either by leg's mark.
-    (verdict, FakeGitHub, FakeTheta, the log of deletes and dispatches, all it said, clock)"""
+    (verdict, FakeGitHub, FakeLatitude, the log of deletes and dispatches, all it said, clock)"""
     clock, log = Clock(), []
-    api, gh = api or FakeTheta(rows=rows), gh or FakeGitHub()
+    api, gh = api or FakeLatitude(rows=rows), gh or FakeGitHub()
     api.log, gh.log = log, log
     api.nodes = listed(nodes, status)
     gh.jobs_answers = answers
     gh.past_runs = list(past_runs) or gh.past_runs
-    theta, github = t.Theta(PROJECT, KEY, api, clock.sleep), t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
+    theta, github = t.Latitude(PROJECT, KEY, api, clock.sleep), t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
 
     def answers_at(host, port):
         said = answering[{"1.1.1.1": "l", "2.2.2.2": "w"}[host]] if isinstance(answering, dict) else answering
@@ -298,22 +322,21 @@ def watched(answers, nodes="lw", status="running", answering=True, relaunch_of="
 
 def group_turning_on():
     out = []
-    out.append(("machines: each leg on its own fixed PC, the two the design names, and no third",
-                t.MACHINES == {L: "community_18a9f767a3e940349d2a634e173598f2", W: "community_921db380bf634e279a706d1d1311c129"}
-                and sorted(t.MACHINES) == sorted(t.node_legs()) and len(set(t.MACHINES.values())) == 2))
-    source = (HERE / "theta_node.py").read_text(encoding="utf-8")
-    out.append(("machines: each named in one place, and no argument names one", all(source.count(m) == 1 for m in t.MACHINES.values()) and "--machine" not in source))
+    out.append(("plan: one, named in one place, and no argument names another",
+                (HERE / "theta_node.py").read_text(encoding="utf-8").count('"%s"' % t.PLAN) == 1 and "--plan" not in (HERE / "theta_node.py").read_text(encoding="utf-8")))
     out.append(("names: a node's name says its run, its attempt and its leg, so its machine",
                 {t.node_name(5, 1, leg) for leg in t.node_legs()} == {"ci5a1l", "ci5a1w"} and t.leg_of("w") == W and t.leg_of("l") == L
                 and t.NAME.match("ci5a1l").groups() == ("5", "1", "l")))
     for leg in (L, W):
-        api, gh, ssh = FakeTheta(), FakeGitHub(), FakeSsh()
+        api, gh, ssh = FakeLatitude(), FakeGitHub(), FakeSsh()
         got, error = provisioned(api, gh, ssh, leg)
         sent = api.created[0] if api.created else {}
-        out.append(("on, %s: its own machine, under the run's name, with this run's key and a price ceiling" % leg,
-                    got and [c["resource_id"] for c in api.created] == [t.MACHINES[leg]] and sent.get("name") == t.node_name(5, 1, leg)
-                    and sent.get("ssh_public_key") == "ssh-ed25519 AAAA ci-node" and sent.get("ssh_port") == 22
-                    and sent.get("container_image") == t.IMAGE and sent.get("max_price_per_hour_usd") == t.MAX_PRICE_USD_HOUR))
+        out.append(("on, %s: the cheapest location with stock, the United States among equals, under the run's name, billed by the hour" % leg,
+                    got and [c["site"] for c in api.created] == ["DAL"] and sent.get("hostname") == t.node_name(5, 1, leg)
+                    and sent.get("plan") == t.PLAN and sent.get("operating_system") == t.OPERATING_SYSTEM and sent.get("billing") == "hourly"
+                    and sent.get("project") == PROJECT))
+        out.append(("on, %s: with this run's key, which is dropped once the node has answered" % leg,
+                    sent.get("ssh_keys") == ["key_" + t.node_name(5, 1, leg)] and api.keys == [] and api.keys_deleted == ["key_" + t.node_name(5, 1, leg)]))
         out.append(("on, %s: one runner, its own label, online" % leg,
                     [j["name"] for j in gh.jits] == [t.node_name(5, 1, leg)] and gh.jits[0]["labels"] == [t.leg_label(5, 1, leg)]
                     and gh.jits[0]["work_folder"] == "../work"))
@@ -324,8 +347,8 @@ def group_turning_on():
                     and b"node_bootstrap" in stdin["bash -s"] and b"\r" not in stdin["bash -s"]
                     and stdin[START_RUNNER] == b"JIT1\n" and not any("JIT" in c for c in commands)))
         out.append(("on, %s: a node that went well stays on" % leg, api.deleted == []))
-    out.append(("prices: the ceiling is above both machines' price", t.MAX_PRICE_USD_HOUR >= 0.182))
-    got, error = provisioned(FakeTheta(), FakeGitHub(), FakeSsh({"true": (255, "", "root@<node>: Permission denied (publickey).")}))
+    out.append(("prices: the ceiling is above the plan's dearest location, as read", t.MAX_PRICE_USD_HOUR >= 1.48))
+    got, error = provisioned(FakeLatitude(), FakeGitHub(), FakeSsh({"true": (255, "", "root@<node>: Permission denied (publickey).")}))
     calls = []
 
     def route(argv, **kw):
@@ -356,61 +379,53 @@ def group_turning_on():
 
 def group_no_fallback():
     out = []
-    api, gh = FakeTheta(create_status=409), FakeGitHub()
+    api, gh = FakeLatitude(create_status=403), FakeGitHub()
     got, error = provisioned(api, gh, FakeSsh())
-    out.append(("fail: a refusal (the price, say) is final: an error, nothing on", got is None and "409" in error and api.nodes == [] and gh.jits == [] and len(api.created) == 1))
-    for leg in (L, W):
-        api, gh = FakeTheta(create_status=404), FakeGitHub()
-        api.resources = [m for m in t.MACHINES.values() if m != t.MACHINES[leg]]
-        got, error = provisioned(api, gh, FakeSsh(), leg)
-        out.append(("fail, %s: its machine is taken and the other is free: asked again for about 6 minutes, then a message naming the leg and its machine, never the other machine" % leg,
-                    got is None and "taken" in error and leg in error and t.MACHINES[leg] in error and api.nodes == [] and gh.jits == []
-                    and {c["resource_id"] for c in api.created} == {t.MACHINES[leg]} and len(api.created) == 1 + t.FREE_LIMIT_S // 30 and 300 <= t.FREE_LIMIT_S <= 420))
-
-    class FreedLater(FakeTheta):
-        def __call__(self, method, url, headers, body):
-            if method == "POST" and len(self.created) < 8:
-                self.created.append(json.loads(body))
-                return 404, b'{"message":"GPU resource not found"}'
-            return super().__call__(method, url, headers, body)
-    api = FreedLater()
+    out.append(("fail: a refusal (the spending limit, say) is final: an error, nothing on", got is None and "403" in error and api.nodes == [] and gh.jits == [] and len(api.created) == 1))
+    api, gh = FakeLatitude(refuse_sites=["DAL"]), FakeGitHub()
+    got, error = provisioned(api, gh, FakeSsh())
+    out.append(("on: a location that no longer has it, between the list and the order: the next cheapest",
+                got and [c["site"] for c in api.created] == ["DAL", "NYC"] and len(api.nodes) == 1))
+    api, gh = FakeLatitude(refuse_sites=["DAL", "NYC", "AMS"]), FakeGitHub()
+    api.regions[0] = ("Mexico", t.MAX_PRICE_USD_HOUR + 0.5, ["MEX2"])
+    got, error = provisioned(api, gh, FakeSsh())
+    out.append(("fail: no location at or under the ceiling takes it: the dearest is not ordered, and the error says so",
+                got is None and [c["site"] for c in api.created] == ["DAL", "NYC", "AMS"] and "MEX2" in error and "ceiling" in error and gh.jits == []))
+    api = FakeLatitude()
+    api.regions = []
     got, error = provisioned(api, FakeGitHub(), FakeSsh())
-    out.append(("on: a machine we just freed (3m40 measured), still 404, is waited for", got and len(api.created) == 9 and 8 * 30 >= 220))
-    api = FakeTheta(balance=2.5)
-    got, error = provisioned(api, FakeGitHub(), FakeSsh())
-    out.append(("fail: the balance would not cover both nodes at their age limit: an error, nothing created",
-                got is None and "balance" in error and api.created == [] and t.MIN_BALANCE_USD >= t.GUARD_HOURS * (0.156 + 0.182)))
-    api = FakeTheta(create_lost=True)
+    out.append(("fail: nowhere has the plan: an error naming it, nothing created, no key registered", got is None and t.PLAN in error and api.created == [] and api.keys == []))
+    api = FakeLatitude(create_lost=True)
     got, error = provisioned(api, FakeGitHub(), FakeSsh())
     out.append(("fail: the answer to the create is lost: the node it may have made is deleted", got is None and api.deleted == ["dpl_l"]))
-    api = FakeTheta(rows=())
+    api = FakeLatitude(rows=())
     got, error = provisioned(api, FakeGitHub(), FakeSsh())
     out.append(("fail: a node never Running within the limit is deleted", got is None and api.deleted == ["dpl_l"] and api.nodes == []))
-    api = FakeTheta()
+    api = FakeLatitude()
     got, error = provisioned(api, FakeGitHub(), FakeSsh({"true": (255, "", "refused")}))
     out.append(("fail: no SSH within the limit: deleted", got is None and api.deleted == ["dpl_l"]))
-    api, gh = FakeTheta(), FakeGitHub()
+    api, gh = FakeLatitude(), FakeGitHub()
     got, error = provisioned(api, gh, FakeSsh({"bash -s": (1, "", "node_bootstrap: ERROR: missing: git")}))
     out.append(("fail: a bootstrap that refuses: deleted, and nothing registered", got is None and "missing: git" in error and api.deleted == ["dpl_l"] and gh.jits == []))
-    api, gh = FakeTheta(), FakeGitHub(jit_status=401)
+    api, gh = FakeLatitude(), FakeGitHub(jit_status=401)
     got, error = provisioned(api, gh, FakeSsh())
     out.append(("fail: GitHub refuses the registration: deleted", got is None and api.deleted == ["dpl_l"]))
-    api, gh = FakeTheta(), FakeGitHub()
+    api, gh = FakeLatitude(), FakeGitHub()
     got, error = provisioned(api, gh, FakeSsh({START_RUNNER: (1, "", "no")}))
     out.append(("fail: the runner does not start: deleted, and the registered one removed",
                 got is None and api.deleted == ["dpl_l"] and gh.removed == ["100"]))
-    api, gh = FakeTheta(), FakeGitHub(online=False)
+    api, gh = FakeLatitude(), FakeGitHub(online=False)
     got, error = provisioned(api, gh, FakeSsh())
     out.append(("fail: a runner that never comes online fails the run within the limit, it does not wait 24 hours in the queue",
                 got is None and "online" in error and api.deleted == ["dpl_l"] and t.RUNNER_ONLINE_LIMIT_S <= 600))
-    api, gh = FakeTheta(), FakeGitHub()
+    api, gh = FakeLatitude(), FakeGitHub()
     api.nodes = listed("w")
     gh.runners = [{"id": 90, "name": "ci5a1w", "busy": False, "status": "online", "labels": [{"name": t.leg_label(5, 1, W)}]}]
     got, error = provisioned(api, gh, FakeSsh({START_RUNNER: (1, "", "no")}), L)
     out.append(("fail: a leg that fails leaves the other's node and runner alone: stop-node takes that one",
                 got is None and api.deleted == ["dpl_l"] and [n["id"] for n in api.nodes] == ["dpl_w"] and "90" not in gh.removed))
     # The command line: exit 1, and nothing a job could read.
-    for var in ("THETA_API_KEY", "THETA_PROJECT"):
+    for var in ("LATITUDE_API_KEY", "LATITUDE_PROJECT"):
         os.environ.pop(var, None)
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink):
@@ -429,52 +444,42 @@ def group_no_fallback():
 
 
 def group_two_runs():
-    """One machine, one run, per machine."""
+    """No fixed machine: two runs do not get in each other's way, and what no run needs goes."""
     out = []
 
     def taken(nodes, run_status, leg=L):
-        api, gh = FakeTheta(), FakeGitHub()
+        api, gh = FakeLatitude(), FakeGitHub()
         api.nodes = list(nodes)
         gh.run_status = run_status
         got, error = provisioned(api, gh, FakeSsh(), leg)
         return got, error, api, gh
-    live = {"id": "d9", "name": "ci9a1l", "status": "running"}
+    live = {"id": "d9", "name": "ci9a1l", "status": t.RUNNING}
     got, error, api, gh = taken([live], {"9": "in_progress"})
-    out.append(("two runs: a live run's node on this machine refuses this leg at once, naming it, with nothing created",
-                got is None and "run 9" in error and "ci9a1l" in error and t.MACHINES[L] in error and api.created == [] and api.deleted == []))
-    got, error, api, gh = taken([live], {"9": "in_progress"}, W)
-    out.append(("two runs: on the other machine it does not refuse this leg, and is not touched", got and api.deleted == []))
+    out.append(("two runs: a live run's node is that run's: this leg goes on, and it is not touched", got and api.deleted == []))
     got, error, api, gh = taken([live], {"9": "completed"})
-    out.append(("two runs: a node on this machine whose run has finished goes, and the machine is waited for", got and api.deleted == ["d9"]))
-    got, error, api, gh = taken([live], {"9": "completed"}, W)
-    out.append(("two runs: on the other machine it is the other provision's", got and api.deleted == []))
+    out.append(("two runs: a node whose run has finished goes", got and api.deleted == ["d9"]))
     got, error, api, gh = taken(listed("lw", attempt=0), {"5": "in_progress"})
     out.append(("two runs: an earlier attempt of this same run goes, both its nodes", got and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
     got, error, api, gh = taken(listed("w"), {"5": "in_progress"})
     out.append(("same run: the other leg's node of this attempt is left alone", got and api.deleted == []))
-    for leg, mark in ((L, "l"), (W, "w")):
-        by_hand = {"id": "dh", "name": "gpunodegn8rdcmn6agw1", "status": "running", "machine_type": t.MACHINES[leg]}
-        got, error, api, gh = taken([by_hand], {}, leg)
-        out.append(("taken, %s: a node of this project made by hand on its machine fails it at once, by name, untouched" % leg,
-                    got is None and "gpunodegn8rdcmn6agw1" in error and t.MACHINES[leg] in error and api.deleted == [] and api.created == []))
-        other_leg = W if leg == L else L
-        got, error, api, gh = taken([by_hand], {}, other_leg)
-        out.append(("taken, %s: on the other machine it is other work" % leg, got and api.deleted == []))
-    other = {"id": "dh", "name": "cihandbuild1", "status": "running", "machine_type": "community_other"}
+    by_hand = {"id": "dh", "name": "myserver", "status": t.RUNNING}
+    got, error, api, gh = taken([by_hand], {})
+    out.append(("by hand: a server of this project with another name is never touched", got and api.deleted == []))
+    other = {"id": "dh", "name": "cihandbuild1", "status": t.RUNNING}
     got, error, api, gh = taken([other], {})
-    out.append(("taken: a node on a third machine is other work, even with a name that starts with ci", got and api.deleted == []))
+    out.append(("by hand: even with a name that starts with ci", got and api.deleted == []))
     return out
 
 
 def run_off_with(answers, if_legs_done=True, nodes="lw", api=None, runners=()):
-    """The off command: (exit code, FakeTheta, FakeGitHub, stdout, stderr)."""
-    api, gh, clock = api or FakeTheta(), FakeGitHub(), Clock()
+    """The off command: (exit code, FakeLatitude, FakeGitHub, stdout, stderr)."""
+    api, gh, clock = api or FakeLatitude(), FakeGitHub(), Clock()
     api.nodes = listed(nodes)
     gh.jobs_answers = answers
     gh.runners = list(runners)
     saved = t.from_env, t.github_from_env, t.turn_off
     real_turn_off = t.turn_off
-    t.from_env = lambda: t.Theta(PROJECT, KEY, api, clock.sleep)
+    t.from_env = lambda: t.Latitude(PROJECT, KEY, api, clock.sleep)
     t.github_from_env = lambda: t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
     t.turn_off = lambda theta, names: real_turn_off(theta, names, clock, clock.sleep)
     before = os.environ.get("RUNNER_ADMIN_TOKEN")
@@ -492,12 +497,12 @@ def run_off_with(answers, if_legs_done=True, nodes="lw", api=None, runners=()):
 def group_off():
     out = []
     clock = Clock()
-    api = FakeTheta()
-    api.nodes = listed("lw") + [{"id": "dpl_2", "name": "ci5a2l", "status": "running"}, {"id": "dpl_lab", "name": "gpunodegn8rdcmn6agw1", "status": "running"}]
-    theta = t.Theta(PROJECT, KEY, api, clock.sleep)
+    api = FakeLatitude()
+    api.nodes = listed("lw") + [{"id": "dpl_2", "name": "ci5a2l", "status": t.RUNNING}, {"id": "dpl_lab", "name": "gpunodegn8rdcmn6agw1", "status": t.RUNNING}]
+    theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
     deleted = t.turn_off(theta, t.node_names(5, 1), clock, clock.sleep)
     out.append(("off: both of this attempt's nodes and nothing else, by name", sorted(deleted) == ["dpl_l", "dpl_w"] and sorted(n["id"] for n in api.nodes) == ["dpl_2", "dpl_lab"]))
-    out.append(("off: nothing on is not an error", t.turn_off(t.Theta(PROJECT, KEY, FakeTheta(), clock.sleep), t.node_names(5, 1), clock, clock.sleep) == []))
+    out.append(("off: nothing on is not an error", t.turn_off(t.Latitude(PROJECT, KEY, FakeLatitude(), clock.sleep), t.node_names(5, 1), clock, clock.sleep) == []))
 
     class Refused(FakeGitHub):
         def __call__(self, method, url, headers, body):
@@ -539,7 +544,7 @@ def group_stop_node():
     removed = t.GitHub("o/r", "T", "A", gh, clock.sleep).remove_runners(labels)
     out.append(("stop: a runner GitHub says is still on a job (422) fails nothing, and the next one still goes", removed == ["unused"] and gh.removed == ["51"]))
 
-    class SecondDelete(FakeTheta):
+    class SecondDelete(FakeLatitude):
         def __call__(self, method, url, headers, body):
             if method == "DELETE":
                 self.deleted.append("x")
@@ -548,20 +553,20 @@ def group_stop_node():
             return super().__call__(method, url, headers, body)
     api = SecondDelete()
     api.nodes = listed("l")
-    out.append(("stop: a delete that answers 404 is a node gone", t.turn_off(t.Theta(PROJECT, KEY, api, clock.sleep), ["ci5a1l"], clock, clock.sleep) == ["dpl_l"]))
+    out.append(("stop: a delete that answers 404 is a node gone", t.turn_off(t.Latitude(PROJECT, KEY, api, clock.sleep), ["ci5a1l"], clock, clock.sleep) == ["dpl_l"]))
 
     def off():
         clock = Clock()
-        api = FakeTheta()
+        api = FakeLatitude()
         api.nodes = listed("lw")
         return clock, api
 
     clock, api = off()
     api.outage = lambda: clock.now < 300
-    deleted, _ = quiet(t.turn_off, t.Theta(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
-    out.append(("stop: Theta fails for 5 minutes, list and delete: both still go", sorted(deleted) == ["dpl_l", "dpl_w"] and api.nodes == []))
+    deleted, _ = quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
+    out.append(("stop: the API fails for 5 minutes, list and delete: both still go", sorted(deleted) == ["dpl_l", "dpl_w"] and api.nodes == []))
 
-    class DeleteFails(FakeTheta):
+    class DeleteFails(FakeLatitude):
         failing = "dpl_l"
         until = 300
 
@@ -572,7 +577,7 @@ def group_stop_node():
     clock = Clock()
     api = DeleteFails()
     api.nodes = listed("lw")
-    deleted, _ = quiet(t.turn_off, t.Theta(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
+    deleted, _ = quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
     out.append(("stop: one node's delete fails for 5 minutes: the other goes at once, and that one in the end",
                 deleted[0] == "dpl_w" and sorted(deleted) == ["dpl_l", "dpl_w"] and api.nodes == []))
     for failing, stays, gone in (("dpl_l", "ci5a1l", "ci5a1w"), ("dpl_w", "ci5a1w", "ci5a1l")):
@@ -581,7 +586,7 @@ def group_stop_node():
         api.failing, api.until = failing, 10 ** 9
         api.nodes = listed("lw")
         try:
-            quiet(t.turn_off, t.Theta(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
+            quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
             message = ""
         except t.ThetaError as exc:
             message = str(exc)
@@ -590,14 +595,14 @@ def group_stop_node():
     clock, api = off()
     api.outage = lambda: True
     try:
-        quiet(t.turn_off, t.Theta(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
+        quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
         message = ""
     except t.ThetaError as exc:
         message = str(exc)
-    out.append(("stop: Theta never answers: an error naming both, once the time is up and not before",
+    out.append(("stop: the API never answers: an error naming both, once the time is up and not before",
                 "ci5a1l" in message and "ci5a1w" in message and t.OFF_ANSWER_LIMIT_S <= clock.now <= t.OFF_ANSWER_LIMIT_S + 60))
 
-    class ForAWhile(FakeTheta):
+    class ForAWhile(FakeLatitude):
         polls = 0
         last = 40
 
@@ -605,8 +610,8 @@ def group_stop_node():
             self.polls += 1
             return (503, b"busy") if self.polls <= self.last else super().__call__(method, url, headers, body)
     code, api, _, _, said = run_off_with([[GREEN_L, GREEN_W]], api=ForAWhile())
-    out.append(("stop: a passed run, and Theta back in time: green, nothing to report", code == 0 and "::error::" not in said and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
-    down = FakeTheta()
+    out.append(("stop: a passed run, and the API back in time: green, nothing to report", code == 0 and "::error::" not in said and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    down = FakeLatitude()
     down.outage = lambda: True
     code, _, _, _, said = run_off_with([[GREEN_L, GREEN_W]], api=down)
     out.append(("stop: a passed run, and a node may be on: the job is red, and says it may be billing and that the build has its own results",
@@ -637,9 +642,15 @@ def group_bootstrap():
     out.append(("bootstrap: the job's user has no sudo, and the script stops if it finds one",
                 "NOPASSWD" not in bootstrap and "rm -f /etc/sudoers.d/runner" in bootstrap
                 and '! as_runner sudo -n true 2>/dev/null || missing+=' in bootstrap))
-    out.append(("names: run ids of today fit Theta's 20 characters", t.node_name(41647921995, 12, W) == "ci41647921995a12w" and len(t.node_name(41647921995, 12, W)) <= 20))
+    out.append(("names: run ids of today fit in a hostname", t.node_name(41647921995, 12, W) == "ci41647921995a12w" and len(t.node_name(41647921995, 12, W)) <= 20))
     out.append(("labels: one per leg, with the run and the attempt", t.leg_label(41647921995, 2, W) == "theta-41647921995-2-win-x86_64"))
-    out.append(("time: Theta's 5 decimals and GitHub's none", t.parse_time("2026-11-03T14:35:38.39446Z") == t.parse_time("2026-11-03T14:35:38Z") and t.parse_time("nonsense") is None))
+    out.append(("time: Latitude's +00:00 and GitHub's Z are one time", t.parse_time("2026-11-03T14:35:38+00:00") == t.parse_time("2026-11-03T14:35:38Z") is not None))
+    runner = (HERE / "node_runner.sh").read_text(encoding="utf-8")
+    out.append(("runner: as many open files as on GitHub's runners, not a login's 1024, from before it starts",
+                "ulimit -n 65536" in runner and runner.index("ulimit -n 65536") < runner.index("./run.sh")))
+    out.append(("bootstrap: the system it is written for is the one the node asks for",
+                "= noble ]" in bootstrap and "24_04" in t.OPERATING_SYSTEM and "jammy" not in bootstrap and "/etc/apt/sources.list.d/*.sources" in bootstrap))
+    out.append(("time: decimals and none", t.parse_time("2026-11-03T14:35:38.39446Z") == t.parse_time("2026-11-03T14:35:38Z") and t.parse_time("nonsense") is None))
     return out
 
 
@@ -663,18 +674,18 @@ def group_github_blip():
 
 
 def group_false_lost():
-    """Finding 2: Theta's list alone said lost, after 5 minutes."""
+    """Finding 2: the API's list alone said lost, after 5 minutes."""
     out = []
     then_done = [[RUN_L, RUN_W]] * 40 + [[GREEN_L, GREEN_W]]
     result, gh, api, _, _, _ = watched(list(then_done), nodes="w")
     # With no row and no address kept, the list is all there is: the other witness is the address it saw.
     out.append(("list: a node gone from the list from the first look, with nothing else to ask, and its leg running: lost at the limit", result == "lost" and len(gh.dispatches) == 1))
 
-    class ListLosesIt(FakeTheta):
+    class ListLosesIt(FakeLatitude):
         polls = 0
 
         def __call__(self, method, url, headers, body):
-            if url.endswith("/gpu-deployments") and method == "GET":
+            if "/servers?" in url and method == "GET":
                 self.polls += 1
                 if self.polls > 2:
                     self.nodes = [n for n in self.nodes if n["id"] != "dpl_l"]
@@ -696,15 +707,15 @@ def group_false_lost():
     out.append(("both: not a second before the limit, and lost at it", almost is None and enough == "lost"))
     machine = t.Machine(("h", 1))
     machine.see(NOW, listed=None, answers=False, steps_done=1)
-    out.append(("evidence: a leg running, sshd silent and Theta's API silent too: that may be Theta, the leg is left alone",
+    out.append(("evidence: a leg running, sshd silent and the API silent too: that may be the API, the leg is left alone",
                 t.leg_state(RUN_L, machine, NOW + 3600) is None))
     machine = t.Machine(("h", 1))
     machine.see(NOW, listed=False, answers=False, steps_done=1)
     machine.see(NOW + 600, listed=False, answers=False, steps_done=2)
     out.append(("evidence: a leg that finished a step says the machine lives, and the wait starts again",
                 machine.down_since is None and t.leg_state(RUN_L, machine, NOW + t.DOWN_LIMIT_S) is None))
-    out.append(("status: the string the API really answers (measured: running), read as it is", t.RUNNING == "running"))
-    live = FakeTheta()
+    out.append(("status: the string the API really answers (measured: deploying, then on), read as it is", t.RUNNING == "on"))
+    live = FakeLatitude()
     live.nodes = listed("lw")
     clock = Clock()
     machines = {L: t.Machine(), W: t.Machine()}
@@ -713,13 +724,13 @@ def group_false_lost():
     def banner(host, port):
         seen.append(host)
         return True
-    quiet(t.look_at_machines, t.Theta(PROJECT, KEY, live, clock.sleep), 5, 1, machines, {}, banner, NOW)
-    out.append(("status: each node the real API calls running is listed, each with its own address, and each asked by itself",
-                machines[L].listed is True and machines[L].address == ("1.1.1.1", 30001) and machines[W].address == ("2.2.2.2", 30002)
+    quiet(t.look_at_machines, t.Latitude(PROJECT, KEY, live, clock.sleep), 5, 1, machines, {}, banner, NOW)
+    out.append(("status: each node the real API calls on is listed, each with its own address, and each asked by itself",
+                machines[L].listed is True and machines[L].address == ("1.1.1.1", 22) and machines[W].address == ("2.2.2.2", 22)
                 and machines[L].down_since is None and seen == ["1.1.1.1", "2.2.2.2"]))
     live.list_status = 500
     machines = {L: t.Machine(("h", 1))}
-    quiet(t.look_at_machines, t.Theta(PROJECT, KEY, live, clock.sleep), 5, 1, machines, {}, lambda h, p: True, NOW)
+    quiet(t.look_at_machines, t.Latitude(PROJECT, KEY, live, clock.sleep), 5, 1, machines, {}, lambda h, p: True, NOW)
     out.append(("status: the API down says nothing about the machine", machines[L].listed is None and machines[L].down_since is None))
     return out
 
@@ -737,7 +748,7 @@ def group_lost_either_order():
     out.append(("first GitHub: the jobs failed at once, the list still says running, sshd silent: lost at the limit, and only at it",
                 result == "lost" and len(gh.dispatches) == 1 and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300))
     result, gh, api, _, _, clock = watched([[RUN_L, RUN_W]], answering=False)
-    out.append(("silence: Theta says running, sshd silent, GitHub says in progress: lost at the limit, it does not wait for GitHub",
+    out.append(("silence: the API says running, sshd silent, GitHub says in progress: lost at the limit, it does not wait for GitHub",
                 result == "lost" and len(gh.dispatches) == 1 and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300))
     result, gh, api, _, said, _ = watched([[DEAD_L, GREEN_W]])
     out.append(("a leg with no failed step on a machine that answers: not a lost machine, no re-launch, it says so, and its node is left for stop-node",
@@ -806,7 +817,7 @@ def group_two_legs():
 
 
 def _refuses_delete_of(node_id, first):
-    class Refuses(FakeTheta):
+    class Refuses(FakeLatitude):
         left = first
 
         def __call__(self, method, url, headers, body):
@@ -890,7 +901,7 @@ def group_watch_stages():
     result, gh, api, log, _, clock = watched([[RED_L, RUN_W]] * 3 + [[RED_L, GREEN_W]], nodes="w")
     out.append(("a next watch job: a compile error before it began, its node gone: the same", result == "done" and gh.dispatches == []))
     result, gh, api, log, said, clock = watched([[DEAD_L, RUN_W]] * 40 + [[DEAD_L, GREEN_W]], nodes="w")
-    out.append(("a next watch job: a loss the last one settled, its node deleted: seen again from what GitHub and Theta say, one re-launch when the other leg ends",
+    out.append(("a next watch job: a loss the last one settled, its node deleted: seen again from what GitHub and the API say, one re-launch when the other leg ends",
                 result == "lost" and len(gh.dispatches) == 1 and clock.now >= 40 * 60))
     return out
 
@@ -900,11 +911,11 @@ def group_sweep():
 
     def swept(nodes, run_status=None, github=True, jobs=None, **kwargs):
         clock = Clock()
-        api, gh = FakeTheta(), FakeGitHub()
+        api, gh = FakeLatitude(), FakeGitHub()
         api.nodes = nodes
         gh.run_status = run_status or {}
         gh.jobs_answers = [jobs if jobs is not None else [RUN_L, RUN_W]]
-        theta = t.Theta(PROJECT, KEY, api, clock.sleep)
+        theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
         hub = t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep) if github else None
         return quiet(t.sweep, theta, hub, NOW, **kwargs)[0], api
     young = "2026-11-03T11:00:00Z"
@@ -919,7 +930,17 @@ def group_sweep():
                 gone == ["ci5a1l", "ci5a1w"] and api.deleted == ["d1", "d2"]))
     out.append(("sweep: the limit lets one leg of 350 minutes and the node job finish, and no more than that and an hour",
                 t.GUARD_HOURS * 60 >= 350 + 45 + t.STUCK_S / 60 and t.GUARD_HOURS * 60 <= 350 + 45 + t.STUCK_S / 60 + 70))
-    out.append(("sweep: the most a forgotten pair of nodes costs is what provision asks the balance to hold", t.GUARD_HOURS * (0.156 + 0.182) <= t.MIN_BALANCE_USD))
+    out.append(("sweep: a forgotten pair of nodes costs less than the account's first limit of $100", t.GUARD_HOURS * 2 * t.MAX_PRICE_USD_HOUR < 100))
+    gone, api = swept([dict(node_l, created_at="2026-11-03T02:00:00+00:00")], {"5": "in_progress"})
+    out.append(("sweep: the API's own way of writing a time counts", gone == ["ci5a1l"]))
+    clock = Clock()
+    api = FakeLatitude()
+    api.nodes = [dict(node_w)]
+    api.keys = [{"id": "k%d" % i, "attributes": {"name": n}} for i, n in enumerate(("ci4a1l", "ci5a1w", "laptop"))]
+    gh = FakeGitHub()
+    gh.run_status, gh.jobs_answers = {"5": "in_progress"}, [[RUN_L, RUN_W]]
+    quiet(t.sweep, t.Latitude(PROJECT, KEY, api, clock.sleep), t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep), NOW)
+    out.append(("sweep: a key whose node is gone goes; the key of a node still on, and a key by hand, never", api.keys_deleted == ["k0"]))
     gone, api = swept([node_l, node_w], {"5": "in_progress"})
     out.append(("sweep: young nodes whose run still needs them stay", gone == [] and api.deleted == []))
     gone, api = swept([node_l, node_w], {"5": "completed"})
@@ -948,29 +969,30 @@ def group_sweep():
 def group_secrets():
     out = []
 
-    class Leaky(FakeTheta):
+    class Leaky(FakeLatitude):
         def __call__(self, method, url, headers, body):
-            if url.endswith("/billing/balance"):
+            if url.endswith("/ssh_keys"):
                 return 403, ("key %s project %s refused" % (KEY, PROJECT)).encode()
             return super().__call__(method, url, headers, body)
     clock = Clock()
     try:
-        t.Theta(PROJECT, KEY, Leaky(), clock.sleep).balance_usd()
+        t.Latitude(PROJECT, KEY, Leaky(), clock.sleep).ssh_keys()
         message = ""
     except t.ThetaError as exc:
         message = str(exc)
     out.append(("secrets: an error names neither the key nor the project, in the URL or the answer",
                 message and KEY not in message and PROJECT not in message))
-    address = t.Theta(PROJECT, KEY, FakeTheta(), clock.sleep).address("dpl_l")
-    out.append(("address: host and port of the Running container, nothing else of the row", address == ("1.1.1.1", 30001)))
+    address = t.Latitude(PROJECT, KEY, FakeLatitude(), clock.sleep).address("dpl_l")
+    out.append(("address: host and port of the server, nothing else", address == ("1.1.1.1", 22)))
     pending = dict(ROW_L, PodPhase="x: Pending")
-    out.append(("address: a Pending container has none yet", t.Theta(PROJECT, KEY, FakeTheta(rows=(pending,)), clock.sleep).address("dpl_l") is None))
+    out.append(("address: a server with no address yet has none", t.Latitude(PROJECT, KEY, FakeLatitude(rows=(pending,)), clock.sleep).address("dpl_l") is None))
+    out.append(("address: a server the API no longer knows has none", t.Latitude(PROJECT, KEY, FakeLatitude(rows=()), clock.sleep).address("dpl_l") is None))
     flaky = []
 
     def transport(method, url, headers, body):
         flaky.append(url)
-        return (503, b"busy") if len(flaky) < 3 else (200, b'{"body":{"balance_usd":3}}')
-    out.append(("reads: a busy API is asked again", t.Theta(PROJECT, KEY, transport, clock.sleep).balance_usd() == 3.0 and len(flaky) == 3))
+        return (503, b"busy") if len(flaky) < 3 else (200, b'{"data":[]}')
+    out.append(("reads: a busy API is asked again", t.Latitude(PROJECT, KEY, transport, clock.sleep).nodes() == [] and len(flaky) == 3))
     source = (HERE / "theta_node.py").read_text(encoding="utf-8")
     out.append(("no key travels: nothing is kept between jobs, so there is nothing to seal", "openssl" not in source and "seal" not in source))
     return out
@@ -1128,7 +1150,7 @@ def group_cancelled_by_hand():
         result, gh, _, _, _, _ = watched([[RUN_L, QUEUED_W]], nodes="", answering=False, gh=gh)
         out.append(("cancel: what the run's own row says is not read (%s): the jobs decide" % status, result == "lost" and len(gh.dispatches) == 1))
 
-    class CancelledDuringDelete(FakeTheta):
+    class CancelledDuringDelete(FakeLatitude):
         def __call__(self, method, url, headers, body):
             if method == "DELETE":
                 gh.jobs_answers = [[RUN_L, QUEUE_CANCELLED_W]]
@@ -1144,7 +1166,7 @@ def group_cancelled_by_hand():
     result, gh, _, _, _, _ = watched([[RUN_L, RUN_W]], answering=False, gh=gh)
     out.append(("cancel: right before the dispatch: no re-launch", result == "done" and gh.dispatches == []))
 
-    class GoesDownAtTheDelete(FakeTheta):
+    class GoesDownAtTheDelete(FakeLatitude):
         def __call__(self, method, url, headers, body):
             if method == "DELETE":
                 gh.jobs_answers = ["down"]
@@ -1230,7 +1252,7 @@ def group_same_code():
 # What GitHub sets in every job, and what a step sets for each name it declares.
 RUNNER_ENV = {"GITHUB_RUN_ID": "5", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_REF_NAME": "main", "GITHUB_SHA": HEAD,
               "GITHUB_REPOSITORY": "o/r", "GITHUB_OUTPUT": os.devnull}
-STEP_VALUES = {"THETA_API_KEY": KEY, "THETA_PROJECT": PROJECT, "RUNNER_ADMIN_TOKEN": "ADMIN", "GH_TOKEN": "TOKEN", "KIND": "release",
+STEP_VALUES = {"LATITUDE_API_KEY": KEY, "LATITUDE_PROJECT": PROJECT, "RUNNER_ADMIN_TOKEN": "ADMIN", "GH_TOKEN": "TOKEN", "KIND": "release",
                "TAG": "firefox-99", "COMPILE_CACHE": "gha", "CORE_REF": "core-x", "WRAPPER_REF": "wrap-y", "GTESTS": "true",
                "GTEST_FILTER_INPUT": "X*", "RELAUNCH_OF": "", "ONLY_IF": "--if-legs-done", "LEG": L}
 
@@ -1244,9 +1266,9 @@ def run_step(step, answers, nodes="lw", answering=False, wrap_provision=None, **
     """A step of release.yml, as written: its command line through main(), with nothing in
     the environment but the names the step declares and what GitHub sets, on the real
     from_env and github_from_env. Only HTTP, the clock and sshd's banner are faked.
-    (exit code, stdout, stderr, FakeGitHub, FakeTheta)"""
+    (exit code, stdout, stderr, FakeGitHub, FakeLatitude)"""
     env = dict(RUNNER_ENV, PATH=os.environ["PATH"], **{name: overrides.get(name, STEP_VALUES[name]) for name in step["env"]})
-    clock, api, gh = Clock(), FakeTheta(), FakeGitHub()
+    clock, api, gh = Clock(), FakeLatitude(), FakeGitHub()
     api.nodes = listed(nodes)
     gh.jobs_answers = answers
 
@@ -1255,7 +1277,7 @@ def run_step(step, answers, nodes="lw", answering=False, wrap_provision=None, **
 
     def urlopen(req, timeout=60):
         headers = {k.lower(): v for k, v in req.header_items()}
-        if "thetaedgecloud" in req.full_url:
+        if "api.latitude.sh" in req.full_url:
             status, raw = api(req.get_method(), req.full_url, headers, req.data)
         else:
             token = "ADMIN" if "/actions/runners" in req.full_url else "TOKEN"
@@ -1354,7 +1376,7 @@ def group_any_shape():
                     raise make()
                 return super().__call__(method, url, headers, body)
 
-        class ThetaBreaks(FakeTheta):
+        class ThetaBreaks(FakeLatitude):
             left = 4 * 3
 
             def __call__(self, method, url, headers, body):
@@ -1372,27 +1394,27 @@ def group_any_shape():
             tries.append(url)
             if len(tries) <= 2:
                 raise make()
-            return 200, b'{"body":{"deployments":[]}}'
+            return 200, b'{"data":[]}'
         clock = Clock()
-        out.append(("shape: %s is asked again like any read, inside the client" % name, t.Theta(PROJECT, KEY, breaks_twice, clock.sleep).nodes() == [] and len(tries) == 3))
+        out.append(("shape: %s is asked again like any read, inside the client" % name, t.Latitude(PROJECT, KEY, breaks_twice, clock.sleep).nodes() == [] and len(tries) == 3))
 
         def always_breaks(method, url, headers, body):
             raise make()
         try:
-            t.Theta(PROJECT, KEY, always_breaks, clock.sleep).nodes()
+            t.Latitude(PROJECT, KEY, always_breaks, clock.sleep).nodes()
             kind = None
         except t.NoAnswer as exc:
             kind = str(exc)
         out.append(("shape: and for good it is no answer, which names the failure and not the project", kind and name in kind and PROJECT not in kind))
-    for body in (b'{"body":null}', b"null", b"", b'{"body":{}}', b"<html>"):
-        api = FakeTheta()
+    for body in (b'{"data":null}', b"null", b"", b'{}', b"<html>"):
+        api = FakeLatitude()
         api.list_body = body
         result, gh, api, _, _, _ = watched(list(through), api=api)
-        out.append(("shape: Theta's list answers %r: not a crash, not a lost machine, the watch reaches its verdict" % body,
+        out.append(("shape: the API's list answers %r: not a crash, not a lost machine, the watch reaches its verdict" % body,
                     result == "done" and gh.dispatches == []))
         clock = Clock()
         try:
-            t.Theta(PROJECT, KEY, api, clock.sleep).nodes()
+            t.Latitude(PROJECT, KEY, api, clock.sleep).nodes()
             read_as_empty = True
         except t.NoAnswer:
             read_as_empty = False
@@ -1436,27 +1458,6 @@ def group_clear_verdicts():
     out.append(("verdict: a new run not listed yet goes by its name, and the wait for it is bounded",
                 result == "lost" and t.relaunch_title(5) in said and len(gh.dispatches) == 1))
 
-    def create_404(body, resources, leg=W):
-        class Answers(FakeTheta):
-            def __call__(self, method, url, headers, sent):
-                if method == "POST":
-                    self.created.append(json.loads(sent))
-                    return 404, body
-                return super().__call__(method, url, headers, sent)
-        api = Answers()
-        api.resources = resources
-        return provisioned(api, FakeGitHub(), FakeSsh(), leg)[1], api
-    error, api = create_404(b'{"message":"GPU resource not found"}', [t.MACHINES[L]])
-    out.append(("verdict: a 404 with this leg's machine out of gpu-resources past the wait: not available, taken or off, whatever the 404 says, naming it",
-                "not available" in error and "off" in error and t.MACHINES[W] in error and W in error and t.MACHINES[L] not in error
-                and len(api.created) == 1 + t.FREE_LIMIT_S // 30))
-    error, api = create_404(b'{"message":"Cannot find deployment image img_x"}', list(t.MACHINES.values()))
-    out.append(("verdict: a 404 with the machine listed: free, and something else is missing, named, blaming neither owner nor PC",
-                "Cannot find deployment image" in error and "is free" in error and t.TEMPLATE in error and "taken" not in error and "not available" not in error))
-    error, api = create_404(b'{"message":"GPU resource not found"}', ["community_other"])
-    out.append(("verdict: gpu-resources listing only others: not available", "not available" in error))
-    error, api = create_404(b'{"message":"GPU resource not found"}', "down")
-    out.append(("verdict: gpu-resources not answering: it does not guess", "does not say why" in error and "taken" not in error and "is free" not in error))
     result, _, _, _, said, _ = watched(list(lost), nodes="", answering=False, relaunch_of="4")
     out.append(("verdict: a second loss says it is a failure and not a person's cancel", result == "failed" and "::error::" in said and "not a cancel by a person" in said))
     result, _, _, _, said, _ = watched([[QUEUED_L, QUEUED_W]])
@@ -1528,33 +1529,33 @@ def group_lingering_and_silence():
     runner: none measured, each cheap to survive."""
     out = []
     clock = Clock()
-    api = FakeTheta(delete_takes=False)
+    api = FakeLatitude(delete_takes=False)
     api.nodes = listed("lw")
-    deleted, said = quiet(t.turn_off, t.Theta(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
+    deleted, said = quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
     out.append(("linger: a delete accepted and a node still listed: a warning, past the limit, not an error",
                 sorted(deleted) == ["dpl_l", "dpl_w"] and "::warning::" in said and clock.now >= t.GONE_LIMIT_S))
-    result, gh, _, log, _, _ = watched([[RUN_L, RUN_W]], answering=False, api=FakeTheta(delete_takes=False))
+    result, gh, _, log, _, _ = watched([[RUN_L, RUN_W]], answering=False, api=FakeLatitude(delete_takes=False))
     out.append(("linger: it does not stop the re-launch", result == "lost" and log[-2:] == ["dispatch", "cancel"]))
-    api, gh = FakeTheta(), FakeGitHub()
-    api.nodes = [{"id": "d9", "name": "ci9a1l", "status": "running"}]
+    api, gh = FakeLatitude(), FakeGitHub()
+    api.nodes = [{"id": "d9", "name": "ci9a1l", "status": t.RUNNING}]
     gh.run_status = {"9": "in_progress"}
     gh.past_runs = [{"id": 5, "display_title": t.relaunch_title(9)}]
     got, error = provisioned(api, gh, FakeSsh())
-    out.append(("linger: the re-launch finds its old run's node still listed, that run still ending: not refused for it",
+    out.append(("linger: the re-launch finds its old run's node still listed, that run still ending: it goes",
                 got and api.deleted == ["d9"]))
-    api = FakeTheta()
-    api.list_body = b'{"body":{"deployments":null}}'
+    api = FakeLatitude()
+    api.list_body = b'{"data":[]}'
     clock = Clock()
-    theta = t.Theta(PROJECT, KEY, api, clock.sleep)
-    out.append(("null: an empty list as null: nothing on", t.turn_off(theta, t.node_names(5, 1), clock, clock.sleep) == [] and theta.nodes() == []))
+    theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
+    out.append(("empty: an empty list: nothing on", t.turn_off(theta, t.node_names(5, 1), clock, clock.sleep) == [] and theta.nodes() == []))
     got, error = provisioned(api, FakeGitHub(), FakeSsh())
-    out.append(("null: nothing to refuse either", got))
+    out.append(("empty: nothing to clear either", got))
 
     failed_late = job(WIN, conclusion="failure", steps=("success", "failure"), completed="2026-11-03T12:10:00Z", runner="ci5a1w")
     silent_from_2 = {"l": True, "w": lambda s: s < 120}
     answers = [[GREEN_L, RUN_W]] * 8 + [[GREEN_L, failed_late]]
     result, gh, api, _, _, clock = watched(list(answers), answering=silent_from_2)
-    out.append(("failed step: a leg dies, GitHub marks its step failed after the machine went silent, Theta still lists it: lost at the limit",
+    out.append(("failed step: a leg dies, GitHub marks its step failed after the machine went silent, the API still lists it: lost at the limit",
                 result == "lost" and len(gh.dispatches) == 1 and 120 + t.DOWN_LIMIT_S - 60 <= clock.now <= 120 + t.DOWN_LIMIT_S + 300))
     result, gh, _, _, _, _ = watched(list(answers))
     out.append(("failed step: the same job on a machine that answers: a defect, no re-launch", result == "done" and gh.dispatches == []))
@@ -1570,7 +1571,7 @@ def group_deployment_id():
     """A deployment id reaches no log: the repository is public."""
     out = []
 
-    class Echoes(FakeTheta):
+    class Echoes(FakeLatitude):
         failing = ()
 
         def __call__(self, method, url, headers, body):
@@ -1580,22 +1581,21 @@ def group_deployment_id():
     clock = Clock()
     api = Echoes()
     api.nodes = listed("l")
-    api.failing = (("DELETE", "gpu-deployments"),)
-    theta = t.Theta(PROJECT, KEY, api, clock.sleep)
+    api.failing = (("DELETE", "/servers/"),)
+    theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
     try:
         _, said = quiet(t.turn_off, theta, ["ci5a1l"], clock, clock.sleep)
         message = said
     except t.ThetaError as exc:
         message = str(exc)
     out.append(("id: a failed delete, in its URL and its answer: the error names the node by its name, not its id",
-                "ci5a1l" in message and "dpl_l" not in message and "gpu-deployments" in message))
-    for verb, part, call in (("GET", "/deployments/list", lambda th: th.address("dpl_9")),
-                             ("POST", "gpu-deployments", lambda th: th.create("ci5a1l", L, "k")),
-                             ("GET", "/billing/balance", lambda th: th.balance_usd())):
+                "ci5a1l" in message and "dpl_l" not in message and "/servers/" in message))
+    for verb, part, call in (("GET", "/servers/dpl_9", lambda th: th.address("dpl_9")),
+                             ("POST", "/servers", lambda th: th.create("ci5a1l", "k"))):
         api = Echoes()
         api.nodes = listed("l")
         api.failing = ((verb, part),)
-        theta = t.Theta(PROJECT, KEY, api, clock.sleep)
+        theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
         theta.nodes()
         try:
             call(theta)
@@ -1603,14 +1603,14 @@ def group_deployment_id():
         except t.ThetaError as exc:
             message = str(exc)
         out.append(("id: a node seen in the list, and an answer of %s %s that repeats it" % (verb, part), "HTTP 500" in message and "dpl_l" not in message))
-    api = FakeTheta()
-    theta = t.Theta(PROJECT, KEY, api, clock.sleep)
-    created = theta.create("ci5a1l", L, "k")
+    api = FakeLatitude()
+    theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
+    created = theta.create("ci5a1l", "k")
     out.append(("id: a node just created is known too", created in theta.http.secrets))
     api = Echoes()
-    api.failing = (("DELETE", "gpu-deployments"),)
+    api.failing = (("DELETE", "/servers/"),)
     try:
-        t.Theta(PROJECT, KEY, api, clock.sleep).delete("dpl_l")
+        t.Latitude(PROJECT, KEY, api, clock.sleep).delete("dpl_l")
         message = "no error"
     except t.ThetaError as exc:
         message = str(exc)
@@ -1639,7 +1639,7 @@ class ScriptedRun:
 
     def __call__(self, argv, **kwargs):
         self.argvs.append(argv)
-        code, out, err = self.answers.get(argv[-1], (0, b"", b""))
+        code, out, err = self.answers.get(shlex.split(argv[-1])[-1], (0, b"", b""))
         return subprocess.CompletedProcess(argv, code, out, err)
 
 
@@ -1655,7 +1655,7 @@ def with_run(fake, fn):
 def provisioned_through_ssh(answers):
     """provision() with the real Ssh class over a scripted ssh: (error text, all it said)."""
     clock = Clock()
-    theta = t.Theta(PROJECT, KEY, FakeTheta(), clock.sleep)
+    theta = t.Latitude(PROJECT, KEY, FakeLatitude(), clock.sleep)
     github = t.GitHub("o/r", "TOKEN", "ADMIN", FakeGitHub(), clock.sleep)
     with tempfile.TemporaryDirectory() as tmp:
         key = Path(tmp) / "node_key"
@@ -1674,23 +1674,31 @@ def provisioned_through_ssh(answers):
 def group_address():
     """The repository is public: a node's address reaches no log."""
     out = []
-    refused = b"ssh: connect to host 1.1.1.1 port 30001: Connection refused\r\n"
-    ssh = t.Ssh("1.1.1.1", 30001, "k")
-    code, stdout, stderr = with_run(ScriptedRun({"x": (255, b"from 1.1.1.1:30001 in 130001", refused)}), lambda: ssh("x"))
-    out.append(("address: what ssh says comes back without host or port, and the rest of it intact",
-                code == 255 and stderr == "ssh: connect to host <node> port <port>: Connection refused\r\n"
-                and stdout == "from <node>:<port> in 130001"))
+    refused = b"ssh: connect to host 1.1.1.1 port 22: Connection refused\r\n"
+    ssh = t.Ssh("1.1.1.1", 22, "k")
+    run = ScriptedRun({"x": (255, b"from 1.1.1.1 in 130001", refused)})
+    code, stdout, stderr = with_run(run, lambda: ssh("x"))
+    out.append(("address: what ssh says comes back without the host, and the rest of it intact",
+                code == 255 and stderr == "ssh: connect to host <node> port 22: Connection refused\r\n" and stdout == "from <node> in 130001"))
+    out.append(("root: through the image's user and sudo, with no prompt to hang on, the command quoted whole",
+                "ubuntu@1.1.1.1" in run.argvs[0] and "root@1.1.1.1" not in run.argvs[0] and run.argvs[0][-1] == "sudo -n bash -c x"))
+    run = ScriptedRun({"cat > /a b": (0, b"", b"")})
+    with_run(run, lambda: ssh("cat > /a b"))
+    out.append(("root: a command with spaces and a redirect stays one command", shlex.split(run.argvs[0][-1]) == ["sudo", "-n", "bash", "-c", "cat > /a b"]))
+    # Port 22 was scrubbed like the old high ports: "22" inside a host key turned into <port>,
+    # and the pin went to a key that does not exist.
+    with_22 = b"node_bootstrap: host key: ssh-ed25519 AAAA22bb22\nnode 22.23.4\n"
+    code, stdout, _ = with_run(ScriptedRun({"x": (0, with_22, b"")}), lambda: ssh("x"))
+    out.append(("address: on port 22, a host key and a version with 22 in them come back whole",
+                t.HOST_KEY_LINE.search(stdout).group(1) == "ssh-ed25519 AAAA22bb22" and "22.23.4" in stdout))
     error, said = provisioned_through_ssh({"bash -s": (255, b"", refused)})
     out.append(("address: a failed bootstrap's error, on its way to ::error::, does not carry it",
-                "<node>" in error and "1.1.1.1" not in error + said and "30001" not in error + said))
+                "<node>" in error and "1.1.1.1" not in error + said and "Connection refused" not in said))
     error, said = provisioned_through_ssh({"bash -s": (0, BOOTSTRAPPED.encode(), b""), PUT_RUNNER: (255, b"", refused)})
-    out.append(("address: nor the log of a node that came up", "node up after" in said and "1.1.1.1" not in error + said and "30001" not in error + said))
+    out.append(("address: nor the log of a node that came up", "node up after" in said and "1.1.1.1" not in error + said and "Connection refused" not in said))
     for code in (255, 1):
         error, said = provisioned_through_ssh({"bash -s": (0, BOOTSTRAPPED.encode(), b""), START_RUNNER: (code, b"", refused)})
-        out.append(("address: ssh ending with %d at the runner's start" % code, error and "1.1.1.1" not in error + said and "30001" not in error + said))
-    api = FakeTheta(rows=(dict(ROW_L, PortMappings={"22": "1.1.1.1:30001"}), ROW_W))
-    result, gh, _, _, said, _ = watched([[GREEN_L, GREEN_W]], api=api)
-    out.append(("address: a port that cannot be read: no answer, and not repeated", result == "done" and "30001" not in said))
+        out.append(("address: ssh ending with %d at the runner's start" % code, error and "1.1.1.1" not in error + said and "Connection refused" not in said))
     if shutil_which("ssh"):
         import socket
         with socket.socket() as probe:
@@ -1698,27 +1706,27 @@ def group_address():
             port = probe.getsockname()[1]
         with tempfile.TemporaryDirectory() as tmp:
             code, _, stderr = t.Ssh("127.0.0.1", port, Path(tmp) / "none")("true", timeout=30)
-        out.append(("address: the real ssh's own words on a closed port", code != 0 and "<node>" in stderr and "127.0.0.1" not in stderr and str(port) not in stderr))
+        out.append(("address: the real ssh's own words on a closed port", code != 0 and "127.0.0.1" not in stderr))
     return out
 
 
 def group_host_key():
-    """The image's host key is the same on every node: the bootstrap makes one, and only
-    the connection that runs it goes unverified. It carries no secret."""
+    """The bootstrap makes a host key of the node's own, and only the connection that runs
+    it goes unverified. It carries no secret."""
     out = []
-    api, gh, ssh = FakeTheta(), FakeGitHub(), FakeSsh()
+    api, gh, ssh = FakeLatitude(), FakeGitHub(), FakeSsh()
     got, _ = provisioned(api, gh, ssh)
     commands = [c for c, _ in ssh.calls]
     out.append(("host key: pinned after the bootstrap, before the runner's script and its configuration",
                 got and ("pin", HOST_KEY) in ssh.calls
                 and commands.index("bash -s") < commands.index("pin") < commands.index(PUT_RUNNER) < commands.index(START_RUNNER)))
-    api, gh = FakeTheta(), FakeGitHub()
+    api, gh = FakeLatitude(), FakeGitHub()
     got, error = provisioned(api, gh, FakeSsh({"bash -s": (0, "node_bootstrap: ready\n", "")}))
     out.append(("host key: a bootstrap that names none fails the run: nothing registered, deleted",
                 got is None and "host key" in error and gh.jits == [] and api.deleted == ["dpl_l"]))
     with tempfile.TemporaryDirectory() as tmp:
         key = Path(tmp) / "node_key"
-        first = t.Ssh("1.1.1.1", 30001, key)
+        first = t.Ssh("1.1.1.1", 22, key)
         pinned = first.pin(HOST_KEY)
         known = Path(tmp, "node_key.known_hosts").read_text(encoding="utf-8")
     first_argv, pinned_argv = " ".join(first.argv), " ".join(pinned.argv)

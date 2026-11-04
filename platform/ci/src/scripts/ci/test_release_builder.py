@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Who compiles what in release.yml, read from the file itself.
 
-The x86_64 legs compile on the Theta node and nowhere else: no input chooses, no
+The x86_64 legs compile on a build node and nowhere else: no input chooses, no
 expression falls back, no leg names a hosted runner. linux-arm64 stays on GitHub's
 runners, because the node is x86. Gates and tests stay on GitHub's runners. And the
 guards around that: secrets behind an environment, labels of one run and one leg, no
@@ -47,7 +47,7 @@ PR_EVENTS = {"pull_request", "pull_request_target", "pull_request_review", "pull
              "issue_comment", "issues", "workflow_run", "merge_group", "discussion", "discussion_comment", "fork", "watch"}
 WATCHES = ("watch-1", "watch-2")
 INPUT_IN_EXPRESSION = re.compile(r"\$\{\{[^}]*(?:\binputs\.|\bgithub\.head_ref\b|\bgithub\.event\.)[^}]*\}\}")
-SENSITIVE = ("THETA_API_KEY", "THETA_PROJECT", "RUNNER_ADMIN_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "NODE_ACCESS",
+SENSITIVE = ("LATITUDE_API_KEY", "LATITUDE_PROJECT", "RUNNER_ADMIN_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "NODE_ACCESS",
              "ACTIONS_RUNNER_INPUT_JITCONFIG", "encoded_jit_config")
 PRINTED = re.compile(r"\b(?:echo|printf|print|tee|cat)\b.*\b(?:%s)\b" % "|".join(SENSITIVE))
 TRACED = re.compile(r"\bset\s+-\w*x|\bset\s+-o\s+xtrace\b|\b(?:ba)?sh\s+-\w*x\b")
@@ -370,9 +370,9 @@ def group_exposure(doc, jobs, build, steps) -> list:
         {"run": 'echo "${{ github.event_name }}"'}, {"env": {"A": "${{ inputs.a }}"}, "run": 'echo "$A"'}]}}}})) == 3))
     printed = printed_secrets(everywhere)
     out.append(("logs: no step that holds a secret prints it, traces itself or dumps its environment, as far as its own text shows (%s)" % printed, not printed))
-    secret = {"THETA_API_KEY": "${{ secrets.THETA_API_KEY }}"}
-    bad = [{"env": secret, "run": 'echo "$THETA_API_KEY"'}, {"env": secret, "run": "set -ex\npython3 a.py"}, {"env": secret, "run": "env | sort"},
-           {"run": 'curl -H "x: ${{ secrets.THETA_API_KEY }}" u'}, {"env": secret, "shell": "bash -x {0}", "run": "python3 a.py"}]
+    secret = {"LATITUDE_API_KEY": "${{ secrets.LATITUDE_API_KEY }}"}
+    bad = [{"env": secret, "run": 'echo "$LATITUDE_API_KEY"'}, {"env": secret, "run": "set -ex\npython3 a.py"}, {"env": secret, "run": "env | sort"},
+           {"run": 'curl -H "x: ${{ secrets.LATITUDE_API_KEY }}" u'}, {"env": secret, "shell": "bash -x {0}", "run": "python3 a.py"}]
     out.append(("logs: the check sees each kind of it, and not a step that only uses one",
                 all(printed_secrets({"x.yml": {"jobs": {"j": {"steps": [step]}}}}) for step in bad)
                 and not printed_secrets({"x.yml": {"jobs": {"j": {"steps": [{"env": secret, "run": "python3 a.py --run 5 | tee -a out"}]}}}})))
@@ -439,7 +439,7 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
                 stop["if"].startswith("always()") and stop["needs"] == ["plan", "node"] + list(WATCHES) and delete["if"] == "always()"))
     out.append(("stop (finding 1): a watch that crashed is no reason to delete: with the node job done, only if the legs have finished",
                 delete["env"]["ONLY_IF"] == "${{ needs.node.result == 'success' && '--if-legs-done' || '' }}" and "$ONLY_IF" in delete["run"]))
-    out.append(("stop: its step outlasts Theta's silence and one last slow call, and fits in its job, so the script speaks and not a timeout",
+    out.append(("stop: its step outlasts the API's silence and one last slow call, and fits in its job, so the script speaks and not a timeout",
                 delete["timeout-minutes"] * 60 >= theta_node.OFF_ANSWER_LIMIT_S + 4 * 60 + 30
                 and delete["timeout-minutes"] < stop["timeout-minutes"]))
     out.append(("stop: a stop-node gone red holds nothing up: neither the gate nor the publish needs it",

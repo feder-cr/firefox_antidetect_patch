@@ -22,7 +22,7 @@ since 2026-11-03 (Federico's decision): the cache's keys are the hash of the
 preprocessed source, the arguments and the compiler. `--compile-cache off` asks
 for a cold build.
 
-Who compiles is no choice: the two x86_64 legs on the Theta node, every run,
+Who compiles is no choice: the two x86_64 legs on a build node, every run,
 candidates and releases alike (scripts/ci/theta_node.py); linux-arm64 on GitHub,
 because the node is x86; gates and tests always on GitHub. So the plan has no say.
 

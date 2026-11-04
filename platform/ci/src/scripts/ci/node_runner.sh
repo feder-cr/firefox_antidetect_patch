@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the one runner of a leg of a release.yml run on its Theta node:
+# Start the one runner of a leg of a release.yml run on its node:
 #
 #     bash node_runner.sh RUN    # on the node, as root: one JIT config on stdin
 #
@@ -7,7 +7,7 @@
 # deleted after it.
 #
 # The runner starts from an empty environment: every inherited CARGO_* variable and
-# the working directory enter sccache's key for Rust, and root's container environment
+# the working directory enter sccache's key for Rust, and root's environment
 # has no business in it. What a job finds comes from here, ~/actions-runner/.env and
 # .path, and the job's own env.
 #
@@ -38,6 +38,8 @@ IFS= read -r config || true
 run_one() {
   trap '' HUP   # the SSH session that started it ends at once
   install -d -o runner -g runner "$HOME_DIR/work"
+  # A build opens far more files than a login's default of 1024; GitHub's runners allow 65536.
+  ulimit -n 65536
   rm -f "$GUARD"
   cat > "$GUARD" <<EOF
 #!/bin/bash

@@ -140,7 +140,7 @@ di rete e difetti noti con il lavoro che li chiude.
   le regole e la ricostruzione sul tag.
 - Una build di prova: `gh workflow run release.yml --ref <ramo> -f kind=candidate`
   (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla). Le due gambe
-  x86_64 compilano solo sul nodo Theta (`scripts/ci/theta_node.py`): i suoi segreti stanno
+  x86_64 compilano solo su un server Latitude.sh (`scripts/ci/theta_node.py`): i suoi segreti stanno
   nell'environment `theta-builder`, limitato a `main` e `theta/*`, quindi il ramo di una
   build di prova deve essere uno di questi. Una release si lancia solo da `main`, mai da un
   tag: `release_plan.py` rifiuta il resto.
