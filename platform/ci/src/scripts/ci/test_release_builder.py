@@ -213,9 +213,11 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
                 "needs.node.outputs" not in text and "outputs" not in jobs["node"]
                 and jobs["plan"]["outputs"].get("attempt") == "${{ github.run_attempt }}"))
     node = jobs["node"]
-    matrix = node["strategy"]["matrix"]["leg"]
-    out.append(("node: one job for each leg that compiles on a node, whichever fails the other goes on, so the run names every machine it could not have",
-                matrix == theta_node.node_legs() and node["strategy"]["fail-fast"] is False and node["name"] == "node-${{ matrix.leg }}"))
+    command = " ".join(s.get("run", "") for s in node["steps"])
+    out.append(("node: one job for the run's one node, which serves every leg that compiles on a node: no matrix, no leg to choose",
+                "strategy" not in node and node["name"] == "node" and "matrix." not in json.dumps(node)
+                and "theta_node.py provision" in command and "--leg" not in command
+                and not any("LEG" in s.get("env", {}) for s in node["steps"])))
     out.append(("no fallback: a node job that fails fails the run: nothing swallows it, and the build needs it, so the matrix does not run at all",
                 "continue-on-error" not in node and "node" in build["needs"] and "if" not in build))
     out.append(("node: a rerun of failed jobs turns nothing on: it could not run on it",

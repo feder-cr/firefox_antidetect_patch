@@ -169,7 +169,7 @@ jobs:
   # the run names every machine it could not have. The legs are test_release_builder.py's
   # to hold to scripts/ci/legs.py.
   node:
-    name: node-${{ matrix.leg }}
+    name: node
     needs: plan
     # A rerun of failed jobs has no watch and no label to run on: nothing to turn on for it.
     if: needs.plan.outputs.attempt == github.run_attempt
@@ -177,24 +177,19 @@ jobs:
     environment: theta-builder
     timeout-minutes: 45
     permissions: { actions: read, contents: read }
-    strategy:
-      fail-fast: false
-      matrix:
-        leg: [linux-x86_64, win-x86_64]
     steps:
       - name: The series (this repository, this commit)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
-      - name: Turn this leg's node on, prepare it, start its runner
+      - name: Turn the run's node on, prepare it, start one runner per leg
         env:
           LATITUDE_API_KEY: ${{ secrets.LATITUDE_API_KEY }}
           LATITUDE_PROJECT: ${{ secrets.LATITUDE_PROJECT }}
           RUNNER_ADMIN_TOKEN: ${{ secrets.RUNNER_ADMIN_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-          LEG: ${{ matrix.leg }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/theta_node.py provision \
-            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --leg "$LEG"
+            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
 
   build:
     name: build-${{ matrix.leg }}

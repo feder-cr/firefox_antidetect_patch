@@ -151,6 +151,11 @@ as_runner test -w /opt/hostedtoolcache || missing+=("a writable tool cache")
   || missing+=("a runner that starts ($(as_runner "$R/bin/Runner.Listener" --version 2>&1 | head -1))")
 [ "$(as_runner node --version)" = "v$NODE_VERSION" ] || missing+=("Node.js $NODE_VERSION")
 /usr/local/bin/glslangValidator --version | grep -q ":$GLSLANG_VERSION\$" || missing+=("glslang $GLSLANG_VERSION")
+# What node_runner.sh runs each leg in, as root.
+for tool in systemd-run unshare mount runuser useradd; do
+  command -v "$tool" >/dev/null || missing+=("$tool")
+done
+[ -d /sys/fs/cgroup ] && grep -qw memory /sys/fs/cgroup/cgroup.controllers || missing+=("cgroup v2 with memory")
 [ "${#missing[@]}" = 0 ] || die "missing: ${missing[*]}"
 
 echo "== a host key of this node's own"

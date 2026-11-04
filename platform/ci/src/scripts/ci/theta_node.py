@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 """Turn the build nodes on and off for one run of release.yml.
 
-The two x86_64 legs compile at the same time, each on a node of its own: a Latitude.sh
-server of the plan PLAN, in the cheapest location that has one when the node is created
-(Federico, 2026-11-04: always the cheapest), and nowhere else: no other plan, no other
-kind of runner. One node, one runner, one job. Gates and tests stay on GitHub. A node is
-created for a leg and deleted when that leg ends: a server that is off is still billed,
-and nothing on its disk has to outlive the leg.
+The two x86_64 legs compile at the same time on ONE node: a Latitude.sh server of the plan
+PLAN, in the cheapest location that has one when the node is created (Federico,
+2026-11-04: always the cheapest), and nowhere else: no other plan, no other kind of
+runner. One runner per leg, one job per runner, each leg on its own user, home, mounts
+and cgroup (node_runner.sh). A leg's link spends most of its time on one core of 24, so
+the other leg fills what it leaves, and the plan is billed by the started hour: one
+machine for both is half the price of two (measured 2026-11-04: alone, each leg used
+15-17% of its machine's core-minutes, at most 34.5 GB of its 96). Gates and tests stay on
+GitHub. The node is created for the run and deleted when both legs have ended: a server
+that is off is still billed, and nothing on its disk has to outlive the legs.
 
-    provision --run R --attempt A --leg L
-                                    create this leg's node, prepare it, start its runner
-                                    and see it online. Any failure: exit 1, this node off,
-                                    and the run has failed; stop-node takes the other.
+    provision --run R --attempt A
+                                    create the run's node, prepare it, start one runner
+                                    per leg and see them online. Any failure: exit 1, the
+                                    node off, and the run has failed.
     watch --run R --attempt A --ref REF
-                                    follow both legs, turn each node off when its leg ends;
+                                    follow both legs, turn the node off when both have ended;
                                     prints verdict= done | lost | failed | continue. A
                                     machine lost mid-build leaves the other leg to finish,
                                     then re-launches the whole run once, on new
                                     nodes, unless someone cancelled it, the
                                     other leg ended red or the branch has moved.
     off --run R --attempt A [--if-legs-done]
-                                    delete this run's nodes, each whatever the other does,
-                                    confirm they are gone; with the option, only those
-                                    whose leg GitHub says has finished
+                                    delete this run's node, confirm it is gone; with the
+                                    option, only once GitHub says both legs have finished
     sweep [--max-age-hours H]       protection against a forgotten node, see sweep()
     status                          our nodes
 
@@ -422,20 +425,25 @@ def new_key(directory: Path) -> Path:
     return key
 
 
-def node_name(run, attempt, leg) -> str:
-    """Our mark on a node, its hostname: the run that owns it, and the leg."""
-    name = "ci%sa%s%s" % (run, attempt, leg[0])
+# The node's mark: it serves every leg of NODE_LEGS. A runner's mark is its leg's letter.
+NODE_MARK = "x"
+
+
+def node_name(run, attempt) -> str:
+    """Our mark on the node, its hostname: the run that owns it."""
+    name = "ci%sa%s%s" % (run, attempt, NODE_MARK)
     if not NAME.match(name) or len(name) > 20:
         raise ValueError("not a node name: %r" % name)
     return name
 
 
 def node_names(run, attempt) -> list:
-    return [node_name(run, attempt, leg) for leg in node_legs()]
+    return [node_name(run, attempt)]
 
 
-def leg_of(mark) -> str:
-    return next(leg for leg in node_legs() if leg[0] == mark)
+def runner_name(run, attempt, leg) -> str:
+    """A leg's runner: the run, the attempt and the leg's letter."""
+    return "ci%sa%s%s" % (run, attempt, leg[0])
 
 
 def leg_label(run, attempt, leg) -> str:
@@ -530,8 +538,8 @@ def turn_off(theta, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LI
 
 
 def off_now(theta, name) -> bool:
-    """One pass and no waiting, for a leg that has ended, while the other is being watched:
-    what confirms it is the turn_off at the end."""
+    """One pass and no waiting, for legs that have ended: what confirms it is the
+    turn_off at the end."""
     try:
         for node in theta.nodes():
             if node.get("name") == name:
@@ -542,26 +550,26 @@ def off_now(theta, name) -> bool:
         return False
 
 
-def clear_leftovers(theta, github, run, attempt, leg):
-    """What no run needs any more goes. That covers an earlier attempt of this run, and a run
-    already re-launched, whose watch has deleted the node, whatever the list still says.
-    Another run's live node is that run's: there is no fixed machine to share, so two runs
-    do not get in each other's way. A node made by hand has another name and is never touched."""
+def clear_leftovers(theta, github, run, attempt):
+    """What no run needs any more goes. That covers an earlier attempt of this run, a node
+    of this one a failed provision left, and a run already re-launched, whose watch has
+    deleted the node, whatever the list still says. Another run's live node is that run's:
+    there is no fixed machine to share, so two runs do not get in each other's way. A node
+    made by hand has another name and is never touched."""
     for node in theta.nodes():
         name = node.get("name") or ""
         ours = NAME.match(name)
         if ours and ours.group(1) == str(run):
-            if ours.group(2) != str(attempt) or ours.group(3) == leg[0]:
-                say("an earlier attempt of this run left %s: deleting it" % name)
-                theta.delete(node["id"])
+            say("an earlier attempt of this run left %s: deleting it" % name)
+            theta.delete(node["id"])
         elif ours and (github.run_finished(ours.group(1)) or github.relaunched(ours.group(1))):
             say("run %s needs nothing any more and left %s: deleting it" % (ours.group(1), name))
             theta.delete(node["id"])
 
 
 def start_runner(github, ssh, run, attempt, leg):
-    config = github.jit_config(node_name(run, attempt, leg), leg_label(run, attempt, leg))
-    code, out, err = ssh("bash /usr/local/sbin/node_runner.sh %s" % run, stdin=(config + "\n").encode(), timeout=60)
+    config = github.jit_config(runner_name(run, attempt, leg), leg_label(run, attempt, leg))
+    code, out, err = ssh("bash /usr/local/sbin/node_runner.sh %s %s" % (run, leg[0]), stdin=(config + "\n").encode(), timeout=120)
     if code != 0:
         raise ThetaError("node_runner.sh exited %d: %s" % (code, (err or out)[-300:]))
     say("runner started, for %s" % leg)
@@ -578,11 +586,10 @@ def wait_online(github, name, clock=time.monotonic, sleep=time.sleep, limit=RUNN
         sleep(10)
 
 
-def provision(theta, github, run, attempt, leg, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep):
-    """This leg's node ready with its runner online, or ThetaError with this node off. The
-    other leg's is the other provision's, and stop-node's if that one is gone."""
-    clear_leftovers(theta, github, run, attempt, leg)
-    name = node_name(run, attempt, leg)
+def provision(theta, github, run, attempt, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep):
+    """The run's node ready with one runner per leg online, or ThetaError with the node off."""
+    clear_leftovers(theta, github, run, attempt)
+    name = node_name(run, attempt)
     key = make_key()
     public_key = Path(str(key) + ".pub").read_text(encoding="utf-8").strip()
     # The create inside the try: a lost answer can mean a node exists, and the
@@ -602,10 +609,12 @@ def provision(theta, github, run, attempt, leg, make_ssh, make_key, clock=time.m
         code, out, err = ssh("cat > /usr/local/sbin/node_runner.sh", stdin=script_bytes("node_runner.sh"), timeout=60)
         if code != 0:
             raise ThetaError("could not put node_runner.sh on the node: %s" % err[-300:])
-        start_runner(github, ssh, run, attempt, leg)
-        wait_online(github, name, clock, sleep)
+        for leg in node_legs():
+            start_runner(github, ssh, run, attempt, leg)
+        for leg in node_legs():
+            wait_online(github, runner_name(run, attempt, leg), clock, sleep)
     except Exception:
-        off_after_failure(theta, github, run, attempt, leg, clock, sleep)
+        off_after_failure(theta, github, run, attempt, clock, sleep)
         raise
 
 
@@ -627,12 +636,12 @@ def remove_runners(github, labels) -> list:
         return []
 
 
-def off_after_failure(theta, github, run, attempt, leg, clock, sleep):
+def off_after_failure(theta, github, run, attempt, clock, sleep):
     try:
-        turn_off(theta, [node_name(run, attempt, leg)], clock, sleep)
+        turn_off(theta, node_names(run, attempt), clock, sleep)
     except (ThetaError, OSError, ValueError, KeyError) as exc:
         say("::warning::the node could not be deleted, stop-node and the sweeper will: %s" % exc)
-    remove_runners(github, [leg_label(run, attempt, leg)])
+    remove_runners(github, [leg_label(run, attempt, leg) for leg in node_legs()])
 
 
 def ssh_answers(host, port, timeout=15) -> bool:
@@ -744,7 +753,7 @@ def look_at_machines(theta, run, attempt, machines, by_leg, probe, now):
         listed = None
         if rows is not None:
             try:
-                row = rows.get(node_name(run, attempt, leg))
+                row = rows.get(node_name(run, attempt))
                 listed = bool(row) and str(row.get("status", "")).lower() == RUNNING
                 if row:
                     address = theta.address(row["id"])
@@ -898,7 +907,7 @@ def give_up(theta, github, run, attempt, why, clock, sleep) -> str:
 def why_not_coming(github, run, attempt, stuck_legs) -> str:
     why = "%s waits for a runner that is not coming, on a machine that answered" % " and ".join(stuck_legs)
     try:
-        if any(github.runner_status(node_name(run, attempt, leg)) is None for leg in stuck_legs):
+        if any(github.runner_status(runner_name(run, attempt, leg)) is None for leg in stuck_legs):
             why += ", and the runner has gone without taking it, as one does when the node refuses another run's job: that uses it up"
     except ThetaError as exc:
         say("the list of runners did not answer: %s" % exc)
@@ -932,8 +941,8 @@ def watch(theta, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_an
           clock=time.time, sleep=time.sleep, poll=60, limit=STAGE_LIMIT_S, sha="") -> str:
     """Until both legs are settled, or this job's share of the time has run out. Returns
     done, lost (re-launched), failed, or continue for the next watch job, which reads the
-    same from GitHub and the API and needs nothing from this one. A leg that settles has its
-    node deleted at once, and the other goes on. A poll that fails, in whatever way, is
+    same from GitHub and the API and needs nothing from this one. The node is deleted as
+    soon as every leg has settled and none of them needs it kept. A poll that fails, in whatever way, is
     only a poll: a healthy build goes on without us, and after BLIND_POLLS in a row the
     watch stops and says what the last one was."""
     machines = {leg: Machine() for leg in node_legs()}
@@ -962,9 +971,10 @@ def watch(theta, github, run, attempt, ref, inputs, relaunch_of="", probe=ssh_an
                     to_turn_off.add(leg)
             else:
                 machine.expect_runner(bool(job) and job.get("status") in WAITING, clock())
-        for leg in sorted(to_turn_off):
-            if off_now(theta, node_name(run, attempt, leg)):
-                to_turn_off.discard(leg)
+        # One node for every leg: it goes once all of them are done with it.
+        if to_turn_off and to_turn_off >= set(machines):
+            if off_now(theta, node_name(run, attempt)):
+                to_turn_off.clear()
         if len(settled) < len(machines):
             return None
         return conclude(theta, github, run, attempt, settled, by_leg, cancelled, ref, sha, inputs, relaunch_of, clock, sleep)
@@ -997,7 +1007,7 @@ def finished_legs(github, run, attempt) -> list:
 
 def sweep(theta, github, now, max_age_hours=GUARD_HOURS, dry_run=False) -> list:
     """Delete the nodes we started that no run needs: our name, and older than the
-    limit, or owned by a run that has finished, or whose own leg has finished (what a
+    limit, or owned by a run that has finished, or whose legs have all finished (what a
     watch that died leaves behind). A node with any other name was made by hand and is
     never touched. Without GitHub, the age alone."""
     deleted = []
@@ -1013,8 +1023,8 @@ def sweep(theta, github, now, max_age_hours=GUARD_HOURS, dry_run=False) -> list:
             try:
                 if github.run_finished(m.group(1)):
                     why = "its run has finished"
-                elif leg_of(m.group(3)) in finished_legs(github, m.group(1), m.group(2)):
-                    why = "its leg has finished"
+                elif set(node_legs()) <= set(finished_legs(github, m.group(1), m.group(2))):
+                    why = "its legs have finished"
             except (ThetaError, OSError, ValueError, KeyError) as exc:
                 say("run %s unknown for now, its node stays: %s" % (m.group(1), exc))
         if why:
@@ -1076,10 +1086,10 @@ def run_provision(a) -> int:
         theta, github = from_env(), github_from_env()
         if github is None:
             raise ThetaError("GITHUB_REPOSITORY is not set")
-        provision(theta, github, a.run, a.attempt, a.leg, node_ssh(work), lambda: new_key(work))
+        provision(theta, github, a.run, a.attempt, node_ssh(work), lambda: new_key(work))
     except (ThetaError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         # Without its node the leg has nowhere to run: the run has failed.
-        print("::error::no node for %s, the run fails: %s" % (a.leg, exc), file=sys.stderr)
+        print("::error::no node for %s, the run fails: %s" % (" and ".join(node_legs()), exc), file=sys.stderr)
         return 1
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -1118,11 +1128,15 @@ def run_off(a) -> int:
             return 0
         staying = [leg for leg in node_legs() if leg not in going]
         if staying:
-            print("::warning::%s has not finished, its node stays: the sweeper deletes it when it has" % " and ".join(staying), file=sys.stderr)
+            print("::warning::%s has not finished, the node stays: the sweeper deletes it when it has" % " and ".join(staying), file=sys.stderr)
     code = 0
-    names = [node_name(a.run, a.attempt, leg) for leg in going]
+    # One node for every leg: it goes only when none is left on it.
+    names = node_names(a.run, a.attempt) if set(node_legs()) <= set(going) else []
     try:
-        print("deleted: %s" % (", ".join(names) if turn_off(theta, names) else "nothing was on"))
+        if not names:
+            print("deleted: nothing, the node stays for the legs still on it")
+        else:
+            print("deleted: %s" % (", ".join(names) if turn_off(theta, names) else "nothing was on"))
     except ThetaError as exc:
         # Red, because it may be billing and only a person reading this can know. Nothing
         # needs this job: the legs, the gate and the publish keep their own results.
@@ -1141,8 +1155,6 @@ def main(argv=None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--run", required=True)
         p.add_argument("--attempt", required=True)
-        if name == "provision":
-            p.add_argument("--leg", required=True, choices=node_legs())
         if name == "watch":
             p.add_argument("--ref", required=True)
         if name == "off":

@@ -3,19 +3,21 @@
 
 Each group runs on its own: an exception is that group's failure, not the file's.
 
-  turning on: each leg on its own machine, by name of the run, its runner online; any
-    failure is an error with that node off, never another machine or another runner;
-    a machine taken, by someone else or by a run still alive, fails clearly, per machine;
-  turning off: by name, seen gone, each whatever happens to the other; with --if-legs-done
-    only a leg's node whose job GitHub says has finished;
-  the watch: both legs at once; GitHub's blips, the list's false alarms, a machine and a job
-    as two witnesses in either order; a lost machine leaves the other leg to finish, then one
-    re-launch by value, nodes off first and cancel last, never two, never of a run someone
-    cancelled, never after a red leg, never of other code;
-  the sweeper: only our names, and each machine freed behind a watch that died;
+  turning on: one machine for both legs, by name of the run, one runner per leg online;
+    any failure is an error with that node off and both legs' runners removed, never
+    another machine or another run's runner;
+  turning off: by name, seen gone; with --if-legs-done only once GitHub says both legs
+    have finished;
+  the watch: both legs at once on the one node; GitHub's blips, the list's false alarms, a
+    machine and a job as two witnesses in either order; the node kept while any leg needs
+    it; a lost machine is lost to both legs, then one re-launch by value, the node off first
+    and cancel last, never two, never of a run someone cancelled, never after a red leg,
+    never of other code;
+  the sweeper: only our names, and the machine freed behind a watch that died;
   secrets: nothing reaches a message;
-  the runner on the node: from an empty environment, killing any other run's job at its
-    first step (Linux), which the watch turns into a failed run;
+  the runners on the node: one per leg, each its own user, home copy, guard and port,
+    from an empty environment, killing any other run's job at its first step (Linux),
+    which the watch turns into a failed run;
   exposure: a node's address in no message, its deployment id in no output, and no
     configuration on a connection not held to the host key the bootstrap made.
 
@@ -44,26 +46,26 @@ import theta_node as t  # noqa: E402
 
 KEY, PROJECT = "SECRET-KEY-123", "prj_secret456"
 L, W = "linux-x86_64", "win-x86_64"
-ROW_L = {"BaseID": "dpl_l", "PodPhase": "ci5a1l-deployment-x: Running", "PortMappings": {"22": 30001},
+# The run's one node, which both legs share: one row, one address for both legs' Machine.
+ROW_X = {"BaseID": "dpl_x", "PodPhase": "ci5a1x-deployment-x: Running", "PortMappings": {"22": 30001},
          "NodePublicIP": "1.1.1.1", "AuthPassword": "PASSWORD-789"}
-ROW_W = {"BaseID": "dpl_w", "PodPhase": "ci5a1w-deployment-x: Running", "PortMappings": {"22": 30002},
-         "NodePublicIP": "2.2.2.2", "AuthPassword": "PASSWORD-789"}
 LINUX, WIN = "build-" + L, "build-" + W
 HEAD = "c0ffee"
 HOST_KEY = "ssh-ed25519 AAAAHOSTKEY"
 BOOTSTRAPPED = "== the user\nnode_bootstrap: host key: %s\nnode_bootstrap: ready\n" % HOST_KEY
-START_RUNNER = "bash /usr/local/sbin/node_runner.sh 5"
+START_L = "bash /usr/local/sbin/node_runner.sh 5 l"
+START_W = "bash /usr/local/sbin/node_runner.sh 5 w"
 PUT_RUNNER = "cat > /usr/local/sbin/node_runner.sh"
 
 
-def listed(marks="lw", status=t.RUNNING, run=5, attempt=1):
+def listed(marks=t.NODE_MARK, status=t.RUNNING, run=5, attempt=1):
     return [{"id": "dpl_%s" % m, "name": "ci%sa%s%s" % (run, attempt, m), "status": status} for m in marks]
 
 
 class FakeLatitude:
     """The API as measured on 2026-11-04: JSON:API, the server's hostname as its name."""
 
-    def __init__(self, create_status=201, create_lost=False, rows=(ROW_L, ROW_W), delete_takes=True, log=None, refuse_sites=()):
+    def __init__(self, create_status=201, create_lost=False, rows=(ROW_X,), delete_takes=True, log=None, refuse_sites=()):
         self.create_status, self.create_lost = create_status, create_lost
         self.rows, self.delete_takes = list(rows), delete_takes
         self.nodes, self.created, self.deleted = [], [], []
@@ -248,8 +250,8 @@ def quiet(fn, *args, **kwargs):
         return fn(*args, **kwargs), sink.getvalue()
 
 
-def provisioned(api, gh, ssh, leg=L):
-    """provision() of one leg: (True or None, error text)."""
+def provisioned(api, gh, ssh):
+    """provision() of the run's node: (True or None, error text)."""
     clock = Clock()
     theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
     github = t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
@@ -258,7 +260,7 @@ def provisioned(api, gh, ssh, leg=L):
         key.write_text("private", encoding="utf-8")
         Path(str(key) + ".pub").write_text("ssh-ed25519 AAAA ci-node\n", encoding="utf-8")
         try:
-            quiet(t.provision, theta, github, 5, 1, leg, lambda host, port: ssh, lambda: key, clock, clock.sleep)
+            quiet(t.provision, theta, github, 5, 1, lambda host, port: ssh, lambda: key, clock, clock.sleep)
             return True, ""
         except t.ThetaError as exc:
             return None, str(exc)
@@ -295,14 +297,13 @@ DEAD_W = job(WIN, conclusion="failure", steps=("success", None, None), completed
 CANCELLED_W = job(WIN, conclusion="cancelled", steps=("success", None, None), completed="2026-11-03T11:59:00Z", runner="ci5a1w")
 QUEUE_CANCELLED_W = job(WIN, conclusion="cancelled")
 INPUTS = {"kind": "candidate", "compile_cache": "gha", "core_ref": "main", "wrapper_ref": "v1", "relaunch_of": "5"}
-LOSE_L = {"l": False, "w": True}
-LOSE_W = {"l": True, "w": False}
 
 
-def watched(answers, nodes="lw", status=t.RUNNING, answering=True, relaunch_of="", limit=6 * 3600, past_runs=(), gh=None,
-            rows=(ROW_L, ROW_W), api=None, sha=HEAD, probe=None):
-    """watch() to its verdict, on a clock that only moves when it sleeps. answering: is sshd
-    there: a bool, a function of the seconds since the start, or either by leg's mark.
+def watched(answers, nodes=t.NODE_MARK, status=t.RUNNING, answering=True, relaunch_of="", limit=6 * 3600, past_runs=(), gh=None,
+            rows=(ROW_X,), api=None, sha=HEAD, probe=None):
+    """watch() to its verdict, on a clock that only moves when it sleeps. answering: is the
+    node's sshd there: a bool, or a function of the seconds since the start. One node: both
+    legs ask the same machine, and both lose it together.
     (verdict, FakeGitHub, FakeLatitude, the log of deletes and dispatches, all it said, clock)"""
     clock, log = Clock(), []
     api, gh = api or FakeLatitude(rows=rows), gh or FakeGitHub()
@@ -313,8 +314,8 @@ def watched(answers, nodes="lw", status=t.RUNNING, answering=True, relaunch_of="
     theta, github = t.Latitude(PROJECT, KEY, api, clock.sleep), t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
 
     def answers_at(host, port):
-        said = answering[{"1.1.1.1": "l", "2.2.2.2": "w"}[host]] if isinstance(answering, dict) else answering
-        return said(clock.now) if callable(said) else said
+        assert (host, port) == ("1.1.1.1", 22), host
+        return answering(clock.now) if callable(answering) else answering
     result, said = quiet(t.watch, theta, github, 5, 1, "main", INPUTS, relaunch_of, probe or answers_at,
                          lambda: NOW + clock.now, clock.sleep, 60, limit, sha=sha)
     return result, gh, api, log, said, clock
@@ -324,29 +325,30 @@ def group_turning_on():
     out = []
     out.append(("plan: one, named in one place, and no argument names another",
                 (HERE / "theta_node.py").read_text(encoding="utf-8").count('"%s"' % t.PLAN) == 1 and "--plan" not in (HERE / "theta_node.py").read_text(encoding="utf-8")))
-    out.append(("names: a node's name says its run, its attempt and its leg, so its machine",
-                {t.node_name(5, 1, leg) for leg in t.node_legs()} == {"ci5a1l", "ci5a1w"} and t.leg_of("w") == W and t.leg_of("l") == L
-                and t.NAME.match("ci5a1l").groups() == ("5", "1", "l")))
-    for leg in (L, W):
-        api, gh, ssh = FakeLatitude(), FakeGitHub(), FakeSsh()
-        got, error = provisioned(api, gh, ssh, leg)
-        sent = api.created[0] if api.created else {}
-        out.append(("on, %s: the cheapest location with stock, the United States among equals, under the run's name, billed by the hour" % leg,
-                    got and [c["site"] for c in api.created] == ["DAL"] and sent.get("hostname") == t.node_name(5, 1, leg)
-                    and sent.get("plan") == t.PLAN and sent.get("operating_system") == t.OPERATING_SYSTEM and sent.get("billing") == "hourly"
-                    and sent.get("project") == PROJECT))
-        out.append(("on, %s: with this run's key, which is dropped once the node has answered" % leg,
-                    sent.get("ssh_keys") == ["key_" + t.node_name(5, 1, leg)] and api.keys == [] and api.keys_deleted == ["key_" + t.node_name(5, 1, leg)]))
-        out.append(("on, %s: one runner, its own label, online" % leg,
-                    [j["name"] for j in gh.jits] == [t.node_name(5, 1, leg)] and gh.jits[0]["labels"] == [t.leg_label(5, 1, leg)]
-                    and gh.jits[0]["work_folder"] == "../work"))
-        commands = [c for c, _ in ssh.calls]
-        stdin = dict(ssh.calls)
-        out.append(("on, %s: prepared before the runner starts, the run named, and the configuration goes by stdin, never on a command line" % leg,
-                    commands.index("bash -s") < commands.index(START_RUNNER)
-                    and b"node_bootstrap" in stdin["bash -s"] and b"\r" not in stdin["bash -s"]
-                    and stdin[START_RUNNER] == b"JIT1\n" and not any("JIT" in c for c in commands)))
-        out.append(("on, %s: a node that went well stays on" % leg, api.deleted == []))
+    out.append(("names: the node's name says its run and its attempt, and that it serves every leg",
+                t.node_name(5, 1) == "ci5a1x" and t.node_names(5, 1) == ["ci5a1x"] and t.NAME.match("ci5a1x").groups() == ("5", "1", t.NODE_MARK)
+                and t.NODE_MARK not in {leg[0] for leg in t.node_legs()}))
+    out.append(("names: each leg's runner says its run, its attempt and its leg, and is no node's name",
+                [t.runner_name(5, 1, leg) for leg in t.node_legs()] == ["ci5a1l", "ci5a1w"] and t.node_name(5, 1) not in ("ci5a1l", "ci5a1w")))
+    api, gh, ssh = FakeLatitude(), FakeGitHub(), FakeSsh()
+    got, error = provisioned(api, gh, ssh)
+    sent = api.created[0] if api.created else {}
+    out.append(("on: one node for both legs, in the cheapest location with stock, the United States among equals, under the run's name, billed by the hour",
+                got and [c["site"] for c in api.created] == ["DAL"] and sent.get("hostname") == t.node_name(5, 1)
+                and sent.get("plan") == t.PLAN and sent.get("operating_system") == t.OPERATING_SYSTEM and sent.get("billing") == "hourly"
+                and sent.get("project") == PROJECT and [n["name"] for n in api.nodes] == ["ci5a1x"]))
+    out.append(("on: with this run's key, which is dropped once the node has answered",
+                sent.get("ssh_keys") == ["key_ci5a1x"] and api.keys == [] and api.keys_deleted == ["key_ci5a1x"]))
+    out.append(("on: one runner per leg, each its own name and its own label, online",
+                [j["name"] for j in gh.jits] == ["ci5a1l", "ci5a1w"] and [j["labels"] for j in gh.jits] == [[t.leg_label(5, 1, L)], [t.leg_label(5, 1, W)]]
+                and all(j["work_folder"] == "../work" for j in gh.jits)))
+    commands = [c for c, _ in ssh.calls]
+    stdin = dict(ssh.calls)
+    out.append(("on: prepared once, before either runner starts; each started with the run and its leg named, its own configuration by stdin, never on a command line",
+                commands.count("bash -s") == 1 and commands.index("bash -s") < commands.index(START_L) < commands.index(START_W)
+                and b"node_bootstrap" in stdin["bash -s"] and b"\r" not in stdin["bash -s"]
+                and stdin[START_L] == b"JIT1\n" and stdin[START_W] == b"JIT2\n" and not any("JIT" in c for c in commands)))
+    out.append(("on: a node that went well stays on", api.deleted == []))
     out.append(("prices: the ceiling is above the plan's dearest location, as read", t.MAX_PRICE_USD_HOUR >= 1.48))
     got, error = provisioned(FakeLatitude(), FakeGitHub(), FakeSsh({"true": (255, "", "root@<node>: Permission denied (publickey).")}))
     calls = []
@@ -397,46 +399,61 @@ def group_no_fallback():
     out.append(("fail: nowhere has the plan: an error naming it, nothing created, no key registered", got is None and t.PLAN in error and api.created == [] and api.keys == []))
     api = FakeLatitude(create_lost=True)
     got, error = provisioned(api, FakeGitHub(), FakeSsh())
-    out.append(("fail: the answer to the create is lost: the node it may have made is deleted", got is None and api.deleted == ["dpl_l"]))
+    out.append(("fail: the answer to the create is lost: the node it may have made is deleted", got is None and api.deleted == ["dpl_x"]))
     api = FakeLatitude(rows=())
     got, error = provisioned(api, FakeGitHub(), FakeSsh())
-    out.append(("fail: a node never Running within the limit is deleted", got is None and api.deleted == ["dpl_l"] and api.nodes == []))
+    out.append(("fail: a node never Running within the limit is deleted", got is None and api.deleted == ["dpl_x"] and api.nodes == []))
     api = FakeLatitude()
     got, error = provisioned(api, FakeGitHub(), FakeSsh({"true": (255, "", "refused")}))
-    out.append(("fail: no SSH within the limit: deleted", got is None and api.deleted == ["dpl_l"]))
+    out.append(("fail: no SSH within the limit: deleted", got is None and api.deleted == ["dpl_x"]))
     api, gh = FakeLatitude(), FakeGitHub()
     got, error = provisioned(api, gh, FakeSsh({"bash -s": (1, "", "node_bootstrap: ERROR: missing: git")}))
-    out.append(("fail: a bootstrap that refuses: deleted, and nothing registered", got is None and "missing: git" in error and api.deleted == ["dpl_l"] and gh.jits == []))
+    out.append(("fail: a bootstrap that refuses: deleted, and nothing registered", got is None and "missing: git" in error and api.deleted == ["dpl_x"] and gh.jits == []))
     api, gh = FakeLatitude(), FakeGitHub(jit_status=401)
     got, error = provisioned(api, gh, FakeSsh())
-    out.append(("fail: GitHub refuses the registration: deleted", got is None and api.deleted == ["dpl_l"]))
+    out.append(("fail: GitHub refuses the registration: deleted", got is None and api.deleted == ["dpl_x"]))
     api, gh = FakeLatitude(), FakeGitHub()
-    got, error = provisioned(api, gh, FakeSsh({START_RUNNER: (1, "", "no")}))
-    out.append(("fail: the runner does not start: deleted, and the registered one removed",
-                got is None and api.deleted == ["dpl_l"] and gh.removed == ["100"]))
+    got, error = provisioned(api, gh, FakeSsh({START_L: (1, "", "no")}))
+    out.append(("fail: the first leg's runner does not start: deleted, its registered runner removed, and the other leg's never started",
+                got is None and api.deleted == ["dpl_x"] and gh.removed == ["100"] and [j["name"] for j in gh.jits] == ["ci5a1l"]))
+    api, gh = FakeLatitude(), FakeGitHub()
+    gh.runners = [{"id": 90, "name": "ci6a1l", "busy": False, "status": "online", "labels": [{"name": t.leg_label(6, 1, L)}]}]
+    ssh = FakeSsh({START_W: (1, "", "no")})
+    got, error = provisioned(api, gh, ssh)
+    out.append(("fail: the second leg's runner does not start: the one node deleted, both legs' runners removed, another run's never",
+                got is None and api.deleted == ["dpl_x"] and api.nodes == [] and len(gh.removed) == 2 and "90" not in gh.removed
+                and [r["name"] for r in gh.runners] == ["ci6a1l"]
+                and START_L in [c for c, _ in ssh.calls]))
     api, gh = FakeLatitude(), FakeGitHub(online=False)
     got, error = provisioned(api, gh, FakeSsh())
     out.append(("fail: a runner that never comes online fails the run within the limit, it does not wait 24 hours in the queue",
-                got is None and "online" in error and api.deleted == ["dpl_l"] and t.RUNNER_ONLINE_LIMIT_S <= 600))
-    api, gh = FakeLatitude(), FakeGitHub()
-    api.nodes = listed("w")
-    gh.runners = [{"id": 90, "name": "ci5a1w", "busy": False, "status": "online", "labels": [{"name": t.leg_label(5, 1, W)}]}]
-    got, error = provisioned(api, gh, FakeSsh({START_RUNNER: (1, "", "no")}), L)
-    out.append(("fail: a leg that fails leaves the other's node and runner alone: stop-node takes that one",
-                got is None and api.deleted == ["dpl_l"] and [n["id"] for n in api.nodes] == ["dpl_w"] and "90" not in gh.removed))
+                got is None and "online" in error and api.deleted == ["dpl_x"] and t.RUNNER_ONLINE_LIMIT_S <= 600))
+
+    class OnlyLinuxOnline(FakeGitHub):
+        def __call__(self, method, url, headers, body):
+            answer = super().__call__(method, url, headers, body)
+            for runner in self.runners:
+                runner["status"] = "online" if runner["name"] == "ci5a1l" else "offline"
+            return answer
+    api, gh = FakeLatitude(), OnlyLinuxOnline()
+    got, error = provisioned(api, gh, FakeSsh())
+    out.append(("fail: one leg's runner online and the other's never: the node deleted, both runners removed",
+                got is None and "online" in error and api.deleted == ["dpl_x"] and sorted(gh.removed) == ["100", "101"]))
     # The command line: exit 1, and nothing a job could read.
     for var in ("LATITUDE_API_KEY", "LATITUDE_PROJECT"):
         os.environ.pop(var, None)
     sink = io.StringIO()
     with contextlib.redirect_stdout(sink):
-        code, said = quiet(t.main, ["provision", "--run", "5", "--attempt", "1", "--leg", W])
-    out.append(("fail: the command exits 1 with an error for the run's page, naming the leg", code == 1 and sink.getvalue() == "" and "::error::" in said and W in said))
+        code, said = quiet(t.main, ["provision", "--run", "5", "--attempt", "1"])
+    out.append(("fail: the command exits 1 with an error for the run's page, naming the legs left with nowhere to run",
+                code == 1 and sink.getvalue() == "" and "::error::" in said and L in said and W in said))
     try:
         quiet(t.main, ["provision", "--run", "5", "--attempt", "1", "--leg", "linux-arm64"])
         refused = False
     except SystemExit as exc:
         refused = exc.code != 0
-    out.append(("no fallback: the arm64 leg has no node, and the command will not make one", refused))
+    out.append(("no fallback: the command takes no leg, so nothing can ask it for an arm64 node, and the node's legs are the x86_64 ones",
+                refused and t.node_legs() == [L, W]))
     source = (HERE / "theta_node.py").read_text(encoding="utf-8")
     out.append(("no fallback: nothing in the script names a builder or sends a leg to GitHub's runners",
                 "builder" not in source.replace("test_release_builder", "") and "provision_outputs" not in source and "GitHub's runners, nothing" not in source))
@@ -447,21 +464,24 @@ def group_two_runs():
     """No fixed machine: two runs do not get in each other's way, and what no run needs goes."""
     out = []
 
-    def taken(nodes, run_status, leg=L):
+    def taken(nodes, run_status):
         api, gh = FakeLatitude(), FakeGitHub()
         api.nodes = list(nodes)
         gh.run_status = run_status
-        got, error = provisioned(api, gh, FakeSsh(), leg)
+        got, error = provisioned(api, gh, FakeSsh())
         return got, error, api, gh
-    live = {"id": "d9", "name": "ci9a1l", "status": t.RUNNING}
+    live = {"id": "d9", "name": "ci9a1x", "status": t.RUNNING}
     got, error, api, gh = taken([live], {"9": "in_progress"})
-    out.append(("two runs: a live run's node is that run's: this leg goes on, and it is not touched", got and api.deleted == []))
+    out.append(("two runs: a live run's node is that run's: this run's goes on, and it is not touched", got and api.deleted == []))
     got, error, api, gh = taken([live], {"9": "completed"})
     out.append(("two runs: a node whose run has finished goes", got and api.deleted == ["d9"]))
-    got, error, api, gh = taken(listed("lw", attempt=0), {"5": "in_progress"})
-    out.append(("two runs: an earlier attempt of this same run goes, both its nodes", got and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
-    got, error, api, gh = taken(listed("w"), {"5": "in_progress"})
-    out.append(("same run: the other leg's node of this attempt is left alone", got and api.deleted == []))
+    earlier = [{"id": "d0%s" % m, "name": "ci5a0%s" % m, "status": t.RUNNING} for m in (t.NODE_MARK, "l", "w")]
+    got, error, api, gh = taken(earlier, {"5": "in_progress"})
+    out.append(("two runs: an earlier attempt of this same run goes, whatever its nodes were called (one per leg before 2026-11-04)",
+                got and sorted(api.deleted) == ["d0l", "d0w", "d0x"]))
+    got, error, api, gh = taken([{"id": "d_old", "name": "ci5a1x", "status": t.RUNNING}], {"5": "in_progress"})
+    out.append(("same run: a node of this very attempt left by a provision that failed goes before the new one is made",
+                got and api.deleted == ["d_old"] and len(api.created) == 1 and [n["id"] for n in api.nodes] == ["dpl_x"]))
     by_hand = {"id": "dh", "name": "myserver", "status": t.RUNNING}
     got, error, api, gh = taken([by_hand], {})
     out.append(("by hand: a server of this project with another name is never touched", got and api.deleted == []))
@@ -471,7 +491,7 @@ def group_two_runs():
     return out
 
 
-def run_off_with(answers, if_legs_done=True, nodes="lw", api=None, runners=()):
+def run_off_with(answers, if_legs_done=True, nodes=t.NODE_MARK, api=None, runners=()):
     """The off command: (exit code, FakeLatitude, FakeGitHub, stdout, stderr)."""
     api, gh, clock = api or FakeLatitude(), FakeGitHub(), Clock()
     api.nodes = listed(nodes)
@@ -498,10 +518,11 @@ def group_off():
     out = []
     clock = Clock()
     api = FakeLatitude()
-    api.nodes = listed("lw") + [{"id": "dpl_2", "name": "ci5a2l", "status": t.RUNNING}, {"id": "dpl_lab", "name": "gpunodegn8rdcmn6agw1", "status": t.RUNNING}]
+    api.nodes = listed() + [{"id": "dpl_2", "name": "ci5a2x", "status": t.RUNNING}, {"id": "dpl_6", "name": "ci6a1x", "status": t.RUNNING},
+                            {"id": "dpl_lab", "name": "gpunodegn8rdcmn6agw1", "status": t.RUNNING}]
     theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
     deleted = t.turn_off(theta, t.node_names(5, 1), clock, clock.sleep)
-    out.append(("off: both of this attempt's nodes and nothing else, by name", sorted(deleted) == ["dpl_l", "dpl_w"] and sorted(n["id"] for n in api.nodes) == ["dpl_2", "dpl_lab"]))
+    out.append(("off: this attempt's one node and nothing else, by name", deleted == ["dpl_x"] and sorted(n["id"] for n in api.nodes) == ["dpl_2", "dpl_6", "dpl_lab"]))
     out.append(("off: nothing on is not an error", t.turn_off(t.Latitude(PROJECT, KEY, FakeLatitude(), clock.sleep), t.node_names(5, 1), clock, clock.sleep) == []))
 
     class Refused(FakeGitHub):
@@ -517,13 +538,17 @@ def group_off():
     code, api, _, _, _ = run_off_with(["garbage"])
     out.append(("off after a watch that crashed: nor is an answer that cannot be read", code == 0 and api.deleted == []))
     code, api, _, _, said = run_off_with([[GREEN_L]])
-    out.append(("off: a leg not listed yet is not a finished leg, and each is asked for itself", code == 0 and api.deleted == ["dpl_l"] and W in said))
+    out.append(("off: a leg not listed yet is not a finished leg: the node stays, and the warning names that leg alone",
+                code == 0 and api.deleted == [] and W in said and L not in said))
     code, api, _, _, said = run_off_with([[GREEN_L, RUN_W]])
-    out.append(("off: one leg finished, the other running: its node goes, the other's stays", code == 0 and api.deleted == ["dpl_l"] and W in said and L not in said))
-    code, api, _, _, _ = run_off_with([[GREEN_L, GREEN_W]])
-    out.append(("off: both legs have finished: both deleted", code == 0 and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("off: one leg finished, the other running on the same node: the node stays for it, and the warning names only that one",
+                code == 0 and api.deleted == [] and W in said and L not in said))
+    code, api, _, _, said = run_off_with([[RUN_L, GREEN_W]])
+    out.append(("off: the same the other way round", code == 0 and api.deleted == [] and L in said and W not in said))
+    code, api, _, printed, _ = run_off_with([[GREEN_L, GREEN_W]])
+    out.append(("off: both legs have finished: the node deleted", code == 0 and api.deleted == ["dpl_x"] and "ci5a1x" in printed))
     code, api, _, _, _ = run_off_with([[RUN_L, RUN_W]], if_legs_done=False)
-    out.append(("off without the option (a node job did not finish): both deleted, asking nothing", code == 0 and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("off without the option (a node job did not finish): the node deleted, asking nothing", code == 0 and api.deleted == ["dpl_x"]))
     runners = [{"id": 90, "name": "ci5a1l", "busy": False, "labels": [{"name": t.leg_label(5, 1, L)}]},
                {"id": 91, "name": "ci5a1w", "busy": False, "labels": [{"name": t.leg_label(5, 1, W)}]},
                {"id": 92, "name": "ci6a1l", "busy": False, "labels": [{"name": t.leg_label(6, 1, L)}]}]
@@ -533,7 +558,7 @@ def group_off():
 
 
 def group_stop_node():
-    """Both nodes off, each whatever happens to the other, for as long as the step can try."""
+    """The run's node off, for as long as the step can try."""
     out = []
     clock = Clock()
     gh = FakeGitHub()
@@ -552,22 +577,22 @@ def group_stop_node():
                 return 404, b'{"message":"GPU deployment not found"}'
             return super().__call__(method, url, headers, body)
     api = SecondDelete()
-    api.nodes = listed("l")
-    out.append(("stop: a delete that answers 404 is a node gone", t.turn_off(t.Latitude(PROJECT, KEY, api, clock.sleep), ["ci5a1l"], clock, clock.sleep) == ["dpl_l"]))
+    api.nodes = listed()
+    out.append(("stop: a delete that answers 404 is a node gone", t.turn_off(t.Latitude(PROJECT, KEY, api, clock.sleep), ["ci5a1x"], clock, clock.sleep) == ["dpl_x"]))
 
     def off():
         clock = Clock()
         api = FakeLatitude()
-        api.nodes = listed("lw")
+        api.nodes = listed()
         return clock, api
 
     clock, api = off()
     api.outage = lambda: clock.now < 300
     deleted, _ = quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
-    out.append(("stop: the API fails for 5 minutes, list and delete: both still go", sorted(deleted) == ["dpl_l", "dpl_w"] and api.nodes == []))
+    out.append(("stop: the API fails for 5 minutes, list and delete: the node still goes", deleted == ["dpl_x"] and api.nodes == []))
 
     class DeleteFails(FakeLatitude):
-        failing = "dpl_l"
+        failing = "dpl_x"
         until = 300
 
         def __call__(self, method, url, headers, body):
@@ -576,22 +601,34 @@ def group_stop_node():
             return super().__call__(method, url, headers, body)
     clock = Clock()
     api = DeleteFails()
-    api.nodes = listed("lw")
+    api.nodes = listed()
     deleted, _ = quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
-    out.append(("stop: one node's delete fails for 5 minutes: the other goes at once, and that one in the end",
-                deleted[0] == "dpl_w" and sorted(deleted) == ["dpl_l", "dpl_w"] and api.nodes == []))
-    for failing, stays, gone in (("dpl_l", "ci5a1l", "ci5a1w"), ("dpl_w", "ci5a1w", "ci5a1l")):
-        clock = Clock()
-        api = DeleteFails()
-        api.failing, api.until = failing, 10 ** 9
-        api.nodes = listed("lw")
-        try:
-            quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
-            message = ""
-        except t.ThetaError as exc:
-            message = str(exc)
-        out.append(("stop: %s can never be deleted: the other is gone all the same, and the error names only the one that may be on" % stays,
-                    stays in message and gone not in message and [n["name"] for n in api.nodes] == [stays]))
+    out.append(("stop: the node's delete fails for 5 minutes: asked again, and gone in the end",
+                deleted == ["dpl_x"] and api.nodes == [] and clock.now >= 300))
+    # turn_off takes names, each whatever happens to the other: what a node of the old
+    # one-per-leg design, or a provision's leftover, would need. Nothing passes two today.
+    clock = Clock()
+    api = DeleteFails()
+    api.failing, api.until = "dpl_l", 10 ** 9
+    api.nodes = listed("lw")
+    try:
+        quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), ["ci5a1l", "ci5a1w"], clock, clock.sleep)
+        message = ""
+    except t.ThetaError as exc:
+        message = str(exc)
+    out.append(("stop: of two names, one that can never be deleted: the other is gone all the same, and the error names only the one that may be on",
+                "ci5a1l" in message and "ci5a1w" not in message and [n["name"] for n in api.nodes] == ["ci5a1l"]))
+    clock = Clock()
+    api = DeleteFails()
+    api.until = 10 ** 9
+    api.nodes = listed()
+    try:
+        quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
+        message = ""
+    except t.ThetaError as exc:
+        message = str(exc)
+    out.append(("stop: the node can never be deleted: an error naming it, and it is still listed",
+                "ci5a1x" in message and [n["name"] for n in api.nodes] == ["ci5a1x"]))
     clock, api = off()
     api.outage = lambda: True
     try:
@@ -599,8 +636,8 @@ def group_stop_node():
         message = ""
     except t.ThetaError as exc:
         message = str(exc)
-    out.append(("stop: the API never answers: an error naming both, once the time is up and not before",
-                "ci5a1l" in message and "ci5a1w" in message and t.OFF_ANSWER_LIMIT_S <= clock.now <= t.OFF_ANSWER_LIMIT_S + 60))
+    out.append(("stop: the API never answers: an error naming the node, once the time is up and not before",
+                "ci5a1x" in message and t.OFF_ANSWER_LIMIT_S <= clock.now <= t.OFF_ANSWER_LIMIT_S + 60))
 
     class ForAWhile(FakeLatitude):
         polls = 0
@@ -610,7 +647,7 @@ def group_stop_node():
             self.polls += 1
             return (503, b"busy") if self.polls <= self.last else super().__call__(method, url, headers, body)
     code, api, _, _, said = run_off_with([[GREEN_L, GREEN_W]], api=ForAWhile())
-    out.append(("stop: a passed run, and the API back in time: green, nothing to report", code == 0 and "::error::" not in said and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("stop: a passed run, and the API back in time: green, nothing to report", code == 0 and "::error::" not in said and api.deleted == ["dpl_x"]))
     down = FakeLatitude()
     down.outage = lambda: True
     code, _, _, _, said = run_off_with([[GREEN_L, GREEN_W]], api=down)
@@ -618,9 +655,9 @@ def group_stop_node():
                 code == 1 and "::error::" in said and "billing" in said and "build" in said))
     one = DeleteFails()
     clock = Clock()
-    one.failing, one.until = "dpl_l", 10 ** 9
+    one.failing, one.until = "dpl_x", 10 ** 9
     code, api, _, _, said = run_off_with([[GREEN_L, GREEN_W]], api=one)
-    out.append(("stop: one node refused: red for that one, the other gone", code == 1 and [n["name"] for n in api.nodes] == ["ci5a1l"] and "ci5a1l" in said and "ci5a1w" not in said))
+    out.append(("stop: the node refused: red, naming it", code == 1 and [n["name"] for n in api.nodes] == ["ci5a1x"] and "ci5a1x" in said and "billing" in said))
     return out
 
 
@@ -642,7 +679,8 @@ def group_bootstrap():
     out.append(("bootstrap: the job's user has no sudo, and the script stops if it finds one",
                 "NOPASSWD" not in bootstrap and "rm -f /etc/sudoers.d/runner" in bootstrap
                 and '! as_runner sudo -n true 2>/dev/null || missing+=' in bootstrap))
-    out.append(("names: run ids of today fit in a hostname", t.node_name(41647921995, 12, W) == "ci41647921995a12w" and len(t.node_name(41647921995, 12, W)) <= 20))
+    out.append(("names: run ids of today fit in a hostname", t.node_name(41647921995, 12) == "ci41647921995a12x" and len(t.node_name(41647921995, 12)) <= 20
+                and t.runner_name(41647921995, 12, W) == "ci41647921995a12w"))
     out.append(("labels: one per leg, with the run and the attempt", t.leg_label(41647921995, 2, W) == "theta-41647921995-2-win-x86_64"))
     out.append(("time: Latitude's +00:00 and GitHub's Z are one time", t.parse_time("2026-11-03T14:35:38+00:00") == t.parse_time("2026-11-03T14:35:38Z") is not None))
     runner = (HERE / "node_runner.sh").read_text(encoding="utf-8")
@@ -677,7 +715,7 @@ def group_false_lost():
     """Finding 2: the API's list alone said lost, after 5 minutes."""
     out = []
     then_done = [[RUN_L, RUN_W]] * 40 + [[GREEN_L, GREEN_W]]
-    result, gh, api, _, _, _ = watched(list(then_done), nodes="w")
+    result, gh, api, _, _, _ = watched(list(then_done), nodes="")
     # With no row and no address kept, the list is all there is: the other witness is the address it saw.
     out.append(("list: a node gone from the list from the first look, with nothing else to ask, and its leg running: lost at the limit", result == "lost" and len(gh.dispatches) == 1))
 
@@ -688,16 +726,15 @@ def group_false_lost():
             if "/servers?" in url and method == "GET":
                 self.polls += 1
                 if self.polls > 2:
-                    self.nodes = [n for n in self.nodes if n["id"] != "dpl_l"]
+                    self.nodes = [n for n in self.nodes if n["id"] != "dpl_x"]
             return super().__call__(method, url, headers, body)
     result, gh, api, _, _, _ = watched(list(then_done), api=ListLosesIt())
     out.append(("list: gone for 40 minutes with sshd answering and a leg running: not lost", result == "done" and gh.dispatches == []))
     result, gh, api, _, _, _ = watched(list(then_done), status="pending")
     out.append(("list: another status with sshd answering: not lost", result == "done" and gh.dispatches == []))
-    result, gh, api, _, _, _ = watched(list(then_done), rows=(dict(ROW_L, PodPhase="x: Pending"), ROW_W))
+    result, gh, api, _, _, _ = watched(list(then_done), rows=(dict(ROW_X, PodPhase="x: Pending"),))
     out.append(("list: a pod not Running from the first look: no address, the leg left to the list", result == "lost"))
-    silent_5 = {"l": lambda s: s >= 5 * 60, "w": True}
-    result, gh, _, _, _, _ = watched(list(then_done), answering=silent_5)
+    result, gh, _, _, _, _ = watched(list(then_done), answering=lambda s: s >= 5 * 60)
     out.append(("both: down for the old 5 minutes, then sshd back: not lost", result == "done" and gh.dispatches == []))
     out.append(("the limit is at least 15 minutes", t.DOWN_LIMIT_S >= 15 * 60))
     machine = t.Machine(("h", 1))
@@ -716,7 +753,7 @@ def group_false_lost():
                 machine.down_since is None and t.leg_state(RUN_L, machine, NOW + t.DOWN_LIMIT_S) is None))
     out.append(("status: the string the API really answers (measured: deploying, then on), read as it is", t.RUNNING == "on"))
     live = FakeLatitude()
-    live.nodes = listed("lw")
+    live.nodes = listed()
     clock = Clock()
     machines = {L: t.Machine(), W: t.Machine()}
     seen = []
@@ -725,9 +762,15 @@ def group_false_lost():
         seen.append(host)
         return True
     quiet(t.look_at_machines, t.Latitude(PROJECT, KEY, live, clock.sleep), 5, 1, machines, {}, banner, NOW)
-    out.append(("status: each node the real API calls on is listed, each with its own address, and each asked by itself",
-                machines[L].listed is True and machines[L].address == ("1.1.1.1", 22) and machines[W].address == ("2.2.2.2", 22)
-                and machines[L].down_since is None and seen == ["1.1.1.1", "2.2.2.2"]))
+    out.append(("status: the one node the real API calls on is listed, and both legs see it, at its one address, each asking it",
+                machines[L].listed is True and machines[W].listed is True and machines[L].address == machines[W].address == ("1.1.1.1", 22)
+                and machines[L].down_since is None and machines[W].down_since is None and seen == ["1.1.1.1", "1.1.1.1"]))
+    other = FakeLatitude(rows=(ROW_X, dict(ROW_X, BaseID="dpl_y", NodePublicIP="2.2.2.2")))
+    other.nodes = [{"id": "dpl_y", "name": "ci6a1x", "status": t.RUNNING}, {"id": "dpl_z", "name": "ci5a2x", "status": t.RUNNING}]
+    machines, seen = {L: t.Machine(), W: t.Machine()}, []
+    quiet(t.look_at_machines, t.Latitude(PROJECT, KEY, other, clock.sleep), 5, 1, machines, {}, banner, NOW)
+    out.append(("status: another run's node, or another attempt's, is not this run's machine",
+                machines[L].listed is False and machines[W].listed is False and machines[L].address is None and seen == []))
     live.list_status = 500
     machines = {L: t.Machine(("h", 1))}
     quiet(t.look_at_machines, t.Latitude(PROJECT, KEY, live, clock.sleep), 5, 1, machines, {}, lambda h, p: True, NOW)
@@ -751,8 +794,11 @@ def group_lost_either_order():
     out.append(("silence: the API says running, sshd silent, GitHub says in progress: lost at the limit, it does not wait for GitHub",
                 result == "lost" and len(gh.dispatches) == 1 and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300))
     result, gh, api, _, said, _ = watched([[DEAD_L, GREEN_W]])
-    out.append(("a leg with no failed step on a machine that answers: not a lost machine, no re-launch, it says so, and its node is left for stop-node",
-                result == "done" and gh.dispatches == [] and "no re-launch" in said and api.deleted == ["dpl_w"]))
+    out.append(("a leg with no failed step on a machine that answers: not a lost machine, no re-launch, it says so, and the node is left for stop-node",
+                result == "done" and gh.dispatches == [] and "no re-launch" in said and api.deleted == []))
+    result, gh, api, _, said, _ = watched([[GREEN_L, DEAD_W]])
+    out.append(("the same the other way round: the node kept, though the other leg needs it no more",
+                result == "done" and gh.dispatches == [] and W in said and api.deleted == []))
     result, gh, _, _, _, _ = watched([[RED_L, GREEN_W]], answering=False, nodes="")
     out.append(("a compile error is a defect, whatever the machine does: no re-launch", result == "done" and gh.dispatches == []))
     result, gh, _, _, _, _ = watched([[job(LINUX, conclusion="cancelled", steps=("success", "cancelled")), job(WIN, conclusion="cancelled")]])
@@ -764,54 +810,58 @@ def group_lost_either_order():
 
 
 def group_two_legs():
-    """The two legs at once: what happens to one does not take the other with it."""
+    """The two legs at once, on one node: a leg that ends does not take the node from the
+    other, and a machine lost is lost to both."""
     out = []
     runs = [[RUN_L, RUN_W]] * 3
     result, gh, api, log, _, clock = watched(runs + [[GREEN_L, RUN_W]] * 3 + [[GREEN_L, GREEN_W]])
-    out.append(("both healthy: done, with no re-launch, each node deleted as its own leg ended, not when the other did",
-                result == "done" and gh.dispatches == [] and gh.cancels == [] and log == ["delete dpl_l", "delete dpl_w"]))
+    first_only, _, early, _, _, _ = watched(runs + [[GREEN_L, RUN_W]], limit=10 * 60)
+    out.append(("both healthy: done, with no re-launch, the node deleted once both legs ended, not when the first did",
+                result == "done" and gh.dispatches == [] and gh.cancels == [] and log == ["delete dpl_x"]
+                and first_only == "continue" and early.deleted == []))
     result, gh, api, log, _, _ = watched(runs + [[RED_L, RUN_W]] * 3 + [[RED_L, GREEN_W]])
-    out.append(("a red leg, no loss: the other goes on, no re-launch, this job does not end the run", result == "done" and gh.dispatches == [] and gh.cancels == [] and log == ["delete dpl_l", "delete dpl_w"]))
+    out.append(("a red leg, no loss: the other goes on, on the node, no re-launch, this job does not end the run",
+                result == "done" and gh.dispatches == [] and gh.cancels == [] and log == ["delete dpl_x"]))
 
-    long_enough = int(t.DOWN_LIMIT_S / 60) + 30
-    survivor = [[RUN_L, RUN_W]] * long_enough + [[DEAD_L, GREEN_W]]
-    result, gh, api, log, said, clock = watched(list(survivor), answering=LOSE_L)
-    out.append(("loss of one: the healthy leg is not touched until it ends, the dead node goes at the limit, then one re-launch, this run's cancel last",
-                result == "lost" and log == ["delete dpl_l", "delete dpl_w", "dispatch", "cancel"] and clock.now >= long_enough * 60
-                and len(gh.dispatches) == 1 and len(gh.cancels) == 1 and L in said))
-    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, GREEN_W]], answering=LOSE_L)
-    out.append(("loss of one: the dead leg's job still says in progress when the other ends: it does not wait for GitHub",
-                result == "lost" and clock.now >= long_enough * 60 and len(gh.dispatches) == 1))
-    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * long_enough + [[GREEN_L, RUN_W]], answering=LOSE_W)
-    out.append(("loss of one, the other way round: the same", result == "lost" and log == ["delete dpl_w", "delete dpl_l", "dispatch", "cancel"]
-                and len(gh.dispatches) == 1 and "the machine of %s was lost" % W in said and "the machine of %s" % L not in said))
-    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, GREEN_W]], answering=LOSE_L)
-    out.append(("loss of one: the annotation names the leg whose machine was lost, and not the other", "::warning::the machine of %s was lost" % L in said and "the machine of %s" % W not in said))
-    result, gh, api, log, said, _ = watched([[GREEN_L, RUN_W]], answering=LOSE_W)
-    out.append(("a leg already green and the other lost: re-launch of the whole run, the green one comes back through the cache",
-                result == "lost" and gh.dispatches[0]["inputs"]["relaunch_of"] == "5" and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
-    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, RED_W]], answering=LOSE_L)
-    out.append(("loss of one, and the surviving leg ended red: no re-launch, it would fail again, the run fails and says why",
-                result == "failed" and gh.dispatches == [] and len(gh.cancels) == 1 and "no re-launch" in said and W in said and clock.now >= long_enough * 60))
-    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, GREEN_W]], answering=LOSE_L, relaunch_of="4")
-    out.append(("second loss, the other leg still healthy: it finishes, then the run fails, no third try",
-                result == "failed" and gh.dispatches == [] and len(gh.cancels) == 1 and "second loss" in said and clock.now >= long_enough * 60))
-    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, CANCELLED_W]], answering=LOSE_L)
-    out.append(("loss of one, then a person cancels: no re-launch", result == "done" and gh.dispatches == [] and gh.cancels == []))
     result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]], answering=False)
-    out.append(("both lost: no one to wait for, one re-launch", result == "lost" and sorted(api.deleted) == ["dpl_l", "dpl_w"] and len(gh.dispatches) == 1 and L in said and W in said))
+    out.append(("loss of the machine mid-build: both legs lose it together, the node goes at the limit, then one re-launch, this run's cancel last",
+                result == "lost" and log == ["delete dpl_x", "dispatch", "cancel"] and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300
+                and len(gh.dispatches) == 1 and len(gh.cancels) == 1 and "the machine of %s and %s was lost" % (L, W) in said))
+    result, gh, api, log, said, clock = watched([[DEAD_L, RUN_W]], answering=False)
+    out.append(("loss: GitHub has failed one leg's job and still says the other's is in progress: both lost at the limit, it does not wait for GitHub",
+                result == "lost" and len(gh.dispatches) == 1 and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300))
+    result, gh, api, log, said, clock = watched([[GREEN_L, RUN_W]], answering=False)
+    out.append(("a leg already green, then the machine lost: re-launch of the whole run, the green one comes back through the cache; the annotation names only the lost leg",
+                result == "lost" and gh.dispatches[0]["inputs"]["relaunch_of"] == "5" and api.deleted == ["dpl_x"]
+                and "::warning::the machine of %s was lost" % W in said and "the machine of %s" % L not in said))
+    result, gh, api, log, said, clock = watched([[RUN_L, GREEN_W]], answering=False)
+    out.append(("the same the other way round", result == "lost" and len(gh.dispatches) == 1 and api.deleted == ["dpl_x"]
+                and "::warning::the machine of %s was lost" % L in said and "the machine of %s" % W not in said))
+    result, gh, api, log, said, clock = watched([[RED_L, RUN_W]], answering=False)
+    out.append(("a leg ended red, then the machine lost: no re-launch, it would fail again, the run fails and says why",
+                result == "failed" and gh.dispatches == [] and len(gh.cancels) == 1 and "no re-launch" in said and "%s ended red" % L in said
+                and api.deleted == ["dpl_x"] and clock.now >= t.DOWN_LIMIT_S))
+    result, gh, api, log, said, clock = watched([[GREEN_L, RUN_W]], answering=False, relaunch_of="4")
+    out.append(("second loss, a leg already green: the run fails, no third try",
+                result == "failed" and gh.dispatches == [] and len(gh.cancels) == 1 and "second loss" in said))
+    result, gh, api, log, said, clock = watched([[RUN_L, RUN_W]] * 5 + [[RUN_L, CANCELLED_W]], answering=False)
+    out.append(("the machine silent, then a person cancels: no re-launch, the node off",
+                result == "done" and gh.dispatches == [] and gh.cancels == [] and api.deleted == ["dpl_x"]))
+    result, gh, api, log, said, clock = watched([[QUEUED_L, QUEUED_W]], answering=False)
+    out.append(("the machine lost before either leg started: lost at the limit, one re-launch, both named",
+                result == "lost" and api.deleted == ["dpl_x"] and len(gh.dispatches) == 1 and L in said and W in said
+                and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300))
     result, gh, api, log, said, clock = watched([[QUEUED_L, RUN_W]] * (int(t.STUCK_S / 60) + 30) + [[QUEUED_L, GREEN_W]])
-    out.append(("a runner not coming for one leg: its node goes, the healthy leg finishes, then the run fails, no re-launch",
-                result == "failed" and log == ["delete dpl_l", "delete dpl_w", "cancel"] and gh.dispatches == [] and "not coming" in said and clock.now >= t.STUCK_S + 30 * 60))
-    result, gh, api, log, said, _ = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, GREEN_W]], answering=LOSE_L,
-                                            api=_refuses_delete_of("dpl_l", first=3))
-    out.append(("a dead node's delete refused for a while: asked again at the next poll, and the other leg's watch goes on",
-                result == "lost" and "dpl_l" in api.deleted and len(gh.dispatches) == 1))
-    # 4 tries of one delete: the survivor's, refused on the very poll that concludes.
-    result, gh, api, log, said, _ = watched([[RUN_L, RUN_W]] * long_enough + [[RUN_L, GREEN_W]], answering=LOSE_L, api=_refuses_delete_of("dpl_w", first=4))
-    out.append(("a survivor's node still on when the run concludes: both machines free before the dispatch all the same",
-                result == "lost" and log[-3:] == ["delete dpl_w", "dispatch", "cancel"] and api.nodes == []))
-    result, gh, api, log, said, _ = watched([[QUEUED_L, RUN_W]] * (int(t.STUCK_S / 60) + 30) + [[QUEUED_L, GREEN_W]], api=_refuses_delete_of("dpl_w", first=4))
+    out.append(("a runner not coming for one leg: the node stays for the healthy leg, which finishes, then the node goes and the run fails, no re-launch",
+                result == "failed" and log == ["delete dpl_x", "cancel"] and gh.dispatches == [] and "not coming" in said and clock.now >= t.STUCK_S + 30 * 60))
+    result, gh, api, log, said, _ = watched([[RUN_L, RUN_W]], answering=False, api=_refuses_delete_of("dpl_x", first=3))
+    out.append(("the node's delete refused for a while: asked again until it is gone, and only then the dispatch",
+                result == "lost" and api.deleted == ["dpl_x"] and log == ["delete dpl_x", "dispatch", "cancel"] and api.nodes == [] and len(gh.dispatches) == 1))
+    # 1 refusal: the watch's own delete, on the very poll that concludes.
+    result, gh, api, log, said, _ = watched([[RUN_L, GREEN_W]], answering=False, api=_refuses_delete_of("dpl_x", first=1))
+    out.append(("the node still on when the run concludes: free before the dispatch all the same",
+                result == "lost" and log == ["delete dpl_x", "dispatch", "cancel"] and api.nodes == []))
+    result, gh, api, log, said, _ = watched([[QUEUED_L, RUN_W]] * (int(t.STUCK_S / 60) + 30) + [[QUEUED_L, GREEN_W]], api=_refuses_delete_of("dpl_x", first=4))
     out.append(("the same when the run fails instead: no node left on", result == "failed" and api.nodes == []))
     return out
 
@@ -836,9 +886,9 @@ def group_relaunch():
     out.append(("re-launch: one, with the run's own inputs by value and its mark",
                 result == "lost" and gh.dispatches == [{"ref": "main", "inputs": INPUTS}] and len(gh.cancels) == 1))
     out.append(("re-launch: the nodes first, seen gone, then the dispatch, this run's cancel last", log[-2:] == ["dispatch", "cancel"]))
-    result, gh, api, log, _, _ = watched([[DEAD_L, GREEN_W]], answering=LOSE_L)
-    out.append(("re-launch: both machines free before the dispatch: it needs both back",
-                log == ["delete dpl_w", "delete dpl_l", "dispatch", "cancel"] and api.nodes == []))
+    result, gh, api, log, _, _ = watched([[DEAD_L, GREEN_W]], answering=False)
+    out.append(("re-launch: the node gone before the dispatch, seen gone, whichever leg was lost",
+                result == "lost" and log == ["delete dpl_x", "dispatch", "cancel"] and api.nodes == []))
     out.append(("re-launch: the refs are explicit, a pushed tag's empty ones no longer pick a default",
                 t.relaunch_inputs(5, "release", "firefox-55", "gha", "engine/firefox-55", "v1", "true", "*") ==
                 {"kind": "release", "compile_cache": "gha", "core_ref": "engine/firefox-55", "wrapper_ref": "v1", "relaunch_of": "5",
@@ -873,7 +923,7 @@ def group_stuck():
     out.append(("stuck: queued alone past the limit", t.stuck([GREEN_L, old_w], NOW)))
     result, gh, api, _, said, clock = watched([[old_l, old_w]])
     out.append(("a leg whose runner never comes, on a machine that answers: the run fails in bounded time, no re-launch, the nodes off, GitHub's old times not counted",
-                result == "failed" and gh.dispatches == [] and len(gh.cancels) == 1 and sorted(api.deleted) == ["dpl_l", "dpl_w"] and "not coming" in said
+                result == "failed" and gh.dispatches == [] and len(gh.cancels) == 1 and api.deleted == ["dpl_x"] and "not coming" in said
                 and t.STUCK_S <= clock.now <= t.STUCK_S + 120))
     result, gh, _, _, _, _ = watched([[old_l, old_w]], nodes="", answering=False)
     out.append(("the same with the machine gone: lost", result == "lost" and len(gh.dispatches) == 1))
@@ -896,13 +946,20 @@ def group_watch_stages():
     out.append(("stage: it stops by itself well before the 360 minutes GitHub gives a job", t.STAGE_LIMIT_S <= 340 * 60))
     result, gh, api, _, _, clock = watched([[]])
     out.append(("no legs listed at all for a while: nothing to watch", result == "done" and clock.now == (t.NO_LEGS_POLLS - 1) * 60))
-    result, gh, api, log, _, clock = watched([[GREEN_L, RUN_W]] * 3 + [[GREEN_L, GREEN_W]], nodes="w")
-    out.append(("a next watch job: a leg green before it began, its node gone: ended at once, not read as lost", result == "done" and gh.dispatches == [] and clock.now < t.DOWN_LIMIT_S))
-    result, gh, api, log, _, clock = watched([[RED_L, RUN_W]] * 3 + [[RED_L, GREEN_W]], nodes="w")
-    out.append(("a next watch job: a compile error before it began, its node gone: the same", result == "done" and gh.dispatches == []))
-    result, gh, api, log, said, clock = watched([[DEAD_L, RUN_W]] * 40 + [[DEAD_L, GREEN_W]], nodes="w")
-    out.append(("a next watch job: a loss the last one settled, its node deleted: seen again from what GitHub and the API say, one re-launch when the other leg ends",
-                result == "lost" and len(gh.dispatches) == 1 and clock.now >= 40 * 60))
+    result, gh, api, log, _, clock = watched([[GREEN_L, RUN_W]] * 3 + [[GREEN_L, GREEN_W]])
+    out.append(("a next watch job: a leg green before it began: ended at once, not read as lost, and the node goes when the other ends",
+                result == "done" and gh.dispatches == [] and clock.now < t.DOWN_LIMIT_S and log == ["delete dpl_x"]))
+    result, gh, api, log, _, clock = watched([[RED_L, RUN_W]] * 3 + [[RED_L, GREEN_W]])
+    out.append(("a next watch job: a compile error before it began: the same", result == "done" and gh.dispatches == [] and log == ["delete dpl_x"]))
+    result, gh, api, log, _, clock = watched([[GREEN_L, GREEN_W]], nodes="")
+    out.append(("a next watch job: both legs ended and the node already gone: done at once, nothing read as lost",
+                result == "done" and gh.dispatches == [] and clock.now == 0))
+    result, gh, api, log, said, clock = watched([[DEAD_L, RUN_W]] * 40 + [[DEAD_L, GREEN_W]], nodes="")
+    out.append(("a next watch job: the node gone (deleted, or lost between two jobs) with a leg dead and the other still said to run: seen again from what GitHub and the API say, both lost at the limit, one re-launch",
+                result == "lost" and len(gh.dispatches) == 1 and t.DOWN_LIMIT_S <= clock.now <= t.DOWN_LIMIT_S + 300))
+    result, gh, api, log, said, clock = watched([[DEAD_L, RUN_W]] * 3 + [[DEAD_L, GREEN_W]])
+    out.append(("a next watch job: a dead runner's leg the last one left with its node, the machine answering: no loss, the node kept for stop-node",
+                result == "done" and gh.dispatches == [] and api.deleted == []))
     return out
 
 
@@ -923,46 +980,53 @@ def group_sweep():
     by_hand = {"id": "dpl_lab", "name": "gpunodegn8rdcmn6agw1", "created_at": "2020-01-01T00:00:00Z"}
     other = {"id": "dpl_c", "name": "cinema", "created_at": "2020-01-01T00:00:00Z"}
     hand = {"id": "dpl_h", "name": "cihandbuild1", "created_at": "2020-01-01T00:00:00Z"}
-    node_l = {"id": "d1", "name": "ci5a1l", "created_at": young}
-    node_w = {"id": "d2", "name": "ci5a1w", "created_at": young}
-    gone, api = swept([by_hand, other, hand, dict(node_l, created_at=old), dict(node_w, created_at=old)], {"5": "in_progress"})
-    out.append(("sweep: past the limit both of ours go even if their run says it is alive; by hand or another name never, however old",
-                gone == ["ci5a1l", "ci5a1w"] and api.deleted == ["d1", "d2"]))
+    node = {"id": "d1", "name": "ci5a1x", "created_at": young}
+    node_6 = {"id": "d6", "name": "ci6a1x", "created_at": young}
+    gone, api = swept([by_hand, other, hand, dict(node, created_at=old), dict(node_6, created_at=old)], {"5": "in_progress", "6": "in_progress"})
+    out.append(("sweep: past the limit ours go even if their run says it is alive; by hand or another name never, however old",
+                gone == ["ci5a1x", "ci6a1x"] and api.deleted == ["d1", "d6"]))
     out.append(("sweep: the limit lets one leg of 350 minutes and the node job finish, and no more than that and an hour",
                 t.GUARD_HOURS * 60 >= 350 + 45 + t.STUCK_S / 60 and t.GUARD_HOURS * 60 <= 350 + 45 + t.STUCK_S / 60 + 70))
-    out.append(("sweep: a forgotten pair of nodes costs less than the account's first limit of $100", t.GUARD_HOURS * 2 * t.MAX_PRICE_USD_HOUR < 100))
-    gone, api = swept([dict(node_l, created_at="2026-11-03T02:00:00+00:00")], {"5": "in_progress"})
-    out.append(("sweep: the API's own way of writing a time counts", gone == ["ci5a1l"]))
+    out.append(("sweep: a forgotten node costs less than the account's first limit of $100, even two runs' at once", t.GUARD_HOURS * 2 * t.MAX_PRICE_USD_HOUR < 100))
+    gone, api = swept([dict(node, created_at="2026-11-03T02:00:00+00:00")], {"5": "in_progress"})
+    out.append(("sweep: the API's own way of writing a time counts", gone == ["ci5a1x"]))
     clock = Clock()
     api = FakeLatitude()
-    api.nodes = [dict(node_w)]
-    api.keys = [{"id": "k%d" % i, "attributes": {"name": n}} for i, n in enumerate(("ci4a1l", "ci5a1w", "laptop"))]
+    api.nodes = [dict(node)]
+    api.keys = [{"id": "k%d" % i, "attributes": {"name": n}} for i, n in enumerate(("ci4a1x", "ci5a1x", "laptop"))]
     gh = FakeGitHub()
     gh.run_status, gh.jobs_answers = {"5": "in_progress"}, [[RUN_L, RUN_W]]
     quiet(t.sweep, t.Latitude(PROJECT, KEY, api, clock.sleep), t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep), NOW)
     out.append(("sweep: a key whose node is gone goes; the key of a node still on, and a key by hand, never", api.keys_deleted == ["k0"]))
-    gone, api = swept([node_l, node_w], {"5": "in_progress"})
-    out.append(("sweep: young nodes whose run still needs them stay", gone == [] and api.deleted == []))
-    gone, api = swept([node_l, node_w], {"5": "completed"})
-    out.append(("sweep: young nodes whose run has finished go", gone == ["ci5a1l", "ci5a1w"]))
-    gone, api = swept([node_l, node_w], {"5": "in_progress"}, jobs=[GREEN_L, RUN_W])
-    out.append(("sweep: behind a dead watch: one leg over, the other running: only that leg's node goes", gone == ["ci5a1l"] and api.deleted == ["d1"]))
-    gone, api = swept([node_l, node_w], {"5": "in_progress"}, jobs=[GREEN_L, GREEN_W])
-    out.append(("sweep: both legs over, the run still going on with arm64: both go", gone == ["ci5a1l", "ci5a1w"]))
-    gone, api = swept([node_l, node_w], {"5": "in_progress"}, jobs=[])
+    gone, api = swept([node], {"5": "in_progress"})
+    out.append(("sweep: a young node whose run still needs it stays", gone == [] and api.deleted == []))
+    gone, api = swept([node], {"5": "completed"})
+    out.append(("sweep: a young node whose run has finished goes", gone == ["ci5a1x"]))
+    gone, api = swept([node], {"5": "in_progress"}, jobs=[GREEN_L, RUN_W])
+    out.append(("sweep: behind a dead watch: one leg over, the other still running on it: the node stays", gone == [] and api.deleted == []))
+    gone, api = swept([node], {"5": "in_progress"}, jobs=[RUN_L, GREEN_W])
+    out.append(("sweep: the same the other way round", gone == [] and api.deleted == []))
+    gone, api = swept([node], {"5": "in_progress"}, jobs=[GREEN_L, GREEN_W])
+    out.append(("sweep: both legs over, the run still going on with arm64: the node goes", gone == ["ci5a1x"] and api.deleted == ["d1"]))
+    gone, api = swept([node], {"5": "in_progress"}, jobs=[])
     out.append(("sweep: no legs listed yet is not legs finished", gone == [] and api.deleted == []))
-    gone, api = swept([node_l], {"5": 500})
+    gone, api = swept([node], {"5": 500})
     out.append(("sweep: GitHub's error is not 'the run has finished'", gone == [] and api.deleted == []))
-    gone, api = swept([node_l, {"id": "d6", "name": "ci6a1w", "created_at": old}], github=False)
-    out.append(("sweep: from a machine with no GitHub, the age alone", gone == ["ci6a1w"] and api.deleted == ["d6"]))
-    gone, api = swept([{"id": "d6", "name": "ci6a1w", "created_at": old}], dry_run=True)
-    out.append(("sweep: a dry run deletes nothing", gone == ["ci6a1w"] and api.deleted == []))
+    gone, api = swept([node, dict(node_6, created_at=old)], github=False)
+    out.append(("sweep: from a machine with no GitHub, the age alone", gone == ["ci6a1x"] and api.deleted == ["d6"]))
+    gone, api = swept([dict(node_6, created_at=old)], dry_run=True)
+    out.append(("sweep: a dry run deletes nothing", gone == ["ci6a1x"] and api.deleted == []))
     force_cancelled = [job(LINUX, conclusion="cancelled", steps=("success", None, None), runner="ci5a1l"), job(WIN, conclusion="cancelled"),
                        job("watch-1", conclusion="cancelled")]
-    gone, api = swept([node_l, node_w], {"5": "completed"}, jobs=force_cancelled)
-    out.append(("sweep: a force-cancel leaves no stop-node: the run over, its nodes go at the next sweep, however young", gone == ["ci5a1l", "ci5a1w"]))
-    gone, api = swept([node_l, node_w], {"5": "queued"}, jobs=force_cancelled)
-    out.append(("sweep: and before the run reads completed, their legs having ended are enough", gone == ["ci5a1l", "ci5a1w"]))
+    gone, api = swept([node], {"5": "completed"}, jobs=force_cancelled)
+    out.append(("sweep: a force-cancel leaves no stop-node: the run over, its node goes at the next sweep, however young", gone == ["ci5a1x"]))
+    gone, api = swept([node], {"5": "queued"}, jobs=force_cancelled)
+    out.append(("sweep: and before the run reads completed, its legs having ended are enough", gone == ["ci5a1x"]))
+    old_design = [{"id": "d1l", "name": "ci5a1l", "created_at": young}, {"id": "d1w", "name": "ci5a1w", "created_at": young}]
+    gone, api = swept(list(old_design), {"5": "in_progress"}, jobs=[GREEN_L, RUN_W])
+    out.append(("sweep: nodes of the one-per-leg design behind a dead watch: one leg over is not enough for either", gone == []))
+    gone, api = swept(list(old_design), {"5": "in_progress"}, jobs=[GREEN_L, GREEN_W])
+    out.append(("sweep: and both legs over: both go", gone == ["ci5a1l", "ci5a1w"]))
     return out
 
 
@@ -982,11 +1046,11 @@ def group_secrets():
         message = str(exc)
     out.append(("secrets: an error names neither the key nor the project, in the URL or the answer",
                 message and KEY not in message and PROJECT not in message))
-    address = t.Latitude(PROJECT, KEY, FakeLatitude(), clock.sleep).address("dpl_l")
+    address = t.Latitude(PROJECT, KEY, FakeLatitude(), clock.sleep).address("dpl_x")
     out.append(("address: host and port of the server, nothing else", address == ("1.1.1.1", 22)))
-    pending = dict(ROW_L, PodPhase="x: Pending")
-    out.append(("address: a server with no address yet has none", t.Latitude(PROJECT, KEY, FakeLatitude(rows=(pending,)), clock.sleep).address("dpl_l") is None))
-    out.append(("address: a server the API no longer knows has none", t.Latitude(PROJECT, KEY, FakeLatitude(rows=()), clock.sleep).address("dpl_l") is None))
+    pending = dict(ROW_X, PodPhase="x: Pending")
+    out.append(("address: a server with no address yet has none", t.Latitude(PROJECT, KEY, FakeLatitude(rows=(pending,)), clock.sleep).address("dpl_x") is None))
+    out.append(("address: a server the API no longer knows has none", t.Latitude(PROJECT, KEY, FakeLatitude(rows=()), clock.sleep).address("dpl_x") is None))
     flaky = []
 
     def transport(method, url, headers, body):
@@ -1026,23 +1090,40 @@ def group_probe():
 
 
 def runner_case(leaks) -> dict:
-    """node_runner.sh, as it runs on the node, with the system's commands faked."""
+    """node_runner.sh, as it runs on the node, with the system's commands faked:
+    systemd-run and unshare run what follows their "--" (unshare undoes the mounts when
+    it ends, as the end of a namespace would), mount --bind points its target at its source,
+    runuser goes straight to the command, and the users are a file. The two legs run one
+    after the other: without a real namespace, two at once would share the mount points."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        home, bin_dir = tmp / "home", tmp / "bin"
-        guard = tmp / "root_owned" / "job_guard.sh"
-        guard.parent.mkdir()
-        (home / "actions-runner").mkdir(parents=True)
-        bin_dir.mkdir()
-        trace, envs, kills = tmp / "trace", tmp / "envs", tmp / "kills"
-        run = home / "actions-runner" / "run.sh"
+        template, home, toolcache, tmp_dir = tmp / "template", tmp / "home", tmp / "toolcache", tmp / "tmpdir"
+        root, cgroup, bin_dir, guard_dir = tmp / "legs", tmp / "cgroup", tmp / "bin", tmp / "root_owned"
+        for d in (template / "actions-runner", home, toolcache, tmp_dir, cgroup, bin_dir, guard_dir, root / "l" / "home"):
+            d.mkdir(parents=True)
+        (toolcache / "node").write_text("v20")
+        (root / "l" / "home" / "stale").write_text("an earlier runner's")
+        meminfo = tmp / "meminfo"
+        meminfo.write_text("MemTotal:       100663296 kB\nMemFree:        1 kB\n")
+        trace, kills, record, users, mounts = tmp / "trace", tmp / "kills", tmp / "record", tmp / "users", tmp / "mounts"
+        run = template / "actions-runner" / "run.sh"
         run.write_text("#!/bin/bash\n"
-                       'echo "start $ACTIONS_RUNNER_INPUT_JITCONFIG work=$(ls -d "$HOME/work" | wc -l)" >> "%s"\n'
-                       'env >> "%s"\n'
-                       'sleep 0.3\necho "end $ACTIONS_RUNNER_INPUT_JITCONFIG" >> "%s"\nexit 3\n' % (trace, envs, trace),
+                       'echo "start $ACTIONS_RUNNER_INPUT_JITCONFIG work=$(ls -d "$HOME/work" | wc -l) stale=$(ls "$HOME/stale" 2>/dev/null | wc -l) dir=$(pwd -P)" >> "%s"\n'
+                       'env > "%s/env-$ACTIONS_RUNNER_INPUT_JITCONFIG"\n'
+                       'sleep 0.3\necho "end $ACTIONS_RUNNER_INPUT_JITCONFIG" >> "%s"\nexit 3\n' % (trace, tmp, trace),
                        newline="\n")
         run.chmod(0o755)
-        fakes = {"runuser": '#!/bin/bash\nwhile [ "$1" != "--" ]; do shift; done; shift; exec "$@"\n',
+        before_dashes = 'a=(); while [ "$1" != "--" ]; do a+=("$1"); shift; done; shift\n'
+        fakes = {"systemd-run": "#!/bin/bash\n" + before_dashes + 'echo "systemd-run ${a[*]}" >> "%s"\nexec "$@"\n' % record,
+                 "unshare": "#!/bin/bash\n" + before_dashes + 'echo "unshare ${a[*]}" >> "%s"\n"$@"; code=$?\n'
+                            'if [ -f "%s" ]; then tac "%s" | while IFS= read -r dst; do rm -f "$dst"; mv "$dst.under" "$dst"; done; rm -f "%s"; fi\n'
+                            'exit $code\n' % (record, mounts, mounts, mounts),
+                 "mount": '#!/bin/bash\necho "mount $*" >> "%s"\n'
+                          'if [ "$1" = "--bind" ]; then mv "$3" "$3.under" && ln -s "$2" "$3" && echo "$3" >> "%s"; fi\n' % (record, mounts),
+                 "runuser": '#!/bin/bash\nu=""; while [ "$1" != "--" ]; do [ "$1" = "-u" ] && u="$2"; shift; done; shift\n'
+                            'echo "runuser $u" >> "%s"\nexec "$@"\n' % record,
+                 "id": '#!/bin/bash\n[ "$1" = "-u" ] && grep -qx "$2" "%s" 2>/dev/null\n' % users,
+                 "useradd": '#!/bin/bash\necho "useradd $*" >> "%s"\necho "${@: -1}" >> "%s"\n' % (record, users),
                  "pkill": '#!/bin/bash\necho "$*" >> "%s"\nexit "${FAKE_PKILL_EXIT:-0}"\n' % kills,
                  "install": '#!/bin/bash\nfor a; do d="$a"; done; mkdir -p "$d"\n',
                  "chown": '#!/bin/bash\necho "$*" >> "%s/chowns"\n' % tmp}
@@ -1050,32 +1131,46 @@ def runner_case(leaks) -> dict:
             (bin_dir / name).write_text(text, newline="\n")
             (bin_dir / name).chmod(0o755)
         log = tmp / "log"
-        env = dict(os.environ, PATH="%s%s%s" % (bin_dir, os.pathsep, os.environ["PATH"]), NODE_RUNNER_HOME=str(home),
-                   NODE_RUNNER_LOG=str(log), NODE_RUNNER_GUARD=str(guard), **leaks)
+        env = dict(os.environ, PATH="%s%s%s" % (bin_dir, os.pathsep, os.environ["PATH"]), NODE_RUNNER_TEMPLATE=str(template),
+                   NODE_RUNNER_HOME=str(home), NODE_RUNNER_TOOLCACHE=str(toolcache), NODE_RUNNER_TMP=str(tmp_dir),
+                   NODE_RUNNER_CGROUP=str(cgroup), NODE_RUNNER_ROOT=str(root), NODE_RUNNER_MEMINFO=str(meminfo),
+                   NODE_RUNNER_LOG=str(log), NODE_RUNNER_GUARD=str(guard_dir / "job_guard"), **leaks)
         script = str(HERE / "node_runner.sh")
 
-        def start(config, run_id="5"):
-            return subprocess.run(["bash", script, run_id], input=config, env=env, capture_output=True, text=True, timeout=30)
-        started = start("CFG1\n")
-        empty, no_run, bad_run = start(""), subprocess.run(["bash", script], input="CFG\n", env=env, capture_output=True, text=True, timeout=30), start("CFG\n", "5;rm")
-        for _ in range(100):
-            if log.exists() and log.read_text().count("exited with") >= 1:
-                break
-            subprocess.run(["sleep", "0.1"])
+        def start(config, *args):
+            return subprocess.run(["bash", script, *args], input=config, env=env, capture_output=True, text=True, timeout=30)
 
-        def hooked(run_id, pkill_exit="0"):
+        def ended(leg):
+            leg_log = Path("%s-%s.log" % (log, leg))
+            for _ in range(100):
+                if leg_log.exists() and leg_log.read_text().count("exited with") >= 1:
+                    return leg_log.read_text()
+                subprocess.run(["sleep", "0.1"])
+            return leg_log.read_text() if leg_log.exists() else ""
+        refused = [start("", "5", "l"), start("CFG\n"), start("CFG\n", "5;rm", "l"), start("CFG\n", "5"),
+                   start("CFG\n", "5", "lw"), start("CFG\n", "5", "L"), start("CFG\n", "5", "1"), start("CFG\n", "5", "l;rm")]
+        started = {}
+        for leg in ("l", "w"):
+            started[leg] = start("CFG-%s\n" % leg, "5", leg)
+            started[leg + "_at_once"] = not trace.exists() or "end CFG-%s" % leg not in trace.read_text()
+            started[leg + "_log"] = ended(leg)
+
+        def hooked(leg, run_id, pkill_exit="0"):
             kills.write_text("")
-            done = subprocess.run(["bash", "-e", str(guard)], capture_output=True, text=True,
+            done = subprocess.run(["bash", "-e", "%s-%s.sh" % (guard_dir / "job_guard", leg)], capture_output=True, text=True,
                                   env={"GITHUB_RUN_ID": run_id, "PATH": env["PATH"], "FAKE_PKILL_EXIT": pkill_exit})
             return done, kills.read_text().splitlines()
-        guard_ok, kills_ok = hooked("5")
-        guard_other, kills_other = hooked("6")
-        guard_no_pkill, _ = hooked("6", "2")
-        return {"code": started.returncode, "refused": (empty.returncode, no_run.returncode, bad_run.returncode),
-                "trace": trace.read_text().splitlines(), "log": log.read_text(), "env": envs.read_text(),
-                "guard_ok": guard_ok.returncode, "guard_other": guard_other, "guard_mode": guard.stat().st_mode & 0o111,
-                "kills_ok": kills_ok, "kills_other": kills_other, "guard_no_pkill": guard_no_pkill.returncode,
-                "chowns": (tmp / "chowns").read_text(), "guard": str(guard), "home_has_guard": any(home.rglob("job_guard.sh"))}
+        hooks = {leg: {"ok": hooked(leg, "5"), "other": hooked(leg, "6"), "no_pkill": hooked(leg, "6", "2")[0].returncode,
+                       "mode": Path("%s-%s.sh" % (guard_dir / "job_guard", leg)).stat().st_mode & 0o111}
+                 for leg in ("l", "w")}
+        return {"started": started, "refused": refused, "trace": trace.read_text().splitlines(),
+                "env": {leg: (tmp / ("env-CFG-%s" % leg)).read_text() for leg in ("l", "w")},
+                "record": record.read_text().splitlines(), "chowns": (tmp / "chowns").read_text(), "hooks": hooks,
+                "guard": str(guard_dir / "job_guard"), "home": str(home), "toolcache": str(toolcache), "tmp_dir": str(tmp_dir),
+                "cgroup": str(cgroup), "root": str(root), "dirs": {leg: str((root / leg / "home" / "actions-runner").resolve()) for leg in ("l", "w")},
+                "copied_toolcache": all((root / leg / "toolcache" / "node").exists() for leg in ("l", "w")),
+                "guard_in_homes": any(root.rglob("job_guard*")) or any(template.rglob("job_guard*")),
+                "mounts_left": home.is_symlink() or toolcache.is_symlink() or tmp_dir.is_symlink()}
 
 
 def group_runner():
@@ -1083,30 +1178,64 @@ def group_runner():
     if not sys.platform.startswith("linux"):
         print("skip  runner: node_runner.sh runs on Linux only")
         return out
-    leaks = {"CARGO_LEAK": "root", "CONTAINER_SECRET": "x", "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/nope"}
+    leaks = {"CARGO_LEAK": "root", "CONTAINER_SECRET": "x", "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/nope", "SCCACHE_SERVER_PORT": "4226"}
     r = runner_case(leaks)
-    out.append(("runner: returns at once; no configuration, no run id, or one that is not a number is refused",
-                r["code"] == 0 and all(c != 0 for c in r["refused"])))
-    out.append(("runner: one runner, its config once, its work directory there", r["trace"] == ["start CFG1 work=1", "end CFG1"]))
-    out.append(("runner: how it ended is logged", r["log"].count("exited with 3") == 1))
-    names = {l.split("=", 1)[0] for l in r["env"].splitlines() if "=" in l}
+    s = r["started"]
+    out.append(("runner: returns at once, for each leg", s["l"].returncode == 0 and s["w"].returncode == 0 and s["l_at_once"] and s["w_at_once"]))
+    out.append(("runner: no configuration, no run id or one that is not a number, refused",
+                all(c.returncode != 0 for c in r["refused"][:3]) and "first argument" in r["refused"][2].stderr))
+    out.append(("runner: the leg's letter is required, one lowercase letter and nothing else",
+                all(c.returncode != 0 and "second argument" in c.stderr for c in r["refused"][3:])))
+    out.append(("runner: one runner per leg, its config once, in its own copy of the prepared home, its work directory there, nothing of an earlier runner's",
+                r["trace"] == ["start CFG-l work=1 stale=0 dir=%s" % r["dirs"]["l"], "end CFG-l",
+                               "start CFG-w work=1 stale=0 dir=%s" % r["dirs"]["w"], "end CFG-w"]))
+    out.append(("runner: how each ended is logged, in its own log", s["l_log"].count("exited with 3") == 1 and s["w_log"].count("exited with 3") == 1
+                and "leg l" in s["l_log"] and "leg w" in s["w_log"]))
+    allowed = {"HOME", "PATH", "LANG", "SCCACHE_SERVER_PORT", "ACTIONS_RUNNER_HOOK_JOB_STARTED", "ACTIONS_RUNNER_INPUT_JITCONFIG", "PWD", "OLDPWD", "SHLVL", "_"}
+    envs = {leg: dict(l.split("=", 1) for l in text.splitlines() if "=" in l) for leg, text in r["env"].items()}
     out.append(("runner: an empty environment: nothing of root's reaches the job's start, neither CARGO_* nor anything else",
-                not names & set(leaks)
-                and names <= {"HOME", "PATH", "LANG", "ACTIONS_RUNNER_HOOK_JOB_STARTED", "ACTIONS_RUNNER_INPUT_JITCONFIG", "PWD", "OLDPWD", "SHLVL", "_"}))
-    out.append(("runner: HOME and PATH are the job's", "LANG=C.UTF-8" in r["env"] and "PATH=/home/runner/.cargo/bin:/opt/node/bin:" in r["env"]))
-    out.append(("runner: the job of another run fails at the runner's own hook; this run's goes on",
-                r["guard_ok"] == 0 and r["guard_other"].returncode != 0 and "serves only run 5" in r["guard_other"].stderr
-                and r["guard_mode"] != 0 and "ACTIONS_RUNNER_HOOK_JOB_STARTED" in r["env"]))
-    out.append(("runner: the hook kills the user's every process, the Worker with them, so no always() step follows; this run's job kills nothing",
-                r["kills_other"] == ["-KILL -u runner"] and r["kills_ok"] == []))
-    out.append(("runner: and the hook still fails the job if the kill itself fails", r["guard_no_pkill"] != 0))
+                all(not set(e) & (set(leaks) - {"SCCACHE_SERVER_PORT"}) and set(e) <= allowed for e in envs.values())))
+    out.append(("runner: HOME, PATH and LANG are the job's, HOME at the same path for both legs, as sccache's key wants",
+                all(e.get("LANG") == "C.UTF-8" and e.get("PATH", "").startswith("/home/runner/.cargo/bin:/opt/node/bin:") and e.get("HOME") == r["home"]
+                    for e in envs.values())))
+    ports = [envs[leg].get("SCCACHE_SERVER_PORT") for leg in ("l", "w")]
+    out.append(("runner: each leg its own sccache port, never sccache's default nor root's", all(ports) and len(set(ports)) == 2 and "4226" not in ports))
+    record = r["record"]
+    useradds = [l for l in record if l.startswith("useradd ")]
+    uids = [l.split("--uid ", 1)[1].split()[0] for l in useradds if "--uid " in l]
+    out.append(("runner: each leg its own user, made once, with its own uid, and the runner runs as it",
+                [l.rsplit(" ", 1)[1] for l in useradds] == ["runner-l", "runner-w"] and len(set(uids)) == 2
+                and [l for l in record if l.startswith("runuser ")] == ["runuser runner-l", "runuser runner-w"]))
+    units = [l for l in record if l.startswith("systemd-run ")]
+    ceiling = "MemoryMax=%dM" % ((100663296 // 1024 - 4096) // 2)
+    out.append(("runner: each leg its own cgroup, its own unit, half the machine less 2 GB as its ceiling, no swap",
+                len(units) == 2 and all(ceiling in u and "MemorySwapMax=0" in u and "--scope" in u for u in units)
+                and "--unit=leg-l-5" in units[0] and "--unit=leg-w-5" in units[1]))
+    out.append(("runner: each leg its own mounts: its copies of home, tool cache and /tmp at the same paths, and its cgroup seen from inside",
+                [l for l in record if l.startswith("unshare ")] == ["unshare --mount --cgroup --propagation private"] * 2
+                and all("mount --bind %s/%s/%s %s" % (r["root"], leg, src, dst) in record
+                        for leg in ("l", "w") for src, dst in (("home", r["home"]), ("toolcache", r["toolcache"]), ("tmp", r["tmp_dir"])))
+                and record.count("mount -t cgroup2 cgroup2 %s" % r["cgroup"]) == 2 and r["copied_toolcache"] and not r["mounts_left"]))
+    out.append(("runner: each leg's copies are its own user's", all("-R runner-%s:runner-%s %s/%s/home %s/%s/toolcache" % (leg, leg, r["root"], leg, r["root"], leg)
+                                                                    in r["chowns"] for leg in ("l", "w"))))
+    hooks = r["hooks"]
+    out.append(("runner: the job of another run fails at its leg's own hook; this run's goes on",
+                all(h["ok"][0].returncode == 0 and h["other"][0].returncode != 0 and "serves only run 5" in h["other"][0].stderr and h["mode"] != 0
+                    for h in hooks.values())
+                and all("ACTIONS_RUNNER_HOOK_JOB_STARTED" in e for e in envs.values())))
+    out.append(("runner: the hook kills its own leg's user's every process, the Worker with them, never the other leg's; this run's job kills nothing",
+                hooks["l"]["other"][1] == ["-KILL -u runner-l"] and hooks["w"]["other"][1] == ["-KILL -u runner-w"]
+                and hooks["l"]["ok"][1] == [] and hooks["w"]["ok"][1] == []))
+    out.append(("runner: and the hook still fails the job if the kill itself fails", all(h["no_pkill"] != 0 for h in hooks.values())))
     text = (HERE / "node_runner.sh").read_text(encoding="utf-8")
-    out.append(("runner: the hook is outside the job's home, in root's directory by default, and made root's: a job can move anything in its home (measured)",
-                not r["home_has_guard"] and "root:root %s" % r["guard"] in r["chowns"]
-                and "ACTIONS_RUNNER_HOOK_JOB_STARTED=%s" % r["guard"] in r["env"]
-                and 'GUARD="${NODE_RUNNER_GUARD:-/usr/local/sbin/job_guard.sh}"' in text))
+    out.append(("runner: each leg's hook is its own, outside the job's home, in root's directory by default, and made root's: a job can move anything in its home (measured)",
+                not r["guard_in_homes"] and all("root:root %s-%s.sh" % (r["guard"], leg) in r["chowns"] for leg in ("l", "w"))
+                and all(e.get("ACTIONS_RUNNER_HOOK_JOB_STARTED") == "%s-%s.sh" % (r["guard"], leg) for leg, e in envs.items())
+                and 'GUARD="${NODE_RUNNER_GUARD:-/usr/local/sbin/job_guard}-$LEG.sh"' in text))
     out.append(("runner: no --preserve-environment, and no flag that the runner's `run` does not take", "--preserve-environment" not in text and "--disableupdate" not in text))
-    out.append(("runner: one node, one job: nothing cleans up after a job or waits for one before it", "pkill -KILL -u runner 2>" not in text and "PIDFILE" not in text and "rm -rf" not in text))
+    out.append(("runner: one runner, one job: nothing cleans up after a job or waits for one before it; the only removal is the leg's old copy, before its fresh one",
+                "pkill -KILL -u runner 2>" not in text and "PIDFILE" not in text and text.count("rm -rf") == 1
+                and text.index('rm -rf "$LEG_ROOT"') < text.index('cp -a "$TEMPLATE"')))
     return out
 
 
@@ -1119,8 +1248,8 @@ def group_cancelled_by_hand():
     out.append(("cancel: no cancel, the runner dead: failure and steps left as they were: the machine is lost, at the limit",
                 result == "lost" and len(gh.dispatches) == 1 and clock.now >= t.DOWN_LIMIT_S))
     result, gh, api, _, _, clock = watched([[GREEN_L, CANCELLED_W]], answering=False)
-    out.append(("cancel: with a cancel, the same steps, cancelled: no re-launch, and both nodes off with no 15 minutes' wait",
-                result == "done" and gh.dispatches == [] and gh.cancels == [] and clock.now == 0 and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("cancel: with a cancel, the same steps, cancelled: no re-launch, and the node off with no 15 minutes' wait",
+                result == "done" and gh.dispatches == [] and gh.cancels == [] and clock.now == 0 and api.deleted == ["dpl_x"]))
     result, gh, _, _, said, _ = watched([[GREEN_L, CANCELLED_W]])
     out.append(("cancel: on a machine that answers: done, and it is no leg that died with nothing to show",
                 result == "done" and "no failed step" not in said and not t.died_silently(CANCELLED_W, NOW)))
@@ -1128,8 +1257,8 @@ def group_cancelled_by_hand():
     hub.jobs_answers = [[GREEN_L, CANCELLED_W]]
     out.append(("cancel: and stop-node finds the legs finished, so it deletes what is left", t.finished_legs(t.GitHub("o/r", "T", "A", hub, lambda s: None), 5, 1) == [L, W]))
     result, gh, api, _, _, clock = watched([[DEAD_L, QUEUE_CANCELLED_W]], answering=False)
-    out.append(("cancel: a machine lost before it and a leg cancelled in the queue: the same, at once, both nodes off",
-                result == "done" and gh.dispatches == [] and clock.now == 0 and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("cancel: a machine lost before it and a leg cancelled in the queue: the same, at once, the node off",
+                result == "done" and gh.dispatches == [] and clock.now == 0 and api.deleted == ["dpl_x"]))
     arm = job("build-linux-arm64", conclusion="cancelled", steps=("cancelled",), runner="GitHub Actions 7")
     result, gh, _, _, _, clock = watched([[GREEN_L, DEAD_W, arm]], answering=False)
     out.append(("cancel: only a job on GitHub's runners shows it: no re-launch, at once", result == "done" and gh.dispatches == [] and clock.now == 0))
@@ -1157,7 +1286,7 @@ def group_cancelled_by_hand():
             return super().__call__(method, url, headers, body)
     gh = FakeGitHub()
     result, gh, api, _, _, _ = watched([[RUN_L, RUN_W]], answering=False, gh=gh, api=CancelledDuringDelete())
-    out.append(("cancel: during the nodes' delete: no re-launch", result == "done" and gh.dispatches == [] and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("cancel: during the node's delete: no re-launch", result == "done" and gh.dispatches == [] and api.deleted == ["dpl_x"]))
     gh = FakeGitHub()
     result, gh, api, _, said, _ = watched([[RUN_L, RUN_W]], answering=False, gh=gh, api=CancelledDuringDelete(), relaunch_of="4")
     out.append(("cancel: during the delete, of a re-launched run: no failure called a second loss", result == "done" and gh.cancels == [] and "second loss" not in said))
@@ -1187,8 +1316,7 @@ def group_runner_clock():
     result, gh, api, _, _, clock = watched([[QUEUED_L, QUEUED_W]] * 2 + ["down"] * 4 * 25 + [[QUEUED_L, QUEUED_W], [RUN_L, RUN_W], [GREEN_L, GREEN_W]])
     out.append(("clock: GitHub down with the runners there: they cannot take a job meanwhile, so the run does not fail for it",
                 result == "done" and gh.cancels == [] and clock.now > t.STUCK_S))
-    silent_for_a_while = {"l": lambda s: not 600 <= s < 1100, "w": True}
-    result, gh, _, _, _, clock = watched([[QUEUED_L, RUN_W]] * 35 + [[RUN_L, RUN_W]] * 3 + [[GREEN_L, GREEN_W]], answering=silent_for_a_while)
+    result, gh, _, _, _, clock = watched([[QUEUED_L, RUN_W]] * 35 + [[RUN_L, RUN_W]] * 3 + [[GREEN_L, GREEN_W]], answering=lambda s: not 600 <= s < 1100)
     out.append(("clock: a machine silent for a while does not count against its runner: the wait starts again when it is back, and its runner still comes",
                 result == "done" and gh.cancels == []))
     machine = t.Machine(("h", 1))
@@ -1254,7 +1382,7 @@ RUNNER_ENV = {"GITHUB_RUN_ID": "5", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_REF_NAME"
               "GITHUB_REPOSITORY": "o/r", "GITHUB_OUTPUT": os.devnull}
 STEP_VALUES = {"LATITUDE_API_KEY": KEY, "LATITUDE_PROJECT": PROJECT, "RUNNER_ADMIN_TOKEN": "ADMIN", "GH_TOKEN": "TOKEN", "KIND": "release",
                "TAG": "firefox-99", "COMPILE_CACHE": "gha", "CORE_REF": "core-x", "WRAPPER_REF": "wrap-y", "GTESTS": "true",
-               "GTEST_FILTER_INPUT": "X*", "RELAUNCH_OF": "", "ONLY_IF": "--if-legs-done", "LEG": L}
+               "GTEST_FILTER_INPUT": "X*", "RELAUNCH_OF": "", "ONLY_IF": "--if-legs-done"}
 
 
 def workflow():
@@ -1262,7 +1390,7 @@ def workflow():
     return yaml.safe_load((HERE.parent.parent / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
 
 
-def run_step(step, answers, nodes="lw", answering=False, wrap_provision=None, **overrides):
+def run_step(step, answers, nodes=t.NODE_MARK, answering=False, wrap_provision=None, **overrides):
     """A step of release.yml, as written: its command line through main(), with nothing in
     the environment but the names the step declares and what GitHub sets, on the real
     from_env and github_from_env. Only HTTP, the clock and sshd's banner are faked.
@@ -1331,8 +1459,8 @@ def group_workflow_steps():
     lost = [[RUN_L, RUN_W]]
     for name in ("watch-1", "watch-2"):
         code, printed, said, gh, api = watch_step(name, list(lost))
-        out.append(("watch step, %s: from its own names to a re-launch of every input by value, on this commit, both nodes off" % name,
-                    code == 0 and "verdict=lost" in printed and sorted(api.deleted) == ["dpl_l", "dpl_w"] and len(gh.cancels) == 1
+        out.append(("watch step, %s: from its own names to a re-launch of every input by value, on this commit, the node off" % name,
+                    code == 0 and "verdict=lost" in printed and api.deleted == ["dpl_x"] and len(gh.cancels) == 1
                     and gh.dispatches == [{"ref": "main", "inputs": {"kind": "release", "compile_cache": "gha", "core_ref": "core-x", "wrapper_ref": "wrap-y",
                                                                      "relaunch_of": "5", "release_tag": "firefox-99", "gtests": "true", "gtest_filter": "X*"}}]))
     code, printed, said, gh, api = watch_step("watch-1", list(lost), RELAUNCH_OF="4")
@@ -1341,22 +1469,24 @@ def group_workflow_steps():
     out.append(("watch step: RUNNER_ADMIN_TOKEN reaches the list of runners, GH_TOKEN the rest: no poll failed on the wrong one",
                 code == 1 and "verdict=failed" in printed and "this poll saw nothing" not in said))
     code, printed, said, gh, api = watch_step("watch-1", [[GREEN_L, GREEN_W]])
-    out.append(("watch step: legs that finished: verdict done, exit 0, both nodes off", code == 0 and "verdict=done" in printed and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("watch step: legs that finished: verdict done, exit 0, the node off", code == 0 and "verdict=done" in printed and api.deleted == ["dpl_x"]))
 
     node_step = doc["jobs"]["node"]["steps"][-1]
     seen = []
 
-    def fake_provision(theta, github, run, attempt, leg, make_ssh, make_key, *rest):
-        seen.append((run, attempt, leg, github.repo))
-    for leg in (L, W):
-        code, printed, said, _, _ = run_step(node_step, [[]], wrap_provision=fake_provision, LEG=leg)
-        out.append(("node step, %s: reaches provision for that leg, from its own names, and prints nothing a log would keep" % leg,
-                    code == 0 and printed == "" and seen[-1] == ("5", "1", leg, "o/r")))
+    def fake_provision(theta, github, run, attempt, make_ssh, make_key, *rest):
+        seen.append((run, attempt, github.repo))
+    code, printed, said, _, _ = run_step(node_step, [[]], wrap_provision=fake_provision)
+    out.append(("node step: reaches provision once, for the run's one node, from its own names, and prints nothing a log would keep",
+                code == 0 and printed == "" and seen == [("5", "1", "o/r")]))
+    out.append(("node step: no leg in its names: the node is the run's, for every leg", "LEG" not in node_step["env"] and "--leg" not in node_step["run"]))
     stop_step = next(s for s in doc["jobs"]["stop-node"]["steps"] if " off " in s.get("run", ""))
     code, printed, said, gh, api = run_step(stop_step, [[GREEN_L, RUN_W]])
-    out.append(("stop step: with the option from its own names, only the finished leg's node goes", code == 0 and api.deleted == ["dpl_l"] and "ci5a1l" in printed))
+    out.append(("stop step: with the option from its own names, a leg still running: the node stays for it", code == 0 and api.deleted == [] and W in said))
+    code, printed, said, gh, api = run_step(stop_step, [[GREEN_L, GREEN_W]])
+    out.append(("stop step: with the option, both legs finished: the node goes", code == 0 and api.deleted == ["dpl_x"] and "ci5a1x" in printed))
     code, printed, said, gh, api = run_step(stop_step, [[RUN_L, RUN_W]], ONLY_IF="")
-    out.append(("stop step: without it, both", code == 0 and sorted(api.deleted) == ["dpl_l", "dpl_w"]))
+    out.append(("stop step: without it, the node goes", code == 0 and api.deleted == ["dpl_x"]))
     return out
 
 
@@ -1385,8 +1515,8 @@ def group_any_shape():
                     raise make()
                 return super().__call__(method, url, headers, body)
         result, gh, api, _, _, _ = watched(list(through), gh=Breaks(), api=ThetaBreaks())
-        out.append(("shape: %s from either service, poll after poll: the watch goes on, to its verdict, both nodes off" % name,
-                    result == "done" and sorted(api.deleted) == ["dpl_l", "dpl_w"] and gh.dispatches == []))
+        out.append(("shape: %s from either service, poll after poll: the watch goes on, to its verdict, the node off" % name,
+                    result == "done" and api.deleted == ["dpl_x"] and gh.dispatches == []))
     for name, make in (("IncompleteRead", lambda: http.client.IncompleteRead(b"x")), ("BadStatusLine", lambda: http.client.BadStatusLine("x"))):
         tries = []
 
@@ -1530,14 +1660,14 @@ def group_lingering_and_silence():
     out = []
     clock = Clock()
     api = FakeLatitude(delete_takes=False)
-    api.nodes = listed("lw")
+    api.nodes = listed()
     deleted, said = quiet(t.turn_off, t.Latitude(PROJECT, KEY, api, clock.sleep), t.node_names(5, 1), clock, clock.sleep)
     out.append(("linger: a delete accepted and a node still listed: a warning, past the limit, not an error",
-                sorted(deleted) == ["dpl_l", "dpl_w"] and "::warning::" in said and clock.now >= t.GONE_LIMIT_S))
+                deleted == ["dpl_x"] and "::warning::" in said and clock.now >= t.GONE_LIMIT_S))
     result, gh, _, log, _, _ = watched([[RUN_L, RUN_W]], answering=False, api=FakeLatitude(delete_takes=False))
     out.append(("linger: it does not stop the re-launch", result == "lost" and log[-2:] == ["dispatch", "cancel"]))
     api, gh = FakeLatitude(), FakeGitHub()
-    api.nodes = [{"id": "d9", "name": "ci9a1l", "status": t.RUNNING}]
+    api.nodes = [{"id": "d9", "name": "ci9a1x", "status": t.RUNNING}]
     gh.run_status = {"9": "in_progress"}
     gh.past_runs = [{"id": 5, "display_title": t.relaunch_title(9)}]
     got, error = provisioned(api, gh, FakeSsh())
@@ -1552,15 +1682,14 @@ def group_lingering_and_silence():
     out.append(("empty: nothing to clear either", got))
 
     failed_late = job(WIN, conclusion="failure", steps=("success", "failure"), completed="2026-11-03T12:10:00Z", runner="ci5a1w")
-    silent_from_2 = {"l": True, "w": lambda s: s < 120}
     answers = [[GREEN_L, RUN_W]] * 8 + [[GREEN_L, failed_late]]
-    result, gh, api, _, _, clock = watched(list(answers), answering=silent_from_2)
+    result, gh, api, _, _, clock = watched(list(answers), answering=lambda s: s < 120)
     out.append(("failed step: a leg dies, GitHub marks its step failed after the machine went silent, the API still lists it: lost at the limit",
                 result == "lost" and len(gh.dispatches) == 1 and 120 + t.DOWN_LIMIT_S - 60 <= clock.now <= 120 + t.DOWN_LIMIT_S + 300))
     result, gh, _, _, _, _ = watched(list(answers))
     out.append(("failed step: the same job on a machine that answers: a defect, no re-launch", result == "done" and gh.dispatches == []))
     unconcluded = job(WIN, conclusion="failure", steps=("success", "failure", None), completed="2026-11-03T11:59:00Z", runner="ci5a1w")
-    result, gh, _, _, _, _ = watched([[GREEN_L, unconcluded]], answering=LOSE_W)
+    result, gh, _, _, _, _ = watched([[GREEN_L, unconcluded]], answering=False)
     out.append(("failed step: steps left unconcluded say the runner went away, whenever it ended: lost", result == "lost"))
     out.append(("failed step: a compile error before the machine's silence stays a compile error",
                 not t.died_silently(RED_L, NOW) and t.died_silently(RED_L, NOW - 3600)))
@@ -1576,24 +1705,24 @@ def group_deployment_id():
 
         def __call__(self, method, url, headers, body):
             if any(part in url and method == verb for verb, part in self.failing):
-                return 500, b'{"message":"deployment dpl_l is busy"}'
+                return 500, b'{"message":"deployment dpl_x is busy"}'
             return super().__call__(method, url, headers, body)
     clock = Clock()
     api = Echoes()
-    api.nodes = listed("l")
+    api.nodes = listed()
     api.failing = (("DELETE", "/servers/"),)
     theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
     try:
-        _, said = quiet(t.turn_off, theta, ["ci5a1l"], clock, clock.sleep)
+        _, said = quiet(t.turn_off, theta, ["ci5a1x"], clock, clock.sleep)
         message = said
     except t.ThetaError as exc:
         message = str(exc)
     out.append(("id: a failed delete, in its URL and its answer: the error names the node by its name, not its id",
-                "ci5a1l" in message and "dpl_l" not in message and "/servers/" in message))
+                "ci5a1x" in message and "dpl_x" not in message and "/servers/" in message))
     for verb, part, call in (("GET", "/servers/dpl_9", lambda th: th.address("dpl_9")),
-                             ("POST", "/servers", lambda th: th.create("ci5a1l", "k"))):
+                             ("POST", "/servers", lambda th: th.create("ci5a1x", "k"))):
         api = Echoes()
-        api.nodes = listed("l")
+        api.nodes = listed()
         api.failing = ((verb, part),)
         theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
         theta.nodes()
@@ -1602,21 +1731,21 @@ def group_deployment_id():
             message = "no error"
         except t.ThetaError as exc:
             message = str(exc)
-        out.append(("id: a node seen in the list, and an answer of %s %s that repeats it" % (verb, part), "HTTP 500" in message and "dpl_l" not in message))
+        out.append(("id: a node seen in the list, and an answer of %s %s that repeats it" % (verb, part), "HTTP 500" in message and "dpl_x" not in message))
     api = FakeLatitude()
     theta = t.Latitude(PROJECT, KEY, api, clock.sleep)
-    created = theta.create("ci5a1l", "k")
+    created = theta.create("ci5a1x", "k")
     out.append(("id: a node just created is known too", created in theta.http.secrets))
     api = Echoes()
     api.failing = (("DELETE", "/servers/"),)
     try:
-        t.Latitude(PROJECT, KEY, api, clock.sleep).delete("dpl_l")
+        t.Latitude(PROJECT, KEY, api, clock.sleep).delete("dpl_x")
         message = "no error"
     except t.ThetaError as exc:
         message = str(exc)
-    out.append(("id: a delete of a node never listed here, in its own URL", "HTTP 500" in message and "dpl_l" not in message))
+    out.append(("id: a delete of a node never listed here, in its own URL", "HTTP 500" in message and "dpl_x" not in message))
     code, api, _, printed, said = run_off_with([[RUN_L, RUN_W]], if_legs_done=False)
-    out.append(("id: stop-node's log says which nodes went by their names", sorted(api.deleted) == ["dpl_l", "dpl_w"] and "ci5a1l" in printed and "ci5a1w" in printed
+    out.append(("id: stop-node's log says which node went by its name", api.deleted == ["dpl_x"] and "ci5a1x" in printed
                 and "dpl_" not in printed + said))
     return out
 
@@ -1627,7 +1756,7 @@ def group_refused_job():
     out = []
     result, gh, api, _, said, clock = watched([[QUEUED_L, GREEN_W]])
     out.append(("refused job: a leg's runner killed: the run fails within the stuck limit, no re-launch, the node off, and nothing started again",
-                result == "failed" and gh.dispatches == [] and gh.jits == [] and len(gh.cancels) == 1 and "dpl_l" in api.deleted and clock.now <= t.STUCK_S + 120))
+                result == "failed" and gh.dispatches == [] and gh.jits == [] and len(gh.cancels) == 1 and api.deleted == ["dpl_x"] and clock.now <= t.STUCK_S + 120))
     return out
 
 
@@ -1664,7 +1793,7 @@ def provisioned_through_ssh(answers):
 
         def attempt():
             try:
-                t.provision(theta, github, 5, 1, L, lambda host, port: t.Ssh(host, port, key), lambda: key, clock, clock.sleep)
+                t.provision(theta, github, 5, 1, lambda host, port: t.Ssh(host, port, key), lambda: key, clock, clock.sleep)
                 return ""
             except t.ThetaError as exc:
                 return str(exc)
@@ -1697,8 +1826,9 @@ def group_address():
     error, said = provisioned_through_ssh({"bash -s": (0, BOOTSTRAPPED.encode(), b""), PUT_RUNNER: (255, b"", refused)})
     out.append(("address: nor the log of a node that came up", "node up after" in said and "1.1.1.1" not in error + said and "Connection refused" not in said))
     for code in (255, 1):
-        error, said = provisioned_through_ssh({"bash -s": (0, BOOTSTRAPPED.encode(), b""), START_RUNNER: (code, b"", refused)})
-        out.append(("address: ssh ending with %d at the runner's start" % code, error and "1.1.1.1" not in error + said and "Connection refused" not in said))
+        for start in (START_L, START_W):
+            error, said = provisioned_through_ssh({"bash -s": (0, BOOTSTRAPPED.encode(), b""), start: (code, b"", refused)})
+            out.append(("address: ssh ending with %d at a runner's start (%s)" % (code, start[-1]), error and "1.1.1.1" not in error + said and "Connection refused" not in said))
     if shutil_which("ssh"):
         import socket
         with socket.socket() as probe:
@@ -1719,11 +1849,11 @@ def group_host_key():
     commands = [c for c, _ in ssh.calls]
     out.append(("host key: pinned after the bootstrap, before the runner's script and its configuration",
                 got and ("pin", HOST_KEY) in ssh.calls
-                and commands.index("bash -s") < commands.index("pin") < commands.index(PUT_RUNNER) < commands.index(START_RUNNER)))
+                and commands.index("bash -s") < commands.index("pin") < commands.index(PUT_RUNNER) < commands.index(START_L) < commands.index(START_W)))
     api, gh = FakeLatitude(), FakeGitHub()
     got, error = provisioned(api, gh, FakeSsh({"bash -s": (0, "node_bootstrap: ready\n", "")}))
     out.append(("host key: a bootstrap that names none fails the run: nothing registered, deleted",
-                got is None and "host key" in error and gh.jits == [] and api.deleted == ["dpl_l"]))
+                got is None and "host key" in error and gh.jits == [] and api.deleted == ["dpl_x"]))
     with tempfile.TemporaryDirectory() as tmp:
         key = Path(tmp) / "node_key"
         first = t.Ssh("1.1.1.1", 22, key)
