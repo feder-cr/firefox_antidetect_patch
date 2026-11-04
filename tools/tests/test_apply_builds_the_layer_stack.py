@@ -182,3 +182,28 @@ def test_the_lock_of_another_leg_is_opened_without_creating_it(tmp_path, monkeyp
     fresh = tmp_path / "y.lock"
     os.close(engine._open_lock(fresh))
     assert fresh.exists()
+
+
+def test_a_fetch_that_fails_is_asked_again_and_the_last_failure_is_the_error(tmp_path, monkeypatch, capsys):
+    """A build node in Dallas fetched at 2 MB/s for 50 min and git gave up (exit 128):
+    the leg died (candidate 41881364268). Two failures, then the tag comes: the leg goes
+    on. Three failures: the error, after the waits."""
+    calls, waits = [], []
+
+    def flaky(failures):
+        def git(where, *args, **kw):
+            calls.append(args[0])
+            if len(calls) <= failures:
+                raise subprocess.CalledProcessError(128, ["git", *args], stderr=b"fatal: early EOF")
+            return b""
+        return git
+
+    up = {"mozilla_repository": "https://example.invalid/firefox", "mozilla_tag": "TAG"}
+    monkeypatch.setattr(engine, "git", flaky(2))
+    engine._fetch_tag(tmp_path, up, sleep=waits.append)
+    assert len(calls) == 3 and waits == list(engine.FETCH_WAITS) and "early EOF" in capsys.readouterr().out
+    calls.clear(); waits.clear()
+    monkeypatch.setattr(engine, "git", flaky(99))
+    with pytest.raises(subprocess.CalledProcessError):
+        engine._fetch_tag(tmp_path, up, sleep=waits.append)
+    assert len(calls) == 3 and waits == list(engine.FETCH_WAITS)

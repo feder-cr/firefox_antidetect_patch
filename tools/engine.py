@@ -325,11 +325,29 @@ def _init_repo(into: Path) -> None:
         exclude.write_text("/%s/\n" % rel, encoding="utf-8")
 
 
-def _fetch_and_apply(into: Path, up: dict, branch: str) -> str:
+#: Seconds before each new fetch. A build node in Dallas fetched at 2 MB/s for 50 min
+#: and git gave up (exit 128): the leg died (candidate 41881364268, 04/11).
+FETCH_WAITS = (30, 90)
+
+
+def _fetch_tag(into: Path, up: dict, sleep=time.sleep) -> None:
     tag = up["mozilla_tag"]
-    git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
-        "refs/tags/%s:refs/tags/%s" % (tag, tag))
-    return apply(into, tag, branch, force=True)
+    for attempt in range(len(FETCH_WAITS) + 1):
+        try:
+            git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
+                "refs/tags/%s:refs/tags/%s" % (tag, tag))
+            return
+        except subprocess.CalledProcessError as exc:
+            if attempt == len(FETCH_WAITS):
+                raise
+            print("materialize: the fetch of %s failed (%s), again in %d s"
+                  % (tag, (exc.stderr or b"").decode(errors="replace").strip()[-200:] or exc, FETCH_WAITS[attempt]))
+            sleep(FETCH_WAITS[attempt])
+
+
+def _fetch_and_apply(into: Path, up: dict, branch: str) -> str:
+    _fetch_tag(into, up)
+    return apply(into, up["mozilla_tag"], branch, force=True)
 
 
 def _open_lock(path: Path) -> int:
@@ -399,8 +417,7 @@ def materialize(into: Path, branch: str = "engine", shared: Path | None = None) 
             print("materialize: the shared tree in %s failed (%s): this leg fetches its own" % (shared, exc))
             shared = None
     if shared is None:
-        git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
-            "refs/tags/%s:refs/tags/%s" % (tag, tag))
+        _fetch_tag(into, up)
         fetched = time.monotonic()
         tree = apply(into, tag, branch, force=True)
         applied = time.monotonic()
