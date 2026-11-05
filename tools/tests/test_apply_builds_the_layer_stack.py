@@ -233,3 +233,54 @@ def test_a_leg_that_borrows_the_shared_tree_knows_where_its_history_stops(world,
     for leg in ("leg-l", "leg-w"):
         # a file the series does not touch, as config/milestone.txt: git walks down to the tag
         assert run(tmp_path / leg, "log", "-1", "--format=%ad", "--date=iso", "--", "other.txt")
+
+
+def _mirror_of(world: Path, mirror: Path) -> None:
+    """The node's own fetch of the tag, as latitude_node.py's prefetch makes it."""
+    subprocess.run(["git", "init", "-q", "--bare", str(mirror)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(mirror), "fetch", "-q", "--depth", "1", "--no-tags", "file://" + str(world),
+                    "refs/tags/TAG:refs/tags/TAG"], check=True, capture_output=True)
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="flock, as above")
+def test_the_first_leg_takes_the_tag_from_the_node_s_own_fetch(world, tmp_path, monkeypatch, capsys):
+    """The node fetches the tag as soon as it is prepared, before its runners exist; the
+    first leg takes it from there, not from GitHub: proved by an UPSTREAM.json whose
+    repository does not exist."""
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    _mirror_of(world, shared / "mozilla.git")
+    (shared / "mozilla.git" / "fetched-TAG").touch()
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(tmp_path / "gone"), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    head = engine.materialize(tmp_path / "leg", shared=shared)
+    assert head == run(world, "rev-parse", "probe") and "node's own fetch" in capsys.readouterr().out
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="flock, as above")
+def test_a_node_fetch_that_failed_sends_the_leg_to_github(world, tmp_path, monkeypatch, capsys):
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    shared = tmp_path / "shared"
+    (shared / "mozilla.git").mkdir(parents=True)
+    (shared / "mozilla.git" / "failed-TAG").touch()
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(world), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    head = engine.materialize(tmp_path / "leg", shared=shared)
+    assert head == run(world, "rev-parse", "probe") and "failed: from GitHub" in capsys.readouterr().out
+
+
+def test_the_wait_for_the_node_s_fetch_ends(tmp_path):
+    """A fetch that never ends does not hold the leg: after MIRROR_WAIT_S, GitHub."""
+    mirror = tmp_path / "mozilla.git"
+    mirror.mkdir()
+    now = [0.0]
+    got = engine._wait_for_mirror(mirror, "TAG", clock=lambda: now[0], sleep=lambda s: now.__setitem__(0, now[0] + s))
+    assert got is None and now[0] >= engine.MIRROR_WAIT_S
+    assert engine._wait_for_mirror(tmp_path / "none", "TAG") is None

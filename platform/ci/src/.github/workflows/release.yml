@@ -191,7 +191,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/latitude_node.py provision \
-            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+            --run "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --upstream .series/UPSTREAM.json
 
   build:
     name: build-${{ matrix.leg }}

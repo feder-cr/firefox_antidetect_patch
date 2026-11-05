@@ -677,6 +677,62 @@ def group_stop_node():
     return out
 
 
+def group_prefetch():
+    """The node fetches the Mozilla tag right after node_bootstrap.sh, before its runners
+    exist: on 04/11 the first leg spent 110-180 s fetching it from GitHub after its job
+    had started. Only a head start: whoever waits on it falls back to GitHub."""
+    out = []
+    upstream = {"mozilla_repository": "https://github.com/mozilla-firefox/firefox", "mozilla_tag": "FIREFOX_159_0_RELEASE"}
+    api, gh, ssh = FakeLatitude(), FakeGitHub(), FakeSsh()
+    clock = Clock()
+    latitude = t.Latitude(PROJECT, KEY, api, clock.sleep)
+    github = t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
+    with tempfile.TemporaryDirectory() as tmp:
+        key = Path(tmp) / "node_key"
+        key.write_text("private", encoding="utf-8")
+        Path(str(key) + ".pub").write_text("ssh-ed25519 AAAA ci-node\n", encoding="utf-8")
+        quiet(t.provision, latitude, github, 5, 1, lambda host, port: ssh, lambda: key, clock, clock.sleep, upstream=upstream)
+    sent = [(c, s) for c, s in ssh.calls if c == "bash -s" and s and b"mozilla.git" in s]
+    order = [c for c, _ in ssh.calls if isinstance(c, str)]
+    out.append(("prefetch: the node fetches the series' tag after node_bootstrap.sh and before node_runner.sh, once",
+                len(sent) == 1 and b"FIREFOX_159_0_RELEASE" in sent[0][1] and b"mozilla-firefox/firefox" in sent[0][1]
+                and order.index("cat > /usr/local/sbin/node_runner.sh") > max(i for i, c in enumerate(order) if c == "bash -s")))
+    api, gh, ssh = FakeLatitude(), FakeGitHub(), FakeSsh()
+    got, error = provisioned(api, gh, ssh)
+    out.append(("prefetch: without the series' UPSTREAM.json nothing is fetched, and the node comes up as before",
+                got and not any(s and b"mozilla.git" in s for c, s in ssh.calls if c == "bash -s")))
+    workflow_text = (HERE.parent.parent / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    out.append(("prefetch: the node job passes the series' UPSTREAM.json", "provision" in workflow_text and "--upstream .series/UPSTREAM.json" in workflow_text))
+    if not sys.platform.startswith("linux"):
+        print("skip  prefetch: bash and git, Linux only")
+        return out
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        src = tmp / "firefox"
+        subprocess.run(["git", "init", "-q", str(src)], check=True)
+        (src / "a.txt").write_text("a\n", encoding="utf-8")
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        for args in (["add", "a.txt"], ["commit", "-qm", "x"], ["tag", "TAG"]):
+            subprocess.run(["git", "-C", str(src), *args], check=True, env=env)
+        shared = tmp / "shared"
+        for repository, tag in (("file://" + str(src), "TAG"), ("file://" + str(tmp / "gone"), "TAG")):
+            done = subprocess.run(["bash", "-s"], input=t.prefetch_script(repository, tag, str(shared)), capture_output=True, text=True, timeout=30)
+            for _ in range(100):
+                if any((shared / "mozilla.git" / ("%s-TAG" % s)).exists() for s in ("fetched", "failed")):
+                    break
+                subprocess.run(["sleep", "0.1"])
+            state = sorted(p.name for p in (shared / "mozilla.git").glob("*-TAG"))
+            if "gone" not in repository:
+                tagged = subprocess.run(["git", "-C", str(shared / "mozilla.git"), "rev-parse", "TAG"], capture_output=True, text=True).returncode == 0
+                out.append(("prefetch: for real, it returns at once and the fetch marks itself whole (%s)" % state,
+                            done.returncode == 0 and state == ["fetched-TAG"] and tagged
+                            and oct((shared).stat().st_mode & 0o7777) == "0o1777"))
+            else:
+                out.append(("prefetch: a fetch that fails marks itself failed, and a new one starts clean (%s)" % state,
+                            done.returncode == 0 and state == ["failed-TAG"]))
+    return out
+
+
 def group_bootstrap():
     out = []
     bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8")
@@ -1595,11 +1651,13 @@ def group_workflow_steps():
     node_step = doc["jobs"]["node"]["steps"][-1]
     seen = []
 
-    def fake_provision(latitude, github, run, attempt, make_ssh, make_key, *rest):
+    def fake_provision(latitude, github, run, attempt, make_ssh, make_key, *rest, upstream=None):
         seen.append((run, attempt, github.repo))
     code, printed, said, _, _ = run_step(node_step, [[]], wrap_provision=fake_provision)
     out.append(("node step: reaches provision once, for the run's one node, from its own names, and prints nothing a log would keep",
                 code == 0 and printed == "" and seen == [("5", "1", "o/r")]))
+    out.append(("node step: an UPSTREAM.json it cannot read costs the head start only, never the run",
+                code == 0 and "no tag fetched ahead" in said))
     out.append(("node step: no leg in its names: the node is the run's, for every leg", "LEG" not in node_step["env"] and "--leg" not in node_step["run"]))
     stop_step = next(s for s in doc["jobs"]["stop-node"]["steps"] if " off " in s.get("run", ""))
     code, printed, said, gh, api = run_step(stop_step, [[GREEN_L, RUN_W]])
@@ -2024,7 +2082,7 @@ def host_key_section(serves):
             victim.wait()
 
 
-GROUPS = [group_node_deps, group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
+GROUPS = [group_prefetch, group_node_deps, group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
           group_lost_either_order, group_two_legs, group_relaunch, group_stuck, group_watch_stages, group_sweep, group_secrets,
           group_probe, group_runner, group_cancelled_by_hand, group_runner_clock, group_same_code,
           group_workflow_steps, group_any_shape, group_clear_verdicts, group_dispatch_once, group_lingering_and_silence,

@@ -591,7 +591,25 @@ def wait_online(github, name, clock=time.monotonic, sleep=time.sleep, limit=RUNN
         sleep(10)
 
 
-def provision(latitude, github, run, attempt, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep):
+#: Where both legs find the series applied once (tools/engine.py materialize --shared) and
+#: the node's own fetch of the Mozilla tag, which starts right after node_bootstrap.sh,
+#: before the runners exist: on 04/11 the first leg spent 110-180 s fetching it from
+#: GitHub after its job had started.
+SHARED = "/srv/shared"
+
+
+def prefetch_script(repository, tag, shared=SHARED) -> str:
+    """Root's fetch of the tag into SHARED/mozilla.git, in the background; a file says when
+    it is whole (fetched-<tag>) or failed (failed-<tag>). Whoever waits on it falls back to
+    GitHub on its own (engine.py, _wait_for_mirror)."""
+    mirror = shared + "/mozilla.git"
+    return ("set -eu\ninstall -d -m 1777 %(shared)s\nrm -rf %(m)s\ngit init -q --bare %(m)s\n"
+            "nohup sh -c 'git -C \"$0\" fetch -q --depth 1 --no-tags \"$1\" \"refs/tags/$2:refs/tags/$2\" > \"$0.log\" 2>&1"
+            " && touch \"$0/fetched-$2\" || touch \"$0/failed-$2\"' %(m)s %(r)s %(t)s > /dev/null 2>&1 < /dev/null &\n"
+            % {"shared": shlex.quote(shared), "m": shlex.quote(mirror), "r": shlex.quote(repository), "t": shlex.quote(tag)})
+
+
+def provision(latitude, github, run, attempt, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep, upstream=None):
     """The run's node ready with one runner per leg online, or NodeError with the node off."""
     clear_leftovers(latitude, github, run, attempt)
     name = node_name(run, attempt)
@@ -611,6 +629,11 @@ def provision(latitude, github, run, attempt, make_ssh, make_key, clock=time.mon
         if not host_key:
             raise NodeError("node_bootstrap.sh named no host key: the runner's configuration would go to an unverified host")
         ssh = ssh.pin(host_key.group(1))
+        if upstream:
+            # Only a head start: a failure here costs the legs their own fetch, nothing more.
+            code, out, err = ssh("bash -s", stdin=prefetch_script(upstream["mozilla_repository"], upstream["mozilla_tag"]).encode(),
+                                 timeout=60)
+            say("the tag's fetch on the node: %s" % ("started" if code == 0 else "not started (%s), the legs fetch it" % (err or out)[-200:]))
         code, out, err = ssh("cat > /usr/local/sbin/node_runner.sh", stdin=script_bytes("node_runner.sh"), timeout=60)
         if code != 0:
             raise NodeError("could not put node_runner.sh on the node: %s" % err[-300:])
@@ -1094,7 +1117,14 @@ def run_provision(a) -> int:
         latitude, github = from_env(), github_from_env()
         if github is None:
             raise NodeError("GITHUB_REPOSITORY is not set")
-        provision(latitude, github, a.run, a.attempt, node_ssh(work), lambda: new_key(work))
+        upstream = None
+        if a.upstream:
+            # Only a head start: without it the legs fetch the tag themselves, as before.
+            try:
+                upstream = json.loads(Path(a.upstream).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                say("::warning::no tag fetched ahead on the node, %s unreadable: %s" % (a.upstream, exc))
+        provision(latitude, github, a.run, a.attempt, node_ssh(work), lambda: new_key(work), upstream=upstream)
     except (NodeError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         # Without its node the leg has nowhere to run: the run has failed.
         print("::error::no node for %s, the run fails: %s" % (" and ".join(node_legs()), exc), file=sys.stderr)
@@ -1167,6 +1197,8 @@ def main(argv=None) -> int:
             p.add_argument("--ref", required=True)
         if name == "off":
             p.add_argument("--if-legs-done", action="store_true")
+        if name == "provision":
+            p.add_argument("--upstream", default="", help="the series' UPSTREAM.json: the node fetches its tag at once")
     s = sub.add_parser("sweep")
     s.add_argument("--max-age-hours", type=float, default=GUARD_HOURS)
     s.add_argument("--dry-run", action="store_true")

@@ -330,11 +330,13 @@ def _init_repo(into: Path) -> None:
 FETCH_WAITS = (30, 90)
 
 
-def _fetch_tag(into: Path, up: dict, sleep=time.sleep) -> None:
+def _fetch_tag(into: Path, up: dict, sleep=time.sleep, source: str | None = None) -> None:
     tag = up["mozilla_tag"]
+    # A local mirror is root's: git refuses another user's repository unless told.
+    trust = ("-c", "safe.directory=*") if source else ()
     for attempt in range(len(FETCH_WAITS) + 1):
         try:
-            git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
+            git(into, *trust, "fetch", "-q", "--depth", "1", "--no-tags", source or up["mozilla_repository"],
                 "refs/tags/%s:refs/tags/%s" % (tag, tag))
             return
         except subprocess.CalledProcessError as exc:
@@ -345,9 +347,32 @@ def _fetch_tag(into: Path, up: dict, sleep=time.sleep) -> None:
             sleep(FETCH_WAITS[attempt])
 
 
-def _fetch_and_apply(into: Path, up: dict, branch: str) -> str:
-    _fetch_tag(into, up)
+def _fetch_and_apply(into: Path, up: dict, branch: str, source: str | None = None) -> str:
+    _fetch_tag(into, up, source=source)
     return apply(into, up["mozilla_tag"], branch, force=True)
+
+
+#: How long the first leg waits for the node's own fetch of the tag before going to
+#: GitHub itself. That fetch starts as soon as the node is prepared, before the runners
+#: (latitude_node.py, prefetch), and took 110-180 s on 04/11.
+MIRROR_WAIT_S = 20 * 60
+
+
+def _wait_for_mirror(mirror: Path, tag: str, clock=time.monotonic, sleep=time.sleep) -> str | None:
+    """The node's mirror of the tag once it is whole, or None: no mirror, its fetch
+    failed, or it took longer than MIRROR_WAIT_S. None means GitHub, as before."""
+    if not mirror.is_dir():
+        return None
+    began = clock()
+    while clock() - began < MIRROR_WAIT_S:
+        if (mirror / ("fetched-%s" % tag)).exists():
+            return str(mirror)
+        if (mirror / ("failed-%s" % tag)).exists():
+            print("materialize: the node's own fetch of %s failed: from GitHub" % tag)
+            return None
+        sleep(5)
+    print("materialize: the node's own fetch of %s took over %d s: from GitHub" % (tag, MIRROR_WAIT_S))
+    return None
 
 
 def _open_lock(path: Path) -> int:
@@ -379,7 +404,10 @@ def _shared_commit(shared: Path, up: dict, branch: str) -> Path:
         if not mark.exists():
             shutil.rmtree(repo, ignore_errors=True)
             _init_repo(repo)
-            _fetch_and_apply(repo, up, branch)
+            mirror = _wait_for_mirror(shared / "mozilla.git", up["mozilla_tag"])
+            if mirror:
+                print("materialize: the tag from the node's own fetch, %s" % mirror)
+            _fetch_and_apply(repo, up, branch, source=mirror)
             commit = git(repo, "rev-parse", branch).decode().strip()
             mark.write_text(commit + "\n", encoding="utf-8")
             print("materialize: the series applied in %s, for every leg on this machine" % repo)
