@@ -61,7 +61,6 @@ def main(argv) -> int:
     sub.add_parser("node-parallel")
     k = sub.add_parser("linker-shim")
     k.add_argument("--out", type=Path, required=True)
-    sub.add_parser("lld-link-shim")
     u = sub.add_parser("cpu-report")
     u.add_argument("--samples", type=Path, default=Path("cpuwatch.jsonl"))
     u.add_argument("--events", type=Path, default=Path("events.jsonl"))
@@ -105,10 +104,6 @@ def main(argv) -> int:
         import linker_shim
         import memory_watch
         print("\n".join(linker_shim.write(args.out, threads=memory_watch.cpu_limit())))
-    elif args.cmd == "lld-link-shim":
-        sys.path.insert(0, str(HERE.parent))
-        import linker_shim
-        print(linker_shim.write_lld_link())
     elif args.cmd == "matrix":
         print(legs.matrix(legs.tree_version()))
     elif args.cmd == "assets":

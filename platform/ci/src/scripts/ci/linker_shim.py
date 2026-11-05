@@ -34,8 +34,9 @@ Code generation in LTO_PARTITIONS pieces runs on as many threads, one per thread
 L3 group link_pin.py keeps the link on (12 on the node's 4484PX). Federico chose it on
 04/11 knowing the cost: the same optimisation, full LTO and PGO, but the code is laid out
 by partition and not as the retail's single one, and calls between partitions lose what
-code generation alone would have done across them. The Windows leg asks the same of
-lld-link through _LINK_ (release.yml's Build step).
+code generation alone would have done across them. Not on Windows: there xul.dll's link
+broke, "llvm.localrecover first argument must be function defined in this module" (an SEH
+filter split from its function, candidate 41993534158), as small executables had.
 
 And `--disable-verify`: LTO verifies the merged module before and after its pipeline,
 37 s of libxul's link (its trace, candidate 41912498170). The verifier only checks: it
@@ -85,31 +86,3 @@ def write(out: Path, clang_bin: Path = Path.home() / ".mozbuild" / "clang" / "bi
     print("huge pages for the link: %s, enabled: %s, defrag: %s" % (TUNABLE, _read(THP_ENABLED), _read(THP_DEFRAG)), file=sys.stderr)
     return ["COMPILER_PATH=%s" % out]
 
-
-#: lld-link with LTO's code generation split, for xul.dll only. On every link (through
-#: _LINK_) the split broke small executables, "LLVM ERROR: Broken module found" on
-#: zucchini.exe and updater.exe (candidate 41989284692). This stands in for the
-#: toolchain's own lld-link, at its path, so configure's LINKER and about:buildconfig
-#: read exactly what they read before; it runs the same lld, as lld-link.
-LLD_LINK = '''#!/bin/sh
-# CI (scripts/ci/linker_shim.py): lld-link, with LTO partitions on xul.dll's link only.
-X=""
-for a in "$@"; do
-  case "$a" in [-/][oO][uU][tT]:*xul.dll|[-/][oO][uU][tT]:*XUL.DLL) X="/opt:lldltopartitions=%d" ;; esac
-done
-exec "$(dirname "$0")/lld" -flavor link $X "$@"
-'''
-
-
-def write_lld_link(clang_bin: Path = Path.home() / ".mozbuild" / "clang" / "bin") -> str:
-    """Replaces clang_bin/lld-link (a link to lld) with the script above. Again on a
-    toolchain that already has it, as one restored from the cache would."""
-    lld = clang_bin / "lld"
-    if not lld.exists():
-        raise SystemExit("linker_shim: no %s to run as lld-link" % lld)
-    path = clang_bin / "lld-link"
-    if path.is_symlink() or path.exists():
-        path.unlink()
-    path.write_text(LLD_LINK % LTO_PARTITIONS, encoding="utf-8", newline="\n")
-    path.chmod(0o755)
-    return "lld-link: %s runs %s, with %d LTO partitions on xul.dll" % (path, lld, LTO_PARTITIONS)

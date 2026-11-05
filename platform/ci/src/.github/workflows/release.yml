@@ -625,11 +625,6 @@ jobs:
       - name: The node - its linker asks for huge pages
         if: matrix.node && matrix.family == 'linux'
         run: python3 scripts/ci linker-shim --out "$HOME/.cache/ci-linker" | tee -a "$GITHUB_ENV"
-      # The Windows node's lld-link, at the toolchain's own path, splits LTO's code generation
-      # in 12 partitions for xul.dll only (scripts/ci/linker_shim.py says why).
-      - name: The node - its lld-link splits xul.dll's code generation
-        if: matrix.node && matrix.family == 'win'
-        run: python3 scripts/ci lld-link-shim
       - name: The CI's .mozconfig, in layers
         env:
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
