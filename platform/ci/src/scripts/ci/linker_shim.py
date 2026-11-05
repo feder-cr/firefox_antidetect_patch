@@ -36,6 +36,12 @@ L3 group link_pin.py keeps the link on (12 on the node's 4484PX). Federico chose
 by partition and not as the retail's single one, and calls between partitions lose what
 code generation alone would have done across them. The Windows leg asks the same of
 lld-link through _LINK_ (release.yml's Build step).
+
+And `--disable-verify`: LTO verifies the merged module before and after its pipeline,
+37 s of libxul's link (its trace, candidate 41912498170). The verifier only checks: it
+preserves every analysis or stops the link with a fatal error, and writes nothing
+(llvm/lib/IR/Verifier.cpp). lld-link built for release skips it already
+(lld/COFF/LTO.cpp, DisableVerify under NDEBUG).
 """
 from __future__ import annotations
 
@@ -73,7 +79,7 @@ def write(out: Path, clang_bin: Path = Path.home() / ".mozbuild" / "clang" / "bi
     """The stand-in for ld.lld; the lines for $GITHUB_ENV."""
     out.mkdir(parents=True, exist_ok=True)
     path = out / "ld.lld"
-    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace "
+    first = ("--threads=%d " % threads if threads > 0 else "") + "--time-trace --disable-verify "
     path.write_text(script(clang_bin / "ld.lld", first, "--lto-partitions=%d" % LTO_PARTITIONS), encoding="utf-8", newline="\n")
     path.chmod(0o755)
     print("huge pages for the link: %s, enabled: %s, defrag: %s" % (TUNABLE, _read(THP_ENABLED), _read(THP_DEFRAG)), file=sys.stderr)

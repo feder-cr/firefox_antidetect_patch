@@ -426,7 +426,7 @@ def group_build_steps(doc) -> list:
         other = subprocess.run([str(tmp / "a" / "ld.lld"), "-o", "../../dist/bin/libmozsandbox.so", "a"], env=env, capture_output=True, text=True).stdout.strip()
         out.append(("huge pages: Linux's through COMPILER_PATH, the real linker gets the arguments and the tunable, and keeps its name",
                     linux == ["COMPILER_PATH=%s" % (tmp / "a")]
-                    and said == "glibc.malloc.hugetlb=1 %s --threads=48 --time-trace --lto-partitions=12 -o libxul.so a b" % (clang_bin / "ld.lld")))
+                    and said == "glibc.malloc.hugetlb=1 %s --threads=48 --time-trace --disable-verify --lto-partitions=12 -o libxul.so a b" % (clang_bin / "ld.lld")))
         out.append(("lld's threads: ld.lld caps itself at 16 when not asked, so it is asked, first, so a later flag would still win",
                     said.split()[2] == "--threads=48"))
         out.append(("the link's own times: --time-trace (libxul.so.time-trace), to tell LTO's optimiser from its code generation, "
@@ -441,9 +441,9 @@ def group_build_steps(doc) -> list:
         # Partitions on every link broke libmozsandbox.so (SyscallAsm, a hidden symbol in module
         # assembly, candidate 41918300545): libxul's link only, the one that takes minutes.
         out.append(("lto partitions: on libxul's link only on Linux, not on libmozsandbox.so's, whose module assembly they break (%s)" % other,
-                    "--lto-partitions" not in other and other.endswith("--threads=48 --time-trace -o ../../dist/bin/libmozsandbox.so a")))
+                    "--lto-partitions" not in other and other.endswith("--threads=48 --time-trace --disable-verify -o ../../dist/bin/libmozsandbox.so a")))
         out.append(("lto partitions: 12 on the Linux node's ld.lld and on the Windows node's lld-link (_LINK_), none on a hosted runner, none in the mozconfig",
-                    said.split()[4] == "--lto-partitions=12" and linker_shim.LTO_PARTITIONS == 12
+                    said.split()[5] == "--lto-partitions=12" and said.split()[4] == "--disable-verify" and linker_shim.LTO_PARTITIONS == 12
                     and e.render(link_env, win_ctx) == "/opt:lldltopartitions=12" and "time-trace" not in link_env
                     and e.render(link_env, linux_ctx) == "" and e.render(link_env, hosted_ctx) == ""
                     and "partitions" not in (HERE / "mozconfig.py").read_text(encoding="utf-8")))
