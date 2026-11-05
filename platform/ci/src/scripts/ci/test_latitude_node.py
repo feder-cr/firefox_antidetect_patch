@@ -1653,7 +1653,15 @@ def group_workflow_steps():
 
     def fake_provision(latitude, github, run, attempt, make_ssh, make_key, *rest, upstream=None):
         seen.append((run, attempt, github.repo))
-    code, printed, said, _, _ = run_step(node_step, [[]], wrap_provision=fake_provision)
+    # From an empty directory: where the job runs, .series/UPSTREAM.json exists, and on a
+    # developer's machine it may not; the case is the one where it cannot be read.
+    here = os.getcwd()
+    with tempfile.TemporaryDirectory() as empty:
+        os.chdir(empty)
+        try:
+            code, printed, said, _, _ = run_step(node_step, [[]], wrap_provision=fake_provision)
+        finally:
+            os.chdir(here)
     out.append(("node step: reaches provision once, for the run's one node, from its own names, and prints nothing a log would keep",
                 code == 0 and printed == "" and seen == [("5", "1", "o/r")]))
     out.append(("node step: an UPSTREAM.json it cannot read costs the head start only, never the run",
