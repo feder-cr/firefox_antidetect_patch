@@ -284,3 +284,30 @@ def test_the_wait_for_the_node_s_fetch_ends(tmp_path):
     got = engine._wait_for_mirror(mirror, "TAG", clock=lambda: now[0], sleep=lambda s: now.__setitem__(0, now[0] + s))
     assert got is None and now[0] >= engine.MIRROR_WAIT_S
     assert engine._wait_for_mirror(tmp_path / "none", "TAG") is None
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="flock, as above")
+def test_no_git_runs_in_the_node_s_fetch_which_is_another_user_s(world, tmp_path, monkeypatch):
+    """The mirror is root's and the leg another user: git refuses to run in it, even to
+    fetch from it ("dubious ownership"), whatever -c safe.directory says, and the first leg
+    of candidate 42004989128 went back to GitHub (418 s). Nothing touches it but reads."""
+    engine.apply(world, "TAG", "probe", force=False)
+    tree = run(world, "rev-parse", "probe^{tree}")
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    _mirror_of(world, shared / "mozilla.git")
+    (shared / "mozilla.git" / "fetched-TAG").touch()
+    up = tmp_path / "UPSTREAM.json"
+    up.write_text(json.dumps({"mozilla_repository": str(tmp_path / "gone"), "mozilla_tag": "TAG",
+                              "source_branch": "work", "exported_tree": tree}))
+    monkeypatch.setattr(engine, "UPSTREAM", up)
+    real, seen = engine.git, []
+
+    def watched(where, *args, **kw):
+        seen.append((str(where), args))
+        return real(where, *args, **kw)
+    monkeypatch.setattr(engine, "git", watched)
+    head = engine.materialize(tmp_path / "leg", shared=shared)
+    mirror = str(shared / "mozilla.git")
+    assert head == run(world, "rev-parse", "probe")
+    assert not [s for s in seen if s[0].startswith(mirror) or any(mirror in str(a) for a in s[1])], seen

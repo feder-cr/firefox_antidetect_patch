@@ -330,13 +330,11 @@ def _init_repo(into: Path) -> None:
 FETCH_WAITS = (30, 90)
 
 
-def _fetch_tag(into: Path, up: dict, sleep=time.sleep, source: str | None = None) -> None:
+def _fetch_tag(into: Path, up: dict, sleep=time.sleep) -> None:
     tag = up["mozilla_tag"]
-    # A local mirror is root's: git refuses another user's repository unless told.
-    trust = ("-c", "safe.directory=*") if source else ()
     for attempt in range(len(FETCH_WAITS) + 1):
         try:
-            git(into, *trust, "fetch", "-q", "--depth", "1", "--no-tags", source or up["mozilla_repository"],
+            git(into, "fetch", "-q", "--depth", "1", "--no-tags", up["mozilla_repository"],
                 "refs/tags/%s:refs/tags/%s" % (tag, tag))
             return
         except subprocess.CalledProcessError as exc:
@@ -347,8 +345,31 @@ def _fetch_tag(into: Path, up: dict, sleep=time.sleep, source: str | None = None
             sleep(FETCH_WAITS[attempt])
 
 
-def _fetch_and_apply(into: Path, up: dict, branch: str, source: str | None = None) -> str:
-    _fetch_tag(into, up, source=source)
+def _borrow_tag(into: Path, mirror: Path, tag: str) -> None:
+    """The tag from the node's own fetch without running git in it: the mirror is root's,
+    and git refuses another user's repository ("dubious ownership"), even to fetch from,
+    whatever -c safe.directory says (candidate 42004989128: the leg fell back to GitHub,
+    418 s). Its objects by alternates, its ref and its shallow file read as files."""
+    ref = mirror / "refs" / "tags" / tag
+    sha = ref.read_text(encoding="utf-8").strip() if ref.exists() else ""
+    if not sha:
+        packed = (mirror / "packed-refs").read_text(encoding="utf-8") if (mirror / "packed-refs").exists() else ""
+        sha = next((l.split()[0] for l in packed.splitlines() if l.endswith(" refs/tags/%s" % tag)), "")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise OSError("the node's fetch has no commit for refs/tags/%s" % tag)
+    alternates = into / ".git" / "objects" / "info" / "alternates"
+    alternates.parent.mkdir(parents=True, exist_ok=True)
+    alternates.write_text(str((mirror / "objects").resolve()) + "\n", encoding="utf-8")
+    if (mirror / "shallow").exists():
+        shutil.copyfile(mirror / "shallow", into / ".git" / "shallow")
+    git(into, "update-ref", "refs/tags/%s" % tag, sha)
+
+
+def _fetch_and_apply(into: Path, up: dict, branch: str, mirror: Path | None = None) -> str:
+    if mirror is not None:
+        _borrow_tag(into, mirror, up["mozilla_tag"])
+    else:
+        _fetch_tag(into, up)
     return apply(into, up["mozilla_tag"], branch, force=True)
 
 
@@ -407,7 +428,15 @@ def _shared_commit(shared: Path, up: dict, branch: str) -> Path:
             mirror = _wait_for_mirror(shared / "mozilla.git", up["mozilla_tag"])
             if mirror:
                 print("materialize: the tag from the node's own fetch, %s" % mirror)
-            _fetch_and_apply(repo, up, branch, source=mirror)
+                try:
+                    _fetch_and_apply(repo, up, branch, mirror=Path(mirror))
+                except (OSError, subprocess.CalledProcessError) as exc:
+                    print("materialize: the node's fetch could not be borrowed (%s): from GitHub" % exc)
+                    shutil.rmtree(repo, ignore_errors=True)
+                    _init_repo(repo)
+                    _fetch_and_apply(repo, up, branch)
+            else:
+                _fetch_and_apply(repo, up, branch)
             commit = git(repo, "rev-parse", branch).decode().strip()
             mark.write_text(commit + "\n", encoding="utf-8")
             print("materialize: the series applied in %s, for every leg on this machine" % repo)
