@@ -98,7 +98,9 @@ def links(uid: int, proc: Path = PROC) -> list:
             argv = (entry / "cmdline").read_bytes().split(b"\0")
         except OSError:
             continue
-        if not argv or os.path.basename(argv[0].decode("utf-8", "replace")) not in LINKERS:
+        name = os.path.basename(argv[0].decode("utf-8", "replace")) if argv else ""
+        # The Windows node runs lld as `lld -flavor link` (linker_shim.write_lld_link).
+        if name not in LINKERS and not (name == "lld" and argv[1:3] == [b"-flavor", b"link"]):
             continue
         words = [a.decode("utf-8", "replace") for a in argv]
         outs = [words[i + 1] for i, w in enumerate(words[:-1]) if w == "-o"] + [w.split(":", 1)[1] for w in words if w.lower().startswith(("/out:", "-out:"))]

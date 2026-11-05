@@ -625,6 +625,11 @@ jobs:
       - name: The node - its linker asks for huge pages
         if: matrix.node && matrix.family == 'linux'
         run: python3 scripts/ci linker-shim --out "$HOME/.cache/ci-linker" | tee -a "$GITHUB_ENV"
+      # The Windows node's lld-link, at the toolchain's own path, splits LTO's code generation
+      # in 12 partitions for xul.dll only (scripts/ci/linker_shim.py says why).
+      - name: The node - its lld-link splits xul.dll's code generation
+        if: matrix.node && matrix.family == 'win'
+        run: python3 scripts/ci lld-link-shim
       - name: The CI's .mozconfig, in layers
         env:
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
@@ -641,11 +646,6 @@ jobs:
           # Windows's link cannot be reached alone, so its whole build asks for huge pages.
           # No configure option reads this (scripts/ci/test_release_path.py).
           GLIBC_TUNABLES: ${{ matrix.node && matrix.family == 'win' && 'glibc.malloc.hugetlb=1' || '' }}
-          # lld-link reads _LINK_ by itself: LTO's code generation in 12 partitions, as the Linux
-          # node's ld.lld (scripts/ci/linker_shim.py says why). Not LDFLAGS: about:buildconfig would
-          # print it. No /time-trace: on a Linux host lld-link took it for a file and every
-          # configure link test failed (candidate 41918300545).
-          _LINK_: ${{ matrix.node && matrix.family == 'win' && '/opt:lldltopartitions=12' || '' }}
           # Which objects miss, by name: sccache compiles in its clients here (configure's
           # SCCACHE_CLIENT_SIDE without MOZ_AUTOMATION), so the server's debug log never saw a
           # compile and sccache-misses.txt came out empty on every run. The one module that
