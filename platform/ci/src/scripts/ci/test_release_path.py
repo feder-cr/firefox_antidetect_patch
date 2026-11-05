@@ -432,7 +432,8 @@ def group_build_steps(doc) -> list:
         out.append(("the link's own times: --time-trace (libxul.so.time-trace), to tell LTO's optimiser from its code generation, "
                     "and the events artifact keeps the file",
                     said.split()[3] == "--time-trace"
-                    and "obj-rel/**/*.time-trace" in str(steps["Upload this leg's events"]["with"]["path"])))
+                    and "obj-rel/dist/bin/libxul.so.time-trace" in str(steps["Upload this leg's events"]["with"]["path"])
+                    and "**" not in str(steps["Upload this leg's events"]["with"]["path"])))
         # The trace of candidate 41912498170: 320 s of serial optimisation, then 428 s of code
         # generation on one thread. Federico chose partitions (04/11): as many as the threads of
         # the L3 group the link is pinned to, on both legs, and never through configure.
@@ -707,6 +708,11 @@ def group_stage_package(doc) -> list:
     scripts = {name: (HERE / name).read_text(encoding="utf-8") for name in ("package_linux.sh", "package_win.sh")}
     out.append(("package: both legs stage dist/firefox only, through stage_package.sh, and run no mach package themselves",
                 all("bash scripts/ci/stage_package.sh" in s and "\n./mach package\n" not in s for s in scripts.values())))
+    # The artifact quota filled on 04/11 (81 GB, ~950 MB a candidate) and every new run
+    # failed at its first upload: a candidate's symbols (~400 MB) are kept 2 days.
+    symbols = next(s for s in doc["jobs"]["build"]["steps"] if s.get("name") == "Upload crash symbols")
+    out.append(("artifacts: a candidate's crash symbols are kept 2 days, a release's 14",
+                str(symbols["with"]["retention-days"]).replace(" ", "") == "${{needs.plan.outputs.kind=='release'&&14||2}}"))
     if not sys.platform.startswith("linux"):
         print("skip  stage_package.sh: bash, Linux only")
         return out

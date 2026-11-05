@@ -883,9 +883,9 @@ jobs:
           # of dist/firefox. With PGO its command line says -9e, 192 MiB blocks: too few for
           # threads to matter. xz reads this, and counts 12.3 GiB for it, with the build over.
           XZ_OPT: ${{ matrix.node && '-T16 --block-size=32MiB --memlimit-compress=16GiB' || '' }}
-          # Once, on the candidate that proves stage_package.sh: mach package after it, and
-          # dist/firefox compared byte for byte. Empty from then on.
-          CI_PACKAGE_PROVE: '1'
+          # '1' runs mach package after stage_package.sh and compares dist/firefox byte for byte.
+          # Proved on 04/11: Linux 166 entries (candidate 41913592515), Windows 191 (41917575322).
+          CI_PACKAGE_PROVE: ''
         run: python3 scripts/ci phase package -- bash scripts/ci/package_${{ matrix.family }}.sh
 
       - name: Upload build artifact
@@ -956,7 +956,9 @@ jobs:
           name: symbols-${{ matrix.leg }}
           path: symbols/*.zip
           if-no-files-found: error
-          retention-days: 14
+          # ~400 MB a run: a candidate's are checked in the run and not kept. The artifact
+          # quota filled on 04/11 (81 GB) and every new run failed at its first upload.
+          retention-days: ${{ needs.plan.outputs.kind == 'release' && 14 || 2 }}
 
       # The engine's own tests, on request (input gtests): the stealth hooks each
       # have one (StartupCache.WritesNeverLowerIOPriority, the bundled-font and
@@ -1015,7 +1017,7 @@ jobs:
             cpuwatch.jsonl
             linkpin.log
             inputwatch*
-            obj-rel/**/*.time-trace
+            obj-rel/dist/bin/libxul.so.time-trace
           if-no-files-found: ignore
           retention-days: 14
 
