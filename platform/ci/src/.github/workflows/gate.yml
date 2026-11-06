@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# gate.yml — THE gate of a build: drive, fonts, hidden desktop and WebGL, on
+# gate.yml — THE gate of a build: drive, hidden desktop, WebGL and host, on
 # each leg's native runner. Called by release.yml on the archives it just
 # built and by republish.yml on another run's, and written ONCE for both.
 #
@@ -139,23 +139,6 @@ jobs:
         shell: bash
         run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
 
-      # FONT GATE - assert this leg's binary exposes EXACTLY the Windows font
-      # persona: the SAME family set on every OS (the local Win/Linux parity we
-      # can prove by hand), host-leak 0, and the CSS generics mapping to Windows
-      # fonts. This is the ONLY place macOS/CoreText font handling is validated -
-      # there is no local Mac - so a Mac-only regression (e.g. host fonts leaking
-      # through CoreText, or the bundle-only skip not wired in) fails HERE, on the
-      # real artifact, each architecture on its own CPU, before anything ships.
-      #
-      # "Each on its own CPU" is load-bearing and was not true for one release: in
-      # firefox-18 the x86_64 asset was driven under Rosetta, so this gate ran
-      # against a translation layer rather than an Intel machine. It cannot see an
-      # Intel-only fault that way, and it stayed green.
-      # Headless, no proxy, no secrets. See scripts/ci_font_gate.py in the wrapper.
-      - name: FONT GATE - exactly the Windows font persona on this OS
-        shell: bash
-        run: python scripts/ci_font_gate.py "$FF_EXE"
-
       # HIDDEN-DESKTOP + WEBGL-MASKING GUARDS - run the wrapper's e2e checks
       # against THIS leg's freshly-built artifact, on its native runner. The
       # wrapper's headless=True is headed+hidden: on Windows the browser is
@@ -291,9 +274,9 @@ jobs:
       # the seal the guards above ran under. The comparison - every leg against
       # the Windows one, and what does not depend on the identity against retail
       # Firefox for Windows - is the host-gate job below, which needs all legs.
-      # It replaces the font gate's question (is the font list the persona's?)
-      # with the general one (is anything the host's?), and the font gate stays
-      # until it has run green on a release.
+      # It replaced the font gate's question (is the font list the persona's?)
+      # with the general one (is anything the host's?). The font gate stayed
+      # until this ran green on a release (firefox-55, run 41754346016), then went.
       - name: HOST GATE - what a page reads on this leg
         shell: bash
         run: |

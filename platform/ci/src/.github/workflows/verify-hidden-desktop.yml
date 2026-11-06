@@ -31,8 +31,8 @@ on:
         description: 'invisible_playwright ref to drive the binaries with'
         default: 'main'
       core_ref:
-        description: 'invisible_core ref the gate installs (the one the binaries were built for)'
-        default: 'engine/firefox-157'
+        description: 'invisible_core ref the gate installs (the one the binaries were built for); empty is main'
+        default: ''
 
 permissions:
   contents: read
@@ -46,4 +46,4 @@ jobs:
       # a re-gate seals locally, as a candidate does (scripts/release_plan.py)
       seal_tag: local
       wrapper_ref: ${{ inputs.wrapper_ref }}
-      core_ref: ${{ inputs.core_ref }}
+      core_ref: ${{ inputs.core_ref || 'main' }}

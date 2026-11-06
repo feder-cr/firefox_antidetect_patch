@@ -45,15 +45,12 @@ MANIFEST = os.path.join(FONTS, "bundle-fonts.list")
 # la famiglia non dichiarata una sequenza bandiera misurava 52,599998 (la somma
 # di due glifi separati, quindi nessuna legatura), con lei dichiarata misura
 # 72,0 come il giudice.
-# ⛔ SECONDA COPIA, e sta in un ALTRO REPOSITORY: la stessa lista vive come
-# `EXPECTED` in `scripts/ci_font_gate.py` DEL WRAPPER (invisible_playwright),
-# non nell'albero Firefox. Il commento che stava qui diceva solo
-# "verbatim from ci_font_gate.py" e il 2026-08-17 mi ha fatto concludere che il
-# file non esistesse, perche' l'avevo cercato qui.
-#
-# La deriva che quel commento temeva e' REALE e si e' verificata quel giorno:
-# questa lista e' passata a 71 famiglie e l'altra e' rimasta a 68, per mezz'ora,
-# perche' stanno in due repository e nessun test le confronta.
+# Fino al 2026-11-06 c'era una SECONDA COPIA in un altro repository, `EXPECTED`
+# in `scripts/ci_font_gate.py` del wrapper (invisible_playwright), e il
+# 2026-08-17 le due erano divise per mezz'ora: 71 famiglie qui, 68 là, perche'
+# nessun test le confrontava. Il font gate e' uscito con la release firefox-55,
+# dopo che il host gate (che fa la domanda generale) e' passato verde su di lei:
+# questa e' ora l'unica lista.
 EXPECTED_67 = {
     "Arial","Bahnschrift","Calibri","Cambria","Cambria Math","Candara",
     "Comic Sans MS","Consolas","Constantia","Corbel","Courier New","Ebrima","Franklin Gothic",

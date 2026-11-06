@@ -254,6 +254,22 @@ def main() -> int:
                     if "tests/test_hidden_desktop.py" in p.read_text(encoding="utf-8") and p.name != "gate.yml")
     cases.append(("the gate's guards run in gate.yml only (copies: %s)" % (", ".join(copies) or "none"), not copies))
 
+    # The host gate asks the general question (is anything the host's?) of which the
+    # font gate asked one case (is the font list the persona's?). It was to stay until
+    # the host gate ran green on a release: firefox-55, run 41754346016.
+    font_gate = sorted(p.name for p in wf.glob("*.yml") if "ci_font_gate" in p.read_text(encoding="utf-8"))
+    cases.append(("the font gate is gone, the host gate covers it (still in: %s)" % (", ".join(font_gate) or "none"),
+                  not font_gate and "ci_host_gate.py dump" in (wf / "gate.yml").read_text(encoding="utf-8")))
+
+    # verify-hidden-desktop.yml defaulted core_ref to engine/firefox-157 two engines
+    # after it: a re-gate by hand installed a core that refuses firefox-55.
+    import yaml
+    vhd_text = (wf / "verify-hidden-desktop.yml").read_text(encoding="utf-8")
+    vhd_core = yaml.safe_load(vhd_text)[True]["workflow_dispatch"]["inputs"]["core_ref"]
+    cases.append(("verify-hidden-desktop: core_ref has no branch by default, empty is main where it is read",
+                  vhd_core["default"] == "" and "inputs.core_ref" in vhd_text
+                  and vhd_text.count("inputs.core_ref") == vhd_text.count("inputs.core_ref || 'main'")))
+
     # An edit made on Windows wrote CRLF into 13 files at once, package_linux.sh and
     # node_deps_build.sh among them (2026-11-04): bash stops at the first line, "set:
     # pipefail: invalid option name". What runs on Linux keeps LF.
