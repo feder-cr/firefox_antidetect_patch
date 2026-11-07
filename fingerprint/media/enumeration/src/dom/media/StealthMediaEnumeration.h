@@ -9,10 +9,17 @@
 #include <cstdint>
 #include <utility>
 
+#include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla {
+
+// Stealthfox [B300]: what the declared enumeration did, from inside the
+// engine, for a test that must not depend on the load of the machine it runs
+// on: the declared wait it dispatched, and whether the host's speakers were
+// asked. MOZ_LOG=StealthMediaEnumeration:4.
+inline LazyLogModule gStealthMediaEnumerationLog("StealthMediaEnumeration");
 
 // Stealthfox [B300]: with the enumeration declared, the speakers are not
 // asked of the host, for the list or for correlating a camera's groupId. They
@@ -29,7 +36,12 @@ inline bool StealthHostSpeakersMayBeAsked() {
 // as a bool so this file never names MediaManager's private EnumerationFlag:
 // the caller evaluates it inside MediaManager.
 inline bool StealthHostSpeakersRequested(bool aEnumerateAudioOutputs) {
-  return aEnumerateAudioOutputs && StealthHostSpeakersMayBeAsked();
+  const bool asked = aEnumerateAudioOutputs && StealthHostSpeakersMayBeAsked();
+  if (aEnumerateAudioOutputs) {
+    MOZ_LOG(gStealthMediaEnumerationLog, LogLevel::Info,
+            ("host speakers asked: %s", asked ? "yes" : "no"));
+  }
+  return asked;
 }
 
 // Stealthfox [B300]: a declared enumeration takes the declared time, on every
@@ -41,6 +53,8 @@ inline bool StealthHostSpeakersRequested(bool aEnumerateAudioOutputs) {
 template <typename Resolve>
 void StealthDeclaredEnumeration(Resolve&& aResolve) {
   if (uint32_t ms = StaticPrefs::zoom_stealth_media_enumeration_ms()) {
+    MOZ_LOG(gStealthMediaEnumerationLog, LogLevel::Info,
+            ("declared wait: %u ms", ms));
     NS_DelayedDispatchToCurrentThread(
         NS_NewRunnableFunction("MediaManager::DeclaredEnumeration",
                                std::forward<Resolve>(aResolve)),
