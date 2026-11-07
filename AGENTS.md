@@ -1,6 +1,6 @@
 # Il motore come serie di patch
 
-Questo repository (feder-cr/firefox_antidetect_patch, ramo `main`; in locale `C:/ff/engine`)
+Questo repository (feder-cr/firefox_antidetect_patch, ramo `main`; in locale `C:/ff/repos/firefox_antidetect_patch`)
 è il nostro Firefox scritto come **differenza da un tag di Mozilla**: una cartella
 per funzione, applicate nell'ordine di `SERIES`. Il tag e il ramo sorgente sono in
 `UPSTREAM.json`.
