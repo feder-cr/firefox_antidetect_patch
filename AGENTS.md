@@ -9,9 +9,9 @@ per funzione, applicate nell'ordine di `SERIES`. Il tag e il ramo sorgente sono 
 
 Su GitHub c'è solo questa serie: nessun ramo contiene l'albero di Firefox. Il codice si
 modifica **nel sorgente locale**, `C:/ff/source`, sul ramo `source_branch` di
-`UPSTREAM.json` (oggi `port/159-from-d28c866`, che esiste solo in locale; serve un
+`UPSTREAM.json` (oggi `port/159-phase4`, che esiste solo in locale; serve un
 clone che abbia il tag `mozilla_tag`). Se non c'è, o è vecchio, lo si ricrea dalla
-serie: `python tools/engine.py apply --head port/159-from-d28c866 --force`, che dà
+serie: `python tools/engine.py apply --head port/159-phase4 --force`, che dà
 sempre lo stesso commit, perché le date sono quelle del tag. La serie si
 **genera** dal ramo con `export` e si **dimostra** identica con `verify`. La CI rifà
 lo stesso percorso, `materialize`: tag di Mozilla, poi serie, poi l'albero dichiarato
@@ -59,7 +59,7 @@ python -m pytest -q tools/tests
    browser. Un valore che nasce dall'host si toglie dove nasce (dichiarato, o calcolato
    con lo stesso codice su ogni sistema), non si corregge a valle.
 2. **Stesso seed, stessi byte su ogni macchina.** La stessa identità su host diversi
-   (Windows, Linux x86_64, Linux arm64) dà lo stesso risultato: testo, canvas, WebGL,
+   (Windows x86_64, Linux x86_64) dà lo stesso risultato: testo, canvas, WebGL,
    audio, media.
 3. **Il riferimento è Windows retail, e si va solo verso di lui.** Il risultato è uguale,
    o coerente, con Firefox ufficiale su Windows. Linux si porta verso Windows, mai il
@@ -136,11 +136,12 @@ di rete e difetti noti con il lavoro che li chiude.
 - Prima di ogni push: `pytest`, `check`, `verify`; poi `git log -p origin/main..`
   cercando email e nomi dei sistemi studiati. Questi controlli sono locali e restano
   fuori da GitHub.
-- Push: `git push origin master:main`. La CI (`.github/workflows/series.yml`) rifà
+- Push: `git push origin main`. La CI (`.github/workflows/series.yml`) rifà
   le regole e la ricostruzione sul tag.
 - Una build di prova: `gh workflow run release.yml --ref <ramo> -f kind=candidate`
-  (compila tutte e tre le gambe, LTO+PGO, con la cache; non pubblica nulla). Le due gambe
-  x86_64 compilano solo su un server Latitude.sh (`scripts/ci/theta_node.py`): i suoi segreti stanno
+  (compila le due gambe, Linux e Windows x86_64, LTO+PGO, con la cache; non pubblica nulla).
+  Una candidata con i gtest parte anche da sola a ogni push su `main` e il lunedì alle 03:00 UTC.
+  Le gambe compilano solo su un server Latitude.sh (`scripts/ci/latitude_node.py`): i suoi segreti stanno
   nell'environment `theta-builder`, limitato a `main` e `theta/*`, quindi il ramo di una
   build di prova deve essere uno di questi. Una release si lancia solo da `main`, mai da un
   tag: `release_plan.py` rifiuta il resto.
