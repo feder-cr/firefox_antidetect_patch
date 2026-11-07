@@ -66,9 +66,14 @@ GUARD="${NODE_RUNNER_GUARD:-/usr/local/sbin/job_guard}-$LEG.sh"
 LOG="${NODE_RUNNER_LOG:-/var/log/node_runner}-$LEG.log"
 # sccache's default is 4226; each leg its own, so two servers never meet.
 PORT=$(( 4300 + N ))
-# Half of what the machine has, less 2 GB for the system: each leg's ceiling.
+# What the machine has, less 4 GB for the system: each leg's ceiling. Not half: the
+# halves were a fairness device, and the Windows gtest link (a second xul.dll with the
+# same LTO) needs more than one of them on its own: 44.8 GB and growing when the
+# memory watch killed it at the 45.7 GB half (run 42355412767, 2026-11-07), while the
+# other leg's peak is 29.8 GB. Both fit in the whole; what does not fit the whole still
+# dies by the memory watch, which judges the machine, not the half.
 MEM_KB="$(awk '/^MemTotal:/ {print $2}' "$MEMINFO")"
-LEG_MEM_MB=$(( (MEM_KB / 1024 - 4096) / 2 ))
+LEG_MEM_MB=$(( MEM_KB / 1024 - 4096 ))
 
 run_one() {
   trap '' HUP   # the SSH session that started it ends at once

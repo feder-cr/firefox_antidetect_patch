@@ -1384,8 +1384,10 @@ def group_runner():
                 [l.rsplit(" ", 1)[1] for l in useradds] == ["runner-l", "runner-w"] and len(set(uids)) == 2
                 and [l for l in record if l.startswith("runuser ")] == ["runuser runner-l", "runuser runner-w"]))
     units = [l for l in record if l.startswith("systemd-run ")]
-    ceiling = "MemoryMax=%dM" % ((100663296 // 1024 - 4096) // 2)
-    out.append(("runner: each leg its own cgroup, its own unit, half the machine less 2 GB as its ceiling, no swap",
+    # The whole machine less 4 GB, not half of it: the Windows gtest link alone needs more
+    # than a half (44.8 GB when the memory watch killed it at 45.7, 2026-11-07).
+    ceiling = "MemoryMax=%dM" % (100663296 // 1024 - 4096)
+    out.append(("runner: each leg its own cgroup, its own unit, the machine less 4 GB as its ceiling, no swap",
                 len(units) == 2 and all(ceiling in u and "MemorySwapMax=0" in u and "--scope" in u for u in units)
                 and "--unit=leg-l-5" in units[0] and "--unit=leg-w-5" in units[1]))
     out.append(("runner: each leg its own mounts: its copies of home, tool cache and /tmp at the same paths, and its cgroup seen from inside",
