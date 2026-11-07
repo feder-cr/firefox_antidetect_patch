@@ -498,7 +498,7 @@ def main() -> int:
                       and "builds cold" in said.get("run", "") and "GITHUB_STEP_SUMMARY" in said.get("run", "")))
         cases.append(("gtests: an input, off by default, on every leg, as a phase",
                       gt_input["type"] == "boolean" and gt_input["default"] is False and len(gt_step) == 1
-                      and gt_step[0]["if"] == "github.event.inputs.gtests == 'true' && runner.environment == 'github-hosted'"
+                      and gt_step[0]["if"] == "needs.plan.outputs.gtests == 'true' && runner.environment == 'github-hosted'"
                       and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"]))
         # A cross-compiled leg's runner cannot execute what it builds (run 41232307511:
         # "Exec format error" on firefox.exe): its gtests are built there and run by a
@@ -513,7 +513,7 @@ def main() -> int:
                    and any(st.get("with", {}).get("name") == "gtest-bin-%s" % leg.leg for st in j.get("steps", []))
                    and any("gtest_run.py" in st.get("run", "") for st in j.get("steps", []))]
             cross_ok = (cross_ok and len(ran) == 1 and "if" not in ran[0]
-                        and all("github.event.inputs.gtests == 'true'" in st.get("if", "") for st in ran[0]["steps"]))
+                        and all("needs.plan.outputs.gtests == 'true'" in st.get("if", "") for st in ran[0]["steps"]))
         kept = steps.get("The node - keep them", {})
         built = steps.get("The node - its gtest binaries, for a job on GitHub's runners", {})
         cross_ok = (cross_ok and "recurse_gtest" in built.get("run", "") and "matrix.target" not in gt_step[0]["run"]

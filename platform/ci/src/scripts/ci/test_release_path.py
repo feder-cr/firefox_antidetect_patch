@@ -48,13 +48,17 @@ CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure",
 
 
 def context(gtests="true", attempt="1", gtest_filter=GREEN_FILTER, environment="self-hosted", node=True, leg="linux-x86_64"):
+    # The gtests and the filter come from the plan's outputs (an automatic run has no
+    # inputs); `inputs` stays for what only a run by hand carries.
     return {"github": {"event": {"inputs": {"gtests": gtests, "gtest_filter": gtest_filter}}, "run_attempt": attempt, "run_id": "7"},
             "inputs": {"gtest_filter": gtest_filter}, "runner": {"environment": environment, "os": "Linux", "arch": "X64"},
+            "needs": {"plan": {"outputs": {"gtests": gtests, "gtest_filter": gtest_filter}}},
             "matrix": {"leg": leg, "node": node}}
 
 
 def outcome(jobs, forced, gtests="true", kind="release", cancelled=False, attempt="1", plan_attempt="1"):
-    outputs = {"plan": {"kind": kind, "attempt": plan_attempt, "node_label": "latitude-7-%s" % plan_attempt}}
+    outputs = {"plan": {"kind": kind, "attempt": plan_attempt, "node_label": "latitude-7-%s" % plan_attempt,
+                        "gtests": gtests, "gtest_filter": GREEN_FILTER}}
     base = {"plan": "success", "node": "success", "build": "success"}
     return e.jobs_after(jobs, dict(base, **forced), context(gtests, attempt), outputs, cancelled)
 
@@ -93,9 +97,9 @@ def group_gate(doc) -> list:
                 broken["gtest-linux"] == "skipped" and broken["gate"] == "skipped" and broken["publish"] == "skipped"))
     red_gate = outcome(jobs, {"gate": "failure"})
     out.append(("gate: a red gate stops the publish", red_gate["publish"] == "skipped"))
-    out.append(("gate: the graph: publish needs gate, gate needs build and both gtest jobs, each gtest job needs build",
+    out.append(("gate: the graph: publish needs gate, gate needs build and both gtest jobs, each gtest job needs the plan and the build",
                 "gate" in jobs["publish"]["needs"] and "build" in jobs["gate"]["needs"]
-                and all(j in jobs["gate"]["needs"] for j in GTEST_JOBS) and all(jobs[j]["needs"] == "build" for j in GTEST_JOBS)))
+                and all(j in jobs["gate"]["needs"] for j in GTEST_JOBS) and all(jobs[j]["needs"] == ["plan", "build"] for j in GTEST_JOBS)))
     out.append(("gate: neither has an `if` that would run it past what it needs",
                 "if" not in jobs["gate"] and not e.STATUS.search(str(jobs["publish"].get("if", "")))))
     candidate = outcome(jobs, {}, kind="candidate")
