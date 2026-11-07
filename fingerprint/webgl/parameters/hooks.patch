@@ -166,6 +166,89 @@ index 097d20229785c61c89dc5c7e4c22799c48fb7c12..0e847a2f87b61c852c8c7b7713606458
    for (const auto i : MakeEnumeratedRange(WebGLExtensionID::Max)) {
      if (!IsSupported(i, callerType)) continue;
  
+diff --git a/dom/canvas/WebGLContextExtensions.cpp b/dom/canvas/WebGLContextExtensions.cpp
+index d2896172e45e04f85f0588905a0d8f5b475fd717..4537883a4240ac10ca142e595b4bcedaae50f0e4 100644
+--- a/dom/canvas/WebGLContextExtensions.cpp
++++ b/dom/canvas/WebGLContextExtensions.cpp
+@@ -7,6 +7,7 @@
+ #include "WebGLContext.h"
+ #include "WebGLContextUtils.h"
+ #include "WebGLExtensions.h"
++#include "StealthWebGLParams.h"  // STEALTH-HOOK(fingerprint/webgl/parameters)
+ #include "mozilla/EnumeratedRange.h"
+ #include "mozilla/StaticPrefs_webgl.h"
+ #include "mozilla/dom/BindingDeclarations.h"
+@@ -385,6 +386,8 @@ bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const {
+ 
+     case WebGLExtensionID::WEBGL_provoking_vertex:
+       if (!gl->IsSupported(gl::GLFeature::provoking_vertex)) return false;
++      // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, so served wherever the GL can
++      if (StealthWebGLExtensionVerdict(IsWebGL2(), ext) == Some(true)) return true;
+ 
+       // > Implementations SHOULD only expose this extension when
+       // > FIRST_VERTEX_CONVENTION is more efficient than the default behavior
+diff --git a/dom/canvas/WebGLContextFramebufferOperations.cpp b/dom/canvas/WebGLContextFramebufferOperations.cpp
+index 2c4bc437eca9180ef76118c22cddc277c6083e6a..05816e82d3169fff0b69ec9ac22473125a5dc880 100644
+--- a/dom/canvas/WebGLContextFramebufferOperations.cpp
++++ b/dom/canvas/WebGLContextFramebufferOperations.cpp
+@@ -126,6 +126,8 @@ void WebGLContext::ColorMask(const Maybe<GLuint> i, const uint8_t mask) {
+   if (IsContextLost()) return;
+ 
+   if (i) {
++    // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, maybe not enabled here
++    if (!IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed)) return;
+     MOZ_RELEASE_ASSERT(
+         IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed));
+     const auto limit = MaxValidDrawBuffers();
+diff --git a/dom/canvas/WebGLContextGL.cpp b/dom/canvas/WebGLContextGL.cpp
+index 2f5cd91a97a863ce6c164906c1316270bfa67a96..0f011639eab624dcb5b8ceb22c653e8f47ba1c2d 100644
+--- a/dom/canvas/WebGLContextGL.cpp
++++ b/dom/canvas/WebGLContextGL.cpp
+@@ -125,6 +125,8 @@ void WebGLContext::BlendEquationSeparate(Maybe<GLuint> i, GLenum modeRGB,
+   }
+ 
+   if (i) {
++    // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, maybe not enabled here
++    if (!IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed)) return;
+     MOZ_RELEASE_ASSERT(
+         IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed));
+     const auto limit = MaxValidDrawBuffers();
+@@ -206,6 +208,8 @@ void WebGLContext::BlendFuncSeparate(Maybe<GLuint> i, GLenum srcRGB,
+     return;
+ 
+   if (i) {
++    // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, maybe not enabled here
++    if (!IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed)) return;
+     MOZ_RELEASE_ASSERT(
+         IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed));
+     const auto limit = MaxValidDrawBuffers();
+@@ -1571,6 +1575,8 @@ void WebGLContext::PolygonOffsetClampEXT(const GLfloat factor,
+                                          const GLfloat clamp) {
+   const FuncScope funcScope(*this, "polygonOffsetClampEXT");
+   if (IsContextLost()) return;
++  // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, maybe not enabled here
++  if (!IsExtensionEnabled(WebGLExtensionID::EXT_polygon_offset_clamp)) return;
+   MOZ_RELEASE_ASSERT(
+       IsExtensionEnabled(WebGLExtensionID::EXT_polygon_offset_clamp));
+ 
+@@ -1580,6 +1586,8 @@ void WebGLContext::PolygonOffsetClampEXT(const GLfloat factor,
+ void WebGLContext::ProvokingVertex(const webgl::ProvokingVertex mode) const {
+   const FuncScope funcScope(*this, "provokingVertex");
+   if (IsContextLost()) return;
++  // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, maybe not enabled here
++  if (!IsExtensionEnabled(WebGLExtensionID::WEBGL_provoking_vertex)) return;
+   MOZ_RELEASE_ASSERT(
+       IsExtensionEnabled(WebGLExtensionID::WEBGL_provoking_vertex));
+ 
+@@ -1596,6 +1604,8 @@ void WebGLContext::SampleCoverage(GLclampf value, WebGLboolean invert) {
+ void WebGLContext::ClipControlEXT(const GLenum origin, const GLenum depth) {
+   const FuncScope funcScope(*this, "clipControlEXT");
+   if (IsContextLost()) return;
++  // STEALTH-HOOK(fingerprint/webgl/parameters): declared to the page, maybe not enabled here
++  if (!IsExtensionEnabled(WebGLExtensionID::EXT_clip_control)) return;
+   MOZ_RELEASE_ASSERT(IsExtensionEnabled(WebGLExtensionID::EXT_clip_control));
+ 
+   if (origin != LOCAL_GL_LOWER_LEFT && origin != LOCAL_GL_UPPER_LEFT) {
 diff --git a/dom/canvas/WebGLContextValidate.cpp b/dom/canvas/WebGLContextValidate.cpp
 index 2d8a66a1f8cddcbb238c7ee83da65089f03f625c..cb500b09cf76a27fd6a000f26b9025a77537c624 100644
 --- a/dom/canvas/WebGLContextValidate.cpp
