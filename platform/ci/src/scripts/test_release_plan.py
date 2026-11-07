@@ -55,7 +55,16 @@ REFUSED = [
     ("an empty kind by hand", ("workflow_dispatch", "", "", "x")),
     ("another event", ("pull_request", "release", "firefox-49", "x")),
     ("an undeclared compile cache", ("workflow_dispatch", "candidate", "", "x", "on")),
+    # by itself: only from the branch main, and with no inputs
+    ("a push to another branch", ("push", "", "", "theta/executor", "", "branch")),
+    ("a timer on another branch", ("schedule", "", "", "next/firefox-57", "", "branch")),
+    ("a push to main that names a kind", ("push", "release", "", "main", "", "branch")),
+    ("a push to main that asks for a cold build", ("push", "", "", "main", "off", "branch")),
 ]
+
+#: What every plan carries besides its kind: the gtests and the refs.
+DEFAULTS = {"gtests": "false", "gtest_filter": p.DEFAULT_GTEST_FILTER,
+            "core_ref": "main", "wrapper_ref": "main"}
 
 ACCEPTED = [
     ("a candidate", ("workflow_dispatch", "candidate", "", "next/firefox-49"),
@@ -68,6 +77,20 @@ ACCEPTED = [
     ("a release by hand", ("workflow_dispatch", "release", "firefox-49", "next/firefox-49"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
       "seal_tag": "firefox-49", "compile_cache": "gha"}),
+    ("a push to main: a candidate with the gtests and the cache",
+     ("push", "", "", "main", "", "branch"),
+     {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
+      "compile_cache": "gha", "gtests": "true"}),
+    ("the weekly timer on main: the same candidate",
+     ("schedule", "", "", "main", "", "branch"),
+     {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
+      "compile_cache": "gha", "gtests": "true"}),
+    ("a candidate by hand with the gtests and its own refs",
+     ("workflow_dispatch", "candidate", "", "main", "", "branch", "true",
+      "StealthGfxFeatureStatus.*", "keyboard-per-locale", "remove-font-gate"),
+     {"kind": "candidate", "tag": "", "num": "", "prevtag": "", "seal_tag": "local",
+      "compile_cache": "gha", "gtests": "true", "gtest_filter": "StealthGfxFeatureStatus.*",
+      "core_ref": "keyboard-per-locale", "wrapper_ref": "remove-font-gate"}),
     ("a release by hand asking for the cache",
      ("workflow_dispatch", "release", "firefox-49", "next/firefox-49", "gha"),
      {"kind": "release", "tag": "firefox-49", "num": "49", "prevtag": "firefox-48",
@@ -98,6 +121,7 @@ def main() -> int:
             print(f"FAIL  accepted: {name}: {got}")
             failures += 1
     for name, args, want in ACCEPTED:
+        want = {**DEFAULTS, **want}
         try:
             got = p.plan(*args)
         except p.PlanError as exc:

@@ -17,10 +17,14 @@
 # a screenshot fine but is undrivable — only an actual drive catches that. The
 # proxy realness gate (fppro/webrtc) stays LOCAL — it needs secrets.
 #
-# Trigger: by hand only, from main for a release (scripts/release_plan.py says why).
-# A run by hand is a CANDIDATE (build + gate, nothing published, a green run)
-# unless it says kind=release; the `plan` job decides, once, before any build
-# (scripts/release_plan.py), and every job reads its outputs.
+# Trigger: by hand from main for a release; by itself, as a CANDIDATE with the gtests,
+# on every push to main and once a week (scripts/release_plan.py says why: the compile
+# cache lives per branch and dies after seven days unused, so main's cache stays warm
+# and a release is 43 min, never the 75 of a cold one; measured 2026-11-07). A run by
+# hand is a CANDIDATE (build + gate, nothing published, a green run) unless it says
+# kind=release; the `plan` job decides, once, before any build, and every job reads
+# its outputs: the gtests and the refs come from the plan, never from the inputs,
+# which an automatic run does not have.
 #
 # WHO COMPILES: the two x86_64 legs ONLY on Latitude.sh servers, at the same time, each on its
 # own, on a single-job runner with a label of its own. No linux-arm64 from firefox-56 on
@@ -32,9 +36,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
 name: release
 # A re-launch says so where the watch of the run it replaces can find it (latitude_node.py).
-run-name: ${{ inputs.relaunch_of != '' && format('release, relaunch of {0}', inputs.relaunch_of) || 'release' }}
+run-name: ${{ inputs.relaunch_of && inputs.relaunch_of != '' && format('release, relaunch of {0}', inputs.relaunch_of) || (github.event_name == 'workflow_dispatch' && 'release') || format('candidate on {0} ({1})', github.ref_name, github.event_name) }}
 
 on:
+  # A candidate with the gtests, with the compile cache: keeps main's cache warm.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"   # Monday 03:00 UTC: a week unused and the cache is gone
   workflow_dispatch:
     inputs:
       kind:
@@ -114,6 +123,11 @@ jobs:
       prevtag: ${{ steps.plan.outputs.prevtag }}
       seal_tag: ${{ steps.plan.outputs.seal_tag }}
       compile_cache: ${{ steps.plan.outputs.compile_cache }}
+      # The gtests and the refs, from the plan: an automatic run has no inputs.
+      gtests: ${{ steps.plan.outputs.gtests }}
+      gtest_filter: ${{ steps.plan.outputs.gtest_filter }}
+      core_ref: ${{ steps.plan.outputs.core_ref }}
+      wrapper_ref: ${{ steps.plan.outputs.wrapper_ref }}
       build_date: ${{ steps.build_date.outputs.build_date }}
       matrix: ${{ steps.matrix.outputs.matrix }}
       # What a leg's runs-on needs, known here so that it reads no matrix job's output, which
@@ -138,11 +152,17 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
           COMPILE_CACHE: ${{ inputs.compile_cache }}
+          GTESTS: ${{ inputs.gtests }}
+          GTEST_FILTER: ${{ inputs.gtest_filter }}
+          CORE_REF: ${{ inputs.core_ref }}
+          WRAPPER_REF: ${{ inputs.wrapper_ref }}
         run: |
           set -e
           python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
             --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
-            --compile-cache "$COMPILE_CACHE" --ref-type "$REF_TYPE" > plan.txt
+            --compile-cache "$COMPILE_CACHE" --ref-type "$REF_TYPE" \
+            --gtests "$GTESTS" --gtest-filter "$GTEST_FILTER" \
+            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every
@@ -457,7 +477,7 @@ jobs:
       # session zone and the gate did not pass one.
       - name: Install the invisible_core the page-surface gate asks for its branding
         env:
-          CORE_REF: ${{ github.event.inputs.core_ref || 'main' }}
+          CORE_REF: ${{ needs.plan.outputs.core_ref }}
         run: |
           python3 -m pip install --quiet \
             "git+https://github.com/feder-cr/invisible_core@$CORE_REF"
@@ -961,11 +981,11 @@ jobs:
       # symbols, so what ships is already built and checked when the second
       # libxul is linked. A phase, so the report has its row.
       - name: Engine gtests (gtests=true only)
-        if: github.event.inputs.gtests == 'true' && runner.environment == 'github-hosted'
+        if: needs.plan.outputs.gtests == 'true' && runner.environment == 'github-hosted'
         timeout-minutes: 180
         shell: bash
         env:
-          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter }}
+          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
         run: |
           : "${GTEST_FILTER_INPUT:?an empty filter: name the gtests, or * for all}"
           # The Linux runners have no display, and some gtests open windows.
@@ -973,7 +993,7 @@ jobs:
           python3 scripts/ci phase gtest -- xvfb-run -a ./mach gtest "$GTEST_FILTER_INPUT"
       # The node only compiles, on both legs: a hosted job runs what it built.
       - name: The node - its gtest binaries, for a job on GitHub's runners
-        if: github.event.inputs.gtests == 'true' && runner.environment != 'github-hosted'
+        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
         timeout-minutes: 180
         shell: bash
         run: |
@@ -984,7 +1004,7 @@ jobs:
       - name: The node - keep them
         # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.
         timeout-minutes: 60
-        if: github.event.inputs.gtests == 'true' && runner.environment != 'github-hosted'
+        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtest-bin-${{ matrix.leg }}
@@ -1023,30 +1043,30 @@ jobs:
   # that reaches the jobs inside gate.yml is not established.
   gtest-cross:
     name: gtest-win-x86_64
-    needs: build
+    needs: [plan, build]
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - name: The series (this repository, this commit)
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
       - name: The leg's dist/bin with its gtest libxul
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: gtest-bin-win-x86_64
           path: gtest-run
       - name: Engine gtests (gtests=true only)
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         shell: bash
         env:
-          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter }}
+          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
         run: |
           ( cd gtest-run && tar -xf gtest-bin.tar )
           python .series/platform/ci/src/scripts/ci/gtest_run.py --root gtest-run --reports gtest-reports
       - name: What each suite did
-        if: always() && github.event.inputs.gtests == 'true'
+        if: always() && needs.plan.outputs.gtests == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtest-reports-win-x86_64
@@ -1061,41 +1081,41 @@ jobs:
   # is a runner of GitHub's, not the node.
   gtest-linux:
     name: gtest-linux-x86_64
-    needs: build
+    needs: [plan, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
       - name: The series (this repository, this commit)
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: .series, fetch-depth: 1 }
       - name: apt - network timeouts and retries
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         run: |
           printf '%s\n' 'Acquire::http::Timeout "60";' 'Acquire::https::Timeout "60";' 'Acquire::Retries "5";' \
             | sudo tee /etc/apt/apt.conf.d/80-ci-network >/dev/null
       # The runners have no display, and some gtests open windows.
       - name: A display
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         timeout-minutes: 20
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
       - name: The leg's dist/bin with its gtest libxul
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: gtest-bin-linux-x86_64
           path: gtest-run
       - name: Engine gtests (gtests=true only)
-        if: github.event.inputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true'
         env:
-          GTEST_FILTER_INPUT: ${{ github.event.inputs.gtest_filter }}
+          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
         run: |
           tar -C gtest-run -xf gtest-run/gtest-bin.tar
           xvfb-run -a python3 .series/platform/ci/src/scripts/ci/gtest_run.py --root gtest-run --reports gtest-reports
       - name: What each suite did
-        if: always() && github.event.inputs.gtests == 'true'
+        if: always() && needs.plan.outputs.gtests == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtest-reports-linux-x86_64
@@ -1154,11 +1174,11 @@ jobs:
           KIND: ${{ needs.plan.outputs.kind }}
           TAG: ${{ needs.plan.outputs.tag }}
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
-          CORE_REF: ${{ inputs.core_ref || 'main' }}
-          WRAPPER_REF: ${{ inputs.wrapper_ref || 'main' }}
-          GTESTS: ${{ inputs.gtests }}
-          GTEST_FILTER_INPUT: ${{ inputs.gtest_filter }}
-          RELAUNCH_OF: ${{ inputs.relaunch_of }}
+          CORE_REF: ${{ needs.plan.outputs.core_ref }}
+          WRAPPER_REF: ${{ needs.plan.outputs.wrapper_ref }}
+          GTESTS: ${{ needs.plan.outputs.gtests }}
+          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
+          RELAUNCH_OF: ${{ inputs.relaunch_of || '' }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/latitude_node.py watch --run "$GITHUB_RUN_ID" \
             --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
@@ -1188,11 +1208,11 @@ jobs:
           KIND: ${{ needs.plan.outputs.kind }}
           TAG: ${{ needs.plan.outputs.tag }}
           COMPILE_CACHE: ${{ needs.plan.outputs.compile_cache }}
-          CORE_REF: ${{ inputs.core_ref || 'main' }}
-          WRAPPER_REF: ${{ inputs.wrapper_ref || 'main' }}
-          GTESTS: ${{ inputs.gtests }}
-          GTEST_FILTER_INPUT: ${{ inputs.gtest_filter }}
-          RELAUNCH_OF: ${{ inputs.relaunch_of }}
+          CORE_REF: ${{ needs.plan.outputs.core_ref }}
+          WRAPPER_REF: ${{ needs.plan.outputs.wrapper_ref }}
+          GTESTS: ${{ needs.plan.outputs.gtests }}
+          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
+          RELAUNCH_OF: ${{ inputs.relaunch_of || '' }}
         run: |
           python3 .series/platform/ci/src/scripts/ci/latitude_node.py watch --run "$GITHUB_RUN_ID" \
             --attempt "$GITHUB_RUN_ATTEMPT" --ref "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
@@ -1277,8 +1297,8 @@ jobs:
     with:
       build_run_id: ${{ github.run_id }}
       seal_tag: ${{ needs.plan.outputs.seal_tag }}
-      wrapper_ref: ${{ inputs.wrapper_ref || 'main' }}
-      core_ref: ${{ inputs.core_ref || 'main' }}
+      wrapper_ref: ${{ needs.plan.outputs.wrapper_ref }}
+      core_ref: ${{ needs.plan.outputs.core_ref }}
 
   publish:
     needs: [plan, build, gate]
@@ -1291,4 +1311,4 @@ jobs:
       tag: ${{ needs.plan.outputs.tag }}
       num: ${{ needs.plan.outputs.num }}
       prevtag: ${{ needs.plan.outputs.prevtag }}
-      wrapper_ref: ${{ inputs.wrapper_ref || 'main' }}
+      wrapper_ref: ${{ needs.plan.outputs.wrapper_ref }}

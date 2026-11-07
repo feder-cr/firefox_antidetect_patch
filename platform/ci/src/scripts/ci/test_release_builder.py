@@ -340,8 +340,9 @@ def group_pull_requests(doc, jobs, build, steps) -> list:
     out.append(("pull requests: every job those start names a hosted runner, literally (%s)" % reachable, not reachable))
     out.append(("pull requests: the check sees a job on a label of ours",
                 jobs_of_pull_requests({"x.yml": {"on": ["pull_request"], "jobs": {"j": {"runs-on": "latitude-5-1-a"}}}}) == ["x.yml:j:latitude-5-1-a"]))
-    out.append(("pull requests: release.yml, the sweeper and the workflows they call start by hand or by schedule only",
-                triggers(doc) == {"workflow_dispatch"} and triggers(live["theta-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
+    out.append(("pull requests: release.yml starts by hand, on a push to main or by schedule (a candidate that keeps the cache warm); the sweeper and the workflows they call by hand or by schedule only",
+                triggers(doc) == {"workflow_dispatch", "push", "schedule"} and doc[True]["push"] == {"branches": ["main"]}
+                and triggers(live["theta-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
                 and triggers(live["gate.yml"]) <= {"workflow_call", "workflow_dispatch"} and triggers(live["publish.yml"]) == {"workflow_call"}))
     with_label = []
     for name, wf in live.items():
@@ -419,11 +420,12 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
     step = next(s for s in jobs["watch-1"]["steps"] if s.get("id") == "watch")
     out.append(("watch: its verdict survives its failure, and a crash is not swallowed", step.get("shell") == "bash" and 'tee -a "$GITHUB_OUTPUT"' in step["run"]))
     env = step["env"]
-    out.append(("re-launch: every input by value, the refs never empty (finding 3)",
-                env.get("CORE_REF") == "${{ inputs.core_ref || 'main' }}" and env.get("WRAPPER_REF") == "${{ inputs.wrapper_ref || 'main' }}"
-                and env.get("KIND") == "${{ needs.plan.outputs.kind }}" and env.get("RELAUNCH_OF") == "${{ inputs.relaunch_of }}"
-                and "GTESTS" in env and "GTEST_FILTER_INPUT" in env))
-    out.append(("re-launch: refs as the gate reads them", jobs["gate"]["with"]["core_ref"] == "${{ inputs.core_ref || 'main' }}"))
+    out.append(("re-launch: every input by value, from the plan, which an automatic run has instead of inputs (finding 3)",
+                env.get("CORE_REF") == "${{ needs.plan.outputs.core_ref }}" and env.get("WRAPPER_REF") == "${{ needs.plan.outputs.wrapper_ref }}"
+                and env.get("KIND") == "${{ needs.plan.outputs.kind }}" and env.get("RELAUNCH_OF") == "${{ inputs.relaunch_of || '' }}"
+                and env.get("GTESTS") == "${{ needs.plan.outputs.gtests }}" and env.get("GTEST_FILTER_INPUT") == "${{ needs.plan.outputs.gtest_filter }}"))
+    out.append(("re-launch: refs as the gate reads them", jobs["gate"]["with"]["core_ref"] == "${{ needs.plan.outputs.core_ref }}"
+                and jobs["gate"]["with"]["wrapper_ref"] == "${{ needs.plan.outputs.wrapper_ref }}"))
     out.append(("re-launch: the run says so in its name, as the watch looks for it",
                 latitude_node.relaunch_title("{0}") in doc.get("run-name", "") and "relaunch_of" in doc[True]["workflow_dispatch"]["inputs"]))
     stop = jobs["stop-node"]
@@ -439,9 +441,10 @@ def group_watch_and_stop(doc, jobs, build, steps) -> list:
                 "stop-node" not in jobs["gate"]["needs"] and "stop-node" not in jobs["publish"]["needs"]))
     core_ref = doc[True]["workflow_dispatch"]["inputs"]["core_ref"]
     text = WORKFLOW.read_text(encoding="utf-8")
-    out.append(("core_ref: no branch by default: empty is main, in each place that reads it",
+    out.append(("core_ref: no branch by default: the plan reads the input once and answers main for empty; every other place reads the plan",
                 core_ref["default"] == "" and "firefox-157" not in core_ref["description"]
-                and text.count("inputs.core_ref") == text.count("inputs.core_ref || 'main'") >= 4))
+                and text.count("inputs.core_ref") == 1 and "github.event.inputs" not in text
+                and text.count("needs.plan.outputs.core_ref") >= 4))
     guide = HERE.parent.parent / "CLAUDE.md"
     if guide.exists():
         guide_text = guide.read_text(encoding="utf-8")

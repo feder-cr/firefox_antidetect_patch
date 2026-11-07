@@ -65,6 +65,19 @@ LOCAL_SEAL_TAG = "local"
 COMPILE_CACHES = ("gha", "off")
 # The only branch a release's cache is readable from afterwards.
 RELEASE_BRANCH = "main"
+# The events that run a candidate by themselves, from main, with the gtests: a push
+# to main and the weekly timer. They keep main's compile cache warm (GitHub keeps a
+# cache per branch and drops it after seven days unused; a cold release was 75 min
+# against 43 warm, measured 2026-11-07).
+AUTOMATIC_EVENTS = ("push", "schedule")
+# What an automatic candidate runs, and what a run by hand runs when its input is
+# empty: the same list as release.yml's gtest_filter default.
+DEFAULT_GTEST_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:"
+                        "StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
+                        "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:"
+                        "StealthScaleDeclaration.*:StealthWindowGeometry.*:"
+                        "StealthGLMultisample.*")
+DEFAULT_REF = "main"
 
 
 class PlanError(ValueError):
@@ -72,13 +85,27 @@ class PlanError(ValueError):
 
 
 def plan(event: str, kind: str, release_tag: str, ref_name: str,
-         compile_cache: str = "", ref_type: str = "") -> dict[str, str]:
+         compile_cache: str = "", ref_type: str = "", gtests: str = "",
+         gtest_filter: str = "", core_ref: str = "", wrapper_ref: str = "") -> dict[str, str]:
     """The outputs of a run, or PlanError.
 
     compile_cache is the run's request: "" takes the default. ref_type is what the
-    run started from; republish.yml builds nothing, passes none and is not asked."""
-    if event != "workflow_dispatch":
-        raise PlanError(f"release runs by hand, from main for a release, not on {event!r}")
+    run started from; republish.yml builds nothing, passes none and is not asked.
+    gtests, gtest_filter, core_ref and wrapper_ref are the run's inputs, empty on an
+    automatic run: it is a candidate from main with the gtests and the defaults."""
+    if event in AUTOMATIC_EVENTS:
+        if ref_type != "branch" or ref_name != RELEASE_BRANCH:
+            raise PlanError(f"a run by itself is a candidate from the branch {RELEASE_BRANCH}, "
+                            f"not from {ref_name!r} ({ref_type or 'no ref type'})")
+        if kind or release_tag or compile_cache:
+            raise PlanError("a run by itself takes no inputs: it is a candidate with the cache")
+        kind, gtests = "candidate", "true"
+    elif event != "workflow_dispatch":
+        raise PlanError(f"release runs by hand, from main for a release, or by itself on "
+                        f"{' and '.join(AUTOMATIC_EVENTS)} from {RELEASE_BRANCH}, not on {event!r}")
+    common = {"gtests": "true" if gtests == "true" else "false",
+              "gtest_filter": gtest_filter or DEFAULT_GTEST_FILTER,
+              "core_ref": core_ref or DEFAULT_REF, "wrapper_ref": wrapper_ref or DEFAULT_REF}
     if kind not in KINDS:
         raise PlanError(f"kind must be one of {', '.join(KINDS)}, got {kind!r}")
     if compile_cache and compile_cache not in COMPILE_CACHES:
@@ -98,14 +125,14 @@ def plan(event: str, kind: str, release_tag: str, ref_name: str,
                 f"to publish a candidate's archives later, run republish.yml with its "
                 f"run id.")
         return {"kind": "candidate", "tag": "", "num": "", "prevtag": "",
-                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha"}
+                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha", **common}
     try:
         n = check_release_tag(release_tag)
     except SealBuildError as exc:
         raise PlanError(f"a release needs a firefox-N tag: {exc}") from None
     return {"kind": "release", "tag": release_tag, "num": str(n),
             "prevtag": f"firefox-{n - 1}" if n > 0 else "", "seal_tag": release_tag,
-            "compile_cache": compile_cache or "gha"}
+            "compile_cache": compile_cache or "gha", **common}
 
 
 def main(argv=None) -> int:
@@ -116,10 +143,15 @@ def main(argv=None) -> int:
     ap.add_argument("--ref-name", default="")
     ap.add_argument("--compile-cache", default="")
     ap.add_argument("--ref-type", default="")
+    ap.add_argument("--gtests", default="")
+    ap.add_argument("--gtest-filter", default="")
+    ap.add_argument("--core-ref", default="")
+    ap.add_argument("--wrapper-ref", default="")
     a = ap.parse_args(argv)
     try:
         outputs = plan(a.event, a.kind, a.release_tag.strip(), a.ref_name,
-                       a.compile_cache.strip(), a.ref_type.strip())
+                       a.compile_cache.strip(), a.ref_type.strip(), a.gtests.strip(),
+                       a.gtest_filter.strip(), a.core_ref.strip(), a.wrapper_ref.strip())
     except PlanError as exc:
         print(f"PLAN REFUSED: {exc}", file=sys.stderr)
         return 1
