@@ -341,7 +341,7 @@ def group_pull_requests(doc, jobs, build, steps) -> list:
     out.append(("pull requests: the check sees a job on a label of ours",
                 jobs_of_pull_requests({"x.yml": {"on": ["pull_request"], "jobs": {"j": {"runs-on": "latitude-5-1-a"}}}}) == ["x.yml:j:latitude-5-1-a"]))
     out.append(("pull requests: release.yml starts by hand, on a push to main or by schedule (a candidate that keeps the cache warm); the sweeper and the workflows they call by hand or by schedule only",
-                triggers(doc) == {"workflow_dispatch", "push", "schedule"} and doc[True]["push"] == {"branches": ["main"]}
+                triggers(doc) == {"workflow_dispatch", "push", "schedule"} and doc[True]["push"] == {"branches": ["main"], "paths-ignore": ["**.md"]}
                 and triggers(live["theta-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
                 and triggers(live["gate.yml"]) <= {"workflow_call", "workflow_dispatch"} and triggers(live["publish.yml"]) == {"workflow_call"}))
     with_label = []
