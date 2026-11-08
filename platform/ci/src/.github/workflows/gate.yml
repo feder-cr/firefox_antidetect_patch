@@ -19,7 +19,7 @@ on:
         type: string
         required: true
       seal_tag:
-        description: the tag of the local seal the wrapper's guards run under (the plan's)
+        description: "the tag of the local seal the wrapper's guards run under (the plan's): firefox-N, or firefox-N-candidate for a candidate, so that an e2e that promises a property from some engine on can tell which one it drives"
         type: string
         required: true
       wrapper_ref:
@@ -151,6 +151,27 @@ jobs:
       - name: Linux system deps for headless firefox
         if: matrix.kind == 'linux'
         run: ${{ matrix.container == '' && 'sudo ' || '' }}"$(which python)" -m playwright install-deps firefox
+      # A host with no GL at all, as a minimal Docker image or a server has it: GTK
+      # and Xvfb stay, every Mesa library goes. WebGL draws on the GL the engine
+      # ships, so the page must still get WebGL2 (the wrapper's e2e asks for it);
+      # an engine that asks the host's glxtest instead has none, and its e2e fails.
+      # The step fails if a Mesa file is still there, so the test can never pass
+      # on a host that has one.
+      - name: Linux host without Mesa (WebGL2 must exist all the same)
+        if: matrix.kind == 'linux'
+        shell: bash
+        run: |
+          set -e
+          SUDO='${{ matrix.container == '' && 'sudo ' || '' }}'
+          $SUDO dpkg --purge --force-depends libgl1-mesa-dri libglx-mesa0 libegl-mesa0 mesa-libgallium libglapi-mesa 2>&1 | tail -3 || true
+          left=$(ls /usr/lib/x86_64-linux-gnu/libgallium-*.so /usr/lib/x86_64-linux-gnu/dri/*_dri.so /usr/lib/x86_64-linux-gnu/libGLX_mesa.so* /usr/lib/x86_64-linux-gnu/libEGL_mesa.so* 2>/dev/null || true)
+          if [ -n "$left" ]; then
+            echo "ERROR: a host Mesa library is still installed, the test would not prove anything:"
+            echo "$left"
+            exit 1
+          fi
+          command -v Xvfb >/dev/null || { echo "ERROR: Xvfb went with the Mesa purge"; exit 1; }
+          ls /usr/lib/x86_64-linux-gnu/libgtk-3.so.0 >/dev/null
       - name: Extract + locate firefox binary
         shell: bash
         run: |
@@ -298,10 +319,35 @@ jobs:
           python -m invisible_core seal --binary "$FF_EXE" \
             --tag "$SEAL_TAG" \
             -o gate.seal.json
+          # The seal the e2e run under is the one just made from THIS binary, named as
+          # an engine (firefox-N or firefox-N-candidate): an e2e that promises a property
+          # from some engine on reads the number from it, and an old seal, or one with no
+          # number, would make it skip, or fail, for a reason that is not the binary's.
+          INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python - <<'PY'
+          import os, re, sys
+          from pathlib import Path
+          from invisible_core.seal import active_seal, read_engine_identity
+          seal = active_seal()
+          ident = read_engine_identity(Path(os.environ["INVPW_BINARY_PATH"]))
+          problems = []
+          if not re.fullmatch(r"firefox-\d+(-candidate)?", seal.tag):
+              problems.append("the seal tag %r is not firefox-N or firefox-N-candidate" % seal.tag)
+          if Path(seal.origin).resolve() != Path(os.environ["INVISIBLE_SEAL_FILE"]).resolve():
+              problems.append("the active seal is %r, not the one just made" % seal.origin)
+          if not ident.build_id or ident.build_id not in seal.expected_build_ids():
+              problems.append("the binary's BuildID %r is not the seal's %r"
+                              % (ident.build_id, seal.expected_build_ids()))
+          if problems:
+              sys.exit("SEAL AND BINARY DISAGREE: " + "; ".join(problems))
+          print("seal %s matches the binary (BuildID %s)" % (seal.tag, ident.build_id))
+          PY
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py \
+            tests/test_webgl_blending_rounds_once_e2e.py \
+            tests/test_webgl_mediump_is_full_precision_e2e.py \
+            tests/test_webgl2_exists_without_host_mesa_linux_e2e.py \
             -m e2e -o addopts='' -q
 
       # HOST GATE, this leg's half: everything the page in the wrapper's

@@ -143,7 +143,7 @@
  "gfx/thebes/gfxPlatform.cpp": 3,
  "gfx/thebes/gfxPlatformFontList.cpp": 31,
  "gfx/thebes/gfxPlatformFontList.h": 13,
- "gfx/thebes/gfxPlatformGtk.cpp": 3,
+ "gfx/thebes/gfxPlatformGtk.cpp": 7,
  "gfx/thebes/gfxTextRun.cpp": 2,
  "gfx/thebes/moz.build": 5,
  "gfx/wgpu_bindings/src/lib.rs": 1,

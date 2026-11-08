@@ -267,18 +267,35 @@ index ea64ad7a4cb46338a14d8df4312a603840174b5f..e0e8c9fea85ad493bf63fa00d59232c6
    // create a new name table and build a new font with that name table
    // appended on the end, returns true on success
 diff --git a/gfx/thebes/gfxPlatformGtk.cpp b/gfx/thebes/gfxPlatformGtk.cpp
-index de866d03d3a2be630a2bdab1e83963bf3740779c..343339268c3b90a9af904f305767acc1658e1c29 100644
+index de866d03d3a2be630a2bdab1e83963bf3740779c..e5c498a35d5cc73dd9e27621b925faa9c64c378f 100644
 --- a/gfx/thebes/gfxPlatformGtk.cpp
 +++ b/gfx/thebes/gfxPlatformGtk.cpp
-@@ -11,6 +11,7 @@
+@@ -11,6 +11,8 @@
  #include <gtk/gtk.h>
  
  #include "GLContextProvider.h"
++#include "../gl/StealthOwnGL.h"  // STEALTH-HOOK(fingerprint/webgl/own-gl)
 +#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
  #include "VsyncSource.h"
  #include "base/message_loop.h"
  #include "base/task.h"
-@@ -428,6 +429,8 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
+@@ -110,6 +112,7 @@ gfxPlatformGtk::gfxPlatformGtk() {
+     if (IsWaylandDisplay() || gfxConfig::IsEnabled(Feature::X11_EGL)) {
+       gfxVars::SetUseEGL(true);
+     }
++    gl::StealthOwnGLForceEGL();  // STEALTH-HOOK(fingerprint/webgl/own-gl)
+     InitDmabufConfig();
+     if (gfxConfig::IsEnabled(Feature::DMABUF)) {
+       gfxVars::SetUseDMABuf(true);
+@@ -185,6 +188,7 @@ void gfxPlatformGtk::InitX11EGLConfig() {
+ void gfxPlatformGtk::InitDmabufConfig() {
+   FeatureState& feature = gfxConfig::GetFeature(Feature::DMABUF);
+   feature.EnableByDefault();
++  gl::StealthOwnGLNoHostDMABuf(feature, FeatureStatus::Unavailable);  // STEALTH-HOOK(fingerprint/webgl/own-gl)
+ 
+   nsCString failureId;
+   int32_t status;
+@@ -428,6 +432,8 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
  void gfxPlatformGtk::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
                                              FontPresentation aPresentation,
                                              nsTArray<const char*>& aFontList) {
@@ -287,6 +304,14 @@ index de866d03d3a2be630a2bdab1e83963bf3740779c..343339268c3b90a9af904f305767acc1
    if (PrefersColor(aPresentation)) {
      aFontList.AppendElement(kFontTwemojiMozilla);
    }
+@@ -955,6 +961,7 @@ gfxPlatformGtk::CreateGlobalHardwareVsyncSource() {
+   nsString adapterDriverVendor;
+   gfxInfo->GetAdapterDriverVendor(adapterDriverVendor);
+   bool isMesa = adapterDriverVendor.Find(u"mesa") != -1;
++  gl::StealthOwnGLNoHostGLXVsync(isMesa);  // STEALTH-HOOK(fingerprint/webgl/own-gl)
+ 
+   // Only use GLX vsync when the OpenGL compositor / WebRender is being used.
+   // The extra cost of initializing a GLX context while blocking the main thread
 diff --git a/gfx/thebes/gfxTextRun.cpp b/gfx/thebes/gfxTextRun.cpp
 index 121abbea9808dd46cbbcd67f5783f645a0db4fbb..cb41535c08833514d48c21aa712d986eb86d99a8 100644
 --- a/gfx/thebes/gfxTextRun.cpp

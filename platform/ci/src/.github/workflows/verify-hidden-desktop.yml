@@ -33,17 +33,40 @@ on:
       core_ref:
         description: 'invisible_core ref the gate installs (the one the binaries were built for); empty is main'
         default: ''
+      seal_tag:
+        description: 'the engine the binaries are, as the seal names it: firefox-N or firefox-N-candidate. Empty: the candidate after the last release'
+        default: ''
 
 permissions:
   contents: read
   actions: read   # download-artifact needs this to read another run's artifacts
 
 jobs:
+  # The seal's tag says which engine the wrapper's e2e are driving (tests/conftest.py,
+  # engine_at_least): a number, never `local`. Named as release.yml's plan names a candidate.
+  seal:
+    runs-on: ubuntu-24.04
+    outputs:
+      seal_tag: ${{ steps.tag.outputs.seal_tag }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { fetch-depth: 1 }
+      - id: tag
+        env:
+          SEAL_TAG: ${{ inputs.seal_tag }}
+        run: |
+          set -e
+          if [ -z "$SEAL_TAG" ]; then
+            RELEASE_TAGS="$(git ls-remote --tags "https://github.com/${{ github.repository }}" 'firefox-*' | sed -n 's#.*refs/tags/\(firefox-[0-9]*\)$#\1#p')"
+            SEAL_TAG="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import release_plan; print(release_plan.candidate_seal_tag(sys.argv[1]))' "$RELEASE_TAGS")"
+          fi
+          echo "seal_tag=$SEAL_TAG" | tee -a "$GITHUB_OUTPUT"
   gate:
+    needs: seal
     uses: ./.github/workflows/gate.yml
     with:
       build_run_id: ${{ inputs.run_id }}
-      # a re-gate seals locally, as a candidate does (scripts/release_plan.py)
-      seal_tag: local
+      # the engine under re-gate, named by number (scripts/release_plan.py)
+      seal_tag: ${{ needs.seal.outputs.seal_tag }}
       wrapper_ref: ${{ inputs.wrapper_ref }}
       core_ref: ${{ inputs.core_ref || 'main' }}

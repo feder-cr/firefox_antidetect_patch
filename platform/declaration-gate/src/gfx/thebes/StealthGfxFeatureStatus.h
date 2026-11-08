@@ -44,12 +44,12 @@ bool StealthParseGfxFeatureStatus(const nsACString& aDeclaration,
 
 // The answer for one feature from a parsed table. On builds where the only
 // WebGL path is native GL (GTK), WEBGL_OPENGL answers the declared WEBGL
-// entry when the host's GL probe succeeded (aGLProbeSucceeded), because on
-// Windows that path is ANGLE and WEBGL_OPENGL gates a path retail never
-// takes. False for an id outside the live set.
+// entry, whatever the host's own GL is (or is not): the GL that serves WebGL
+// ships with the engine. On Windows that path is ANGLE and WEBGL_OPENGL gates
+// a path retail never takes. False for an id outside the live set.
 bool StealthAnswerGfxFeature(const StealthGfxFeatureTable& aTable,
-                             int32_t aFeature, bool aGLProbeSucceeded,
-                             nsACString& aFailureId, int32_t* aStatus);
+                             int32_t aFeature, nsACString& aFailureId,
+                             int32_t* aStatus);
 
 // The hook in GfxInfoBase::GetFeatureStatus. False when the engine is off
 // (stock Firefox) or the id is outside the live set: Mozilla's path runs.

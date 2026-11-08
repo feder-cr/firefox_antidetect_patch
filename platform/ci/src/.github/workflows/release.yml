@@ -160,11 +160,15 @@ jobs:
           WRAPPER_REF: ${{ inputs.wrapper_ref }}
         run: |
           set -e
+          # The release tags that exist: a candidate is sealed as firefox-N-candidate,
+          # N the last one plus one (scripts/release_plan.py).
+          RELEASE_TAGS="$(git ls-remote --tags "https://github.com/${{ github.repository }}" 'firefox-*' | sed -n 's#.*refs/tags/\(firefox-[0-9]*\)$#\1#p')"
           python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
             --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
             --compile-cache "$COMPILE_CACHE" --ref-type "$REF_TYPE" \
             --gtests "$GTESTS" --gtest-filter "$GTEST_FILTER" \
-            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" > plan.txt
+            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" \
+            --release-tags "$RELEASE_TAGS" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every

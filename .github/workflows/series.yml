@@ -37,6 +37,14 @@ jobs:
           python-version: "3.12"
       - name: The Mozilla tag from Mozilla, the series applied, the declared tree
         run: python .series/tools/engine.py materialize --into source
+      # Our C++ against Mozilla's headers, without building Firefox: a Stealth*
+      # file that uses a header it does not include (and compiles only because
+      # another one pulls it in), a mozilla:: name declared elsewhere, a flag bit
+      # already taken. It ran only by hand before a build; here it fails the push.
+      - name: Our sources against Mozilla's headers (build/stealth_check_sources.py)
+        run: |
+          python source/build/stealth_check_sources.py --self-test
+          python source/build/stealth_check_sources.py
       # The core's checks that read the engine's source: pref types and readers,
       # prefs the binary reads, the Juggler contract and protocol, the WebGL
       # extension order, the font manifest. In the core's own CI they skip, as no
