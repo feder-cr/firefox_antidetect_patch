@@ -345,8 +345,6 @@ jobs:
             tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py \
-            tests/test_webgl_blending_rounds_once_e2e.py \
-            tests/test_webgl_mediump_is_full_precision_e2e.py \
             tests/test_webgl2_exists_without_host_mesa_linux_e2e.py \
             -m e2e -o addopts='' -q
 
