@@ -29,7 +29,7 @@ index 86b2939a83873627e79ec19b87d13008e2e2109d..43a13ea77d87485291dc64c3d9153078
  }
  
 diff --git a/docshell/base/nsDocShell.cpp b/docshell/base/nsDocShell.cpp
-index 9890b717e687329386006642e8c536f4dd094bd9..fbbd86fa8b060636b837b49a2d125aa8fab997bc 100644
+index 9890b717e687329386006642e8c536f4dd094bd9..53b32e434f6550ebab025d122846c370d8088914 100644
 --- a/docshell/base/nsDocShell.cpp
 +++ b/docshell/base/nsDocShell.cpp
 @@ -4,6 +4,8 @@
@@ -51,15 +51,22 @@ index 9890b717e687329386006642e8c536f4dd094bd9..fbbd86fa8b060636b837b49a2d125aa8
        mInvisible(false),
        mHasLoadedNonBlankURI(false),
        mHasStartedLoadingOtherThanInitialBlankURI(false),
-@@ -8999,6 +9004,8 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
+@@ -8999,6 +9004,7 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
    attrs.SetFirstPartyDomain(isTopLevelDoc, aLoadState->URI());
  
    nsCOMPtr<nsIRequest> req;
-+  // STEALTH-HOOK(automation/navigation)
-+  StealthNavigationStarted(this, aLoadState, !isJavaScript && !sameDocument);
++  StealthNavigationLoad stealthLoad(this, aLoadState, !isJavaScript && !sameDocument);  // STEALTH-HOOK(automation/navigation)
    rv = DoURILoad(aLoadState, aCacheKey, getter_AddRefs(req));
  
    if (NS_SUCCEEDED(rv)) {
+@@ -9008,6 +9014,7 @@ nsresult nsDocShell::InternalLoad(nsDocShellLoadState* aLoadState,
+   }
+ 
+   if (NS_FAILED(rv)) {
++    stealthLoad.Failed(rv);  // STEALTH-HOOK(automation/navigation)
+     nsCOMPtr<nsIChannel> chan(do_QueryInterface(req));
+     UnblockEmbedderLoadEventForFailure();
+ 
 @@ -12113,9 +12120,12 @@ class OnLinkClickEvent : public CancelableRunnable, public SupportsWeakPtr {
        if (!mLoadState->HasSourceElement()) {
          mLoadState->SetSourceElement(mContent->AsElement());

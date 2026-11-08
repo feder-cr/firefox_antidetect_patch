@@ -77,6 +77,9 @@ export class FrameTree {
         frame._pendingNavigationId = helper.toProtocolNavigationId(loadIdentifier);
         this.emit(FrameTree.Events.NavigationStarted, frame);
       }, 'juggler-navigation-started-renderer'),
+      helper.addObserver((docShell, topic, payload) => {
+        this._onNavigationFailed(docShell, payload);
+      }, 'juggler-navigation-failed-renderer'),
       helper.addObserver(this._onDOMWindowCreated.bind(this), 'content-document-global-created'),
       helper.addObserver(this._onDOMWindowCreated.bind(this), 'juggler-dom-window-reused'),
       helper.addObserver((browsingContext, topic, why) => {
@@ -474,6 +477,26 @@ export class FrameTree {
       if (frame === this._mainFrame && status !== Cr.NS_BINDING_ABORTED)
         this.forcePageReady();
     }
+  }
+
+  // A navigation Firefox refused before any channel reported progress: a
+  // restricted port, an unknown protocol (nsDocShell::InternalLoad, when
+  // DoURILoad fails). onStateChange never hears of it, and the error page that
+  // follows is a navigation of its own, so this is the only place the refused
+  // one ends, with the status the docshell had.
+  _onNavigationFailed(docShell, payload) {
+    const frame = this.frameForDocShell(docShell);
+    if (!frame)
+      return;
+    const [loadIdentifier, status] = payload.split(' ');
+    const navigationId = helper.toProtocolNavigationId(loadIdentifier);
+    if (frame._pendingNavigationId !== navigationId)
+      return;
+    frame._pendingNavigationId = null;
+    this.emit(FrameTree.Events.NavigationAborted, frame, navigationId,
+              helper.getNetworkErrorStatusText(+status));
+    if (frame === this._mainFrame)
+      this.forcePageReady();
   }
 
   onLocationChange(progress, request, location, flags) {

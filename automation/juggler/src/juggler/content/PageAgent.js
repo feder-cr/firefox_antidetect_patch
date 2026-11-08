@@ -690,12 +690,43 @@ export class PageAgent {
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject.isConnected)
       throw new Error('Node is detached from document');
-    if (!rect)
-      rect = { x: -1, y: -1, width: -1, height: -1};
-    if (unsafeObject.scrollRectIntoViewIfNeeded)
-      unsafeObject.scrollRectIntoViewIfNeeded(rect.x, rect.y, rect.width, rect.height);
-    else
+    // ⛔ WITH THE PAGE'S OWN scrollIntoView, REACHED THROUGH THE XRAY, so a
+    // site that replaced the method changes nothing. Upstream called
+    // Element.scrollRectIntoViewIfNeeded, a method upstream adds to Element's
+    // binding; this tree adds none, so the command failed on every node.
+    const element = unsafeObject.nodeType === 1 ? unsafeObject : unsafeObject.parentElement;
+    const box = nodeBox(unsafeObject);
+    if (!element || !box)
       throw new Error('Node does not have a layout object');
+    // The rect is in the node's own box, as upstream reads it: a point to click
+    // at is a rect of size 0.
+    const wanted = rect ? {
+      left: box.left + rect.x, top: box.top + rect.y,
+      right: box.left + rect.x + rect.width, bottom: box.top + rect.y + rect.height,
+    } : box;
+    const win = element.ownerDocument.defaultView;
+    // ONLY IF NEEDED, as upstream (WhenToScroll::IfNotFullyVisible): what is in
+    // full view is left where it is, or every click would move the page.
+    if (insideViewports(wanted, win))
+      return;
+    element.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+    if (!rect)
+      return;
+    // The element is centred; a rect of an element larger than the viewport
+    // may still be out of it, and its frame's viewport then centres the rect.
+    const after = nodeBox(unsafeObject);
+    const target = {
+      left: after.left + rect.x, top: after.top + rect.y,
+      right: after.left + rect.x + rect.width, bottom: after.top + rect.y + rect.height,
+    };
+    if (insideViewport(target, win))
+      return;
+    const [vw, vh] = viewportSize(win);
+    win.scrollBy({
+      left: (target.left + target.right) / 2 - vw / 2,
+      top: (target.top + target.bottom) / 2 - vh / 2,
+      behavior: 'instant',
+    });
   }
 
   _getNodeBoundingBox(unsafeObject) {
@@ -908,3 +939,54 @@ export class PageAgent {
   }
 }
 
+
+// The box of a node in its frame's viewport, or null when it has no layout
+// (display:none, not rendered). A text node is measured through a range.
+function nodeBox(node) {
+  if (node.nodeType === 1) {
+    if (!node.getClientRects().length)
+      return null;
+    return node.getBoundingClientRect();
+  }
+  const range = node.ownerDocument.createRange();
+  range.selectNode(node);
+  if (!range.getClientRects().length)
+    return null;
+  return range.getBoundingClientRect();
+}
+
+// The layout viewport without scrollbars: the smaller of innerWidth/Height and
+// the root's client size, which also covers quirks mode.
+function viewportSize(win) {
+  const root = win.document.documentElement;
+  return [
+    Math.min(win.innerWidth, (root && root.clientWidth) || win.innerWidth),
+    Math.min(win.innerHeight, (root && root.clientHeight) || win.innerHeight),
+  ];
+}
+
+function insideViewport(r, win) {
+  const [vw, vh] = viewportSize(win);
+  return r.left >= 0 && r.top >= 0 && r.right <= vw && r.bottom <= vh;
+}
+
+// In full view in its frame, and that frame's box in its parent's, up to the
+// top. A parent this process cannot read (another process) cannot be judged,
+// so the answer is no and the caller scrolls: scrollIntoView moves every
+// ancestor frame too.
+function insideViewports(r, win) {
+  let w = win;
+  while (insideViewport(r, w)) {
+    if (w === w.top)
+      return true;
+    const owner = w.frameElement;
+    if (!owner)
+      return false;
+    const f = owner.getBoundingClientRect();
+    const dx = f.left + owner.clientLeft;
+    const dy = f.top + owner.clientTop;
+    r = { left: r.left + dx, top: r.top + dy, right: r.right + dx, bottom: r.bottom + dy };
+    w = w.parent;
+  }
+  return false;
+}

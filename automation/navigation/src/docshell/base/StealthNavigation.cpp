@@ -34,19 +34,40 @@ static void NotifyNavigationStarted(nsISupports* aSubject, const char* aTopic,
   }
 }
 
-void StealthNavigationStarted(nsDocShell* aDocShell,
-                              nsDocShellLoadState* aLoadState, bool aNotify) {
-  if (!aNotify) {
+StealthNavigationLoad::StealthNavigationLoad(nsDocShell* aDocShell,
+                                             nsDocShellLoadState* aLoadState,
+                                             bool aNotify)
+    : mDocShell(aDocShell), mLoadState(aLoadState), mNotify(aNotify) {
+  if (!mNotify) {
     return;
   }
-  MOZ_ASSERT(aDocShell);
-  MOZ_ASSERT(aLoadState);
+  MOZ_ASSERT(mDocShell);
+  MOZ_ASSERT(mLoadState);
   // GetAsSupports is the static of nsDocLoader that nsDocShell inherits;
-  // from a free function it must be named through the class. Same pointer as
-  // GetAsSupports(this) inside nsDocShell.
-  NotifyNavigationStarted(nsDocLoader::GetAsSupports(aDocShell),
+  // from outside nsDocShell it must be named through the class. Same pointer
+  // as GetAsSupports(this) inside nsDocShell.
+  NotifyNavigationStarted(nsDocLoader::GetAsSupports(mDocShell),
                           "juggler-navigation-started-renderer",
-                          aLoadState->GetLoadIdentifier());
+                          mLoadState->GetLoadIdentifier());
+}
+
+void StealthNavigationLoad::Failed(nsresult aStatus) {
+  if (!mNotify) {
+    return;
+  }
+  MOZ_ASSERT(NS_IsMainThread());
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+  if (observerService) {
+    observerService->NotifyObservers(
+        nsDocLoader::GetAsSupports(mDocShell),
+        "juggler-navigation-failed-renderer",
+        NS_ConvertASCIItoUTF16(
+            nsPrintfCString("%" PRIu64 " %" PRIu32,
+                            mLoadState->GetLoadIdentifier(),
+                            static_cast<uint32_t>(aStatus)))
+            .get());
+  }
 }
 
 // The one place a link click topic is sent. Observer notifications: nothing a

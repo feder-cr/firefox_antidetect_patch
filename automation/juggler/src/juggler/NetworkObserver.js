@@ -78,11 +78,21 @@ export class PageNetwork {
     this._requestInterceptionEnabled = true;
   }
 
+  // The answer always means interception is off and nothing is held: every
+  // held request is let go on its own, and one whose channel can no longer be
+  // resumed (the page or the network dropped it meanwhile) neither fails the
+  // command nor keeps the others held.
   disableRequestInterception() {
     this._requestInterceptionEnabled = false;
-    for (const intercepted of this._interceptedRequests.values())
-      intercepted.resume();
+    const held = [...this._interceptedRequests.values()];
     this._interceptedRequests.clear();
+    for (const intercepted of held) {
+      try {
+        intercepted.resume();
+      } catch (e) {
+        intercepted._interceptedChannel = undefined;
+      }
+    }
   }
 
   resumeInterceptedRequest(requestId, url, method, headers, postData) {
@@ -612,6 +622,18 @@ class NetworkRequest {
         errorCode: helper.getNetworkErrorStatusText(error),
       }, this._frameId);
     }
+    this._ended();
+  }
+
+  // A request that ends while it is held (the page cancelled it, a navigation
+  // or the tab took it) is no longer held: a command for it then fails with
+  // "Cannot find request", and disableRequestInterception does not resume a
+  // channel that is gone.
+  _ended() {
+    const pageNetwork = this._pageNetwork;
+    if (pageNetwork?._interceptedRequests.get(this.requestId) === this)
+      pageNetwork._interceptedRequests.delete(this.requestId);
+    this._interceptedChannel = undefined;
     this._networkObserver._channelToRequest.delete(this.httpChannel);
   }
 
@@ -636,7 +658,7 @@ class NetworkRequest {
         protocolVersion,
       }, this._frameId);
     }
-    this._networkObserver._channelToRequest.delete(this.httpChannel);
+    this._ended();
   }
 }
 

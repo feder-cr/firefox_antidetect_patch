@@ -8,6 +8,8 @@
 
 #include <stdint.h>
 
+#include "nscore.h"
+
 class nsDocShell;
 class nsDocShellLoadState;
 class nsIContent;
@@ -16,13 +18,29 @@ class nsISupports;
 // STEALTHFOX (juggler): notifications Juggler needs from the navigation
 // machinery. Observer notifications: nothing a page can see.
 
-// Called by nsDocShell::InternalLoad right before DoURILoad. When aNotify is
-// true (a navigation that is neither a javascript: URL nor a same-document
-// one) reports 'juggler-navigation-started-renderer' for aDocShell. This
-// drives the Juggler protocol's Page.navigationStarted and, ultimately,
-// Page.ready.
-void StealthNavigationStarted(nsDocShell* aDocShell,
-                              nsDocShellLoadState* aLoadState, bool aNotify);
+// One navigation as nsDocShell::InternalLoad starts it, built right before
+// DoURILoad. When aNotify is true (a navigation that is neither a javascript:
+// URL nor a same-document one):
+// - building it reports 'juggler-navigation-started-renderer' for aDocShell,
+//   which drives the Juggler protocol's Page.navigationStarted and,
+//   ultimately, Page.ready;
+// - Failed(), called when DoURILoad fails and before the error page is
+//   loaded, reports 'juggler-navigation-failed-renderer' with the load
+//   identifier and the status. A navigation Firefox refuses before any
+//   channel reports progress (a restricted port, an unknown protocol) ends
+//   there and nowhere else, so Juggler ends it with its reason.
+// It lives on InternalLoad's stack, as aDocShell and aLoadState do.
+class StealthNavigationLoad final {
+ public:
+  StealthNavigationLoad(nsDocShell* aDocShell, nsDocShellLoadState* aLoadState,
+                        bool aNotify);
+  void Failed(nsresult aStatus);
+
+ private:
+  nsDocShell* const mDocShell;
+  nsDocShellLoadState* const mLoadState;
+  const bool mNotify;
+};
 
 // 'Before' of a planned navigation: a link click or a form submission is a
 // PLANNED navigation, an OnLinkClickEvent that runs after the input that caused

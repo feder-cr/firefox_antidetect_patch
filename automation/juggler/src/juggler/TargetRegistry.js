@@ -34,6 +34,15 @@ function pinnedViewportSize(windowInFullscreen, pageViewportSize, contextViewpor
 const IDENTITY_NAME = 'JUGGLER ';
 const HUNDRED_YEARS = 60 * 60 * 24 * 365 * 100;
 
+// The name of an nsICookieValidation result, e.g. eRejectedNoneRequiresSecure.
+function validationName(result) {
+  for (const key of Object.keys(Ci.nsICookieValidation)) {
+    if (key.startsWith('eRejected') && Ci.nsICookieValidation[key] === result)
+      return key;
+  }
+  return String(result);
+}
+
 const ALL_PERMISSIONS = [
   'geo',
   'desktop-notification',
@@ -1404,13 +1413,24 @@ class BrowserContext {
     }
   }
 
+  // Each cookie as Firefox stores it, or the command fails naming the ones
+  // Firefox refused and why.
+  // - 'None' is SameSite=None, as a site's header sets it, and Firefox refuses
+  //   it without Secure (network.cookie.sameSite.noneRequiresSecure). It was
+  //   stored as no attribute at all.
+  // - A session cookie (expires -1 or none) gets an expiry that does not
+  //   restrict it: Firefox honours the expiry of a session cookie too, and -1
+  //   seconds was 1969, so the cookie was gone before anyone read it.
+  // - A refused cookie is not stored and Services.cookies.add still answers
+  //   NS_OK, with the reason in the validation it returns: it was dropped.
   setCookies(cookies) {
     const protocolToSameSite = {
       [undefined]: Ci.nsICookie.SAMESITE_UNSET,
-      'None': Ci.nsICookie.SAMESITE_UNSET,
+      'None': Ci.nsICookie.SAMESITE_NONE,
       'Lax': Ci.nsICookie.SAMESITE_LAX,
       'Strict': Ci.nsICookie.SAMESITE_STRICT,
     };
+    const refused = [];
     for (const cookie of cookies) {
       const uri = cookie.url ? NetUtil.newURI(cookie.url) : null;
       let domain = cookie.domain;
@@ -1427,20 +1447,25 @@ class BrowserContext {
         secure = cookie.secure;
       else if (uri && uri.scheme === 'https')
         secure = true;
-      Services.cookies.add(
+      const isSession = cookie.expires === undefined || cookie.expires === -1;
+      const validation = Services.cookies.add(
         domain,
         path,
         cookie.name,
         cookie.value,
         secure,
         cookie.httpOnly || false,
-        cookie.expires === undefined || cookie.expires === -1 /* isSession */,
-        cookie.expires === undefined ? Date.now() + HUNDRED_YEARS : cookie.expires * 1000,
+        isSession,
+        isSession ? Date.now() + HUNDRED_YEARS : cookie.expires * 1000,
         { userContextId: this.userContextId || undefined } /* originAttributes */,
         protocolToSameSite[cookie.sameSite],
         Ci.nsICookie.SCHEME_UNSET
       );
+      if (validation && validation.result !== Ci.nsICookieValidation.eOK)
+        refused.push(`"${cookie.name}" (${validationName(validation.result)})`);
     }
+    if (refused.length)
+      throw new Error(`Firefox refused the cookie${refused.length > 1 ? 's' : ''} ${refused.join(', ')}; the others are set`);
   }
 
   clearCookies() {
