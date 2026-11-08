@@ -1,5 +1,5 @@
 diff --git a/dom/canvas/ClientWebGLContext.cpp b/dom/canvas/ClientWebGLContext.cpp
-index 097d20229785c61c89dc5c7e4c22799c48fb7c12..0e847a2f87b61c852c8c7b77136064581d6325b6 100644
+index 097d20229785c61c89dc5c7e4c22799c48fb7c12..7881cda52315b89e03603c34468991f5dde6f375 100644
 --- a/dom/canvas/ClientWebGLContext.cpp
 +++ b/dom/canvas/ClientWebGLContext.cpp
 @@ -10,6 +10,8 @@
@@ -147,27 +147,8 @@ index 097d20229785c61c89dc5c7e4c22799c48fb7c12..0e847a2f87b61c852c8c7b7713606458
        },
  
        [promise](const mozilla::ipc::ResponseRejectReason aReason) {
-@@ -6408,6 +6438,9 @@ bool ClientWebGLContext::IsSupported(const WebGLExtensionID ext,
-   if (IsExtensionForbiddenForCaller(ext, callerType)) {
-     return false;
-   }
-+  // STEALTH-HOOK(fingerprint/webgl/parameters)
-+  if (const auto verdict = StealthWebGLExtensionVerdict(mIsWebGL2, ext))
-+    return *verdict;
- 
-   const auto& limits = Limits();
-   return limits.supportedExtensions[ext];
-@@ -6423,6 +6456,8 @@ void ClientWebGLContext::GetSupportedExtensions(
-   }
- 
-   auto& retarr = retval.SetValue();
-+  // STEALTH-HOOK(fingerprint/webgl/parameters)
-+  if (StealthWebGLExtensionList(mIsWebGL2, retarr)) return;
-   for (const auto i : MakeEnumeratedRange(WebGLExtensionID::Max)) {
-     if (!IsSupported(i, callerType)) continue;
- 
 diff --git a/dom/canvas/WebGLContextExtensions.cpp b/dom/canvas/WebGLContextExtensions.cpp
-index d2896172e45e04f85f0588905a0d8f5b475fd717..4537883a4240ac10ca142e595b4bcedaae50f0e4 100644
+index d2896172e45e04f85f0588905a0d8f5b475fd717..1282d860df3f8b4ca6f75b6e3c8ea155be0da191 100644
 --- a/dom/canvas/WebGLContextExtensions.cpp
 +++ b/dom/canvas/WebGLContextExtensions.cpp
 @@ -7,6 +7,7 @@
@@ -187,6 +168,15 @@ index d2896172e45e04f85f0588905a0d8f5b475fd717..4537883a4240ac10ca142e595b4bceda
  
        // > Implementations SHOULD only expose this extension when
        // > FIRST_VERTEX_CONVENTION is more efficient than the default behavior
+@@ -421,6 +424,8 @@ void WebGLContext::RequestExtension(const WebGLExtensionID ext,
+                                     const bool explicitly) {
+   const auto& limits = Limits();
+   if (!limits.supportedExtensions[ext]) return;
++  // STEALTH-HOOK(fingerprint/webgl/parameters): declared but not served: harmless
++  if (!IsExtensionSupported(ext)) return;
+ 
+   auto& slot = mExtensions[ext];
+   switch (ext) {
 diff --git a/dom/canvas/WebGLContextFramebufferOperations.cpp b/dom/canvas/WebGLContextFramebufferOperations.cpp
 index 2c4bc437eca9180ef76118c22cddc277c6083e6a..05816e82d3169fff0b69ec9ac22473125a5dc880 100644
 --- a/dom/canvas/WebGLContextFramebufferOperations.cpp
@@ -250,10 +240,26 @@ index 2f5cd91a97a863ce6c164906c1316270bfa67a96..0f011639eab624dcb5b8ceb22c653e8f
  
    if (origin != LOCAL_GL_LOWER_LEFT && origin != LOCAL_GL_UPPER_LEFT) {
 diff --git a/dom/canvas/WebGLContextValidate.cpp b/dom/canvas/WebGLContextValidate.cpp
-index 2d8a66a1f8cddcbb238c7ee83da65089f03f625c..cb500b09cf76a27fd6a000f26b9025a77537c624 100644
+index 2d8a66a1f8cddcbb238c7ee83da65089f03f625c..ddddd5f2bea7ef32ff33d71a9aceb27418aa6069 100644
 --- a/dom/canvas/WebGLContextValidate.cpp
 +++ b/dom/canvas/WebGLContextValidate.cpp
-@@ -312,6 +312,8 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
+@@ -10,6 +10,7 @@
+ #include "WebGLBuffer.h"
+ #include "WebGLContext.h"
+ #include "WebGLContextUtils.h"
++#include "StealthWebGLParams.h"  // STEALTH-HOOK(fingerprint/webgl/parameters)
+ #include "WebGLFormats.h"
+ #include "WebGLFramebuffer.h"
+ #include "WebGLProgram.h"
+@@ -258,6 +259,7 @@ static webgl::Limits MakeLimits(const WebGLContext& webgl) {
+     gl.GetUIntegerv(LOCAL_GL_MAX_VIEWS_OVR, &limits.maxMultiviewLayers);
+   }
+ 
++  StealthDeclareExtensions(webgl.IsWebGL2(), limits.supportedExtensions);  // STEALTH-HOOK(fingerprint/webgl/parameters)
+   return limits;
+ }
+ 
+@@ -312,6 +314,8 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
                           mStencilWriteMaskFront);
    AssertUintParamCorrect(gl, LOCAL_GL_STENCIL_BACK_WRITEMASK,
                           mStencilWriteMaskBack);

@@ -261,16 +261,10 @@ Maybe<bool> StealthWebGLExtensionVerdict(const bool aIsWebGL2,
   return Some(false);
 }
 
-bool StealthWebGLExtensionList(const bool aIsWebGL2,
-                               nsTArray<nsString>& aOut) {
-  auto whitelist = GetStealthExtensionWhitelist(aIsWebGL2);
-  if (whitelist.empty()) {
-    return false;
-  }
-  for (const auto& name : whitelist) {
-    aOut.AppendElement(NS_ConvertUTF8toUTF16(name));
-  }
-  return true;
+bool StealthDeclaredExtension(const bool aIsWebGL2, const WebGLExtensionID aExt,
+                              const bool aServed) {
+  const auto verdict = StealthWebGLExtensionVerdict(aIsWebGL2, aExt);
+  return verdict ? *verdict : aServed;
 }
 
 }  // namespace mozilla

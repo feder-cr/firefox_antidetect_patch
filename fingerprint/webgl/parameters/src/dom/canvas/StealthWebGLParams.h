@@ -18,6 +18,7 @@
 
 #include "WebGLTypes.h"
 #include "js/TypeDecls.h"
+#include "mozilla/EnumeratedRange.h"
 #include "mozilla/Maybe.h"
 #include "nsTArray.h"
 #include "nsString.h"
@@ -114,11 +115,24 @@ Maybe<webgl::ShaderPrecisionFormat> StealthWebGLShaderPrecision(
 // other, whatever the driver provides. Nothing() when there is no whitelist.
 Maybe<bool> StealthWebGLExtensionVerdict(bool aIsWebGL2, WebGLExtensionID aExt);
 
-// With a whitelist set, appends the list itself, in order, as UTF-16 and
-// returns true: getSupportedExtensions then agrees with IsSupported on the
-// names it lists. It does not run the caller-type check that IsSupported
-// applies first (IsExtensionForbiddenForCaller).
-bool StealthWebGLExtensionList(bool aIsWebGL2, nsTArray<nsString>& aOut);
+// THE ONE DECISION on which extensions a page sees: the host's limits
+// (MakeLimits) take the declared list when there is one, the GL's answer
+// otherwise, and the content process reads only those limits - in Firefox's
+// own order, as retail lists them. aServed is what the host's GL can do.
+bool StealthDeclaredExtension(bool aIsWebGL2, WebGLExtensionID aExt,
+                              bool aServed);
+
+// Applied at the END of MakeLimits, so every limit Mozilla derives from the
+// extension bits inside it (draw buffers, ASTC HDR, multiview) is computed
+// from what the GL serves; only the bits handed to the content process are
+// the declared ones.
+template <typename Bits>
+void StealthDeclareExtensions(const bool aIsWebGL2, Bits& aBits) {
+  for (const auto ext : MakeEnumeratedRange(WebGLExtensionID::Max)) {
+    const bool served = static_cast<bool>(aBits[ext]);
+    aBits[ext] = StealthDeclaredExtension(aIsWebGL2, ext, served);
+  }
+}
 
 }  // namespace mozilla
 
