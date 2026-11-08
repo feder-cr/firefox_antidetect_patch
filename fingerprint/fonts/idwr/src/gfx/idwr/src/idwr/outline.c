@@ -472,8 +472,13 @@ static int design_advance(const idwr_font *font, const float *coords, uint16_t a
 /* Negative controls of the checks (reimpl/outline_hinted_check.py --sideways-perturb), not in
  * idwr.h: 1 the vertical origin left out (x = pen), 2 the half advance width left out (y = 0),
  * 4 the simulations' metric adjustments left out, 8 the points not turned (x, y as upright) */
+#if !defined(IDWR_STATIC) || defined(IDWR_TESTING)
 static int g_sideways_perturb;
 IDWR_API void idwr_outline_sideways_perturb(int bits) { g_sideways_perturb = bits; }
+#define SIDEWAYS_PERTURB g_sideways_perturb
+#else
+#define SIDEWAYS_PERTURB 0
+#endif
 
 /* FontFace::GetDesignGlyphMetrics 0x1800525a4 with isSideways TRUE: the design metrics of the
  * face (of the instance: CreateFontMetricsBuilder with the axis values), then
@@ -489,7 +494,7 @@ static int sideways_metrics(const idwr_font *font, const float *coords, uint16_t
                             uint16_t glyph, idwr_glyph_metrics *m) {
     memset(m, 0, sizeof *m);
     if (!idwr_get_design_glyph_metrics_instance(font, coords, axes, glyph, m)) return 0;
-    if (g_sideways_perturb & 4) return 1;
+    if (SIDEWAYS_PERTURB & 4) return 1;
     if ((simulations & 1) && sideways_has_size(m)) {
         int32_t k = (int32_t)((upem + 25u) / 50u);
         if (m->advanceWidth == 0) m->rightSideBearing -= k;
@@ -567,8 +572,8 @@ static int run_outline_sideways(const idwr_font *font, const float *coords, uint
         } else {
             pen = pen + a;
         }
-        if (!(g_sideways_perturb & 1)) ox = (float)m.verticalOriginY * design + ox;
-        float oy = g_sideways_perturb & 2 ? 0.0f : w * 0.5f + 0.0f;
+        if (!(SIDEWAYS_PERTURB & 1)) ox = (float)m.verticalOriginY * design + ox;
+        float oy = SIDEWAYS_PERTURB & 2 ? 0.0f : w * 0.5f + 0.0f;
         if (offsets) {
             ox = right_to_left ? ox - offsets[k].advanceOffset : offsets[k].advanceOffset + ox;
             oy = oy - offsets[k].ascenderOffset;
@@ -577,7 +582,7 @@ static int run_outline_sideways(const idwr_font *font, const float *coords, uint
         memset(&g, 0, sizeof g);
         b.n = 0;
         if (points(ctx, glyphs[k], &g) || commands(&g, &b)) { err = -1; break; }
-        if (g_sideways_perturb & 8) stream(&s, &b, scale, ox, oy);
+        if (SIDEWAYS_PERTURB & 8) stream(&s, &b, scale, ox, oy);
         else stream_sideways(&s, &b, scale, ox, oy);
     }
     free(b.v);

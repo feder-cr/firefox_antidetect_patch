@@ -908,6 +908,13 @@ jobs:
           CI_PACKAGE_PROVE: ''
         run: python3 scripts/ci phase package -- bash scripts/ci/package_${{ matrix.family }}.sh
 
+      # libxul's math is ucrtbase's (gfx/idwr/libm_ucrt.c): no dynamic symbol of sin, cos,
+      # tan, sinf, cosf, tanf, powf, hypot, sincos or sincosf may be left, undefined (bound to
+      # the host's libm) or defined (exported). Exit 0 passes; 1 or 2 stops the leg.
+      - name: libxul's math is its own (linux)
+        if: matrix.family == 'linux'
+        run: python3 gfx/idwr/tests/check_libxul_math.py obj-rel/dist/bin/libxul.so
+
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

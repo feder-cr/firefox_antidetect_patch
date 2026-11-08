@@ -158,6 +158,8 @@ OWN_FILES = [
     (r"^modules/libpref/init/StealthPrefList\.", "platform/prefs"),
     (r"^gfx/tests/gtest/TestStealthFcFontList\.", "fingerprint/fonts/font-list"),
     (r"^gfx/thebes/StealthFcFontList\.", "fingerprint/fonts/font-list"),
+    (r"^gfx/tests/gtest/TestStealthFcEmptyConfig\.", "fingerprint/fonts/font-list"),
+    (r"^gfx/thebes/StealthFcEmptyConfig\.", "fingerprint/fonts/font-list"),
     (r"^dom/canvas/StealthWebGLReadback\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/canvas/StealthWebGLParams\.", "fingerprint/webgl/parameters"),
     (r"^gfx/gl/StealthGLMultisample\.", "fingerprint/webgl/multisample"),

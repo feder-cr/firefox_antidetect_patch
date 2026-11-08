@@ -49,6 +49,19 @@ IDWR_API double idwr_cos(double x);
 /* ucrtbase _hypot (hypot jumps to it): WebRender FontTransform::compute_scale. */
 IDWR_API double idwr_hypot(double x, double y);
 
+/* ucrtbase pow, expf, logf, asinf, acosf, atanf, atan2f: the rest of the math a page reaches
+   (canvas, SVG filters, CSS); not on the text path. */
+IDWR_API double idwr_pow(double x, double y);
+IDWR_API float idwr_expf(float x);
+IDWR_API float idwr_logf(float x);
+IDWR_API float idwr_asinf(float x);
+IDWR_API float idwr_acosf(float x);
+IDWR_API float idwr_atanf(float x);
+IDWR_API float idwr_atan2f(float y, float x);
+
+/* fmaf(a, b, c) rounded once, in software (used by the ports above; exported for the checks). */
+IDWR_API float idwr_fmaf(float a, float b, float c);
+
 /* fma(a, b, c) rounded once, round-to-nearest-even, in software (used by the ports above;
    exported for the checks). */
 IDWR_API double idwr_fma(double a, double b, double c);

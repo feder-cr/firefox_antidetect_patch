@@ -56,13 +56,18 @@ __attribute__((noreturn)) static void invalid(uint32_t line) {
 }
 
 /* negative control of the swap test: 1 makes the 1/3 constant one ulp larger */
+#if !defined(IDWR_STATIC) || defined(IDWR_TESTING)
 static int g_perturb;
 __declspec(dllexport) void tt_outline_stream_perturb(int bits) { g_perturb = bits; }
+#define STREAM_PERTURB g_perturb
+#else
+#define STREAM_PERTURB 0
+#endif
 
 void os_StreamGlyphOutlines_WithOffset1(float em, uint16_t upem, const uint8_t *const *layouts, const float *org,
                                         uint32_t count, void *sink) {
     float s = (em * 1.52587891e-05f) / (float)upem;
-    const float two = 0.666666627f, one = g_perturb & 1 ? 0.333333373f : 0.333333343f;
+    const float two = 0.666666627f, one = STREAM_PERTURB & 1 ? 0.333333373f : 0.333333343f;
     ORIG(sink_fn, RVA_GeometrySetFillModeToWinding)(sink);
     for (uint32_t k = 0; k < count; k++) {
         float ox = org[2 * k], oy = org[2 * k + 1];

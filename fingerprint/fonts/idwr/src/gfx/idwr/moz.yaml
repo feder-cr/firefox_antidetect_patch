@@ -6,8 +6,8 @@ origin:
   name: idwr
   description: DirectWrite 10.0.26100.9711 text rasterizer, reimplemented in portable C
   url: https://github.com/feder-cr/invisible_DWriteCore
-  release: 33a8de72907ff23d2f0838eded04cea63c2d0ecc
-  revision: 33a8de72907ff23d2f0838eded04cea63c2d0ecc
+  release: e6e811a3b282633b294d8df26def4a6ad8faf2da
+  revision: e6e811a3b282633b294d8df26def4a6ad8faf2da
   license: MPL-2.0
 files:
   truetype/fatal.h: d8e3c23903171852ca45f33d26be6cb3e9eac2a2a81bca0e323420b1b65300c6
@@ -19,12 +19,12 @@ files:
   truetype/interp.c: a40f561e958c2cd2ec9ca3427124707a587dff5d45362116b0e71aee04a7ba65
   truetype/native.c: 1c298700fe2d6e8a419886db210175269bf386ed64815c6b3b1e0bb85201a9fc
   truetype/native.h: 0738487085134b0057ce8e551833a2ddeea99d16ca91b069a897de431c8be9de
-  truetype/orig.c: 6c2f2ace435f699fcdf97a2050e2607cf2757e2fe52d0cfb2815cbe89546d850
+  truetype/orig.c: 5c91e3ee50a1cb0aeaf9b311924a3c3e72d15b4ae202c9a9029a5ef0d6e3f719
   truetype/orig.h: 28ec22025cf6cea598641d971844d5a03809f561648a4105ef29c88e8a035fc6
   truetype/orig_ports.h: cc993185340ac510b8d064b787fa9474141fff30ed51f6b63111ffc216da5426
-  truetype/outline_driver.c: 9c5a8b8a7940bf775b41a5405d482caf3a0981af1fa74da7f0fd74e13b1f686d
+  truetype/outline_driver.c: 7a38a04bd7ee01c81b7eeda4498a5793b358a9c21ead8bc6f57c71949d514666
   truetype/outline_driver.h: ac912fd14f05908c5c7183a4fd1610b7b3d8d4110333b76ce168f64ac64167e7
-  truetype/outline_stream.c: 941f05f2ddd0ccd246ce918e7f9fab2ea6830dcae6f1619f4b71b0a52fcc709e
+  truetype/outline_stream.c: cb748bb791957f188d87399bc252bcd6b6275c9c07ac9771c645caf2aa25c5b8
   truetype/portable.h: 78dfe33afaf237003265f854ef23109481c5b0bd71f8e54a07cc4cab2cdeed8a
   truetype/scaler_fs.c: 69bc7a40fb385cd23345ec59f0da2e434e9de3228e894327f7c4813c0d9a2c4e
   truetype/scaler_fsg.c: 7c1ceba9c4477c9c0382b67884fd66325f66f059c798d9ccaea9974305c5c73f
@@ -57,14 +57,14 @@ files:
   idwr/idwr.h: 0e42fce16df8ca36c0c4263c10565e52285fa4888a433716b4cc29285bf0a42b
   idwr/idwr_fallback.h: e89dd094fce46914b33575e4236cc552ad32b2edadb8bb04d87a98b6750d54ad
   idwr/idwr_internal.h: 28bb21a19de0bd5f23feafdc00f38e470ecc47f9ef5f3d99df5b578859dee6ed
-  idwr/idwr_math.c: 83c6685aa289d4d4d45732d6ac81576f849dac97185e9944a16dda1000b89724
-  idwr/idwr_math.h: c86c7c9b7043f2858e0ca83c3e2bcb3964ff2d21c721f36c63e85915049c2a6f
-  idwr/idwr_math_tables.h: 92e4c9afc11b0bad4e888d7924dbf2463b30630c37d5e47523d9db08f215b8dd
+  idwr/idwr_math.c: d0c60b98e6a48e757903616601095658dacc64f3aa8ea0c4d33d7160c1c1592b
+  idwr/idwr_math.h: 91a87d07a3c05807c299ee6d76afb237f8f59209c9a9450b8277a60981dde5d1
+  idwr/idwr_math_tables.h: 36dc1ac1396e2d568d5a9a3e2318365594f1ab55765718e47d2e229f70b75088
   idwr/lcid_table.h: 36c3a6a68f522cf108f10f58939eaf6089461cc685146f85a1054c2b17dfcc14
   idwr/metrics.c: 402cbb83c37d85c95c95e4e7762f7ebe0659df9176e4cb6cbb493695f935ce0e
   idwr/mode.c: 1866897796a769a36f8a44d4cced401de14f22ca72844a9c60a9aedee5f58333
   idwr/nameweight.c: 5b49fbb325eb4503b519e7bab664c7ba67860a002f007970a533b2c87398d65f
-  idwr/outline.c: 9b12b420f9969527a2bc8bc12a5fcc704a0ab21d3950713c00d41d75cb6e8cf6
+  idwr/outline.c: 7f5bf74ce5b27344016ced265a68ba3495e6754d75735d5f497beb15347533cc
   idwr/sbit.c: 5d8502e7fb68c8cdff96b4a0b680e96323c882e21ac5411e31fe86fefdd1a276
   idwr/texture.c: 2999f3f8ea047f599d5901c88b43eee1d82bc3d0279e188ee7468e8e63ddcd18
   idwr/ttraster.c: 408b3ef9762c29aff5145a60eb21109b3ce46bb88fae27c25c11c262f8ce3342
@@ -86,4 +86,4 @@ files:
   cff/path.c: 68786e1f8efbd0614c5e125086659aea7d021d3d127e655172b53963b4103ea0
   cff/qreduce.c: 6a01795ac1af9a2ce72aac11891de85540551a532dfe0bbb5911b41ef81e14ba
   cff/setup.c: 0b8b1bdd25f21e1c44d97d2903c1bae3b0475adf70cb8b48caffc5ac5317d1fc
-  gecko_golden/IdwrGolden.inc: 604b02ac8317ecea1d699748c56b6922e58b8565e1ee975d9fccafe526f983f1
+  gecko_golden/IdwrGolden.inc: e6ee16b026962eb5592c94af96df1737739e447d7fcd707d359c32aad21fb75f

@@ -1,0 +1,16 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Read by gfx/thebes/moz.build (one include line).
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+    # Exported: widget/gtk/nsLookAndFeel.cpp calls it before FcInit().
+    EXPORTS += [
+        "StealthFcEmptyConfig.h",
+    ]
+    # Non-unified: it declares the system cairo's functions after undefining
+    # the tree cairo's macros, as gfxFcPlatformFontList.cpp does.
+    SOURCES += [
+        "StealthFcEmptyConfig.cpp",
+    ]

@@ -4,11 +4,16 @@
   "gfx/thebes/gfxDWriteFontList.cpp",
   "gfx/thebes/gfxFcPlatformFontList.cpp",
   "gfx/thebes/gfxPlatformFontList.cpp",
-  "gfx/thebes/gfxPlatformFontList.h"
+  "gfx/thebes/gfxPlatformFontList.h",
+  "widget/gtk/nsLookAndFeel.cpp"
  ],
  "added": {
   "gfx/tests/gtest/TestStealthBundledCollection.cpp": "100644",
+  "gfx/tests/gtest/TestStealthFcEmptyConfig.cpp": "100644",
   "gfx/tests/gtest/TestStealthFcFontList.cpp": "100644",
+  "gfx/thebes/StealthFcEmptyConfig.cpp": "100644",
+  "gfx/thebes/StealthFcEmptyConfig.h": "100644",
+  "gfx/thebes/StealthFcEmptyConfig.mozbuild": "100644",
   "gfx/thebes/StealthFcFontList.cpp": "100644",
   "gfx/thebes/StealthFcFontList.h": "100644",
   "gfx/thebes/StealthFcFontList.mozbuild": "100644"
@@ -137,6 +142,26 @@
      "notes"
     ],
     "why": "The diff adds one stray blank line outside comments, not two."
+   }
+  },
+  {
+   "file": "widget/gtk/nsLookAndFeel.cpp",
+   "category": "spoof",
+   "feature": "font-list-bundle-only",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "the include block (StealthFcEmptyConfig.h) and the end of nsLookAndFeel::nsLookAndFeel, the line before FcInit()",
+   "evidence": [
+    "+  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)"
+   ],
+   "notes": "Fontconfig runs on an empty configuration (FcConfigCreate, rescan interval 0, FcConfigSetCurrent; gfx/thebes/StealthFcEmptyConfig.cpp) installed before the FcInit() Mozilla calls here, so the host's /etc/fonts, ~/.config/fontconfig and font directories are never loaded. The same idempotent call sits at the start of the gfxFcPlatformFontList constructor, whichever runs first.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook; two added lines, nothing removed."
    }
   }
  ]

@@ -4987,6 +4987,26 @@
   }
  },
  {
+  "file": "widget/gtk/nsLookAndFeel.cpp",
+  "category": "spoof",
+  "feature": "font-list-bundle-only",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "the include block (StealthFcEmptyConfig.h) and the end of nsLookAndFeel::nsLookAndFeel, the line before FcInit()",
+  "evidence": [
+   "+  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)"
+  ],
+  "notes": "Fontconfig runs on an empty configuration (FcConfigCreate, rescan interval 0, FcConfigSetCurrent; gfx/thebes/StealthFcEmptyConfig.cpp) installed before the FcInit() Mozilla calls here, so the host's /etc/fonts, ~/.config/fontconfig and font directories are never loaded. The same idempotent call sits at the start of the gfxFcPlatformFontList constructor, whichever runs first.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook; two added lines, nothing removed."
+  }
+ },
+ {
   "file": "widget/gtk/nsWindow.cpp",
   "category": "spoof",
   "feature": "occlusion-tracking",
@@ -5313,18 +5333,20 @@
   "category": "spoof",
   "feature": "webgpu-adapter-declaration",
   "prefs": [
-   "dom.webgpu.external-texture.enabled"
+   "dom.webgpu.external-texture.enabled",
+   "javascript.options.use_fdlibm_for_sin_cos_tan"
   ],
-  "added": 1,
-  "removed": 1,
-  "hunks": 1,
+  "added": 2,
+  "removed": 2,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
+  "anchor": "dom.webgpu.external-texture.enabled and javascript.options.use_fdlibm_for_sin_cos_tan, the non-Windows value of each",
   "evidence": [
-   "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
+   "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS",
+   "+  value: false  # STEALTH-HOOK(fingerprint/fonts/idwr): Windows' value; libxul's sin/cos/tan are ucrtbase's (gfx/idwr/libm_ucrt.c)"
   ],
-  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
+  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else. Same for the second line, owned by fingerprint/fonts/idwr (one record per file, so the file stays here): with javascript.options.use_fdlibm_for_sin_cos_tan false on every OS, Math.sin/cos/tan call the libm names libxul now defines itself (gfx/idwr/libm_ucrt.c, ucrtbase's results) instead of fdlibm."
  },
  {
   "file": "Cargo.lock",

@@ -55,7 +55,7 @@
  "layout/base/nsLayoutUtils.cpp": 1,
  "layout/base/nsPresContext.cpp": 1,
  "layout/painting/nsImageRenderer.cpp": 1,
- "modules/libpref/init/StaticPrefList.yaml": 1,
+ "modules/libpref/init/StaticPrefList.yaml": 2,
  "modules/libpref/init/all.js": 6,
  "netwerk/base/LoadInfo.cpp": 1,
  "netwerk/base/nsProtocolProxyService.cpp": 3,

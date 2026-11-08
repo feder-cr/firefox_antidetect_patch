@@ -19,6 +19,15 @@ if CONFIG["TARGET_CPU"] in ("x86_64", "aarch64"):
     include("sources.mozbuild")
     SOURCES += ["IdwrHost.cpp"]
 
+    # libxul's own sin, cos, tan, sinf, cosf, tanf, powf, hypot (and sincos, sincosf), hidden,
+    # with idwr_math's bodies: every reference inside libxul binds to ucrtbase's results, never
+    # to the host libm. Not on Windows, where ucrtbase is the reference. A native object
+    # (-fno-lto) so LTO cannot drop a definition that code generation still calls, and
+    # -fno-builtin so the compiler does not treat these definitions as library calls.
+    if CONFIG["OS_ARCH"] != "WINNT":
+        SOURCES += ["libm_ucrt.c"]
+        SOURCES["libm_ucrt.c"].flags += ["-fno-lto", "-fno-builtin"]
+
     DEFINES["IDWR_STANDALONE"] = True
     DEFINES["IDWR_CFF"] = True
     DEFINES["IDWR_STATIC"] = True
