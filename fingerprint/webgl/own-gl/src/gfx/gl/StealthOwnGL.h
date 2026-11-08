@@ -5,6 +5,7 @@
 #ifndef GFX_GL_STEALTH_OWN_GL_H_
 #define GFX_GL_STEALTH_OWN_GL_H_
 
+#include "GLLibraryEGL.h"
 #include "StealthDeclarationGate.h"
 #include "nsString.h"
 #include "prlink.h"
@@ -68,6 +69,26 @@ inline bool StealthLoadOwnGLOrRefuse(PRLibrary** aEGL, PRLibrary** aGL,
 #endif
   aFailureId->AssignLiteral("FEATURE_FAILURE_EGL_LOAD_3");
   return false;
+}
+
+// EGL's surfaceless platform, asked for as EGL defines it: with no native
+// display. Mozilla's EGL_DEFAULT_DISPLAY is the X11 display wherever there is
+// one (GLLibraryEGL.h), and Mozilla's own surfaceless path runs only where there
+// is none. The engine asks for it under X11 too (Xvfb), where Mesa answers a
+// native display with EGL_BAD_PARAMETER: candidate 42484125583 had no WebGL on
+// the Linux gate. Otherwise as GetAndInitSurfacelessDisplay.
+inline std::shared_ptr<EglDisplay> StealthOwnGLSurfacelessDisplay(
+    GLLibraryEGL& aEgl, const StaticMutexAutoLock& aProofOfLock) {
+  if (!aEgl.IsExtensionSupported(EGLLibExtension::MESA_platform_surfaceless)) {
+    return nullptr;
+  }
+  const EGLAttrib attribs[] = {LOCAL_EGL_NONE};
+  const EGLDisplay display = aEgl.fGetPlatformDisplay(
+      LOCAL_EGL_PLATFORM_SURFACELESS_MESA, nullptr, attribs);
+  if (display == EGL_NO_DISPLAY) {
+    return nullptr;
+  }
+  return EglDisplay::Create(aEgl, display, true, aProofOfLock);
 }
 
 }  // namespace mozilla::gl

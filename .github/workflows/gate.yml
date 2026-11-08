@@ -267,6 +267,7 @@ jobs:
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
+            tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py \
             -m e2e -o addopts='' -q
 
       # HOST GATE, this leg's half: everything the page in the wrapper's

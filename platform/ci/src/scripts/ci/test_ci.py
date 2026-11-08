@@ -253,6 +253,14 @@ def main() -> int:
     copies = sorted(p.name for p in wf.glob("*.yml")
                     if "tests/test_hidden_desktop.py" in p.read_text(encoding="utf-8") and p.name != "gate.yml")
     cases.append(("the gate's guards run in gate.yml only (copies: %s)" % (", ".join(copies) or "none"), not copies))
+    # WebGL on the engine's own GL, under X11 as every Linux session runs: candidate
+    # 42484125583 had no WebGL on the Linux gate (the surfaceless display was asked
+    # for with the X11 display), and only a guard about pixel noise said so.
+    guards = (wf / "gate.yml").read_text(encoding="utf-8")
+    cases.append(("the gate's guards run the own-GL test, by name, beside the WebGL masking one",
+                  "tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py" in guards
+                  and guards.index("test_webgl_readpixels_no_masking_signature")
+                  < guards.index("tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py") < guards.index("-m e2e -o addopts")))
 
     # The host gate asks the general question (is anything the host's?) of which the
     # font gate asked one case (is the font list the persona's?). It was to stay until

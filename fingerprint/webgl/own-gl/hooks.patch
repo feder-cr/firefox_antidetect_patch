@@ -19,7 +19,7 @@ index 87bfa48d504268ce4e728c9ade75ae7a63a60736..56cd60c7f033ac4b7ec02678340458a1
        bool(desc.flags & CreateContextFlags::FORBID_HARDWARE)) {
      // We request EGL if software is required, because we don't know
 diff --git a/gfx/gl/GLLibraryEGL.cpp b/gfx/gl/GLLibraryEGL.cpp
-index 470d9645a892f271545504ec906ddddd2fcd86af..b853961de1e4014223a85cfb58f397c548eea8c6 100644
+index 470d9645a892f271545504ec906ddddd2fcd86af..2a8b4d44260d888a587e76360ee206c2d8d284a1 100644
 --- a/gfx/gl/GLLibraryEGL.cpp
 +++ b/gfx/gl/GLLibraryEGL.cpp
 @@ -3,6 +3,7 @@
@@ -42,7 +42,7 @@ index 470d9645a892f271545504ec906ddddd2fcd86af..b853961de1e4014223a85cfb58f397c5
    } else {
      void* nativeDisplay = EGL_DEFAULT_DISPLAY;
  #ifdef MOZ_WIDGET_GTK
-+    if (StealthOwnGLRequired()) return GetAndInitSurfacelessDisplay(*this, aProofOfLock);  // STEALTH-HOOK(fingerprint/webgl/own-gl): surfaceless only
++    if (StealthOwnGLRequired()) return StealthOwnGLSurfacelessDisplay(*this, aProofOfLock);  // STEALTH-HOOK(fingerprint/webgl/own-gl): surfaceless only
      if (!ret && (!gfx::gfxVars::WebglUseHardware() || aFlags.mForceSoftware)) {
        // Initialize a swrast egl device such as llvmpipe
        ret = GetAndInitSoftwareDisplay(*this, aProofOfLock);
