@@ -147,7 +147,8 @@ echo "== actions-runner $RUNNER_VERSION"
 R=/home/runner/actions-runner
 if [ "$(as_runner "$R/bin/Runner.Listener" --version 2>/dev/null)" != "$RUNNER_VERSION" ]; then
   fetch "https://api.github.com/repos/actions/runner/releases/assets/$RUNNER_ASSET" \
-    "$RUNNER_SHA256" /tmp/actions-runner.tar.gz \n    "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-x64-$RUNNER_VERSION.tar.gz"
+    "$RUNNER_SHA256" /tmp/actions-runner.tar.gz \
+    "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-x64-$RUNNER_VERSION.tar.gz"
   rm -rf "$R" && install -d -o runner -g runner "$R"
   as_runner tar -xzf /tmp/actions-runner.tar.gz -C "$R"
   rm -f /tmp/actions-runner.tar.gz

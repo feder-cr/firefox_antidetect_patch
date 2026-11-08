@@ -14,8 +14,13 @@ filter names is not there, unless it does not exist on this platform (NOT_ON). T
 of each suite stays in --reports, for comparing runs.
 
 On Windows firefox.exe is the launcher: --wait-for-browser, as the green candidate ran it.
+A suite whose process dies on a signal says which, and with --cores (Linux, where the job
+points the kernel's core_pattern there) its core is read with gdb: every thread's
+backtrace goes into the log and into --reports as <suite>.backtrace.txt, and the core is
+dropped. Candidate 42473169415 had a suite exit -11 after all its tests passed, and the
+log could say no more than that.
 
-    GTEST_FILTER_INPUT=<filter> python3 gtest_run.py --root DIR [--reports DIR]    (DIR/bin, DIR/gtest)
+    GTEST_FILTER_INPUT=<filter> python3 gtest_run.py --root DIR [--reports DIR] [--cores DIR]    (DIR/bin, DIR/gtest)
 
 Its cases: scripts/ci/test_release_path.py.
 """
@@ -25,9 +30,12 @@ import argparse
 import json
 import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 SUITE = re.compile(r"(\S+)\.(  # .*)?")
@@ -63,7 +71,39 @@ def environment(root: Path, gtest_filter: str, base=None) -> dict:
     return env
 
 
-def run(root: Path, gtest_filter: str, reports=None, out=print) -> int:
+def signal_name(status: int) -> str:
+    """SIGSEGV for -11; the number when Python has no name for it."""
+    try:
+        return signal.Signals(-status).name
+    except ValueError:
+        return "signal %d" % -status
+
+
+def find_core(cores: Path, pid: int, since: float):
+    """The core the suite's process left (core_pattern core.%p), else any core
+    written since the suite started (one of its children)."""
+    exact = sorted(cores.glob("core.%d*" % pid))
+    if exact:
+        return exact[0]
+    fresh = sorted((p for p in cores.glob("core*") if p.stat().st_mtime >= since), key=lambda p: p.stat().st_mtime)
+    return fresh[-1] if fresh else None
+
+
+def backtrace(app: str, core: Path, debugger: str = "gdb", run=subprocess.run) -> str:
+    """Every thread's backtrace from the core, as gdb prints it."""
+    if not shutil.which(debugger):
+        return "no %s on this machine: the core is %s" % (debugger, core)
+    done = run([debugger, "-batch", "-nx", "-ex", "info sharedlibrary", "-ex", "thread apply all bt 40", app, str(core)],
+               capture_output=True, text=True, check=False, timeout=900)
+    return (done.stdout + done.stderr).strip()
+
+
+def unlimited_core():
+    import resource
+    resource.setrlimit(resource.RLIMIT_CORE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+
+
+def run(root: Path, gtest_filter: str, reports=None, out=print, cores=None, debugger="gdb") -> int:
     if not gtest_filter:
         out("ERROR: an empty filter: name the gtests, or * for all")
         return 2
@@ -89,10 +129,25 @@ def run(root: Path, gtest_filter: str, reports=None, out=print) -> int:
             one = dict(env, GTEST_FILTER=only_suite(gtest_filter, suites, suite),
                        GTEST_OUTPUT="json:%s" % (where / ("%s.json" % suite.replace("/", "_"))))
             out("%s: running" % suite)
-            status = subprocess.run(args, cwd=cwd, env=one, check=False).returncode
-            if status:
+            since = time.time()
+            child = subprocess.Popen(args, cwd=cwd, env=one,
+                                     preexec_fn=unlimited_core if cores and not windows else None)
+            status = child.wait()
+            if status > 0:
                 out("%s: exited %d" % (suite, status))
-                exit_code = status if status > 0 else 1
+                exit_code = status
+            elif status < 0:
+                out("%s: exited %d (%s)" % (suite, status, signal_name(status)))
+                exit_code = 1
+                core = find_core(Path(cores), child.pid, since) if cores and not windows else None
+                if core:
+                    trace = backtrace(app, core, debugger)
+                    (where / ("%s.backtrace.txt" % suite.replace("/", "_"))).write_text(trace + "\n", encoding="utf-8")
+                    for line in trace.splitlines():
+                        out("%s: %s" % (suite, line))
+                    core.unlink(missing_ok=True)
+                elif cores and not windows:
+                    out("%s: no core in %s" % (suite, cores))
             try:
                 report = json.loads(Path(one["GTEST_OUTPUT"][5:]).read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -116,8 +171,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--reports", type=Path)
+    ap.add_argument("--cores", type=Path, help="where core_pattern writes cores (Linux)")
     args = ap.parse_args(argv)
-    return run(args.root.resolve(), os.environ.get("GTEST_FILTER_INPUT", ""), args.reports)
+    return run(args.root.resolve(), os.environ.get("GTEST_FILTER_INPUT", ""), args.reports,
+               cores=args.cores.resolve() if args.cores else None)
 
 
 if __name__ == "__main__":

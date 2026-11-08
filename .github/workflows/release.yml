@@ -1105,7 +1105,7 @@ jobs:
         timeout-minutes: 20
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y xvfb gdb
       - name: The leg's dist/bin with its gtest libxul
         if: needs.plan.outputs.gtests == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -1118,7 +1118,11 @@ jobs:
           GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
         run: |
           tar -C gtest-run -xf gtest-run/gtest-bin.tar
-          xvfb-run -a python3 .series/platform/ci/src/scripts/ci/gtest_run.py --root gtest-run --reports gtest-reports
+          # A suite that dies on a signal leaves its core here, and gtest_run.py puts every
+          # thread's backtrace in the log and in the reports (candidate 42473169415: -11, no more).
+          mkdir -p gtest-cores
+          sudo sysctl -q -w kernel.core_pattern="$PWD/gtest-cores/core.%p"
+          xvfb-run -a python3 .series/platform/ci/src/scripts/ci/gtest_run.py --root gtest-run --reports gtest-reports --cores gtest-cores
       - name: What each suite did
         if: always() && needs.plan.outputs.gtests == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

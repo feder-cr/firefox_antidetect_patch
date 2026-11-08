@@ -1326,6 +1326,20 @@ def group_node_deps():
         done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
     out.append(("node deps: the first address down, the second serving the file: the bootstrap goes on with it",
                 done.returncode == 0 and done.stdout == "the archive" and done.stderr.count("(round 1)") == 1))
+    # The runner's call as bash reads it: four words, the direct address last (a literal
+    # backslash-n once made the fourth word "n" and the direct address a fifth, never tried).
+    begin = bootstrap.index('  fetch "https://api.github.com/repos/actions/runner/')
+    lines = []
+    for line in bootstrap[begin:].splitlines():
+        lines.append(line)
+        if not line.endswith(chr(92)):
+            break
+    script = chr(10).join(["RUNNER_ASSET=1", "RUNNER_SHA256=s", "RUNNER_VERSION=9",
+                           'fetch() { echo "$#"; printf %s "$4"; }'] + lines)
+    done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    words = done.stdout.splitlines()
+    out.append(("node deps: the runner's call gives fetch four words, the direct address the fourth (%s)" % words,
+                words[:1] == ["4"] and done.stdout.endswith("https://github.com/actions/runner/releases/download/v9/actions-runner-linux-x64-9.tar.gz")))
     return out
 
 

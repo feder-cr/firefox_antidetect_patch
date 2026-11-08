@@ -124,6 +124,11 @@ with open(%r, "a") as f:
 suite = env["GTEST_FILTER"]
 with open(env["GTEST_OUTPUT"][5:], "w") as f:
     json.dump({"tests": 1, "failures": 0, "disabled": 0, "errors": 0, "testsuites": []}, f)
+if env.get("FAKE_CRASH") and suite.startswith(env["FAKE_CRASH"]):
+    import signal
+    if env.get("FAKE_CORES"):
+        open(os.path.join(env["FAKE_CORES"], "core." + str(os.getpid())), "w").write("core")
+    os.kill(os.getpid(), signal.SIGSEGV)
 sys.exit(3 if env.get("FAKE_FAIL") and suite.startswith(env["FAKE_FAIL"]) else 0)
 """ % str(record), encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
@@ -234,6 +239,48 @@ def group_gtest(doc) -> list:
                 os.environ.update(old)
         code = go_kept()
         out.append(("gtests: each suite's report stays where it was asked to", code == 0 and sorted(p.name for p in kept.iterdir()) == ["SuiteA.json", "SuiteB_x.json"]))
+        # A suite that dies on a signal: named, and its core read into the log and the reports
+        # (candidate 42473169415 said "exited -11" and nothing else).
+        cores, crash_kept = tree / "cores", tree / "crash-kept"
+        cores.mkdir()
+        gdb = tree / "fake-gdb"
+        gdb.write_text("#!/bin/sh\necho 'Thread 1 (LWP 7):'\necho '#0  crashed_here () at Fake.cpp:7'\necho args: $*\n",
+                       encoding="utf-8", newline="\n")
+        gdb.chmod(gdb.stat().st_mode | stat.S_IEXEC)
+
+        def go_crash(with_cores):
+            old = dict(os.environ)
+            os.environ.update(FAKE_SUITES="SuiteA SuiteB", FAKE_FAIL="", FAKE_CRASH="Suite*-SuiteB",
+                              FAKE_CORES=str(cores) if with_cores else "")
+            said = []
+            try:
+                code = gtest_run.run(root, "Suite*", reports=crash_kept, out=said.append,
+                                     cores=cores if with_cores else None, debugger=str(gdb))
+            finally:
+                os.environ.clear()
+                os.environ.update(old)
+            return code, said
+        if sys.platform.startswith("linux"):
+            code, said = go_crash(True)
+            trace = crash_kept / "SuiteA.backtrace.txt"
+            out.append(("gtests: a suite killed by a signal is red and named (SIGSEGV), its core read: every thread in the log and in the reports, the core dropped, the next suite still ran",
+                        code != 0 and "SuiteA: exited -11 (SIGSEGV)" in said
+                        and "SuiteA: #0  crashed_here () at Fake.cpp:7" in said
+                        and trace.is_file() and "crashed_here" in trace.read_text()
+                        and "thread apply all bt 40" in trace.read_text() and str(root / "bin" / "firefox") in trace.read_text()
+                        and not list(cores.iterdir()) and "SuiteB: running" in said))
+            code, said = go_crash(False)
+            out.append(("gtests: without --cores the signal is still named, and nothing is looked for",
+                        code != 0 and "SuiteA: exited -11 (SIGSEGV)" in said and not any("crashed_here" in l for l in said)))
+        else:
+            print("skip  gtests: a suite killed by a signal: Linux only")
+        out.append(("gtests: the signal's name, also for one Python has no name for",
+                    gtest_run.signal_name(-11) == "SIGSEGV" and gtest_run.signal_name(-200) == "signal 200"))
+        cores_run = steps["Engine gtests (gtests=true only)"]["run"]
+        out.append(("gtests: Linux installs gdb with the display, points core_pattern at the job, and hands gtest_run the directory",
+                    "apt-get install -y xvfb gdb" in display
+                    and cores_run.index("mkdir -p gtest-cores") < cores_run.index('kernel.core_pattern="$PWD/gtest-cores/core.%p"')
+                    < cores_run.index("--cores gtest-cores")))
         (root / "bin" / "firefox").rename(root / "bin" / "firefox.exe")
         code, calls, said = go("SuiteA.*:SuiteB.*")
         out.append(("gtests: Windows: firefox.exe with the arguments the green candidate gave it, the launcher waits",
