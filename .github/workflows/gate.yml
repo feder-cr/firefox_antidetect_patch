@@ -105,6 +105,10 @@ jobs:
           apt-get install -y -qq --no-install-recommends python3 python3-venv python3-pip git ca-certificates
           python3 -m venv /opt/py
           echo /opt/py/bin >> "$GITHUB_PATH"
+          # The container runs as root and GitHub mounts a HOME owned by the
+          # runner's user; Firefox refuses to start as root in another user's
+          # HOME, so root gets its own.
+          echo HOME=/root >> "$GITHUB_ENV"
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
