@@ -117,6 +117,8 @@
  "gfx/2d/UnscaledFontDWrite.h": 7,
  "gfx/2d/moz.build": 5,
  "gfx/gl/GLContext.cpp": 3,
+ "gfx/gl/GLContextProviderLinux.cpp": 2,
+ "gfx/gl/GLLibraryEGL.cpp": 3,
  "gfx/gl/gtest/moz.build": 1,
  "gfx/gl/moz.build": 1,
  "gfx/moz.build": 2,

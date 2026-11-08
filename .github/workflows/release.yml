@@ -883,6 +883,9 @@ jobs:
           python3 scripts/ci/background.py wait lavapipe
           mkdir -p obj-rel/dist/bin/lavapipe
           cp "$HOME/.cache/lavapipe/libvulkan_lvp.so" "$HOME/.cache/lavapipe/VERSION.json" obj-rel/dist/bin/lavapipe/
+          # WebGL's GL, built from the same tree (llvmpipe behind EGL, gfx/gl/StealthOwnGL.h).
+          mkdir -p obj-rel/dist/bin/llvmpipe
+          cp "$HOME/.cache/lavapipe/gl/"* obj-rel/dist/bin/llvmpipe/
           cat obj-rel/dist/bin/lavapipe/VERSION.json
       - name: WebGPU's Vulkan driver (linux-x86_64) - keep it
         if: matrix.leg == 'linux-x86_64' && needs.plan.outputs.compile_cache == 'gha' && steps.lavapipe.outcome == 'success' && steps.lavapipe-cache.outputs.cache-hit != 'true'

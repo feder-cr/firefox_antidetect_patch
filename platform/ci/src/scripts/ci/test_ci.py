@@ -628,6 +628,57 @@ def main() -> int:
                       and len(check(good.splitlines()[0])) == 1
                       and "prove(lib," in (HERE / "lavapipe_build.py").read_text(encoding="utf-8")
                       and all((lvp / "proof" / f).is_file() for f in ("proof.c", "big.comp", "many.vert", "many.frag"))))
+        # WebGL's GL on Linux: llvmpipe behind EGL from lavapipe's tree, never
+        # the host's (before, the host's Mesa or GPU driver decided the served
+        # extensions and every pixel).
+        gl_opts = lavapipe_build.gl_meson_options()
+        changed = sorted(set(gl_opts) - set(lavapipe_build.MESON_OPTIONS))
+        done_run = steps.get("WebGPU's Vulkan driver (linux-x86_64) - done", {}).get("run", "")
+        script = (HERE / "lavapipe_build.py").read_text(encoding="utf-8")
+        cases.append(("webgl: Linux builds WebGL's GL from lavapipe's tree and options (llvmpipe behind EGL, surfaceless only, no GLX, no glvnd), proves it, and ships it in llvmpipe/",
+                      changed == ["-Degl=enabled", "-Dgallium-drivers=llvmpipe", "-Dgles2=enabled",
+                                  "-Dopengl=true", "-Dvulkan-drivers="]
+                      and all(o in gl_opts for o in ("-Dplatforms=", "-Dglx=disabled", "-Dglvnd=disabled",
+                                                    "-Dgbm=disabled", "-Dcpp_rtti=false"))
+                      and len(gl_opts) == len(lavapipe_build.MESON_OPTIONS)
+                      and 'cp "$HOME/.cache/lavapipe/gl/"* obj-rel/dist/bin/llvmpipe/' in done_run
+                      and done_run.index("wait lavapipe") < done_run.index("llvmpipe")
+                      and '"$STAGING/llvmpipe/"' in pkg and "libEGL.so.1 libGLESv2.so.2" in pkg
+                      and "prove_gl(gl," in script and (lvp / "proof" / "gl_proof.c").is_file()
+                      and lavapipe_build.gl_files("26.2.6") == ("libEGL.so.1", "libGLESv2.so.2", "libgallium-26.2.6.so")))
+        own = set(lavapipe_build.gl_files("26.2.6"))
+        egl_dyn = (" 0x1 (NEEDED)             Shared library: [libgallium-26.2.6.so]\n"
+                   " 0x1 (NEEDED)             Shared library: [libc.so.6]\n"
+                   " 0xe (SONAME)             Library soname: [libEGL.so.1]\n"
+                   " 0x1d (RUNPATH)            Library runpath: [$ORIGIN]\n")
+        gal_dyn = (" 0x1 (NEEDED)             Shared library: [libm.so.6]\n"
+                   " 0xe (SONAME)             Library soname: [libgallium-26.2.6.so]\n")
+        floor_sym = "     1: 0000000000000000     0 FUNC    GLOBAL DEFAULT  UND memcpy@GLIBC_2.14 (2)\n"
+        gl_check = lavapipe_build.check_gl_binary
+        cases.append(("webgl: the GL check refuses a host library, a search path other than $ORIGIN, a wrong SONAME and a symbol above Firefox's floor",
+                      gl_check("libEGL.so.1", egl_dyn, floor_sym, own) == []
+                      and gl_check("libgallium-26.2.6.so", gal_dyn, floor_sym, own) == []
+                      and len(gl_check("libEGL.so.1", egl_dyn + " 0x1 (NEEDED)             Shared library: [libdrm.so.2]\n",
+                                       floor_sym, own)) == 1
+                      and len(gl_check("libEGL.so.1", egl_dyn.replace("[$ORIGIN]", "[$ORIGIN/../gallium/targets/dri]"),
+                                       floor_sym, own)) == 1
+                      and len(gl_check("libgallium-26.2.6.so", gal_dyn + " 0x1d (RUNPATH)            Library runpath: [/usr/lib]\n",
+                                       floor_sym, own)) == 1
+                      and len(gl_check("libEGL.so.1", egl_dyn.replace("soname: [libEGL.so.1]", "soname: [libEGL.so]"),
+                                       floor_sym, own)) == 1
+                      and len(gl_check("libgallium-26.2.6.so", gal_dyn, floor_sym + tls_sym, own)) == 1))
+        gl_good = ("A libEGL.so.1 loads from its directory -> OK\n"
+                   "B a surfaceless display (EGL 1.5) and a GLES 3 context -> OK\n"
+                   "C llvmpipe clears and reads back (llvmpipe (LLVM 22.1.8, 128 bits): 255 0 0 255) -> OK\n"
+                   "D no GL library of the host mapped -> OK\n")
+        gl_floor = patch_text("*-gallium-gl-glibc-floor-*.patch")
+        cases.append(("webgl: every GL build draws before it is kept, a host GL library mapped beside it fails the proof, and libgallium meets glibc 2.17 as lavapipe does",
+                      check(gl_good, lavapipe_build.GL_PROOF_LINES) == []
+                      and len(check(gl_good.replace("mapped -> OK", "mapped -> FAIL"), lavapipe_build.GL_PROOF_LINES)) == 1
+                      and len(check(gl_good.splitlines()[0], lavapipe_build.GL_PROOF_LINES)) == 3
+                      and "+  files('dri_target.c', 'dri_glibc_floor.c'),\n" in gl_floor
+                      and "-Wl,-z,nodelete" in gl_floor
+                      and '+__attribute__((visibility("hidden"))) int\n+__cxa_thread_atexit_impl(' in gl_floor))
         install = steps.get("Install Linux build tools", {})
         cases.append(("apt: timeouts and retries before every apt-get, and the install step has a limit (run 41248997155)",
                       len(net) == 1 and bool(apt_at) and net[0] < min(apt_at)

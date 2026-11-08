@@ -1,0 +1,90 @@
+--- a/src/gallium/targets/dri/meson.build
++++ b/src/gallium/targets/dri/meson.build
+@@ -41,13 +41,13 @@
+ 
+ libgallium_dri = shared_library(
+   libgallium_name,
+-  files('dri_target.c'),
++  files('dri_target.c', 'dri_glibc_floor.c'),
+   include_directories : [
+     inc_include, inc_src, inc_mesa, inc_gallium, inc_gallium_aux, inc_util, inc_gallium_drivers,
+     inc_gallium_winsys, include_directories('../../frontends/dri'),
+   ],
+   gnu_symbol_visibility : 'hidden',
+-  link_args : [ld_args_build_id, ld_args_gc_sections, gallium_dri_ld_args],
++  link_args : [ld_args_build_id, ld_args_gc_sections, gallium_dri_ld_args, '-Wl,-z,nodelete'],
+   link_depends : gallium_dri_link_depends,
+   link_with : [
+     libmesa, libgalliumvl,
+--- /dev/null
++++ b/src/gallium/targets/dri/dri_glibc_floor.c
+@@ -0,0 +1,69 @@
++/* Firefox runs on glibc 2.17 (python/mozbuild/mozbuild/action/check_binary.py).
++ * __cxa_thread_atexit_impl, through which libstdc++ runs the destructors of
++ * C++ thread_local objects (LLVM has some), appeared in glibc 2.18. Firefox
++ * meets the same floor by defining the symbol inside its own binaries
++ * (build/unix/stdc++compat/stdc++compat.cpp), so that nothing imports
++ * GLIBC_2.18. Here libstdc++ is linked statically, so the definition carries
++ * what libstdc++ itself does where glibc has no such function
++ * (libsupc++/atexit_thread.cc): a per-thread list run when the thread exits,
++ * and at exit for the main thread. The GL library (libgallium, behind
++ * libEGL) is linked -z nodelete, so the destructors it registers never
++ * outlive its code.
++ */
++
++#include <pthread.h>
++#include <stdlib.h>
++
++struct dri_thread_dtor {
++   void (*dtor)(void *);
++   void *obj;
++   struct dri_thread_dtor *next;
++};
++
++static pthread_key_t dri_thread_dtor_key;
++static pthread_once_t dri_thread_dtor_once = PTHREAD_ONCE_INIT;
++
++static void
++dri_thread_dtor_run(void *list)
++{
++   struct dri_thread_dtor *e = list;
++   while (e) {
++      struct dri_thread_dtor *next = e->next;
++      e->dtor(e->obj);
++      free(e);
++      e = next;
++   }
++}
++
++static void
++dri_thread_dtor_run_current(void)
++{
++   void *list = pthread_getspecific(dri_thread_dtor_key);
++   pthread_setspecific(dri_thread_dtor_key, NULL);
++   dri_thread_dtor_run(list);
++}
++
++static void
++dri_thread_dtor_init(void)
++{
++   pthread_key_create(&dri_thread_dtor_key, dri_thread_dtor_run);
++   atexit(dri_thread_dtor_run_current);
++}
++
++__attribute__((visibility("hidden"))) int
++__cxa_thread_atexit_impl(void (*dtor)(void *), void *obj, void *dso_handle);
++
++int
++__cxa_thread_atexit_impl(void (*dtor)(void *), void *obj, void *dso_handle)
++{
++   (void)dso_handle;
++   pthread_once(&dri_thread_dtor_once, dri_thread_dtor_init);
++   struct dri_thread_dtor *e = malloc(sizeof(*e));
++   if (!e)
++      return -1;
++   e->dtor = dtor;
++   e->obj = obj;
++   e->next = pthread_getspecific(dri_thread_dtor_key);
++   pthread_setspecific(dri_thread_dtor_key, e);
++   return 0;
++}

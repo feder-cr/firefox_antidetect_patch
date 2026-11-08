@@ -1,0 +1,52 @@
+{
+ "modified": [
+  "gfx/gl/GLContextProviderLinux.cpp",
+  "gfx/gl/GLLibraryEGL.cpp"
+ ],
+ "added": {
+  "gfx/gl/StealthOwnGL.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "gfx/gl/GLContextProviderLinux.cpp",
+   "category": "spoof",
+   "feature": "webgl-own-gl",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after #include \"GLContextProvider.h\", and at the top of GLContextProviderLinux::CreateHeadless",
+   "evidence": [
+    "+  if (StealthOwnGLRequired()) return sGLContextProviderEGL.CreateHeadless(desc, out_failureId);  // STEALTH-HOOK(fingerprint/webgl/own-gl): never GLX"
+   ],
+   "notes": "With the engine on, a headless context on Linux (WebGL's) is always EGL, so always the engine's own llvmpipe, never the host's GLX.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-08."
+   }
+  },
+  {
+   "file": "gfx/gl/GLLibraryEGL.cpp",
+   "category": "spoof",
+   "feature": "webgl-own-gl",
+   "prefs": [],
+   "added": 3,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after #include \"GLLibraryEGL.h\", after the non-Windows library comment in GLLibraryEGL::Init, and after #ifdef MOZ_WIDGET_GTK in CreateDisplayLocked",
+   "evidence": [
+    "+  if (!StealthLoadOwnGLOrRefuse(&mEGLLibrary, &mGLLibrary, out_failureId)) return false;  // STEALTH-HOOK(fingerprint/webgl/own-gl): ours or none",
+    "+    if (StealthOwnGLRequired()) return GetAndInitSurfacelessDisplay(*this, aProofOfLock);  // STEALTH-HOOK(fingerprint/webgl/own-gl): surfaceless only"
+   ],
+   "notes": "On Linux with the engine on, EGL is the engine's own llvmpipe (llvmpipe/ next to the executable, StealthLoadOwnGLOrRefuse) or nothing, never the host's libEGL, and the display is EGL's surfaceless platform only, never the host's X11, Wayland or render nodes.",
+   "verifier": {
+    "changed": [],
+    "why": "Written with the hook, 2026-11-08."
+   }
+  }
+ ]
+}

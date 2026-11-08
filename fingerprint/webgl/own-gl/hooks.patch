@@ -1,0 +1,48 @@
+diff --git a/gfx/gl/GLContextProviderLinux.cpp b/gfx/gl/GLContextProviderLinux.cpp
+index 87bfa48d504268ce4e728c9ade75ae7a63a60736..56cd60c7f033ac4b7ec02678340458a1162b7310 100644
+--- a/gfx/gl/GLContextProviderLinux.cpp
++++ b/gfx/gl/GLContextProviderLinux.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "GLContextProvider.h"
++#include "StealthOwnGL.h"  // STEALTH-HOOK(fingerprint/webgl/own-gl)
+ #include "mozilla/gfx/gfxVars.h"
+ #include "prenv.h"
+ 
+@@ -33,6 +34,7 @@ already_AddRefed<GLContext> GLContextProviderLinux::CreateForCompositorWidget(
+ /*static*/
+ already_AddRefed<GLContext> GLContextProviderLinux::CreateHeadless(
+     const GLContextCreateDesc& desc, nsACString* const out_failureId) {
++  if (StealthOwnGLRequired()) return sGLContextProviderEGL.CreateHeadless(desc, out_failureId);  // STEALTH-HOOK(fingerprint/webgl/own-gl): never GLX
+   if (gfxVars::UseEGL() ||
+       bool(desc.flags & CreateContextFlags::FORBID_HARDWARE)) {
+     // We request EGL if software is required, because we don't know
+diff --git a/gfx/gl/GLLibraryEGL.cpp b/gfx/gl/GLLibraryEGL.cpp
+index 470d9645a892f271545504ec906ddddd2fcd86af..b853961de1e4014223a85cfb58f397c548eea8c6 100644
+--- a/gfx/gl/GLLibraryEGL.cpp
++++ b/gfx/gl/GLLibraryEGL.cpp
+@@ -3,6 +3,7 @@
+  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "GLLibraryEGL.h"
++#include "StealthOwnGL.h"  // STEALTH-HOOK(fingerprint/webgl/own-gl)
+ 
+ #include "gfxConfig.h"
+ #include "gfxCrashReporterUtils.h"
+@@ -548,6 +549,7 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
+ 
+   // On non-Windows (Android) we use system copies of libEGL. We look for
+   // the APITrace lib, libEGL.so, and libEGL.so.1 in that order.
++  if (!StealthLoadOwnGLOrRefuse(&mEGLLibrary, &mGLLibrary, out_failureId)) return false;  // STEALTH-HOOK(fingerprint/webgl/own-gl): ours or none
+ 
+ #  if defined(ANDROID)
+   if (!mEGLLibrary) mEGLLibrary = LoadApitraceLibrary();
+@@ -1016,6 +1018,7 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplayLocked(
+   } else {
+     void* nativeDisplay = EGL_DEFAULT_DISPLAY;
+ #ifdef MOZ_WIDGET_GTK
++    if (StealthOwnGLRequired()) return GetAndInitSurfacelessDisplay(*this, aProofOfLock);  // STEALTH-HOOK(fingerprint/webgl/own-gl): surfaceless only
+     if (!ret && (!gfx::gfxVars::WebglUseHardware() || aFlags.mForceSoftware)) {
+       // Initialize a swrast egl device such as llvmpipe
+       ret = GetAndInitSoftwareDisplay(*this, aProofOfLock);

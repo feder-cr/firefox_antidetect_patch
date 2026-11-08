@@ -24,6 +24,14 @@ if [ "${CI_LEG:-}" = linux-x86_64 ]; then
   [ -f obj-rel/dist/bin/lavapipe/libvulkan_lvp.so ] || { echo "ERROR: no lavapipe in obj-rel/dist/bin"; exit 1; }
   mkdir -p "$STAGING/lavapipe"
   cp -a obj-rel/dist/bin/lavapipe/libvulkan_lvp.so obj-rel/dist/bin/lavapipe/VERSION.json "$STAGING/lavapipe/"
+  # WebGL's GL (llvmpipe behind EGL, from the same build), where the engine
+  # looks for it. Required: without it WebGL has no context, never the host's GL.
+  for f in libEGL.so.1 libGLESv2.so.2; do
+    [ -f "obj-rel/dist/bin/llvmpipe/$f" ] || { echo "ERROR: no llvmpipe/$f in obj-rel/dist/bin"; exit 1; }
+  done
+  ls obj-rel/dist/bin/llvmpipe/libgallium-*.so >/dev/null || { echo "ERROR: no llvmpipe libgallium in obj-rel/dist/bin"; exit 1; }
+  mkdir -p "$STAGING/llvmpipe"
+  cp -a obj-rel/dist/bin/llvmpipe/. "$STAGING/llvmpipe/"
 fi
 # JUGGLER GATE: present (Playwright cannot drive the binary without it).
 # PAGE-SURFACE GATE: what a page can read of the build is the retail's of the

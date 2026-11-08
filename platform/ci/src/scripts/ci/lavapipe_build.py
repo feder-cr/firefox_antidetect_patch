@@ -32,6 +32,17 @@ libvulkan.so.1) and asks it for vkGetInstanceProcAddr directly
 
 Linux only (Windows has WARP). Without the file WebGPU answers null (it never falls
 back to a host driver).
+
+The same tree, with the same patches, also gives WebGL its GL on Linux, in
+DIR/gl: llvmpipe behind EGL (libEGL.so.1, libGLESv2.so.2 and the
+libgallium-<mesa>.so they need, found next to them through RUNPATH $ORIGIN),
+surfaceless only, with no GLX, no glvnd and no window-system platform. Before,
+WebGL drew on whatever GL the host had: its Mesa version, or its GPU driver,
+decided which extensions could be served and every pixel. 0001, 0002, 0003 and
+0007 reach llvmpipe as they reach lavapipe; 0009 is 0005 for libgallium. Every
+build proves the GL by drawing with it (scripts/ci/lavapipe/proof/gl_proof.c).
+Firefox loads the three files by path and never the host's libEGL
+(gfx/gl/StealthOwnGL.h); without them WebGL has no context.
 """
 from __future__ import annotations
 
@@ -61,6 +72,10 @@ VERSIONS = PATCHES / "VERSIONS.json"
 LIB = "libvulkan_lvp.so"
 SONAME = "libvulkan.so.1"
 EXPORTS = ("vkGetInstanceProcAddr", "vk_icdGetInstanceProcAddr")
+# WebGL's GL, in DIR/GL_DIR: the two libraries Firefox opens, and libgallium.
+GL_DIR = "gl"
+GL_LIBS = ("libEGL.so.1", "libGLESv2.so.2")
+GL_PROOF = PROOF / "gl_proof.c"
 # What the library may link against: the C runtime, nothing of the host's.
 NEEDED_OK = {"libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1",
              "ld-linux-x86-64.so.2"}
@@ -98,6 +113,28 @@ MESON_OPTIONS = [
     "-Dallow-fallback-for=libdrm", "--force-fallback-for=libdrm",
     "-Dlibdrm:default_library=static",
 ]
+
+# WebGL's GL from the same tree: lavapipe's options with llvmpipe behind EGL in
+# place of the Vulkan driver. "-Dplatforms=" leaves EGL its surfaceless platform
+# only; GLX and glvnd stay off.
+GL_OPTIONS = {"-Dvulkan-drivers": "", "-Dgallium-drivers": "llvmpipe", "-Degl": "enabled",
+              "-Dopengl": "true", "-Dgles2": "enabled"}
+
+
+def gl_meson_options(options=MESON_OPTIONS, changes=GL_OPTIONS) -> list:
+    """MESON_OPTIONS with GL_OPTIONS in place, every other option the same."""
+    out = []
+    for option in options:
+        name = option.partition("=")[0]
+        out.append("%s=%s" % (name, changes[name]) if name in changes else option)
+    missing = set(changes) - {o.partition("=")[0] for o in options}
+    if missing:
+        raise ValueError("GL options with no lavapipe counterpart: %s" % sorted(missing))
+    return out
+
+
+def gallium_name(mesa_version: str) -> str:
+    return "libgallium-%s.so" % mesa_version
 
 
 def version_tuple(text: str) -> tuple:
@@ -139,8 +176,33 @@ def check_binary(dynamic: str, symbols: str) -> list:
     for name in EXPORTS:
         if name not in defined:
             found.append("does not export %s" % name)
-    # Imports above Firefox's floors, named, as check_binary.py checks them:
-    # undefined symbols only.
+    return found + floor_problems(symbols)
+
+
+def check_gl_binary(name: str, dynamic: str, symbols: str, own: set) -> list:
+    """One GL library's problems, as sentences, from the same two readelf
+    outputs: it links against the C runtime and the other files of DIR/gl
+    only, finds those next to itself (RUNPATH $ORIGIN, nothing else), carries
+    its own name, and stays under Firefox's floors."""
+    found = []
+    needed = set(re.findall(r"\(NEEDED\)\s+Shared library: \[([^\]]+)\]", dynamic))
+    extra = sorted(needed - NEEDED_OK - own)
+    if extra:
+        found.append("%s links against %s, which the host would have to provide" % (name, ", ".join(extra)))
+    paths = re.findall(r"\((?:RPATH|RUNPATH)\)\s+Library r(?:un)?path: \[([^\]]+)\]", dynamic)
+    want = ["$ORIGIN"] if needed & own else []
+    if paths != want:
+        found.append("%s looks for libraries in %s, not %s" % (name, paths, want))
+    soname = re.findall(r"\(SONAME\)\s+Library soname: \[([^\]]+)\]", dynamic)
+    if soname != [name]:
+        found.append("%s has SONAME %s" % (name, soname))
+    return found + ["%s %s" % (name, p) for p in floor_problems(symbols)]
+
+
+def floor_problems(symbols: str) -> list:
+    """Imports above Firefox's floors, named, as check_binary.py checks them:
+    undefined symbols only."""
+    found = []
     above = {}
     for line in symbols.splitlines():
         cols = line.split()
@@ -190,10 +252,14 @@ PROOF_LINES = ("A storage buffer binding of 2147483644 bytes",
                "B fragment shader with 64 storage buffers and 64 storage images")
 
 
-def proof_problems(output: str) -> list:
+GL_PROOF_LINES = ("A libEGL.so.1 loads from its directory", "B a surfaceless display",
+                  "C llvmpipe clears and reads back", "D no GL library of the host mapped")
+
+
+def proof_problems(output: str, lines=PROOF_LINES) -> list:
     """What the proof's output says is wrong; [] when every use worked."""
     problems = []
-    for start in PROOF_LINES:
+    for start in lines:
         line = next((l for l in output.splitlines() if l.startswith(start)), None)
         if line is None:
             problems.append("the proof never reported: %s" % start)
@@ -219,11 +285,60 @@ def prove(lib: Path, vulkan_include: Path, work: Path, run=subprocess.run) -> li
     return proof_problems(done.stdout) + ([] if done.returncode == 0 else ["the proof exited %d" % done.returncode])
 
 
+def prove_gl(gl: Path, mesa_include: Path, work: Path, run=subprocess.run) -> list:
+    """Builds scripts/ci/lavapipe/proof/gl_proof.c and runs it on `gl`, the
+    directory, with no library path of the runner's: the GL loads from there
+    alone, draws on a surfaceless GLES 3 context, and maps nothing of the
+    host's GL. Returns the problems."""
+    work.mkdir(parents=True, exist_ok=True)
+    exe = work / "gl_proof"
+    run(["cc", "-O1", "-I", str(mesa_include), "-o", str(exe), str(GL_PROOF), "-ldl"], check=True)
+    env = {k: v for k, v in os.environ.items() if k != "LD_LIBRARY_PATH" and k != "LD_PRELOAD"}
+    done = run([str(exe), str(gl.resolve())], cwd=work, capture_output=True, text=True, env=env)
+    print(done.stdout, end="")
+    return (proof_problems(done.stdout, GL_PROOF_LINES)
+            + ([] if done.returncode == 0 else ["the GL proof exited %d" % done.returncode]))
+
+
+def gl_files(mesa_version: str) -> tuple:
+    return GL_LIBS + (gallium_name(mesa_version),)
+
+
+def package_gl(gl_build: Path, gl: Path, names: tuple, mesa_include: Path, work: Path,
+               run=subprocess.run) -> list:
+    """From a finished GL build to DIR/gl: each library copied under its name,
+    stripped, given RUNPATH $ORIGIN (libEGL and libGLESv2) or none
+    (libgallium), checked and proven. Returns the problems."""
+    shutil.rmtree(gl, ignore_errors=True)
+    gl.mkdir(parents=True)
+    for name in names:
+        built = sorted(p for p in gl_build.rglob(name + "*") if p.is_file() and not p.is_symlink()
+                       and not p.parent.name.endswith(".p"))
+        if len(built) != 1:
+            return ["the GL build has %d files named %s*: %s" % (len(built), name, built)]
+        shutil.copy2(built[0], gl / name)
+        run(["strip", "--strip-unneeded", str(gl / name)], check=True)
+    problems = []
+    for name in names:
+        if name in GL_LIBS:
+            run(["patchelf", "--set-rpath", "$ORIGIN", str(gl / name)], check=True)
+        else:
+            run(["patchelf", "--remove-rpath", str(gl / name)], check=True)
+        dynamic = run(["readelf", "-d", str(gl / name)], check=True, capture_output=True, text=True).stdout
+        symbols = run(["readelf", "--dyn-syms", "-W", str(gl / name)], check=True, capture_output=True,
+                      text=True).stdout
+        problems += check_gl_binary(name, dynamic, symbols, set(names))
+    return problems or prove_gl(gl, mesa_include, work, run)
+
+
 def cached(out: Path, key: str) -> Path | None:
     lib, ver = out / LIB, out / "VERSION.json"
     if lib.is_file() and ver.is_file():
         record = json.loads(ver.read_text("utf-8"))
-        if record.get("inputs") == key and record.get("sha256") == sha256(lib):
+        gl = record.get("gl") or {}
+        if (record.get("inputs") == key and record.get("sha256") == sha256(lib) and gl
+                and all((out / GL_DIR / name).is_file() and sha256(out / GL_DIR / name) == digest
+                        for name, digest in gl.items())):
             return lib
     return None
 
@@ -320,10 +435,25 @@ def build(out: Path, clang: Path, sysroot: Path, jobs: int, run=subprocess.run, 
         if problems:
             lib.unlink()
             raise RuntimeError("the lavapipe library is not shippable:\n  " + "\n  ".join(problems))
+
+        # WebGL's GL: the same tree, llvmpipe behind EGL.
+        gl_build = tmp / "mesa-gl-build"
+        run(["meson", "setup", str(gl_build), str(mesa), "--native-file", str(native),
+             "--wrap-mode=default"] + gl_meson_options(), check=True, env=env)
+        run(["ninja", "-C", str(gl_build), "-j", str(jobs)], check=True, env=env)
+        gl = out / GL_DIR
+        names = gl_files(versions["mesa"]["version"])
+        problems = package_gl(gl_build, gl, names, mesa / "include", tmp / "gl-proof", run)
+        if problems:
+            shutil.rmtree(gl)
+            lib.unlink()
+            raise RuntimeError("WebGL's GL is not shippable:\n  " + "\n  ".join(problems))
+
         (out / "VERSION.json").write_text(json.dumps({
             "mesa": versions["mesa"]["version"], "llvm": versions["llvm"]["commit"],
             "patches": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in series},
             "compiler": clang_version(clang, run), "inputs": key, "sha256": sha256(lib),
+            "gl": {name: sha256(gl / name) for name in names},
         }, indent=1, sort_keys=True) + "\n", "utf-8")
     return lib
 

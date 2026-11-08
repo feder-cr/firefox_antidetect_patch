@@ -98,6 +98,7 @@ FEATURES = {
     "webgl-parameters": "fingerprint/webgl/parameters",
     "webgl-shader-output-language": "fingerprint/webgl/shader-language",
     "webgl-multisample": "fingerprint/webgl/multisample",
+    "webgl-own-gl": "fingerprint/webgl/own-gl",
     # fingerprint: audio, media
     "audio-context-values": "fingerprint/audio/context-values",
     "audio-fingerprint-noise": "fingerprint/audio/noise",
@@ -161,6 +162,7 @@ OWN_FILES = [
     (r"^dom/canvas/StealthWebGLParams\.", "fingerprint/webgl/parameters"),
     (r"^gfx/gl/StealthGLMultisample\.", "fingerprint/webgl/multisample"),
     (r"^gfx/gl/gtest/TestStealthGLMultisample\.cpp$", "fingerprint/webgl/multisample"),
+    (r"^gfx/gl/StealthOwnGL\.", "fingerprint/webgl/own-gl"),
     (r"^toolkit/xre/dllservices/StealthOwnBinaries\.", "platform/untrusted-modules"),
     (r"^js/xpconnect/loader/StealthScriptCache\-inl\.", "platform/script-cache"),
     (r"^toolkit/components/urlformatter/tests/unit/test_stealth_apikeys\.", "stillborn/api-keys"),
