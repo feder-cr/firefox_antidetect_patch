@@ -29,6 +29,7 @@ import argparse
 import contextlib
 import http.client
 import io
+import hashlib
 import json
 import os
 import re
@@ -1261,8 +1262,17 @@ def group_node_deps():
     build = (HERE / "node_deps_build.sh").read_text(encoding="utf-8").replace("\r\n", "\n")
     name = re.search(r"^NODE_DEPS=(node-deps-\d{8}-[0-9a-f]{12})$", bootstrap, re.M)
     sha = re.search(r"^NODE_DEPS_SHA256=([0-9a-f]{64})$", bootstrap, re.M)
-    out.append(("node deps: the archive is named and pinned by sha256, and its URL is this repository's release of that name",
-                bool(name and sha) and "feder-cr/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar" in bootstrap))
+    out.append(("node deps: the archive is named and pinned by sha256, and its URL is this repository's release asset, through the API",
+                bool(name and sha) and re.search(r"^NODE_DEPS_ASSET=[0-9]+$", bootstrap, re.M) is not None
+                and "https://api.github.com/repos/feder-cr/firefox_antidetect_patch/releases/assets/$NODE_DEPS_ASSET" in bootstrap))
+    fetch = bootstrap.split("fetch() {", 1)[1].split(chr(10) + "}", 1)[0]
+    out.append(("node deps: every GitHub release file comes through the API by asset id first, asked for its bytes, and the direct address second, in rounds (2026-11-08: releases/download answered 504 for hours, the API now and then, two candidates lost their node)",
+                re.search(r"^RUNNER_ASSET=[0-9]+$", bootstrap, re.M) is not None
+                and 'fetch "https://api.github.com/repos/actions/runner/releases/assets/$RUNNER_ASSET"' in bootstrap
+                and 'fetch "$NODE_DEPS_URL" "$NODE_DEPS_SHA256" /tmp/node-deps.tar "$NODE_DEPS_WEB_URL"' in bootstrap
+                and bootstrap.count("releases/download") == 2
+                and '-H "Accept: application/octet-stream"' in fetch and 'for url in "$1" ${4:+"$4"}' in fetch
+                and "for round in 1 2 3" in fetch and fetch.index("sha256sum -c") < fetch.index("return 0")))
     out.append(("node deps: the builder names it as the bootstrap reads it, a plain tar a fresh node can open",
                 'NAME="node-deps-$(date -u +%Y%m%d)-$HASH"' in build and '-cf "$OUT/$NAME.tar"' in build and "zstd" not in build))
     out.append(("node deps: glslang comes built in the archive, at the version and from the source the bootstrap pins",
@@ -1293,12 +1303,29 @@ def group_node_deps():
         bad.write_bytes(b"not the archive")
         script = "\n".join([
             "set -euo pipefail",
+            "FETCH_PAUSE=0",
             'die() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }',
             fetch,
             'fetch "file://%s" "%s" "%s/got.tar"' % (bad, "0" * 64, tmp)])
         done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
     out.append(("node deps: an archive that is not the pinned one stops the bootstrap, by name",
-                done.returncode != 0 and "does not match its sha256" in done.stderr))
+                done.returncode != 0 and "does not match its sha256" in done.stderr
+                and done.stderr.count("(round ") == 3))
+    # The first address down, the second serving the file: it arrives, after one failure.
+    with tempfile.TemporaryDirectory() as tmp:
+        good = Path(tmp) / "node-deps.tar"
+        good.write_bytes(b"the archive")
+        digest = hashlib.sha256(b"the archive").hexdigest()
+        script = "\n".join([
+            "set -euo pipefail",
+            "FETCH_PAUSE=0",
+            'die() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }',
+            fetch,
+            'fetch "file://%s/missing.tar" "%s" "%s/got.tar" "file://%s"' % (tmp, digest, tmp, good),
+            'cat "%s/got.tar"' % tmp])
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    out.append(("node deps: the first address down, the second serving the file: the bootstrap goes on with it",
+                done.returncode == 0 and done.stdout == "the archive" and done.stderr.count("(round 1)") == 1))
     return out
 
 

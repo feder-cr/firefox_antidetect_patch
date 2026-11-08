@@ -24,11 +24,18 @@ set -euo pipefail
 # The node's apt packages and glslang, every .deb at the version its MANIFEST lists.
 # Until 2026-11-04 the packages came from Ubuntu's snapshot service at every start: it
 # was down for most of that day (503, 502) and slow when up, and no node could start.
-# A new set: node_deps_build.sh, then the archive up as a pre-release under its name.
+# A new set: node_deps_build.sh, then the archive up as a pre-release under its name,
+# and its asset id here.
+# GitHub's release files come through the API first, by asset id, and the direct
+# address second: on 2026-11-08 the direct one answered 504 for hours, and the API
+# now and then; two candidates lost their node to it.
 NODE_DEPS=node-deps-20261104-aeaa295d91a7
 NODE_DEPS_SHA256=96b646085471d7b50e26b9756f462b22565513873f5687277db3f7cdb238f059
-NODE_DEPS_URL="${NODE_DEPS_URL:-https://github.com/feder-cr/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar}"
+NODE_DEPS_ASSET=709796661
+NODE_DEPS_URL="${NODE_DEPS_URL:-https://api.github.com/repos/feder-cr/firefox_antidetect_patch/releases/assets/$NODE_DEPS_ASSET}"
+NODE_DEPS_WEB_URL="https://github.com/feder-cr/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar"
 RUNNER_VERSION=2.338.2
+RUNNER_ASSET=678460500
 RUNNER_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
 NODE_VERSION=22.23.4
 NODE_SHA256=1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce
@@ -64,10 +71,24 @@ die() { echo "node_bootstrap: ERROR: $*" >&2; exit 1; }
 
 export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a LANG=C.UTF-8
 
-fetch() { # url sha256 file
+fetch() { # url sha256 file [second-url]
   [ -f "$3" ] && echo "$2  $3" | sha256sum -c --quiet - 2>/dev/null && return 0
-  curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 900 -o "$3" "$1"
-  echo "$2  $3" | sha256sum -c --quiet - || die "$1 does not match its sha256"
+  # Both of GitHub's addresses gave 504 for minutes on 2026-11-08, never both for
+  # long: three rounds over the API's address, then the direct one. The API answers a
+  # release asset with its bytes only when asked for them. The sha256 decides.
+  local round url
+  for round in 1 2 3; do
+    for url in "$1" ${4:+"$4"}; do
+      if curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 --max-time 900 \
+           -H "Accept: application/octet-stream" -o "$3" "$url" \
+         && echo "$2  $3" | sha256sum -c --quiet -; then
+        return 0
+      fi
+      echo "node_bootstrap: $url failed or did not match its sha256 (round $round)" >&2
+    done
+    sleep "${FETCH_PAUSE:-30}"
+  done
+  die "$1 does not match its sha256, from any address, in 3 rounds"
 }
 
 DEPS=/opt/node-deps
@@ -82,7 +103,7 @@ if ! command -v curl >/dev/null || [ ! -s /etc/ssl/certs/ca-certificates.crt ]; 
   apt-get update -qq -o APT::Update::Error-Mode=any
   apt-get install -y -qq --no-install-recommends ca-certificates curl >/dev/null
 fi
-fetch "$NODE_DEPS_URL" "$NODE_DEPS_SHA256" /tmp/node-deps.tar
+fetch "$NODE_DEPS_URL" "$NODE_DEPS_SHA256" /tmp/node-deps.tar "$NODE_DEPS_WEB_URL"
 rm -rf "$DEPS" && mkdir -p "$DEPS"
 tar -xf /tmp/node-deps.tar -C "$DEPS"
 rm -f /tmp/node-deps.tar
@@ -125,8 +146,8 @@ cp -a "$DEPS/glslang-root/usr/local/." /usr/local/
 echo "== actions-runner $RUNNER_VERSION"
 R=/home/runner/actions-runner
 if [ "$(as_runner "$R/bin/Runner.Listener" --version 2>/dev/null)" != "$RUNNER_VERSION" ]; then
-  fetch "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-x64-$RUNNER_VERSION.tar.gz" \
-    "$RUNNER_SHA256" /tmp/actions-runner.tar.gz
+  fetch "https://api.github.com/repos/actions/runner/releases/assets/$RUNNER_ASSET" \
+    "$RUNNER_SHA256" /tmp/actions-runner.tar.gz \n    "https://github.com/actions/runner/releases/download/v$RUNNER_VERSION/actions-runner-linux-x64-$RUNNER_VERSION.tar.gz"
   rm -rf "$R" && install -d -o runner -g runner "$R"
   as_runner tar -xzf /tmp/actions-runner.tar.gz -C "$R"
   rm -f /tmp/actions-runner.tar.gz
