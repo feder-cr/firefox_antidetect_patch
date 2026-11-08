@@ -9,7 +9,7 @@
 // sent. The error page is a navigation of its own, with its own load
 // identifier, and committed at the refused address; the reason was only in
 // that document's documentURI (about:neterror?e=deniedPortAccess). Recorded on
-// firefox-55 (invisible_tetra fixtures/juggler/unsafe_port.json).
+// firefox-55, in a recording of the protocol.
 //
 // The docshell now reports the failure with the load identifier and the status
 // (StealthNavigationLoad::Failed, 'juggler-navigation-failed-renderer'), and the

@@ -3,7 +3,7 @@
 //
 // Two defects of the held map (PageNetwork._interceptedRequests), read in the
 // source and worked around by a client that had to drop the engine's copy
-// itself (invisible_tetra network.py) and guess the engine's state after a
+// itself and guess the engine's state after a
 // failed Network.setRequestInterception:
 // - a request that ended while held (the page cancelled it, a navigation or
 //   the tab took it) stayed in the map: only a command or
