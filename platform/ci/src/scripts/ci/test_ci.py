@@ -262,6 +262,14 @@ def main() -> int:
                   and guards.index("test_webgl_readpixels_no_masking_signature")
                   < guards.index("tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py") < guards.index("-m e2e -o addopts")))
 
+    # The text the engine draws and the system theme it declares are checked by name: a test
+    # that no list names is never run, and the objectives of the text engine (idwr in Skia)
+    # and of the declared system fonts and colours stay open.
+    for name in ("tests/test_canvas_text_is_windows_e2e.py", "tests/test_system_fonts_and_colors_are_windows_e2e.py",
+                 "tests/test_a_missing_system_theme_pref_refuses_the_launch_e2e.py"):
+        cases.append(("the gate's guards run %s, by name" % name,
+                      name in guards and guards.index(name) < guards.index("-m e2e -o addopts")))
+
     # The host gate asks the general question (is anything the host's?) of which the
     # font gate asked one case (is the font list the persona's?). It was to stay until
     # the host gate ran green on a release: firefox-55, run 41754346016.

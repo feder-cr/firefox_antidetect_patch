@@ -372,6 +372,9 @@ jobs:
             tests/test_math_sin_cos_tan_are_windows_e2e.py \
             tests/test_css_calc_is_windows_e2e.py \
             tests/test_screenshot_of_text_returns_linux_e2e.py \
+            tests/test_canvas_text_is_windows_e2e.py \
+            tests/test_system_fonts_and_colors_are_windows_e2e.py \
+            tests/test_a_missing_system_theme_pref_refuses_the_launch_e2e.py \
             -m e2e -o addopts='' -q
 
       # HOST GATE, this leg's half: everything the page in the wrapper's
