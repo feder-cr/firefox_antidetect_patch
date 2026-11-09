@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>WebCodecs H.264 on ffvpx</title>
+<script>
+// Decodes the Annex B H.264 stream of web-platform-tests
+// (webcodecs/h264.annexb, 10 frames, 320x240) with VideoDecoder and posts the
+// outcome to /result. Chunk offsets are those of
+// webcodecs/videoDecoder-codec-specific-setup.js (H264_ANNEXB_DATA).
+const CHUNKS = [
+  [0, 4175], [4175, 602], [4777, 473], [5250, 559], [5809, 585],
+  [6394, 517], [6911, 530], [7441, 521], [7962, 452], [8414, 526],
+];
+
+async function run() {
+  const result = {frames: 0, sizes: [], errors: []};
+  if (typeof VideoDecoder === "undefined") {
+    result.errors.push("VideoDecoder is not defined");
+    return result;
+  }
+  const config = {
+    codec: "avc1.64000b",
+    codedWidth: 320,
+    codedHeight: 240,
+    displayAspectWidth: 320,
+    displayAspectHeight: 240,
+  };
+  const support = await VideoDecoder.isConfigSupported(config);
+  result.supported = support.supported;
+  if (!support.supported) {
+    result.errors.push("isConfigSupported is false");
+    return result;
+  }
+  const buf = new Uint8Array(await (await fetch("h264.annexb")).arrayBuffer());
+  const decoder = new VideoDecoder({
+    output: frame => {
+      result.frames++;
+      result.sizes.push(frame.codedWidth + "x" + frame.codedHeight);
+      frame.close();
+    },
+    error: e => result.errors.push(String(e)),
+  });
+  decoder.configure(config);
+  CHUNKS.forEach(([offset, size], i) => {
+    decoder.decode(new EncodedVideoChunk({
+      type: i == 0 ? "key" : "delta",
+      timestamp: i * 33333,
+      data: buf.subarray(offset, offset + size),
+    }));
+  });
+  await decoder.flush();
+  decoder.close();
+  return result;
+}
+
+run()
+  .catch(e => ({errors: [String(e)]}))
+  .then(r => fetch("/result", {method: "POST", body: JSON.stringify(r)}));
+</script>

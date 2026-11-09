@@ -1,0 +1,542 @@
+diff --git a/media/ffvpx/README_MOZILLA b/media/ffvpx/README_MOZILLA
+index 04af9ff38aa59b36b5e558dc8550c07ea97d1c2a..c26fe94a68c185a4813bcab32e9df13a36c02f07 100644
+--- a/media/ffvpx/README_MOZILLA
++++ b/media/ffvpx/README_MOZILLA
+@@ -29,8 +29,15 @@ mozva stub around `widget/gtk` `va_drmcommon.h`; `drmGetDevice` comes from
+ 
+ All source files match their path from the library's source archive.
+ 
+-Currently, we only use the vp8, vp9, av1 (via libdav1d), mp3, flac, vorbis (via
+-libvorbis), opus (via libopus) and PCM portion of the library. If this changes,
++Currently, we only use the vp8, vp9, av1 (via libdav1d), h264, hevc, aac, mp3,
++flac, vorbis (via libvorbis), opus (via libopus) and PCM portion of the library.
++The h264, hevc and aac decoders and parsers come with the sources that FFmpeg
++9.0.1's `configure --enable-decoder=h264,hevc,aac --enable-parser=h264,hevc,aac`
++selects on top of `FFMPEG_CONFIGURATION`; the subsystems they need are switched
++on in `config_override.h`. H.264 and HEVC are wired with their x86 DSP only
++and stay off on other CPUs. AAC, with the float `libavutil/tx` transforms and
++float DSP it uses, runs plain C only (`aac-c-only.patch`), so its output does
++not depend on the CPU. If this changes,
+ configuration files will most likely need to be updated. On Windows,
+ we use d3d11va for vp9 and av1.
+ 
+@@ -222,3 +229,39 @@ Finally, apply the patches:
+   nasm cannot parse a relational operator inside parentheses until 2.15, and
+   our minimum supported nasm (used by the base-toolchains builds) is 2.14.02.
+   Drop this patch once that minimum is raised past 2.15.
++- In `aacdec_proc_template.c`, call `cbrt` (fdlibm through
++  modules/fdlibm/inexact-math-override) instead of `cbrtf`: the override maps `cbrtf` to `fdlibm_cbrtf`, which
++  fdlibm does not have. The double result rounds to the same float.
++- libavutil/md5.c, ambient_viewing_environment.c and tdrdi.c (with their
++  headers, already in the tree) are copied unchanged from FFmpeg n9.0.1
++  (commit bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa), line endings aside. The
++  H.264 and HEVC SEI code needs them.
++- AAC runs plain C whatever the CPU: `AV_TX_FFVPX_C_ONLY` (tx.h, tx.c) makes
++  av_tx_init pick only C codelets, `AV_FLOAT_DSP_FFVPX_C_ONLY` (float_dsp.h/.c)
++  makes avpriv_float_dsp_alloc return the C functions, and aacdec.c,
++  aacdec_float.c and aacsbr_template.c ask for them. The x86 inits of the AAC
++  SBR and PS DSP are off by `MOZ_FFVPX_AAC_C_ONLY` (config_override.h).
++- The AAC-LC float decoder gives the samples of Media Foundation (Windows 11,
++  msauddecmft.dll 10.0.26100.9549), bit for bit, on every OS and CPU. The logic
++  is the FFmpeg 6.1.1 patch of invisible_MediaFoundation
++  (reimpl/ffmpeg/ffmpeg-6.1.1-mf.patch) moved to the 9.0.1 layout:
++  - libavcodec/aac/aacdec_mf.h (new, included by aacdec_float.c): scalefactor
++    to gain (ExponentTableFl), x^(4/3) for |q| >= 1024 and pulses, the TNS
++    lattice filter, PNS (generator, gain, correlated noise with M/S), and the
++    IMDCT with its windows. The AVX2/FMA path of the DLL is a constant, the host
++    CPU is never read.
++  - libavcodec/aac/mf_dct.[ch], mf_imlt.[ch] (new): the DLL's dct_IV and
++    imlt_block in portable C. mf_tables.[ch] (new): the DLL's float tables as
++    bit patterns (sine and KBD windows, twiddles, 2^(k/4), TNS coefficients),
++    read from its .rdata by scripts/gen_tables.py.
++  - aacdec.c: PNS energy kept as the DLL clamps it (sce->mf_pns_nrg), TNS
++    coefficients from the DLL's tables, PNS applied after M/S and intensity
++    stereo (also for SCE), IMDCT state reset in flush.
++  - aacdec_dsp_template.c: scalefactors by mf_sf2exp, M/S on every band with
++    the bit set, TNS by the lattice filter, IMDCT for AOT_AAC_LC.
++  - aacdec_proc_template.c: PNS bands are left to mf_apply_pns, escape values
++    >= 1024 and pulses dequantized as the DLL does, pulses in zero bands.
++  - moz.build: the new sources, and -ffp-contract=off on them and on
++    aacdec_float.c (the sign of zero and every rounding are part of the output).
++  Not ported: SBR and PS (HE-AAC) still decode with FFmpeg's code, and the
++  concealment of streams the DLL rejects.
+diff --git a/media/ffvpx/config_components_audio_video.h b/media/ffvpx/config_components_audio_video.h
+index fcca7f1541df01ba43a1dc687e3268edb30e167a..ed3d527ddf154dbac9214277448fd9ace3d7504a 100644
+--- a/media/ffvpx/config_components_audio_video.h
++++ b/media/ffvpx/config_components_audio_video.h
+@@ -127,14 +127,14 @@
+ #define CONFIG_H263I_DECODER 0
+ #define CONFIG_H263P_DECODER 0
+ #define CONFIG_H263_V4L2M2M_DECODER 0
+-#define CONFIG_H264_DECODER 0
++#define CONFIG_H264_DECODER 1
+ #define CONFIG_H264_CRYSTALHD_DECODER 0
+ #define CONFIG_H264_V4L2M2M_DECODER 0
+ #define CONFIG_H264_MMAL_DECODER 0
+ #define CONFIG_H264_QSV_DECODER 0
+ #define CONFIG_H264_RKMPP_DECODER 0
+ #define CONFIG_HAP_DECODER 0
+-#define CONFIG_HEVC_DECODER 0
++#define CONFIG_HEVC_DECODER 1
+ #define CONFIG_HEVC_QSV_DECODER 0
+ #define CONFIG_HEVC_RKMPP_DECODER 0
+ #define CONFIG_HEVC_V4L2M2M_DECODER 0
+@@ -334,7 +334,7 @@
+ #define CONFIG_ZEROCODEC_DECODER 0
+ #define CONFIG_ZLIB_DECODER 0
+ #define CONFIG_ZMBV_DECODER 0
+-#define CONFIG_AAC_DECODER 0
++#define CONFIG_AAC_DECODER 1
+ #define CONFIG_AAC_FIXED_DECODER 0
+ #define CONFIG_AAC_LATM_DECODER 0
+ #define CONFIG_AC3_DECODER 0
+@@ -928,7 +928,7 @@
+ #define CONFIG_WMV3_NVDEC_HWACCEL 0
+ #define CONFIG_WMV3_VAAPI_HWACCEL 0
+ #define CONFIG_WMV3_VDPAU_HWACCEL 0
+-#define CONFIG_AAC_PARSER 0
++#define CONFIG_AAC_PARSER 1
+ #define CONFIG_AAC_LATM_PARSER 0
+ #define CONFIG_AC3_PARSER 0
+ #define CONFIG_ADX_PARSER 0
+@@ -957,8 +957,8 @@
+ #define CONFIG_GSM_PARSER 0
+ #define CONFIG_H261_PARSER 0
+ #define CONFIG_H263_PARSER 0
+-#define CONFIG_H264_PARSER 0
+-#define CONFIG_HEVC_PARSER 0
++#define CONFIG_H264_PARSER 1
++#define CONFIG_HEVC_PARSER 1
+ #define CONFIG_HDR_PARSER 0
+ #define CONFIG_IPU_PARSER 0
+ #define CONFIG_JPEG2000_PARSER 0
+diff --git a/media/ffvpx/config_override.h b/media/ffvpx/config_override.h
+index 5bf8d741c96fbfa2d69d1b571fb9730d0e2a1b9d..61c442655d2d6d39673d333a87baf0533e85d165 100644
+--- a/media/ffvpx/config_override.h
++++ b/media/ffvpx/config_override.h
+@@ -1,5 +1,77 @@
+ // This file contains overrides for config.h, that can be platform-specific.
+ 
++// modules/fdlibm/inexact-math-override/math.h maps log2f to fdlibm_log2f, which
++// fdlibm does not have. libavutil/libm.h then uses (float)log2(x).
++#undef HAVE_LOG2F
++#define HAVE_LOG2F 0
++
++#define MOZ_FFVPX_AAC_C_ONLY 1
++
++// The H.264, HEVC and AAC decoders, and what FFmpeg 9.0.1's configure
++// selects for them (`--enable-decoder=h264,hevc,aac
++// --enable-parser=h264,hevc,aac` on top of FFMPEG_CONFIGURATION).
++// H.264 and HEVC are wired with their x86 DSP only, so on other CPUs they
++// stay off. AAC runs plain C on every CPU (MOZ_FFVPX_AAC_C_ONLY), so its
++// output does not depend on the CPU.
++#if !defined(MOZ_FFVPX_AUDIOONLY)
++#  if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
++#    define MOZ_FFVPX_H26X 1
++#  else
++#    define MOZ_FFVPX_H26X 0
++#  endif
++#  undef CONFIG_H264_DECODER
++#  define CONFIG_H264_DECODER MOZ_FFVPX_H26X
++#  undef CONFIG_HEVC_DECODER
++#  define CONFIG_HEVC_DECODER MOZ_FFVPX_H26X
++#  undef CONFIG_H264_PARSER
++#  define CONFIG_H264_PARSER MOZ_FFVPX_H26X
++#  undef CONFIG_HEVC_PARSER
++#  define CONFIG_HEVC_PARSER MOZ_FFVPX_H26X
++#  undef CONFIG_ERROR_RESILIENCE
++#  define CONFIG_ERROR_RESILIENCE MOZ_FFVPX_H26X
++#  undef CONFIG_BSWAPDSP
++#  define CONFIG_BSWAPDSP MOZ_FFVPX_H26X
++#  undef CONFIG_CABAC
++#  define CONFIG_CABAC MOZ_FFVPX_H26X
++#  undef CONFIG_H264CHROMA
++#  define CONFIG_H264CHROMA MOZ_FFVPX_H26X
++#  undef CONFIG_H264DSP
++#  define CONFIG_H264DSP MOZ_FFVPX_H26X
++#  undef CONFIG_H264PARSE
++#  define CONFIG_H264PARSE MOZ_FFVPX_H26X
++#  undef CONFIG_H264QPEL
++#  define CONFIG_H264QPEL MOZ_FFVPX_H26X
++#  undef CONFIG_H264_SEI
++#  define CONFIG_H264_SEI MOZ_FFVPX_H26X
++#  undef CONFIG_HEVCPARSE
++#  define CONFIG_HEVCPARSE MOZ_FFVPX_H26X
++#  undef CONFIG_HEVC_SEI
++#  define CONFIG_HEVC_SEI MOZ_FFVPX_H26X
++#  undef CONFIG_ME_CMP
++#  define CONFIG_ME_CMP MOZ_FFVPX_H26X
++#  undef CONFIG_STARTCODE
++#  define CONFIG_STARTCODE MOZ_FFVPX_H26X
++#  define CONFIG_H264_D3D12VA_HWACCEL 0
++#  define CONFIG_HEVC_D3D12VA_HWACCEL 0
++#  define CONFIG_VVC_SEI 0
++// libmozavcodec is position independent: the CABAC inline asm must not take
++// the address of ff_h264_cabac_tables as an absolute 32-bit relocation.
++#  ifndef BROKEN_RELOCATIONS
++#    define BROKEN_RELOCATIONS 1
++#  endif
++// libavutil/x86/asm.h reads PIC to address symbols from inline asm
++// rip-relative.
++#  if defined(__x86_64__) && defined(__PIC__) && !defined(PIC)
++#    define PIC 1
++#  endif
++#  undef CONFIG_ADTS_HEADER
++#  define CONFIG_ADTS_HEADER 1
++#  undef CONFIG_MPEG4AUDIO
++#  define CONFIG_MPEG4AUDIO 1
++#  undef CONFIG_SINEWIN
++#  define CONFIG_SINEWIN 1
++#endif
++
+ // CBS is required for VP9 and AV1 decoding.
+ #if !defined(MOZ_FFVPX_AUDIOONLY)
+ #undef CONFIG_CBS
+diff --git a/media/ffvpx/libavcodec/codec_list.c b/media/ffvpx/libavcodec/codec_list.c
+index 6aa246be207fb74a6b0418cda3a81e246a17e9f0..87f2413ebe0445482a7ef05630c9db1ab5f5847e 100644
+--- a/media/ffvpx/libavcodec/codec_list.c
++++ b/media/ffvpx/libavcodec/codec_list.c
+@@ -12,6 +12,15 @@ static const FFCodec * const codec_list[] = {
+ #if CONFIG_MP3_DECODER
+     &ff_mp3_decoder,
+ #endif
++#if CONFIG_H264_DECODER
++    &ff_h264_decoder,
++#endif
++#if CONFIG_HEVC_DECODER
++    &ff_hevc_decoder,
++#endif
++#if CONFIG_AAC_DECODER
++    &ff_aac_decoder,
++#endif
+ #if CONFIG_LIBDAV1D
+     &ff_libdav1d_decoder,
+ #endif
+diff --git a/media/ffvpx/libavcodec/moz.build b/media/ffvpx/libavcodec/moz.build
+index e067c996f20fee4cf510a4924f37130503335d73..934395a019d171b1db3334a91a1c969818b93c10 100644
+--- a/media/ffvpx/libavcodec/moz.build
++++ b/media/ffvpx/libavcodec/moz.build
+@@ -128,6 +128,86 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
+         'vpx_rac.c',
+     ]
+ 
++    # AAC, plain C only (MOZ_FFVPX_AAC_C_ONLY in config_override.h).
++    SOURCES += [
++        'aac/aacdec.c',
++        'aac/aacdec_ac.c',
++        'aac/aacdec_float.c',
++        'aac/aacdec_lpd.c',
++        'aac/aacdec_tab.c',
++        'aac/aacdec_usac.c',
++        'aac/aacdec_usac_mps212.c',
++        'aac/mf_dct.c',
++        'aac/mf_imlt.c',
++        'aac/mf_tables.c',
++        'aac_ac3_parser.c',
++        'aac_parser.c',
++        'aacps_common.c',
++        'aacps_float.c',
++        'aacpsdsp_float.c',
++        'aacsbr.c',
++        'aactab.c',
++        'cbrt_data.c',
++        'cbrt_tablegen_common.c',
++        'kbdwin.c',
++        'sbrdsp.c',
++        'sinewin.c',
++    ]
++
++    # The AAC float code equals Media Foundation to the bit: no fused multiply-add where the
++    # source has a multiply and an add (aacdec_mf.h).
++    if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
++        for f in (
++            'aac/aacdec_float.c',
++            'aac/mf_dct.c',
++            'aac/mf_imlt.c',
++        ):
++            SOURCES[f].flags += ['-ffp-contract=off']
++
++    # aacdec_mf.h (scalefactor gain, x^(4/3) for |q| >= 1024) and aacdec_proc_template.c's
++    # pulses need pow/powf bit-exact to ucrtbase.dll, never the host's libm: idwr_pow/idwr_powf,
++    # built here from gfx/idwr's own source (invisible_DWriteCore), the same bits as Media
++    # Foundation's CRT call. Not USE_LIBS: idwr there is FINAL_LIBRARY='xul', private to libxul,
++    # so mozavcodec (a separate shared library) compiles its own copy of this one small file.
++    LOCAL_INCLUDES += ['/gfx/idwr/src/idwr']
++    DEFINES['IDWR_STATIC'] = True
++    SOURCES += ['/gfx/idwr/src/idwr/idwr_math.c']
++    SOURCES['/gfx/idwr/src/idwr/idwr_math.c'].flags += ['-fvisibility=hidden']
++
++    # H.264 and HEVC, wired with their x86 DSP (config_override.h).
++    if CONFIG['TARGET_CPU'] in ('x86', 'x86_64'):
++        SOURCES += [
++            'bswapdsp.c',
++            'cabac.c',
++            'error_resilience.c',
++            'h2645_parse.c',
++            'h2645_sei.c',
++            'h2645_vui.c',
++            'h2645data.c',
++            'h264_cabac.c',
++            'h264_cavlc.c',
++            'h264_direct.c',
++            'h264_loopfilter.c',
++            'h264_mb.c',
++            'h264_parse.c',
++            'h264_parser.c',
++            'h264_picture.c',
++            'h264_ps.c',
++            'h264_refs.c',
++            'h264_sei.c',
++            'h264_slice.c',
++            'h264chroma.c',
++            'h264data.c',
++            'h264dec.c',
++            'h264dsp.c',
++            'h264idct.c',
++            'h264qpel.c',
++            'h274.c',
++            'me_cmp.c',
++            'startcode.c',
++        ]
++        DIRS += ['hevc']
++
+     if CONFIG["MOZ_SYSTEM_AV1"]:
+         CFLAGS += CONFIG['MOZ_SYSTEM_LIBDAV1D_CFLAGS']
+         CFLAGS += CONFIG['MOZ_SYSTEM_LIBAOM_CFLAGS']
+diff --git a/media/ffvpx/libavcodec/parser_list.c b/media/ffvpx/libavcodec/parser_list.c
+index dc3d84603e0f8d5ccd4b16fb40b8d5add4e3d0e7..cc3764be9d952c782de078ec1caf92f5f33b93f2 100644
+--- a/media/ffvpx/libavcodec/parser_list.c
++++ b/media/ffvpx/libavcodec/parser_list.c
+@@ -6,5 +6,14 @@ static const FFCodecParser * const parser_list[] = {
+ #endif
+ #if CONFIG_VP9_PARSER
+     &ff_vp9_parser,
++#endif
++#if CONFIG_H264_PARSER
++    &ff_h264_parser,
++#endif
++#if CONFIG_HEVC_PARSER
++    &ff_hevc_parser,
++#endif
++#if CONFIG_AAC_PARSER
++    &ff_aac_parser,
+ #endif
+     NULL };
+diff --git a/media/ffvpx/libavcodec/x86/moz.build b/media/ffvpx/libavcodec/x86/moz.build
+index dc854038c4caff08a7f0abfe2ee9d4e3f2bc78bc..bb2cf918b36c5836bdd00d933ab90d9e1e3177ef 100644
+--- a/media/ffvpx/libavcodec/x86/moz.build
++++ b/media/ffvpx/libavcodec/x86/moz.build
+@@ -38,6 +38,39 @@ SOURCES += [
+     'vp9mc_16bpp.asm',
+ ]
+ 
++# H.264 and HEVC (config_override.h). Nothing for AAC: it is plain C.
++SOURCES += [
++    'bswapdsp.asm',
++    'bswapdsp_init.c',
++    'fpel.asm',
++    'h264_chromamc.asm',
++    'h264_chromamc_10bit.asm',
++    'h264_deblock.asm',
++    'h264_deblock_10bit.asm',
++    'h264_idct.asm',
++    'h264_idct_10bit.asm',
++    'h264_qpel.c',
++    'h264_qpel_10bit.asm',
++    'h264_qpel_8bit.asm',
++    'h264_weight.asm',
++    'h264_weight_10bit.asm',
++    'h264chroma_init.c',
++    'h264dsp_init.c',
++    'h26x/h2656_inter.asm',
++    'h26x/h2656dsp.c',
++    'hevc/add_res.asm',
++    'hevc/deblock.asm',
++    'hevc/dequant.asm',
++    'hevc/dsp_init.c',
++    'hevc/idct.asm',
++    'hevc/mc.asm',
++    'hevc/sao.asm',
++    'hevc/sao_10bit.asm',
++    'me_cmp.asm',
++    'me_cmp_init.c',
++    'qpel.asm',
++]
++
+ LOCAL_INCLUDES += [ "../" ]
+ 
+ if CONFIG['TARGET_CPU'] == 'x86':
+diff --git a/media/ffvpx/libavutil/avutil.symbols b/media/ffvpx/libavutil/avutil.symbols
+index d03c9f0b5dcda42eec03b96caa035d6e3daa03de..bcc0076496a89d9674fbfd96e9a962b8468b03ec 100644
+--- a/media/ffvpx/libavutil/avutil.symbols
++++ b/media/ffvpx/libavutil/avutil.symbols
+@@ -369,3 +369,26 @@ av_channel_layout_describe_bprint
+ ff_emms_asm
+ #endif
+ ff_timecode_set_smpte
++av_bessel_i0
++av_channel_layout_custom_init
++av_channel_layout_retype
++av_container_fifo_alloc_avframe
++av_container_fifo_can_read
++av_container_fifo_free
++av_container_fifo_read
++av_container_fifo_write
++av_film_grain_params_select
++av_log_once
++av_refstruct_ref_c
++av_timecode_get_smpte
++av_timecode_make_smpte_tc_string2
++av_stereo3d_create_side_data
++av_stereo3d_alloc_size
++av_md5_alloc
++av_md5_init
++av_md5_update
++av_md5_final
++av_md5_sum
++av_tdrdi_alloc
++av_ambient_viewing_environment_alloc
++av_ambient_viewing_environment_create_side_data
+diff --git a/media/ffvpx/libavutil/float_dsp.c b/media/ffvpx/libavutil/float_dsp.c
+index 5bfa1008d139e487f4176d301c2adaaf99cd583c..3296f940d0a94e551e1ef484af8f91a4a9fb3cda 100644
+--- a/media/ffvpx/libavutil/float_dsp.c
++++ b/media/ffvpx/libavutil/float_dsp.c
+@@ -151,6 +151,9 @@ av_cold AVFloatDSPContext *avpriv_float_dsp_alloc(int bit_exact)
+     fdsp->scalarproduct_float = ff_scalarproduct_float_c;
+     fdsp->scalarproduct_double = ff_scalarproduct_double_c;
+ 
++    if (bit_exact & AV_FLOAT_DSP_FFVPX_C_ONLY)
++        return fdsp;
++
+ #if ARCH_AARCH64
+     ff_float_dsp_init_aarch64(fdsp);
+ #elif ARCH_ARM
+diff --git a/media/ffvpx/libavutil/float_dsp.h b/media/ffvpx/libavutil/float_dsp.h
+index ab34277c2083319b96d2151bf24b3fa1bd3a2875..ee44bcf75b16c7c345ca7f333b4aefb82dd593ae 100644
+--- a/media/ffvpx/libavutil/float_dsp.h
++++ b/media/ffvpx/libavutil/float_dsp.h
+@@ -241,6 +241,8 @@ void ff_float_dsp_init_mips(AVFloatDSPContext *fdsp);
+  *
+  * @param strict  setting to non-zero avoids using functions which may not be IEEE-754 compliant
+  */
++/* ffvpx: or'd into `strict`, only the C functions, whatever the CPU has. */
++#define AV_FLOAT_DSP_FFVPX_C_ONLY 0x40000000
+ AVFloatDSPContext *avpriv_float_dsp_alloc(int strict);
+ 
+ #endif /* AVUTIL_FLOAT_DSP_H */
+diff --git a/media/ffvpx/libavutil/moz.build b/media/ffvpx/libavutil/moz.build
+index 556b6892d92380c936da5f40f310fa9303af6ada..2969a7bd6412642859a71f1496ff95362aa3c86c 100644
+--- a/media/ffvpx/libavutil/moz.build
++++ b/media/ffvpx/libavutil/moz.build
+@@ -61,6 +61,7 @@ SOURCES += [
+ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
+     SOURCES += [
+         'adler32.c',
++        'ambient_viewing_environment.c',
+         'base64.c',
+         'film_grain_params.c',
+         'hdr_dynamic_metadata.c',
+@@ -68,7 +69,10 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
+         'integer.c',
+         'intmath.c',
+         'lls.c',
++        'md5.c',
+         'pixelutils.c',
++        'stereo3d.c',
++        'tdrdi.c',
+         'threadmessage.c',
+         'timecode.c',
+         'video_enc_params.c'
+diff --git a/media/ffvpx/libavutil/tx.c b/media/ffvpx/libavutil/tx.c
+index 54660c9079cb79e8177c51540a323e91a8117ce4..00d576d7e77938a5965624dc4ca1e234b45bce79 100644
+--- a/media/ffvpx/libavutil/tx.c
++++ b/media/ffvpx/libavutil/tx.c
+@@ -725,10 +725,10 @@ av_cold int ff_tx_init_subtx(AVTXContext *s, enum AVTXType type,
+ 
+     /* We still accept functions marked with SLOW, even if the CPU is
+      * marked with the same flag, but we give them lower priority. */
+-    const int cpu_flags = av_get_cpu_flags();
++    const int cpu_flags = (flags & AV_TX_FFVPX_C_ONLY) ? 0 : av_get_cpu_flags();
+ 
+     /* Flags the transform wants */
+-    uint64_t req_flags = flags;
++    uint64_t req_flags = flags & ~AV_TX_FFVPX_C_ONLY;
+ 
+     /* Flags the codelet may require to be present */
+     uint64_t inv_req_mask = AV_TX_FULL_IMDCT |
+diff --git a/media/ffvpx/libavutil/tx.h b/media/ffvpx/libavutil/tx.h
+index c950095735d76e110b197e73cfa774537cecf954..6628b3c1ba508aabc786125e5f4a42e8bbb0336a 100644
+--- a/media/ffvpx/libavutil/tx.h
++++ b/media/ffvpx/libavutil/tx.h
+@@ -185,6 +185,12 @@ enum AVTXFlags {
+     AV_TX_REAL_TO_IMAGINARY = 1ULL << 4,
+ };
+ 
++/**
++ * ffvpx: pick only the C codelets, whatever the CPU has, so that the output
++ * does not depend on it (AAC). Not in the enum: it is not a FFmpeg flag.
++ */
++#define AV_TX_FFVPX_C_ONLY (1ULL << 57)
++
+ /**
+  * Initialize a transform context with the given configuration
+  * (i)MDCTs with an odd length are currently not supported.
+diff --git a/media/ffvpx/libavutil_visibility.h b/media/ffvpx/libavutil_visibility.h
+index be5025ba13634c251ea4cad4a3ba695c0e5527f3..6d5c574aae9302ea739bfcc71ba12fcc45e6d294 100644
+--- a/media/ffvpx/libavutil_visibility.h
++++ b/media/ffvpx/libavutil_visibility.h
+@@ -13,6 +13,44 @@
+ #include "libavutil/log.h"
+ #include "libavutil/internal.h"
+ #include "libavcodec/packet.h"
++#include "libavutil/channel_layout.h"
++#include "libavutil/container_fifo.h"
++#include "libavutil/film_grain_params.h"
++#include "libavutil/imgutils.h"
++#include "libavutil/frame.h"
++#include "libavutil/pixdesc.h"
++#include "libavutil/refstruct.h"
++#include "libavutil/stereo3d.h"
++
++#include "libavutil/ambient_viewing_environment.h"
++#include "libavutil/avassert.h"
++#include "libavutil/avstring.h"
++#include "libavutil/avutil.h"
++#include "libavutil/base64.h"
++#include "libavutil/bprint.h"
++#include "libavutil/buffer.h"
++#include "libavutil/cpu.h"
++#include "libavutil/crc.h"
++#include "libavutil/dict.h"
++#include "libavutil/display.h"
++#include "libavutil/error.h"
++#include "libavutil/fifo.h"
++#include "libavutil/float_dsp.h"
++#include "libavutil/hdr_dynamic_metadata.h"
++#include "libavutil/hdr_dynamic_vivid_metadata.h"
++#include "libavutil/hwcontext.h"
++#include "libavutil/mastering_display_metadata.h"
++#include "libavutil/mathematics.h"
++#include "libavutil/md5.h"
++#include "libavutil/mem.h"
++#include "libavutil/opt.h"
++#include "libavutil/rational.h"
++#include "libavutil/samplefmt.h"
++#include "libavutil/slicethread.h"
++#include "libavutil/tdrdi.h"
++#include "libavutil/timecode.h"
++#include "libavutil/tx.h"
++#include "libavutil/video_enc_params.h"
+ 
+ #pragma GCC visibility pop
+ 
+diff --git a/media/ffvpx/moz.build b/media/ffvpx/moz.build
+index 41dad33906ac4c266acf6c746fdbb2876e69e2c6..67dd987c8ee2f88da9b49ce0253c7d7610d6b14b 100644
+--- a/media/ffvpx/moz.build
++++ b/media/ffvpx/moz.build
+@@ -9,3 +9,5 @@ DIRS += [
+     'libavutil',
+     'libavcodec'
+ ]
++
++TEST_DIRS += ['gtest']

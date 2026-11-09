@@ -144,7 +144,7 @@ index b4ee977ca56ca3afa98cfcf2215b7790b97bd4fe..b6c44065a3a5a85899096b9ad988c2c2
              if result.is_none() {
                  let created = match global.request_adapter(
 diff --git a/modules/libpref/init/StaticPrefList.yaml b/modules/libpref/init/StaticPrefList.yaml
-index 80be46d83cc04eb081ce58b4e322c8da15143c1c..c127898ccd224e517109d4a877be0fc07e705972 100644
+index 80be46d83cc04eb081ce58b4e322c8da15143c1c..c363875f4125e8d3c0a92c609a6a9fc4e70bf4e3 100644
 --- a/modules/libpref/init/StaticPrefList.yaml
 +++ b/modules/libpref/init/StaticPrefList.yaml
 @@ -6248,7 +6248,7 @@
@@ -165,3 +165,12 @@ index 80be46d83cc04eb081ce58b4e322c8da15143c1c..c127898ccd224e517109d4a877be0fc0
  #endif
    mirror: always
    set_spidermonkey_pref: always
+@@ -12947,7 +12947,7 @@
+   #if defined(XP_MACOSX)
+     value: false
+   #else
+-    value: true
++    value: false  # STEALTH-HOOK(media/ffvpx-decoders): ffvpx decodes H.264, HEVC and AAC, never the system libavcodec
+   #endif
+     mirror: always
+ 

@@ -1,0 +1,34 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+UNIFIED_SOURCES += [
+    "TestFFVPXAac.cpp",
+]
+
+# *.mf.wav: what Media Foundation (Windows 11, msauddecmft.dll
+# 10.0.26100.9549) decodes from the m4a next to it.
+TEST_HARNESS_FILES.gtest += [
+    "aac-lc-pns.m4a",
+    "aac-lc-pns.mf.wav",
+    "aac-noise.m4a",
+    "aac-noise.mf.wav",
+    "lcfdk.m4a",
+    "lcfdk.mf.wav",
+    "tns.m4a",
+    "tns.mf.wav",
+    "tns64.m4a",
+    "tns64.mf.wav",
+]
+
+include("/ipc/chromium/chromium-config.mozbuild")
+
+LOCAL_INCLUDES += [
+    "/dom/media",
+    "/dom/media/gtest",
+    "/dom/media/mp4",
+    "/dom/media/platforms",
+    "/dom/media/platforms/ffmpeg/ffvpx",
+]
+
+FINAL_LIBRARY = "xul-gtest"

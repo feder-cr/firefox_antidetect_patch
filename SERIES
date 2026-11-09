@@ -57,6 +57,7 @@ fingerprint/locale-time/session-declaration
 fingerprint/locale-time/timezone
 fingerprint/locale-time/workers
 fingerprint/media/decode-declaration
+fingerprint/media/decode-samples
 fingerprint/media/enumeration
 fingerprint/media/speech-voices
 fingerprint/screen-window/css-media

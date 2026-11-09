@@ -1,0 +1,239 @@
+# fingerprint/media/decode-samples
+
+Category: build
+Prefs: none read directly
+Test: TODO
+
+## What it does
+
+TODO: one paragraph, from the notes below.
+
+## Hooks in Mozilla files
+
+- `media/ffvpx/README_MOZILLA` ((build configuration, not a hook point), already-hook): Documents the new h264/hevc/aac decoders and parsers (sourced from FFmpeg 9.0.1's own configure selection), the AAC plain-C-only patch, and the AAC-LC = Media Foundation port (aacdec_mf.h, mf_dct/mf_imlt/mf_tables) with what each touched file does. Documentation only.
+- `media/ffvpx/config_components_audio_video.h` ((build configuration, not a hook point), already-hook): Turns on CONFIG_H264_DECODER/_PARSER, CONFIG_HEVC_DECODER/_PARSER, CONFIG_AAC_DECODER/_PARSER (generated config, same macros FFmpeg's own configure would set for --enable-decoder=h264,hevc,aac --enable-parser=h264,hevc,aac). config_override.h re-gates H.264/HEVC to x86-only right below; AAC stays on for every CPU.
+- `media/ffvpx/config_override.h` ((build configuration, not a hook point), already-hook): Gates H.264/HEVC (decoder, parser, SEI, CABAC, chroma/qpel/DSP, bswapdsp, me_cmp, error_resilience, startcode) to x86/x86_64 only via MOZ_FFVPX_H26X, so other CPUs build without them. Sets BROKEN_RELOCATIONS/PIC for the CABAC inline asm in libmozavcodec's PIC build, and HAVE_LOG2F=0 because the fdlibm override has no log2f. MOZ_FFVPX_AAC_C_ONLY is consumed in libavcodec/moz.build (forces plain C, 
+- `media/ffvpx/libavcodec/codec_list.c` ((build configuration, not a hook point), already-hook): Registers ff_h264_decoder, ff_hevc_decoder and ff_aac_decoder in ffvpx's codec table, each gated on the CONFIG_* macro set above, so PDMFactory/FFmpegDecoderModule can find them through avcodec_find_decoder without a system libavcodec.
+- `media/ffvpx/libavcodec/moz.build` ((build configuration, not a hook point), already-hook): Builds the AAC sources in plain C (MOZ_FFVPX_AAC_C_ONLY), with -ffp-contract=off on aacdec_float.c/mf_dct.c/mf_imlt.c so the sign of zero and rounding match Media Foundation bit for bit. Compiles idwr_math.c (invisible_DWriteCore's own ucrtbase-exact pow/powf) directly into mozavcodec, a separate shared library from libxul, so it cannot USE_LIBS the private idwr copy there. Builds the H.264/HEVC s
+- `media/ffvpx/libavcodec/parser_list.c` ((build configuration, not a hook point), already-hook): Registers ff_h264_parser, ff_hevc_parser and ff_aac_parser, each gated on its CONFIG_* macro, alongside codec_list.c's decoder registration.
+- `media/ffvpx/libavcodec/x86/moz.build` ((build configuration, not a hook point), already-hook): Builds the x86 asm/DSP-init sources for H.264 and HEVC (deblock, idct, qpel, chroma, SAO, dequant, me_cmp, bswapdsp); none for AAC, which stays plain C on every CPU per config_override.h.
+- `media/ffvpx/libavutil/avutil.symbols` ((build configuration, not a hook point), already-hook): Exports the libavutil symbols the newly-added md5.c, tdrdi.c, ambient_viewing_environment.c, stereo3d.c and channel_layout/container_fifo helpers need, which the H.264/HEVC SEI code and the AAC channel layout calls link against.
+- `media/ffvpx/libavutil/float_dsp.c` ((build configuration, not a hook point), already-hook): avpriv_float_dsp_alloc returns only the C function pointers when the new AV_FLOAT_DSP_FFVPX_C_ONLY bit is set in its bit_exact argument, before any arch-specific ff_float_dsp_init_* overwrites them with SIMD versions.
+- `media/ffvpx/libavutil/float_dsp.h` ((build configuration, not a hook point), already-hook): Declares the AV_FLOAT_DSP_FFVPX_C_ONLY bit (an unused high bit of the existing `strict` argument, not a new parameter) that float_dsp.c checks.
+- `media/ffvpx/libavutil/moz.build` ((build configuration, not a hook point), already-hook): Builds the new md5.c, tdrdi.c, ambient_viewing_environment.c and stereo3d.c sources the H.264/HEVC SEI code and AAC channel layout need.
+- `media/ffvpx/libavutil/tx.c` ((build configuration, not a hook point), already-hook): ff_tx_init_subtx treats the host CPU as having no feature flags when the new AV_TX_FFVPX_C_ONLY transform flag is set, so av_tx_init can only pick C codelets: the AAC MDCT/IMDCT and float DSP then give the same bytes on every CPU, never the host's SIMD path.
+- `media/ffvpx/libavutil/tx.h` ((build configuration, not a hook point), already-hook): Declares AV_TX_FFVPX_C_ONLY, an unused high bit of the existing AVTXFlags space (not an upstream FFmpeg flag), that tx.c checks.
+- `media/ffvpx/libavutil_visibility.h` ((build configuration, not a hook point), already-hook): Adds the new libavutil headers (md5, tdrdi, ambient_viewing_environment, stereo3d, channel_layout, container_fifo, film_grain_params, and a few more FFmpeg 9.0.1 already had) to the GCC-visibility-pop block that makes their symbols default-visible, same pattern as the existing headers in this file.
+- `media/ffvpx/moz.build` ((build configuration, not a hook point), already-hook): Adds the new gtest/ directory (TestFFVPXAac.cpp) to the build.
+
+## Our own files
+
+- `media/ffvpx/config_components.asm`
+- `media/ffvpx/gtest/TestFFVPXAac.cpp`
+- `media/ffvpx/gtest/aac-lc-pns.m4a`
+- `media/ffvpx/gtest/aac-lc-pns.mf.wav`
+- `media/ffvpx/gtest/aac-noise.m4a`
+- `media/ffvpx/gtest/aac-noise.mf.wav`
+- `media/ffvpx/gtest/lcfdk.m4a`
+- `media/ffvpx/gtest/lcfdk.mf.wav`
+- `media/ffvpx/gtest/moz.build`
+- `media/ffvpx/gtest/tns.m4a`
+- `media/ffvpx/gtest/tns.mf.wav`
+- `media/ffvpx/gtest/tns64.m4a`
+- `media/ffvpx/gtest/tns64.mf.wav`
+- `media/ffvpx/libavcodec/aac.h`
+- `media/ffvpx/libavcodec/aac/aacdec.c`
+- `media/ffvpx/libavcodec/aac/aacdec.h`
+- `media/ffvpx/libavcodec/aac/aacdec_ac.c`
+- `media/ffvpx/libavcodec/aac/aacdec_ac.h`
+- `media/ffvpx/libavcodec/aac/aacdec_dsp_template.c`
+- `media/ffvpx/libavcodec/aac/aacdec_float.c`
+- `media/ffvpx/libavcodec/aac/aacdec_float_coupling.h`
+- `media/ffvpx/libavcodec/aac/aacdec_float_prediction.h`
+- `media/ffvpx/libavcodec/aac/aacdec_latm.h`
+- `media/ffvpx/libavcodec/aac/aacdec_lpd.c`
+- `media/ffvpx/libavcodec/aac/aacdec_lpd.h`
+- `media/ffvpx/libavcodec/aac/aacdec_mf.h`
+- `media/ffvpx/libavcodec/aac/aacdec_proc_template.c`
+- `media/ffvpx/libavcodec/aac/aacdec_tab.c`
+- `media/ffvpx/libavcodec/aac/aacdec_tab.h`
+- `media/ffvpx/libavcodec/aac/aacdec_usac.c`
+- `media/ffvpx/libavcodec/aac/aacdec_usac.h`
+- `media/ffvpx/libavcodec/aac/aacdec_usac_mps212.c`
+- `media/ffvpx/libavcodec/aac/aacdec_usac_mps212.h`
+- `media/ffvpx/libavcodec/aac/mf_dct.c`
+- `media/ffvpx/libavcodec/aac/mf_dct.h`
+- `media/ffvpx/libavcodec/aac/mf_imlt.c`
+- `media/ffvpx/libavcodec/aac/mf_imlt.h`
+- `media/ffvpx/libavcodec/aac/mf_tables.c`
+- `media/ffvpx/libavcodec/aac/mf_tables.h`
+- `media/ffvpx/libavcodec/aac_ac3_parser.c`
+- `media/ffvpx/libavcodec/aac_ac3_parser.h`
+- `media/ffvpx/libavcodec/aac_defines.h`
+- `media/ffvpx/libavcodec/aac_parser.c`
+- `media/ffvpx/libavcodec/aacps.c`
+- `media/ffvpx/libavcodec/aacps.h`
+- `media/ffvpx/libavcodec/aacps_common.c`
+- `media/ffvpx/libavcodec/aacps_fixed_tablegen.h`
+- `media/ffvpx/libavcodec/aacps_float.c`
+- `media/ffvpx/libavcodec/aacps_tablegen.h`
+- `media/ffvpx/libavcodec/aacpsdata.c`
+- `media/ffvpx/libavcodec/aacpsdsp.h`
+- `media/ffvpx/libavcodec/aacpsdsp_float.c`
+- `media/ffvpx/libavcodec/aacpsdsp_template.c`
+- `media/ffvpx/libavcodec/aacsbr.c`
+- `media/ffvpx/libavcodec/aacsbr.h`
+- `media/ffvpx/libavcodec/aacsbr_template.c`
+- `media/ffvpx/libavcodec/aacsbrdata.h`
+- `media/ffvpx/libavcodec/aactab.c`
+- `media/ffvpx/libavcodec/aactab.h`
+- `media/ffvpx/libavcodec/ac3_parser_internal.h`
+- `media/ffvpx/libavcodec/ac3defs.h`
+- `media/ffvpx/libavcodec/bswapdsp.c`
+- `media/ffvpx/libavcodec/bswapdsp.h`
+- `media/ffvpx/libavcodec/cabac.c`
+- `media/ffvpx/libavcodec/cabac.h`
+- `media/ffvpx/libavcodec/cabac_functions.h`
+- `media/ffvpx/libavcodec/cbrt_data.c`
+- `media/ffvpx/libavcodec/cbrt_data.h`
+- `media/ffvpx/libavcodec/cbrt_tablegen.h`
+- `media/ffvpx/libavcodec/cbrt_tablegen_common.c`
+- `media/ffvpx/libavcodec/copy_block.h`
+- `media/ffvpx/libavcodec/error_resilience.c`
+- `media/ffvpx/libavcodec/h264.h`
+- `media/ffvpx/libavcodec/h2645_parse.c`
+- `media/ffvpx/libavcodec/h2645_parse.h`
+- `media/ffvpx/libavcodec/h2645_sei.c`
+- `media/ffvpx/libavcodec/h2645_sei.h`
+- `media/ffvpx/libavcodec/h2645_vui.c`
+- `media/ffvpx/libavcodec/h2645_vui.h`
+- `media/ffvpx/libavcodec/h2645data.c`
+- `media/ffvpx/libavcodec/h2645data.h`
+- `media/ffvpx/libavcodec/h264_cabac.c`
+- `media/ffvpx/libavcodec/h264_cavlc.c`
+- `media/ffvpx/libavcodec/h264_direct.c`
+- `media/ffvpx/libavcodec/h264_loopfilter.c`
+- `media/ffvpx/libavcodec/h264_mb.c`
+- `media/ffvpx/libavcodec/h264_mb_template.c`
+- `media/ffvpx/libavcodec/h264_mc_template.c`
+- `media/ffvpx/libavcodec/h264_mvpred.h`
+- `media/ffvpx/libavcodec/h264_parse.c`
+- `media/ffvpx/libavcodec/h264_parse.h`
+- `media/ffvpx/libavcodec/h264_parser.c`
+- `media/ffvpx/libavcodec/h264_picture.c`
+- `media/ffvpx/libavcodec/h264_ps.c`
+- `media/ffvpx/libavcodec/h264_ps.h`
+- `media/ffvpx/libavcodec/h264_refs.c`
+- `media/ffvpx/libavcodec/h264_sei.c`
+- `media/ffvpx/libavcodec/h264_sei.h`
+- `media/ffvpx/libavcodec/h264_slice.c`
+- `media/ffvpx/libavcodec/h264addpx_template.c`
+- `media/ffvpx/libavcodec/h264chroma.c`
+- `media/ffvpx/libavcodec/h264chroma_template.c`
+- `media/ffvpx/libavcodec/h264data.c`
+- `media/ffvpx/libavcodec/h264data.h`
+- `media/ffvpx/libavcodec/h264dec.c`
+- `media/ffvpx/libavcodec/h264dec.h`
+- `media/ffvpx/libavcodec/h264dsp.c`
+- `media/ffvpx/libavcodec/h264dsp_template.c`
+- `media/ffvpx/libavcodec/h264idct.c`
+- `media/ffvpx/libavcodec/h264idct.h`
+- `media/ffvpx/libavcodec/h264idct_template.c`
+- `media/ffvpx/libavcodec/h264qpel.c`
+- `media/ffvpx/libavcodec/h264qpel.h`
+- `media/ffvpx/libavcodec/h264qpel_template.c`
+- `media/ffvpx/libavcodec/h26x/h2656_deblock_template.c`
+- `media/ffvpx/libavcodec/h26x/h2656_inter_template.c`
+- `media/ffvpx/libavcodec/h26x/h2656_sao_template.c`
+- `media/ffvpx/libavcodec/h274.c`
+- `media/ffvpx/libavcodec/h274.h`
+- `media/ffvpx/libavcodec/hevc/cabac.c`
+- `media/ffvpx/libavcodec/hevc/data.c`
+- `media/ffvpx/libavcodec/hevc/data.h`
+- `media/ffvpx/libavcodec/hevc/dsp.c`
+- `media/ffvpx/libavcodec/hevc/dsp.h`
+- `media/ffvpx/libavcodec/hevc/dsp_template.c`
+- `media/ffvpx/libavcodec/hevc/filter.c`
+- `media/ffvpx/libavcodec/hevc/hevc.h`
+- `media/ffvpx/libavcodec/hevc/hevcdec.c`
+- `media/ffvpx/libavcodec/hevc/hevcdec.h`
+- `media/ffvpx/libavcodec/hevc/moz.build`
+- `media/ffvpx/libavcodec/hevc/mvs.c`
+- `media/ffvpx/libavcodec/hevc/parse.c`
+- `media/ffvpx/libavcodec/hevc/parse.h`
+- `media/ffvpx/libavcodec/hevc/parser.c`
+- `media/ffvpx/libavcodec/hevc/pred.c`
+- `media/ffvpx/libavcodec/hevc/pred.h`
+- `media/ffvpx/libavcodec/hevc/pred_template.c`
+- `media/ffvpx/libavcodec/hevc/ps.c`
+- `media/ffvpx/libavcodec/hevc/ps.h`
+- `media/ffvpx/libavcodec/hevc/refs.c`
+- `media/ffvpx/libavcodec/hevc/sei.c`
+- `media/ffvpx/libavcodec/hevc/sei.h`
+- `media/ffvpx/libavcodec/hpel_template.c`
+- `media/ffvpx/libavcodec/kbdwin.c`
+- `media/ffvpx/libavcodec/kbdwin.h`
+- `media/ffvpx/libavcodec/lpc_functions.h`
+- `media/ffvpx/libavcodec/me_cmp.c`
+- `media/ffvpx/libavcodec/mpegvideoenc.h`
+- `media/ffvpx/libavcodec/pel_template.c`
+- `media/ffvpx/libavcodec/sbr.h`
+- `media/ffvpx/libavcodec/sbrdsp.c`
+- `media/ffvpx/libavcodec/sbrdsp.h`
+- `media/ffvpx/libavcodec/sbrdsp_template.c`
+- `media/ffvpx/libavcodec/sei.h`
+- `media/ffvpx/libavcodec/sinewin.c`
+- `media/ffvpx/libavcodec/sinewin.h`
+- `media/ffvpx/libavcodec/sinewin_tablegen.h`
+- `media/ffvpx/libavcodec/startcode.c`
+- `media/ffvpx/libavcodec/vvc.h`
+- `media/ffvpx/libavcodec/x86/bswapdsp.asm`
+- `media/ffvpx/libavcodec/x86/bswapdsp_init.c`
+- `media/ffvpx/libavcodec/x86/cabac.h`
+- `media/ffvpx/libavcodec/x86/fpel.asm`
+- `media/ffvpx/libavcodec/x86/fpel.h`
+- `media/ffvpx/libavcodec/x86/h264_cabac.c`
+- `media/ffvpx/libavcodec/x86/h264_chromamc.asm`
+- `media/ffvpx/libavcodec/x86/h264_chromamc_10bit.asm`
+- `media/ffvpx/libavcodec/x86/h264_deblock.asm`
+- `media/ffvpx/libavcodec/x86/h264_deblock_10bit.asm`
+- `media/ffvpx/libavcodec/x86/h264_idct.asm`
+- `media/ffvpx/libavcodec/x86/h264_idct_10bit.asm`
+- `media/ffvpx/libavcodec/x86/h264_qpel.c`
+- `media/ffvpx/libavcodec/x86/h264_qpel_10bit.asm`
+- `media/ffvpx/libavcodec/x86/h264_qpel_8bit.asm`
+- `media/ffvpx/libavcodec/x86/h264_weight.asm`
+- `media/ffvpx/libavcodec/x86/h264_weight_10bit.asm`
+- `media/ffvpx/libavcodec/x86/h264chroma_init.c`
+- `media/ffvpx/libavcodec/x86/h264dsp_init.c`
+- `media/ffvpx/libavcodec/x86/h26x/h2656_inter.asm`
+- `media/ffvpx/libavcodec/x86/h26x/h2656_sao.asm`
+- `media/ffvpx/libavcodec/x86/h26x/h2656_sao_10bit.asm`
+- `media/ffvpx/libavcodec/x86/h26x/h2656dsp.c`
+- `media/ffvpx/libavcodec/x86/h26x/h2656dsp.h`
+- `media/ffvpx/libavcodec/x86/hevc/add_res.asm`
+- `media/ffvpx/libavcodec/x86/hevc/deblock.asm`
+- `media/ffvpx/libavcodec/x86/hevc/dequant.asm`
+- `media/ffvpx/libavcodec/x86/hevc/dsp.h`
+- `media/ffvpx/libavcodec/x86/hevc/dsp_init.c`
+- `media/ffvpx/libavcodec/x86/hevc/idct.asm`
+- `media/ffvpx/libavcodec/x86/hevc/mc.asm`
+- `media/ffvpx/libavcodec/x86/hevc/sao.asm`
+- `media/ffvpx/libavcodec/x86/hevc/sao_10bit.asm`
+- `media/ffvpx/libavcodec/x86/me_cmp.asm`
+- `media/ffvpx/libavcodec/x86/me_cmp_init.c`
+- `media/ffvpx/libavcodec/x86/qpel.asm`
+- `media/ffvpx/libavcodec/x86/qpel.h`
+- `media/ffvpx/libavutil/ambient_viewing_environment.c`
+- `media/ffvpx/libavutil/ambient_viewing_environment.h`
+- `media/ffvpx/libavutil/dovi_meta.h`
+- `media/ffvpx/libavutil/md5.c`
+- `media/ffvpx/libavutil/md5.h`
+- `media/ffvpx/libavutil/softfloat.h`
+- `media/ffvpx/libavutil/softfloat_tables.h`
+- `media/ffvpx/libavutil/tdrdi.c`
+- `media/ffvpx/libavutil/tdrdi.h`
+- `media/ffvpx/test/webcodecs_h264/Dockerfile`
+- `media/ffvpx/test/webcodecs_h264/run.sh`
+- `media/ffvpx/test/webcodecs_h264/server.py`
+- `media/ffvpx/test/webcodecs_h264/test.html`
