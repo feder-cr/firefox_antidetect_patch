@@ -102,18 +102,27 @@ index a0d0ceba2c0d4615e259d7a04bed61adaff26203..1007a9714304e0c383c2b7ba242b4fef
  IPDL_SOURCES += [
      "ipc/PWebGPU.ipdl",
 diff --git a/gfx/thebes/gfxPlatform.cpp b/gfx/thebes/gfxPlatform.cpp
-index 9385c82abed17b64c4dd7a45f15d1d0a26cc791c..9c9e17407a6ad8daf6199e66269e553e3f3789e4 100644
+index 9385c82abed17b64c4dd7a45f15d1d0a26cc791c..b48ce91dc0f5ce7daee419337867291bf7242108 100644
 --- a/gfx/thebes/gfxPlatform.cpp
 +++ b/gfx/thebes/gfxPlatform.cpp
-@@ -3,6 +3,7 @@
+@@ -3,6 +3,8 @@
   * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
  
  #include "gfxPlatform.h"
 +#include "mozilla/webgpu/StealthWebGPUDeclaration.h"  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++#include "StealthColorProfile.h"  // STEALTH-HOOK(fingerprint/canvas/color-profile)
  
  #include "GfxDriverInfo.h"
  #include "VRProcessManager.h"
-@@ -3238,7 +3239,8 @@ void gfxPlatform::InitWebGPUConfig() {
+@@ -1953,6 +1955,7 @@ void gfxPlatform::InitializeCMS() {
+       StaticPrefs::gfx_color_management_native_srgb()) {
+     mCMSOutputProfile = mCMSsRGBProfile;
+   }
++  if (mozilla::gfx::StealthColorProfileDeclared()) mCMSOutputProfile = nullptr;  // STEALTH-HOOK(fingerprint/canvas/color-profile): the declared profile, not force_srgb
+ 
+   if (!mCMSOutputProfile) {
+     nsTArray<uint8_t> outputProfileData = GetPlatformCMSOutputProfileData();
+@@ -3238,7 +3241,8 @@ void gfxPlatform::InitWebGPUConfig() {
      featureExternalTexture.Disable(FeatureStatus::Blocklisted, message.get(),
                                     failureId);
    }

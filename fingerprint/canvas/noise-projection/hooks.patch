@@ -396,10 +396,10 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..d39be1c5d9166a3bc0ed56d73e3934e6
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..d5aae07d08f6ff68a02efb4ba457c61f2badc36c 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..ab674504dd4416e1aa6380f2f689647fde54ffaf 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -32,6 +32,10 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,11 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
@@ -407,10 +407,11 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..d5aae07d08f6ff68a02efb4ba457c61f
 +UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp", "TestStealthWebGPUExternalTexture.cpp"]  # STEALTH-HOOK(fingerprint/webgpu)
 +SOURCES += ["TestStealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
 +SOURCES += ["TestStealthSkiaIdwrThreads.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
++SOURCES += ["TestStealthColorProfile.cpp"]  # STEALTH-HOOK(fingerprint/canvas/color-profile)
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +46,19 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +47,19 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  
@@ -430,7 +431,7 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..d5aae07d08f6ff68a02efb4ba457c61f
  if CONFIG["OS_TARGET"] == "Darwin":
      # Not in UNIFIED_SOURCES: MacIOSurface.h includes Carbon headers (MacTypes.h)
      # which would make Rect/Point/Size ambiguous in all subsequent unified files.
-@@ -87,5 +104,6 @@ LOCAL_INCLUDES += [
+@@ -87,5 +105,6 @@ LOCAL_INCLUDES += [
      "/layout/base",
      "/third_party/xsimd/include",
  ]

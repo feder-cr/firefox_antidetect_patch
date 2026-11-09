@@ -266,7 +266,8 @@ def main() -> int:
     # that no list names is never run, and the objectives of the text engine (idwr in Skia)
     # and of the declared system fonts and colours stay open.
     for name in ("tests/test_canvas_text_is_windows_e2e.py", "tests/test_system_fonts_and_colors_are_windows_e2e.py",
-                 "tests/test_a_missing_system_theme_pref_refuses_the_launch_e2e.py"):
+                 "tests/test_a_missing_system_theme_pref_refuses_the_launch_e2e.py",
+                 "tests/test_canvas_icc_readback_is_windows_e2e.py"):
         cases.append(("the gate's guards run %s, by name" % name,
                       name in guards and guards.index(name) < guards.index("-m e2e -o addopts")))
 

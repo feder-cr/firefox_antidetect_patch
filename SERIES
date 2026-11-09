@@ -35,6 +35,7 @@ fingerprint/audio/context-values
 fingerprint/audio/noise
 fingerprint/audio/sample-rate
 fingerprint/canvas/as-drawn
+fingerprint/canvas/color-profile
 fingerprint/canvas/noise-projection
 fingerprint/canvas/text-metrics
 fingerprint/fonts/bundle

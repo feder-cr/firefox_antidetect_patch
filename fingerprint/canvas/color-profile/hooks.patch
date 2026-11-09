@@ -1,0 +1,20 @@
+diff --git a/gfx/thebes/gfxWindowsPlatform.cpp b/gfx/thebes/gfxWindowsPlatform.cpp
+index 0018081bcc486cfe4c646219c1bd1f7ce5e21863..5ed9eddf45cd670b4115dcc0478cd7f932ea1495 100644
+--- a/gfx/thebes/gfxWindowsPlatform.cpp
++++ b/gfx/thebes/gfxWindowsPlatform.cpp
+@@ -5,6 +5,7 @@
+ #define INITGUID  // set before devguid.h
+ 
+ #include "gfxWindowsPlatform.h"
++#include "StealthColorProfile.h"  // STEALTH-HOOK(fingerprint/canvas/color-profile)
+ 
+ #include <d2d1_1.h>
+ #include <d3d10_1.h>
+@@ -1118,6 +1119,7 @@ nsTArray<uint8_t> gfxWindowsPlatform::GetPlatformCMSOutputProfileData() {
+ }
+ 
+ nsTArray<uint8_t> gfxWindowsPlatform::GetPlatformCMSOutputProfileData_Impl() {
++  if (auto declared = mozilla::gfx::StealthDeclaredColorProfileData()) return declared.extract();  // STEALTH-HOOK(fingerprint/canvas/color-profile)
+   static nsTArray<uint8_t> sCached = [&] {
+     // Check override pref first:
+     nsTArray<uint8_t> prefProfileData =
