@@ -188,9 +188,18 @@ jobs:
           # actually own these files (dpkg -S), never apt-get purge. apt-get resolves the
           # whole dependency graph first and the Mesa purge just above already left dpkg in
           # a state apt refuses to touch ("Unmet dependencies"); force-depends bypasses that.
+          # dpkg -S by resolved path misses on a merged-usr host: ldconfig reports
+          # /lib/x86_64-linux-gnu/... but dpkg only knows the /usr/lib/x86_64-linux-gnu/...
+          # it actually installed into, so query dpkg by basename instead (no leading path:
+          # dpkg -S matches that against any directory) to work on both layouts.
           libs=$(ldconfig -p | grep -E 'libavcodec\.so|libavutil\.so' | awk '{print $NF}')
-          pkgs=$(for f in $libs; do dpkg -S "$f" 2>/dev/null | cut -d: -f1; done | sort -u)
-          if [ -n "$pkgs" ]; then
+          if [ -n "$libs" ]; then
+            pkgs=$(dpkg -S 'libavcodec.so*' 'libavutil.so*' 2>/dev/null | cut -d: -f1 | sort -u)
+            if [ -z "$pkgs" ]; then
+              echo "ERROR: ldconfig reports a libavcodec/libavutil but dpkg -S found no owning package for it:"
+              echo "$libs"
+              exit 1
+            fi
             $SUDO dpkg --purge --force-depends $pkgs 2>&1 | tail -5 || true
           fi
           left=$(ldconfig -p | grep -E 'libavcodec|libavutil' || true)
