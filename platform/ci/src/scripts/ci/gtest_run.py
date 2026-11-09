@@ -59,10 +59,13 @@ NOT_ON = {
     "linux": {"StealthWebGPUAdapter", "StealthWebGPUInstanceEnv",  # XP_WIN in TestStealthWebGPUDeclaration.cpp
               "StealthBundledCollection", "StealthFontList", "StealthFallbackNames", "StealthTtcFace",
               "StealthBundledFamilyFilter", "StealthTextQuality",  # OS_TARGET == WINNT in gfx/tests/gtest/moz.build
-              "StealthOwnBinaries"},  # toolkit/xre/dllservices is built on WINNT only
+              "StealthOwnBinaries",  # toolkit/xre/dllservices is built on WINNT only
+              "StealthSkiaIdwrWin"},  # XP_WIN in TestStealthSkiaIdwr.cpp
     "win": {"StealthWebGPUBundledVulkan",  # XP_LINUX in TestStealthWebGPUDeclaration.cpp
             "StealthFcEmptyConfig", "StealthFcFontList", "StealthFontDescriptorPath",
-            "StealthFontMetrics"},  # MOZ_WIDGET_TOOLKIT == gtk in gfx/tests/gtest/moz.build
+            "StealthFontMetrics",  # MOZ_WIDGET_TOOLKIT == gtk in gfx/tests/gtest/moz.build
+            "StealthIdwrFontconfig", "StealthIdwrTextVars",  # TestStealthIdwrTextVars.cpp: gtk block of gfx/tests/gtest/moz.build
+            "StealthSystemTheme"},  # MOZ_WIDGET_GTK in widget/tests/gtest/TestStealthSystemFonts.cpp
 }
 
 

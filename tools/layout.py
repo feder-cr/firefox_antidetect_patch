@@ -233,7 +233,7 @@ OWN_FILES = [
     (r"^gfx/skia/skia/include/ports/SkTypeface_idwr\.h$", "fingerprint/fonts/idwr"),
     (r"^gfx/skia/skia/src/ports/(SkTypeface_idwr|SkScalerContext_idwr|SkIdwrPathSink)\.", "fingerprint/fonts/idwr"),
     (r"^gfx/thebes/StealthIdwrTextVars\.", "fingerprint/fonts/idwr"),
-    (r"^gfx/tests/gtest/(TestStealthSkiaIdwr|StealthSkiaIdwrGolden|TestStealthIdwrTextVars|gen_skia_text_golden)", "fingerprint/fonts/idwr"),
+    (r"^gfx/tests/gtest/(TestStealthSkiaIdwr|StealthSkiaIdwrGolden|TestStealthIdwrTextVars|StealthTestFonts|gen_skia_text_golden)", "fingerprint/fonts/idwr"),
     (r"^gfx/tests/gtest/TestStealthWebGPUDeclaration\.", "fingerprint/webgpu/adapter-declaration"),
     (r"^gfx/wgpu_bindings/src/stealth_webgpu_adapter\.rs$", "fingerprint/webgpu/adapter-declaration"),
     (r"^gfx/wgpu_bindings/src/stealth_webgpu_env\.rs$", "fingerprint/webgpu/adapter-declaration"),

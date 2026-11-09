@@ -104,6 +104,7 @@
   "gfx/skia/skia/src/ports/SkTypeface_idwr.cpp": "100644",
   "gfx/skia/skia/src/ports/SkTypeface_idwr.h": "100644",
   "gfx/tests/gtest/StealthSkiaIdwrGolden.inc": "100644",
+  "gfx/tests/gtest/StealthTestFonts.h": "100644",
   "gfx/tests/gtest/TestStealthIdwrTextVars.cpp": "100644",
   "gfx/tests/gtest/TestStealthSkiaIdwr.cpp": "100644",
   "gfx/tests/gtest/TestStealthSkiaIdwrThreads.cpp": "100644",

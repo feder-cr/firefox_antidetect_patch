@@ -26,6 +26,7 @@
 
 #include "gtest/gtest.h"
 
+#include "StealthTestFonts.h"
 #include "gfxPlatform.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/gfx/2D.h"
@@ -93,27 +94,7 @@ uint64_t Fnv1a64(const uint8_t* aData, size_t aLen, uint64_t aHash = 0xcbf29ce48
   return aHash;
 }
 
-// The bundled font, as the engine ships it (GRE/fonts).
-nsTArray<uint8_t> ReadBundledFont(const char* aName) {
-  nsTArray<uint8_t> out;
-  nsCOMPtr<nsIFile> file;
-  int64_t size = 0;
-  PRFileDesc* fd = nullptr;
-  if (NS_FAILED(NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(file))) ||
-      NS_FAILED(file->Append(u"fonts"_ns)) ||
-      NS_FAILED(file->Append(NS_ConvertUTF8toUTF16(aName))) ||
-      NS_FAILED(file->GetFileSize(&size)) ||
-      NS_FAILED(file->OpenNSPRFileDesc(PR_RDONLY, 0, &fd))) {
-    return out;
-  }
-  out.SetLength(size_t(size));
-  const int32_t read = PR_Read(fd, out.Elements(), int32_t(size));
-  PR_Close(fd);
-  if (read != int32_t(size)) {
-    out.Clear();
-  }
-  return out;
-}
+using stealth_test_fonts::ReadBundledFont;
 
 void UpdateTextVars() {
 #ifdef XP_WIN

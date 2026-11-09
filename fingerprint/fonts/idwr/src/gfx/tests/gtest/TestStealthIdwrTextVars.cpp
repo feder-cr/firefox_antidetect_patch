@@ -9,11 +9,14 @@
 
 #include <unistd.h>
 
+#include <vector>
+
 #include "gtest/gtest.h"
 
 #include "ScaledFontBase.h"
 #include "StealthIdwrTextVars.h"
 #include "StealthSkiaIdwr.h"
+#include "StealthTestFonts.h"
 #include "gfxPlatform.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/gfx/2D.h"
@@ -99,26 +102,42 @@ TEST(StealthIdwrTextVars, PlatformConstructorWithDefaultQualityStarts)
 
 namespace {
 
-// A one glyph bitmap font in BDF: FreeType reads it, idwr (sfnt only) refuses it.
-constexpr char kBdf[] =
-    "STARTFONT 2.1\n"
-    "FONT -misc-test-medium-r-normal--8-80-75-75-c-80-iso10646-1\n"
-    "SIZE 8 75 75\n"
-    "FONTBOUNDINGBOX 8 8 0 0\n"
-    "STARTPROPERTIES 2\n"
-    "FONT_ASCENT 8\n"
-    "FONT_DESCENT 0\n"
-    "ENDPROPERTIES\n"
-    "CHARS 1\n"
-    "STARTCHAR A\n"
-    "ENCODING 65\n"
-    "SWIDTH 1000 0\n"
-    "DWIDTH 8 0\n"
-    "BBX 8 8 0 0\n"
-    "BITMAP\n"
-    "18\n24\n42\n42\n7E\n42\n42\n00\n"
-    "ENDCHAR\n"
-    "ENDFONT\n";
+// A scaled font of the bytes through the Linux backend, as the golden test makes them.
+struct FontchainFont {
+  RefPtr<NativeFontResource> mResource;
+  RefPtr<UnscaledFont> mUnscaled;
+  RefPtr<ScaledFont> mScaled;
+};
+
+void MakeScaledFont(const std::vector<uint8_t>& aBytes, FontchainFont& aOut) {
+  ASSERT_FALSE(aBytes.empty()) << "bundled font missing";
+  aOut.mResource = Factory::CreateNativeFontResource(aBytes.data(), aBytes.size(),
+                                                     FontType::FONTCONFIG);
+  ASSERT_TRUE(aOut.mResource) << "no native font resource";
+  aOut.mUnscaled = aOut.mResource->CreateUnscaledFont(0, nullptr, 0);
+  ASSERT_TRUE(aOut.mUnscaled) << "FreeType does not read the font";
+  wr::FontInstanceOptions options = {};
+  wr::FontInstancePlatformOptions platform = {};
+  aOut.mScaled = aOut.mUnscaled->CreateScaledFontFromWRFont(12.0f, &options, &platform,
+                                                            nullptr, 0);
+  ASSERT_TRUE(aOut.mScaled);
+}
+
+SkTypeface* TypefaceOf(FontchainFont& aFont) {
+  return static_cast<ScaledFontBase*>(aFont.mScaled.get())->GetSkTypeface();
+}
+
+// Arial, bundled, as the engine ships it, with `aColor` as its COLR and CPAL (none: as is).
+std::vector<uint8_t> Arial(const std::vector<stealth_test_fonts::SfntTable>& aColor) {
+  nsTArray<uint8_t> arial = stealth_test_fonts::ReadBundledFont("arial7_04.ttf");
+  if (arial.IsEmpty()) {
+    return {};
+  }
+  if (aColor.empty()) {
+    return std::vector<uint8_t>(arial.Elements(), arial.Elements() + arial.Length());
+  }
+  return stealth_test_fonts::WithTables(arial.Elements(), arial.Length(), aColor);
+}
 
 struct ClearEngine {
   ~ClearEngine() {
@@ -143,28 +162,31 @@ TEST(StealthIdwrFontconfig, TheEngineDecidesWhetherSkiaTextIsIdwrs)
 }
 
 // idwr cannot take the font: there is no typeface. Before, ScaledFontFontconfig went on to
-// SkCreateTypefaceFromCairoFTFont and the host's FreeType drew the glyphs.
+// SkCreateTypefaceFromCairoFTFont and the host's FreeType drew the glyphs. The font is Arial
+// with a COLR whose layer names a palette entry that is not there: FreeType reads the face,
+// idwr refuses it as DirectWrite's CreateFontFace does (ColrBuilder). The two twins show the
+// refusal is the font's and not the test's setup: Arial as is, and Arial with a COLR and CPAL
+// that DirectWrite takes, both have a typeface.
 TEST(StealthIdwrFontconfig, AFontIdwrRefusesHasNoTypeface)
 {
   gfxPlatform::GetPlatform();
   ClearEngine clear;
   DeclareText(5);
 
-  RefPtr<NativeFontResource> resource = Factory::CreateNativeFontResource(
-      reinterpret_cast<const uint8_t*>(kBdf), sizeof(kBdf) - 1, FontType::FONTCONFIG);
-  if (!resource) {
-    GTEST_SKIP() << "no native font resource for the BDF";
-  }
-  RefPtr<UnscaledFont> unscaled = resource->CreateUnscaledFont(0, nullptr, 0);
-  if (!unscaled) {
-    GTEST_SKIP() << "FreeType does not read the BDF";
-  }
-  wr::FontInstanceOptions options = {};
-  wr::FontInstancePlatformOptions platform = {};
-  RefPtr<ScaledFont> font = unscaled->CreateScaledFontFromWRFont(
-      8.0f, &options, &platform, nullptr, 0);
-  ASSERT_TRUE(font);
-  EXPECT_FALSE(static_cast<ScaledFontBase*>(font.get())->GetSkTypeface());
+  FontchainFont intact;
+  ASSERT_NO_FATAL_FAILURE(MakeScaledFont(Arial({}), intact));
+  EXPECT_TRUE(TypefaceOf(intact)) << "idwr takes no typeface of the bundled Arial";
+
+  FontchainFont colorOk;
+  ASSERT_NO_FATAL_FAILURE(
+      MakeScaledFont(Arial(stealth_test_fonts::ColorTables(0)), colorOk));
+  EXPECT_TRUE(TypefaceOf(colorOk))
+      << "idwr takes no typeface of Arial with a valid COLR and CPAL";
+
+  FontchainFont refused;
+  ASSERT_NO_FATAL_FAILURE(
+      MakeScaledFont(Arial(stealth_test_fonts::ColorTables(7)), refused));
+  EXPECT_FALSE(TypefaceOf(refused));
 }
 
 // A declaration without the rendering mode is refused, as one without a quality is. Windows

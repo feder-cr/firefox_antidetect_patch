@@ -330,6 +330,11 @@ def group_gtest(doc) -> list:
         out.append(("gtests: a suite of ours the platform does not build is no loss: StealthBundledCollection is not on Linux, StealthFcFontList is",
                     go("Stealth*", suites="StealthA", ours=["StealthA.One", "StealthBundledCollection.One"])[0] == 0
                     and go("Stealth*", suites="StealthA", ours=["StealthA.One", "StealthFcFontList.One"])[0] != 0))
+        # The suites that exist on one platform only (candidate 42604417318 stopped both gtest jobs on them).
+        every = ["StealthA.One", "StealthSkiaIdwrWin.One", "StealthIdwrFontconfig.One", "StealthIdwrTextVars.One", "StealthSystemTheme.One"]
+        out.append(("gtests: the suites built for one platform only are no loss on the other: StealthSkiaIdwrWin is Windows', StealthIdwrFontconfig, StealthIdwrTextVars and StealthSystemTheme are GTK's",
+                    gtest_run.expected_suites("Stealth*.*", every, "linux") == ["StealthA", "StealthIdwrFontconfig", "StealthIdwrTextVars", "StealthSystemTheme"]
+                    and gtest_run.expected_suites("Stealth*.*", every, "win") == ["StealthA", "StealthSkiaIdwrWin"]))
         # Where the list comes from: nothing is a refusal before any suite starts, never a pass.
         stale = {k: os.environ[k] for k in (our_gtests.SERIES_ROOT_ENV,) if k in os.environ}
         os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
