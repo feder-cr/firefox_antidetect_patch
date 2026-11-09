@@ -16,6 +16,7 @@
 #include <vector>
 
 #ifndef STEALTH_TEST_FONTS_STANDALONE  // set by the check program outside Firefox
+#  include "nsCOMPtr.h"
 #  include "nsDirectoryServiceDefs.h"
 #  include "nsDirectoryServiceUtils.h"
 #  include "nsIFile.h"

@@ -26,6 +26,8 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIFile.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
 #include "qcms.h"
 #if defined(XP_WIN)
 #  include "gfxWindowsPlatform.h"
@@ -334,11 +336,13 @@ TEST(StealthColorProfile, AWideGamutProfileIsNotThisOne)
 namespace {
 
 // The wide gamut profile as a file, in a temporary directory, for the pref
-// gfx.color_management.display_profile. Returns the native path, empty on failure.
+// gfx.color_management.display_profile. Returns the path as UTF-8, empty on failure. The
+// UTF-16 methods of nsIFile (Append, GetPath) exist on every platform; the native ones
+// (AppendNative, GetNativePath) do not exist on Windows.
 nsCString WriteWideGamutFile(nsCOMPtr<nsIFile>& aFile) {
   nsCString path;
   if (NS_FAILED(NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(aFile))) ||
-      NS_FAILED(aFile->AppendNative("stealth-color-profile-wide.icc"_ns)) ||
+      NS_FAILED(aFile->Append(u"stealth-color-profile-wide.icc"_ns)) ||
       NS_FAILED(aFile->CreateUnique(nsIFile::NORMAL_FILE_TYPE, 0600))) {
     return path;
   }
@@ -350,7 +354,10 @@ nsCString WriteWideGamutFile(nsCOMPtr<nsIFile>& aFile) {
   bool wrote = fwrite(wide.Elements(), 1, wide.Length(), fp) == wide.Length();
   fclose(fp);
   if (wrote) {
-    aFile->GetNativePath(path);
+    nsAutoString wide16;
+    if (NS_SUCCEEDED(aFile->GetPath(wide16))) {
+      CopyUTF16toUTF8(wide16, path);
+    }
   }
   return path;
 }
