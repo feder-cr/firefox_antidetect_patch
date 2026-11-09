@@ -16,8 +16,8 @@
 // FcConfigAppFontAddDir (the bundle); the font list is the bundle's anyway.
 //
 // The system font options (what GDK and Xft would say about antialiasing,
-// subpixel order and the LCD filter) are fixed the same way: ClearType, RGB
-// order, ClearType level 100, the settings of a stock Windows install.
+// subpixel order and the LCD filter) are fixed the same way: ClearType, the declared
+// pixel structure's order (RGB, as a stock Windows install), ClearType level 100.
 
 #include <stdint.h>
 
@@ -38,10 +38,10 @@ FcConfig* StealthFcEmptyConfig();
 
 // The body of gfxFcPlatformFontList::UpdateSystemFontOptions: replaces
 // aOptions (system cairo, owned by the caller) with ClearType options -
-// CAIRO_ANTIALIAS_SUBPIXEL, CAIRO_SUBPIXEL_ORDER_RGB, hint style left to the
-// pattern - sets aLcdFilter to FC_LCD_DEFAULT (ClearType level 100) and the 2D
-// factory's subpixel order to RGB. Neither Xft nor GDK is read. Returns
-// whether the options changed, as UpdateSystemFontOptions does: true the first
+// CAIRO_ANTIALIAS_SUBPIXEL, the subpixel order of the declared pixel structure, hint
+// style left to the pattern - sets aLcdFilter to FC_LCD_DEFAULT (ClearType level 100)
+// and the 2D factory's subpixel order to the same order. Neither Xft nor GDK is read.
+// Returns whether the options changed, as UpdateSystemFontOptions does: true the first
 // time, false afterwards.
 bool StealthFixedFontOptions(cairo_font_options_t*& aOptions,
                              int32_t& aLcdFilter);

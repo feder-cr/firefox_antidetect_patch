@@ -11,3 +11,36 @@ index 55c3763d982c05c3a92c3769b19bbe6e59ca4b53..31322425c191773f156492981658cc8b
  TEST_DIRS += ["tests/gtest"]
  
  if CONFIG["FUZZING_INTERFACES"]:
+diff --git a/gfx/skia/generate_mozbuild.py b/gfx/skia/generate_mozbuild.py
+index 7cfdcfd923a712dbff8172cf41ef26b935d53fd5..89a931e6f259ff9ca64767823160f6f9253a4ea5 100755
+--- a/gfx/skia/generate_mozbuild.py
++++ b/gfx/skia/generate_mozbuild.py
+@@ -31,12 +31,16 @@ if CONFIG['MOZ_OPTIMIZE']:
+ 
+ """
+ 
++# STEALTH-HOOK(fingerprint/fonts/idwr): the SOURCES line after FINAL_LIBRARY below is ours (our
++# idwr port of Skia's DirectWrite text). moz.build is generated from this file, so the line is
++# part of the footer: regenerating Skia keeps it.
+ footer = """
+ 
+ # We allow warnings for third-party code that can be updated from upstream.
+ AllowCompilerWarnings()
+ 
+ FINAL_LIBRARY = 'xul'
++SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)
+ LOCAL_INCLUDES += [
+     'skia',
+ ]
+diff --git a/gfx/skia/moz.build b/gfx/skia/moz.build
+index 7c814936301c5873773084eea34d6f8221d72206..0514f0e200854206a5640a895d13edff30fc455c 100644
+--- a/gfx/skia/moz.build
++++ b/gfx/skia/moz.build
+@@ -589,6 +589,7 @@ if CONFIG['INTEL_ARCHITECTURE']:
+ AllowCompilerWarnings()
+ 
+ FINAL_LIBRARY = 'xul'
++SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)
+ LOCAL_INCLUDES += [
+     'skia',
+ ]

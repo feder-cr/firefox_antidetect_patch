@@ -2902,6 +2902,46 @@
   "notes": "Builds gfx/idwr (invisible_DWriteCore's DirectWrite rasterizer) into libxul, on a line of its own outside Mozilla's DIRS list."
  },
  {
+  "file": "gfx/skia/generate_mozbuild.py",
+  "category": "build",
+  "feature": "idwr-text-engine",
+  "prefs": [],
+  "added": 4,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "footer, after FINAL_LIBRARY",
+  "evidence": [
+   "+SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)"
+  ],
+  "notes": "Puts the three sources of our idwr port of Skia's DirectWrite text into the footer moz.build is generated from, so regenerating Skia keeps them.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
+  }
+ },
+ {
+  "file": "gfx/skia/moz.build",
+  "category": "build",
+  "feature": "idwr-text-engine",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after FINAL_LIBRARY",
+  "evidence": [
+   "+SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)"
+  ],
+  "notes": "The generated counterpart of the footer line of generate_mozbuild.py: the three sources of our idwr port of Skia's DirectWrite text.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
+  }
+ },
+ {
   "file": "gfx/skia/skia/src/core/SkScalerContext.cpp",
   "category": "spoof",
   "feature": "glyph-coverage-quantise",

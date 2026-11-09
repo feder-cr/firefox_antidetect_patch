@@ -1,8 +1,8 @@
 diff --git a/gfx/2d/ScaledFontFontconfig.cpp b/gfx/2d/ScaledFontFontconfig.cpp
-index 28540aae69895466fb067bd3b5f02a41d8f4a5f6..334112ace290441dee3bafcb7c225ae7546412de 100644
+index 28540aae69895466fb067bd3b5f02a41d8f4a5f6..21f599cd7ebf619d1067b1c1e4a9d9cc2b5a12ae 100644
 --- a/gfx/2d/ScaledFontFontconfig.cpp
 +++ b/gfx/2d/ScaledFontFontconfig.cpp
-@@ -3,6 +3,7 @@
+@@ -3,11 +3,13 @@
   * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
  
  #include "ScaledFontFontconfig.h"
@@ -10,7 +10,43 @@ index 28540aae69895466fb067bd3b5f02a41d8f4a5f6..334112ace290441dee3bafcb7c225ae7
  
  #include <fontconfig/fcfreetype.h>
  
-@@ -535,6 +536,9 @@ already_AddRefed<UnscaledFont> UnscaledFontFontconfig::CreateFromFontDescriptor(
+ #include "HelpersSkia.h"
+ #include "Logging.h"
++#include "StealthSkiaIdwr.h"  // STEALTH-HOOK(fingerprint/fonts/idwr)
+ #include "UnscaledFontFreeType.h"
+ #include "mozilla/StaticPrefs_gfx.h"
+ #include "mozilla/webrender/WebRenderTypes.h"
+@@ -33,6 +35,7 @@ ScaledFontFontconfig::ScaledFontFontconfig(
+       mInstanceData(aInstanceData) {}
+ 
+ bool ScaledFontFontconfig::UseSubpixelPosition() const {
++  if (StealthIdwrAAModeDeclared()) return true;  // STEALTH-HOOK(fingerprint/fonts/idwr)
+   return !MOZ_UNLIKELY(
+              StaticPrefs::
+                  gfx_text_subpixel_position_force_disabled_AtStartup()) &&
+@@ -46,11 +49,13 @@ bool ScaledFontFontconfig::UseSubpixelPosition() const {
+ }
+ 
+ SkTypeface* ScaledFontFontconfig::CreateSkTypeface() {
++  if (StealthIdwrAAModeDeclared()) return StealthIdwrSkTypeface(this, mInstanceData.mFlags & InstanceData::EMBOLDEN);  // STEALTH-HOOK(fingerprint/fonts/idwr) null: refused, never FreeType
+   return SkCreateTypefaceFromCairoFTFont(mFace->GetFace(), mFace.get(),
+                                          mInstanceData.mLcdFilter);
+ }
+ 
+ void ScaledFontFontconfig::SetupSkFontDrawOptions(SkFont& aFont) {
++  if (StealthIdwrSetupSkFont(this, aFont)) return;  // STEALTH-HOOK(fingerprint/fonts/idwr)
+   aFont.setSubpixel(UseSubpixelPosition());
+ 
+   if (mInstanceData.mFlags & InstanceData::AUTOHINT) {
+@@ -82,6 +87,7 @@ cairo_font_face_t* ScaledFontFontconfig::CreateCairoFontFace(
+ }
+ 
+ AntialiasMode ScaledFontFontconfig::GetDefaultAAMode() {
++  if (StealthIdwrAAModeDeclared()) return StealthIdwrFontconfigAAMode(this);  // STEALTH-HOOK(fingerprint/fonts/idwr)
+   return mInstanceData.mAntialias;
+ }
+ 
+@@ -535,6 +541,9 @@ already_AddRefed<UnscaledFont> UnscaledFontFontconfig::CreateFromFontDescriptor(
      gfxWarning() << "Fontconfig font descriptor is truncated.";
      return nullptr;
    }

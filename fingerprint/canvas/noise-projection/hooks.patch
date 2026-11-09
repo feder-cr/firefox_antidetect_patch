@@ -354,29 +354,39 @@ index 88ec520156fcf4d84098f546286aeb2ca138729f..a34337b63bed9f5f9365dbba82a6b9a4
    f(ACCESSIBLEID, RecordedAccessibleId);                           \
    f(DESTINATION, RecordedDestination);
 diff --git a/gfx/2d/moz.build b/gfx/2d/moz.build
-index 2abc9c45814d6931ad1edcb9daacab750909d597..45a490da01a1981fe4b97b58a368992c1cf4bfd8 100644
+index 2abc9c45814d6931ad1edcb9daacab750909d597..d39be1c5d9166a3bc0ed56d73e3934e66b4b6cc4 100644
 --- a/gfx/2d/moz.build
 +++ b/gfx/2d/moz.build
-@@ -60,6 +60,9 @@ EXPORTS.mozilla.gfx += [
+@@ -60,6 +60,10 @@ EXPORTS.mozilla.gfx += [
      "Types.h",
      "UserData.h",
  ]
 +EXPORTS.mozilla.gfx += ["StealthCanvasProjection.h"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
 +EXPORTS.mozilla.gfx += ["StealthGlyphCoverage.h"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
 +EXPORTS.mozilla.gfx += ["StealthRefuse.h"]  # STEALTH-HOOK(platform/declaration-gate)
++SOURCES += ["StealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
      EXPORTS.mozilla.gfx += [
-@@ -100,6 +103,8 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+@@ -85,6 +89,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+         "ScaledFontDWrite.cpp",
+         "SourceSurfaceD3D11.cpp",
+     ]
++    SOURCES += ["StealthSkiaIdwrWin.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
+     DEFINES["WIN32"] = True
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("android", "gtk"):
+@@ -100,6 +105,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
      SOURCES += [
          "ScaledFontFontconfig.cpp",
      ]
 +    SOURCES += ["StealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    EXPORTS.mozilla.gfx += ["StealthFontDescriptorPath.h"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
++    SOURCES += ["StealthSkiaIdwrFontconfig.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
      SOURCES += [
-@@ -170,6 +175,8 @@ UNIFIED_SOURCES += [
+@@ -170,6 +178,8 @@ UNIFIED_SOURCES += [
      "Swizzle.cpp",
      "Types.cpp",
  ]
@@ -386,19 +396,21 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..45a490da01a1981fe4b97b58a368992c
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..2fc652023e6db0c1c03f0d834be84fe30c601eaf 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..d5aae07d08f6ff68a02efb4ba457c61f2badc36c 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -32,6 +32,8 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,10 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
 +UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp", "TestStealthWebGPUExternalTexture.cpp"]  # STEALTH-HOOK(fingerprint/webgpu)
++SOURCES += ["TestStealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
++SOURCES += ["TestStealthSkiaIdwrThreads.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +44,18 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +46,19 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  
@@ -406,6 +418,7 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..2fc652023e6db0c1c03f0d834be84fe3
 +    UNIFIED_SOURCES += ["TestStealthFcFontList.cpp", "TestStealthFontMetrics.cpp"]
 +    SOURCES += ["TestStealthFcEmptyConfig.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    SOURCES += ["TestStealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
++    SOURCES += ["TestStealthIdwrTextVars.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
 +    CXXFLAGS += CONFIG["CAIRO_FT_CFLAGS"]
 +if CONFIG["OS_TARGET"] == "WINNT":
 +    # gfxDWriteFonts' text quality and ClearType parameters, Windows only.
@@ -417,3 +430,10 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..2fc652023e6db0c1c03f0d834be84fe3
  if CONFIG["OS_TARGET"] == "Darwin":
      # Not in UNIFIED_SOURCES: MacIOSurface.h includes Carbon headers (MacTypes.h)
      # which would make Rect/Point/Size ambiguous in all subsequent unified files.
+@@ -87,5 +104,6 @@ LOCAL_INCLUDES += [
+     "/layout/base",
+     "/third_party/xsimd/include",
+ ]
++LOCAL_INCLUDES += CONFIG["SKIA_INCLUDES"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
+ 
+ FINAL_LIBRARY = "xul-gtest"

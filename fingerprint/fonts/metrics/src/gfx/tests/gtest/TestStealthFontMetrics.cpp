@@ -166,10 +166,12 @@ class StealthFontMetrics : public ::testing::Test {
                        << " at:" << tried.get();
   }
   void DeclareEngine(int32_t aQuality, int32_t aRenderingMode) {
-    mozilla::Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);
     mozilla::Preferences::SetInt("zoom.stealth.text.system_quality", aQuality);
     mozilla::Preferences::SetInt(
         "gfx.font_rendering.cleartype_params.rendering_mode", aRenderingMode);
+    // The engine on, last: with it on a change of the text prefs updates the text vars, and a
+    // declaration without the rendering mode is refused.
+    mozilla::Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);
   }
   RestoreStealthFontMetricsStock mRestore;
   RefPtr<FontData> mData;

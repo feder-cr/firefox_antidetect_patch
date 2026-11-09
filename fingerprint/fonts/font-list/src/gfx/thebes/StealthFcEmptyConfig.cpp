@@ -4,12 +4,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "StealthFcEmptyConfig.h"
+#include "StealthIdwrTextVars.h"  // STEALTH-HOOK(fingerprint/fonts/idwr)
 
 #include <cairo.h>
 #include <fontconfig/fontconfig.h>
 
 #include "mozilla/Assertions.h"
-#include "mozilla/gfx/2D.h"
 #include "nscore.h"
 
 // mSystemFontOptions belongs to the SYSTEM cairo (GTK's), as in
@@ -63,20 +63,26 @@ FcConfig* StealthFcEmptyConfig() {
 
 bool StealthFixedFontOptions(cairo_font_options_t*& aOptions,
                              int32_t& aLcdFilter) {
-  // ClearType on, RGB stripes: the antialias and subpixel order cairo hands
+  // ClearType on, the declared pixel structure's stripes (RGB unless the
+  // declaration says BGR): the antialias and subpixel order cairo hands
   // to fontconfig (cairo_ft_font_options_substitute sets FC_ANTIALIAS and
   // FC_RGBA only where the pattern has none). The hint style stays
   // CAIRO_HINT_STYLE_DEFAULT, so the declared one (StealthDeclareTextOptions)
   // is the only one.
+  const bool bgr = mozilla::gfx::StealthIdwrPixelGeometryIsBGR();
   cairo_font_options_t* fixed = cairo_font_options_create();
   cairo_font_options_set_antialias(fixed, CAIRO_ANTIALIAS_SUBPIXEL);
-  cairo_font_options_set_subpixel_order(fixed, CAIRO_SUBPIXEL_ORDER_RGB);
+  cairo_font_options_set_subpixel_order(
+      fixed, bgr ? CAIRO_SUBPIXEL_ORDER_BGR : CAIRO_SUBPIXEL_ORDER_RGB);
 
   // ClearType level 100 is the full-strength filter: FreeType's default LCD
   // filter (FC_LCD_DEFAULT).
   const int32_t lcdFilter = FC_LCD_DEFAULT;
 
-  mozilla::gfx::Factory::SetSubpixelOrder(mozilla::gfx::SubpixelOrder::RGB);
+  // The order the surfaces draw LCD text in is the declared one as well: this runs
+  // when the font list is made, after the constructor of the platform, and at every
+  // UpdateSystemFontOptions.
+  mozilla::gfx::StealthIdwrApplyPixelGeometry();
 
   if (aOptions && cairo_font_options_equal(aOptions, fixed) &&
       aLcdFilter == lcdFilter) {

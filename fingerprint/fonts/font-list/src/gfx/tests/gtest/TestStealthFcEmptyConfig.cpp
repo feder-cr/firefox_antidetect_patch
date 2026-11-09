@@ -5,7 +5,7 @@
 
 // Fontconfig without the host (Linux only): the current configuration is an
 // empty one, with no configuration file and no system font, and it stays so;
-// the system font options are fixed (ClearType, RGB, level 100).
+// the system font options are fixed (ClearType, the declared pixel structure's order, level 100).
 //
 // In SOURCES, not UNIFIED_SOURCES: the system cairo's getters are declared
 // here after the tree cairo's macros go, as StealthFcEmptyConfig.cpp does.
@@ -16,8 +16,10 @@
 #include <fontconfig/fontconfig.h>
 
 #include "StealthFcEmptyConfig.h"
+#include "StealthIdwrTextVars.h"
 #include "gfxPlatform.h"
 #include "gfxPlatformFontList.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/gfx/2D.h"
 #include "nscore.h"
 
@@ -130,4 +132,65 @@ TEST(StealthFcEmptyConfig, FixedFontOptions)
   EXPECT_FALSE(StealthFixedFontOptions(options, lcdFilter));
   EXPECT_EQ(first, options);
   cairo_font_options_destroy(options);
+}
+
+namespace {
+
+// Back to the stock text declaration (RGB), the vars recomputed, then the prefs gone.
+struct RestoreTextDeclaration {
+  ~RestoreTextDeclaration() {
+    mozilla::Preferences::SetInt(
+        "gfx.font_rendering.cleartype_params.pixel_structure", 1);
+    mozilla::gfx::StealthIdwrUpdateTextVars();
+    for (const char* name : {"zoom.stealth.fpp.hw_seed",
+                             "zoom.stealth.text.system_quality",
+                             "gfx.font_rendering.cleartype_params.rendering_mode",
+                             "gfx.font_rendering.cleartype_params.pixel_structure"}) {
+      mozilla::Preferences::ClearUser(name);
+    }
+  }
+};
+
+}  // namespace
+
+// The font list makes its options after the platform's constructor, and again at every
+// UpdateSystemFontOptions: the order it leaves is the declared pixel structure's. Before,
+// it wrote RGB over the BGR the declaration had set.
+TEST(StealthFcEmptyConfig, FixedFontOptionsKeepTheDeclaredPixelStructure)
+{
+  gfxPlatform::GetPlatform();
+  RestoreTextDeclaration restore;
+  mozilla::Preferences::SetInt("zoom.stealth.text.system_quality", 5);
+  mozilla::Preferences::SetInt(
+      "gfx.font_rendering.cleartype_params.rendering_mode", 0);
+  // The engine on, last: a declaration without the rendering mode is refused.
+  mozilla::Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);
+
+  struct Case {
+    int32_t structure;  // DWRITE_PIXEL_GEOMETRY_*: 0 flat, 1 RGB, 2 BGR
+    cairo_subpixel_order_t cairoOrder;
+    mozilla::gfx::SubpixelOrder order;
+  };
+  const Case kCases[] = {
+      {2, CAIRO_SUBPIXEL_ORDER_BGR, mozilla::gfx::SubpixelOrder::BGR},
+      {1, CAIRO_SUBPIXEL_ORDER_RGB, mozilla::gfx::SubpixelOrder::RGB},
+      {0, CAIRO_SUBPIXEL_ORDER_RGB, mozilla::gfx::SubpixelOrder::RGB},
+      {2, CAIRO_SUBPIXEL_ORDER_BGR, mozilla::gfx::SubpixelOrder::BGR},
+  };
+  for (const Case& c : kCases) {
+    mozilla::Preferences::SetInt(
+        "gfx.font_rendering.cleartype_params.pixel_structure", c.structure);
+    mozilla::gfx::StealthIdwrUpdateTextVars();
+    EXPECT_EQ(c.order, mozilla::gfx::Factory::GetSubpixelOrder()) << c.structure;
+
+    cairo_font_options_t* options = nullptr;
+    int32_t lcdFilter = -1;
+    StealthFixedFontOptions(options, lcdFilter);
+    ASSERT_TRUE(options) << c.structure;
+    EXPECT_EQ(c.cairoOrder, cairo_font_options_get_subpixel_order(options))
+        << c.structure;
+    // What the font list writes after the update is still the declared order.
+    EXPECT_EQ(c.order, mozilla::gfx::Factory::GetSubpixelOrder()) << c.structure;
+    cairo_font_options_destroy(options);
+  }
 }
