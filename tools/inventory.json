@@ -1633,6 +1633,27 @@
   }
  },
  {
+  "file": "dom/media/platforms/wmf/WMFDecoderModule.cpp",
+  "category": "build",
+  "feature": "ffvpx-decoders-no-host-libavcodec",
+  "prefs": [],
+  "added": 9,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "WMFDecoderModule::Supports, the audio branch (CanCreateMFTDecoder(type) && !StreamTypeIsVideo(type))",
+  "evidence": [
+   "+      if (gfx::StealthEngineActive()) {",
+   "+        return media::DecodeSupportSet{};"
+  ],
+  "notes": "With the engine's identity declared, WMFDecoderModule refuses to support audio (so AAC) at all: the host's own msauddecmft.dll varies by Windows build, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs, so without this hook AAC would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port that equals a specific declared Media Foundation. Video (H.264/HEVC, the DXVA hardware path) is unaffected: only the audio branch returns early.",
+  "verifier": {
+   "changed": [],
+   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
+  }
+ },
+ {
   "file": "dom/media/webaudio/AnalyserNode.cpp",
   "category": "spoof",
   "feature": "audio-fingerprint-noise",

@@ -66,6 +66,7 @@
  "dom/media/MediaManager.cpp": 27,
  "dom/media/moz.build": 2,
  "dom/media/platforms/PDMFactory.cpp": 9,
+ "dom/media/platforms/wmf/WMFDecoderModule.cpp": 9,
  "dom/media/webaudio/AnalyserNode.cpp": 5,
  "dom/media/webaudio/AudioContext.cpp": 11,
  "dom/media/webaudio/AudioDestinationNode.cpp": 4,

@@ -24,6 +24,7 @@
 #include "PDMFactory.h"
 #include "VideoUtils.h"
 #include "gtest/gtest.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/gtest/ScopedPrefSetter.h"
@@ -188,6 +189,15 @@ bool DecodeWithFFVPX(const char* aFileName, Decoded& aOut) {
       {"media.utility-process.enabled", false},
       {"media.prefer-non-ffvpx", false},
   });
+  // With the engine's identity declared, AAC must route to the bundled
+  // FFmpeg (ffvpx), never to the host's own Media Foundation on Windows
+  // (WMFDecoderModule::Supports, STEALTH-HOOK fingerprint/media/decode-samples).
+  // zoom.stealth.fpp.hw_seed is an int pref, which ScopedPrefSetter (bool
+  // only) cannot hold.
+  const int32_t originalHwSeed = Preferences::GetInt("zoom.stealth.fpp.hw_seed", 0);
+  Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);
+  auto restoreHwSeed = MakeScopeExit(
+      [&] { Preferences::SetInt("zoom.stealth.fpp.hw_seed", originalHwSeed); });
   RefPtr<PDMFactory> factory = MakeRefPtr<PDMFactory>();
   auto created = WaitFor(factory->CreateDecoder(
       CreateDecoderParams{*trackInfo->GetAsAudioInfo(),
