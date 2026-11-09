@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: gfx.font_rendering.fallback.async, zoom.stealth.fonts.generics, zoom.stealth.text.freetype_antialias, zoom.stealth.text.freetype_hintstyle
-Test: gfx/tests/gtest/TestStealthFcEmptyConfig.cpp (StealthFcEmptyConfig.*)
+Test: gfx/tests/gtest/TestStealthFcEmptyConfig.cpp (StealthFcEmptyConfig.*); gfx/tests/gtest/TestStealthFontDescriptorPath.cpp; end to end in the wrapper (tests/test_screenshot_of_text_returns_linux_e2e.py)
 
 ## What it does
 

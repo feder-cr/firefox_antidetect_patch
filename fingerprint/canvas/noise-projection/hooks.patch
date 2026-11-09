@@ -354,7 +354,7 @@ index 88ec520156fcf4d84098f546286aeb2ca138729f..a34337b63bed9f5f9365dbba82a6b9a4
    f(ACCESSIBLEID, RecordedAccessibleId);                           \
    f(DESTINATION, RecordedDestination);
 diff --git a/gfx/2d/moz.build b/gfx/2d/moz.build
-index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f1e7228df 100644
+index 2abc9c45814d6931ad1edcb9daacab750909d597..45a490da01a1981fe4b97b58a368992c1cf4bfd8 100644
 --- a/gfx/2d/moz.build
 +++ b/gfx/2d/moz.build
 @@ -60,6 +60,9 @@ EXPORTS.mozilla.gfx += [
@@ -367,7 +367,16 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
      EXPORTS.mozilla.gfx += [
-@@ -170,6 +173,8 @@ UNIFIED_SOURCES += [
+@@ -100,6 +103,8 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+     SOURCES += [
+         "ScaledFontFontconfig.cpp",
+     ]
++    SOURCES += ["StealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
++    EXPORTS.mozilla.gfx += ["StealthFontDescriptorPath.h"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
+ 
+ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
+     SOURCES += [
+@@ -170,6 +175,8 @@ UNIFIED_SOURCES += [
      "Swizzle.cpp",
      "Types.cpp",
  ]
@@ -377,7 +386,7 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..fa3503de86d8c7d71dff827f33f1c0e19d0f3aa9 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..2fc652023e6db0c1c03f0d834be84fe30c601eaf 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
 @@ -32,6 +32,8 @@ UNIFIED_SOURCES += [
@@ -389,13 +398,14 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..fa3503de86d8c7d71dff827f33f1c0e1
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +44,17 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +44,18 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  
 +if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    UNIFIED_SOURCES += ["TestStealthFcFontList.cpp", "TestStealthFontMetrics.cpp"]
 +    SOURCES += ["TestStealthFcEmptyConfig.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
++    SOURCES += ["TestStealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    CXXFLAGS += CONFIG["CAIRO_FT_CFLAGS"]
 +if CONFIG["OS_TARGET"] == "WINNT":
 +    # gfxDWriteFonts' text quality and ClearType parameters, Windows only.

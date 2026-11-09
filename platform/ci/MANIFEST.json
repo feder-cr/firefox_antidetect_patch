@@ -63,6 +63,7 @@
   "scripts/make_release.sh": "100644",
   "scripts/make_seal.py": "100644",
   "scripts/memory_watch.py": "100644",
+  "scripts/our_gtests.py": "100644",
   "scripts/patch_survival_allow.txt": "100644",
   "scripts/patch_survival_check.sh": "100644",
   "scripts/protocol_drift_check.py": "100644",

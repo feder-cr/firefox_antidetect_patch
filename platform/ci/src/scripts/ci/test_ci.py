@@ -496,7 +496,7 @@ def main() -> int:
     else:
         doc = yaml.safe_load(rel)
         gt_input = doc[True]["workflow_dispatch"]["inputs"]["gtests"]
-        gt_step = [s for s in doc["jobs"]["build"]["steps"] if s.get("name", "").startswith("Engine gtests")]
+        gt_step = [s for s in doc["jobs"]["build"]["steps"] if s.get("name", "") == "Engine gtests - build them, for the jobs that run them"]
         steps = {s.get("name", ""): s for s in doc["jobs"]["build"]["steps"]}
         again = steps.get("Compile cache - restore again if the first brought nothing", {})
         said = steps.get("Compile cache - what this build starts from", {})
@@ -506,8 +506,8 @@ def main() -> int:
                       and "builds cold" in said.get("run", "") and "GITHUB_STEP_SUMMARY" in said.get("run", "")))
         cases.append(("gtests: an input, off by default, on every leg, as a phase",
                       gt_input["type"] == "boolean" and gt_input["default"] is False and len(gt_step) == 1
-                      and gt_step[0]["if"] == "needs.plan.outputs.gtests == 'true' && runner.environment == 'github-hosted'"
-                      and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"]))
+                      and gt_step[0]["if"] == "needs.plan.outputs.gtests == 'true'"
+                      and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"] and "mach gtest" not in gt_step[0]["run"]))
         # A cross-compiled leg's runner cannot execute what it builds (run 41232307511:
         # "Exec format error" on firefox.exe): its gtests are built there and run by a
         # job on the target's OS, which downloads exactly that leg's dist/bin.
@@ -522,8 +522,8 @@ def main() -> int:
                    and any("gtest_run.py" in st.get("run", "") for st in j.get("steps", []))]
             cross_ok = (cross_ok and len(ran) == 1 and "if" not in ran[0]
                         and all("needs.plan.outputs.gtests == 'true'" in st.get("if", "") for st in ran[0]["steps"]))
-        kept = steps.get("The node - keep them", {})
-        built = steps.get("The node - its gtest binaries, for a job on GitHub's runners", {})
+        kept = steps.get("Engine gtests - keep them", {})
+        built = steps.get("Engine gtests - build them, for the jobs that run them", {})
         cross_ok = (cross_ok and "recurse_gtest" in built.get("run", "") and "matrix.target" not in gt_step[0]["run"]
                     and kept.get("with", {}).get("name") == "gtest-bin-${{ matrix.leg }}")
         cases.append(("gtests: a cross-compiled leg's run on its target's OS (run 41232307511)", cross_ok))

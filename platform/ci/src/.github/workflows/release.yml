@@ -95,9 +95,10 @@ on:
         type: boolean
         default: false
       gtest_filter:
-        # What the last green gtests ran (run 41402916724). * has never gone green here.
-        description: "gtests=true only: which, as mach gtest takes them; * is all, and unproven"
-        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*'
+        # The engine's own gtests by prefix: a new one runs without anyone listing it
+        # (scripts/test_release_plan.py fails on one that this does not name).
+        description: "gtests=true only: which, as mach gtest takes them; * is all, and has never gone green here"
+        default: 'Stealth*.*:Idwr*.*:FFVPXAac*.*:StartupCache.WritesNeverLowerIOPriority'
       relaunch_of:
         description: >
           Set by the watch of a run whose machine was lost, to that run's id: this run
@@ -995,32 +996,28 @@ jobs:
       # have one (StartupCache.WritesNeverLowerIOPriority, the bundled-font and
       # own-binary rules) and nothing else runs them. After the package and the
       # symbols, so what ships is already built and checked when the second
-      # libxul is linked. A phase, so the report has its row.
-      - name: Engine gtests (gtests=true only)
-        if: needs.plan.outputs.gtests == 'true' && runner.environment == 'github-hosted'
-        timeout-minutes: 180
-        shell: bash
-        env:
-          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
-        run: |
-          : "${GTEST_FILTER_INPUT:?an empty filter: name the gtests, or * for all}"
-          # The Linux runners have no display, and some gtests open windows.
-          sudo apt-get install -y xvfb >/dev/null
-          python3 scripts/ci phase gtest -- xvfb-run -a ./mach gtest "$GTEST_FILTER_INPUT"
-      # The node only compiles, on both legs: a hosted job runs what it built.
-      - name: The node - its gtest binaries, for a job on GitHub's runners
-        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
+      # libxul is linked. ONE road, whoever the runner is: this job compiles them and
+      # hands them over, and the jobs gtest-linux and gtest-cross run them through
+      # scripts/ci/gtest_run.py, the only place that is red for a suite of ours that did
+      # not run. No step here runs `mach gtest`: it would go green on a suite that left
+      # the build (scripts/ci/test_release_path.py reads every workflow for it). A phase,
+      # so the report has its row.
+      - name: Engine gtests - build them, for the jobs that run them
+        if: needs.plan.outputs.gtests == 'true'
         timeout-minutes: 180
         shell: bash
         run: |
           python3 scripts/ci phase gtest -- ./mach build recurse_gtest
           # And _tests/gtest, the directory mach runs them from: what they read at run time.
           mkdir -p obj-rel/_tests/gtest
-          tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest
-      - name: The node - keep them
+          # And the gtests of ours, read from this tree: the job that runs them has none, and
+          # gtest_run.py is red for a suite of ours that the filter selects and that did not run.
+          python3 scripts/our_gtests.py --tree . --out obj-rel/our-gtests.txt
+          tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest -C .. our-gtests.txt
+      - name: Engine gtests - keep them
         # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.
         timeout-minutes: 60
-        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
+        if: needs.plan.outputs.gtests == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtest-bin-${{ matrix.leg }}

@@ -1,3 +1,25 @@
+diff --git a/gfx/2d/ScaledFontFontconfig.cpp b/gfx/2d/ScaledFontFontconfig.cpp
+index 28540aae69895466fb067bd3b5f02a41d8f4a5f6..334112ace290441dee3bafcb7c225ae7546412de 100644
+--- a/gfx/2d/ScaledFontFontconfig.cpp
++++ b/gfx/2d/ScaledFontFontconfig.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "ScaledFontFontconfig.h"
++#include "StealthFontDescriptorPath.h"  // STEALTH-HOOK(fingerprint/fonts/font-list)
+ 
+ #include <fontconfig/fcfreetype.h>
+ 
+@@ -535,6 +536,9 @@ already_AddRefed<UnscaledFont> UnscaledFontFontconfig::CreateFromFontDescriptor(
+     gfxWarning() << "Fontconfig font descriptor is truncated.";
+     return nullptr;
+   }
++  if (StealthHandlesFontDescriptors()) {  // STEALTH-HOOK(fingerprint/fonts/font-list)
++    return StealthUnscaledFontFromDescriptor(aData, aDataLength, aIndex);
++  }
+   nsCString path((const char*)aData, aDataLength);
+ 
+   // Use the given pathname/index in a fontconfig lookup to confirm this is a
 diff --git a/gfx/thebes/CoreTextFontList.cpp b/gfx/thebes/CoreTextFontList.cpp
 index b6696c70c4b9065dd04683020010cb8f61e36791..d7fb0423acd95fce1b8536bf367e81c286e6494f 100644
 --- a/gfx/thebes/CoreTextFontList.cpp

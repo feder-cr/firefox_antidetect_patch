@@ -2454,6 +2454,27 @@
   }
  },
  {
+  "file": "gfx/2d/ScaledFontFontconfig.cpp",
+  "category": "spoof",
+  "feature": "font-list-bundle-only",
+  "prefs": [],
+  "added": 4,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "the include block (StealthFontDescriptorPath.h) and UnscaledFontFontconfig::CreateFromFontDescriptor, before the fontconfig lookup of the recorded path",
+  "evidence": [
+   "+  if (StealthHandlesFontDescriptors()) {  // STEALTH-HOOK(fingerprint/fonts/font-list)",
+   "+    return StealthUnscaledFontFromDescriptor(aData, aDataLength, aIndex);"
+  ],
+  "notes": "On Linux a recorded font descriptor (path and index) is checked against the bundle, not against the host's fontconfig: the hook hands the descriptor to gfx/2d/StealthFontDescriptorPath.cpp, which accepts only a bundled file and refuses an untrusted index. Mozilla's own lookup below is left untouched and runs only when the bundle does not handle descriptors.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook; four added lines, nothing removed."
+  }
+ },
+ {
   "file": "gfx/2d/UnscaledFontDWrite.h",
   "category": "other",
   "feature": "font-bundle-file-path",

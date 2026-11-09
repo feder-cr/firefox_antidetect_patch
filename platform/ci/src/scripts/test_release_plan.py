@@ -18,6 +18,10 @@ refuse, each one a real way to get it wrong, and the runs it must accept:
     7. a build dispatched from a tag ref, and a release from any branch but main;
     8. a compile cache nobody declared;
     8b. --builder: there is no such choice any more.
+  the default gtest filter (gtest_coverage below)
+    14. every gtest of ours - the TEST, TEST_F and TEST_P that the series added to the
+        tree - is named by the filter a candidate runs by default; a suite that the
+        filter does not name is built by the candidate and never run.
   known-good
     9. a candidate: nothing published, the gate's seal firefox-N-candidate, the cache on;
    10. a candidate with the cache off, a cold build;
@@ -32,12 +36,16 @@ Run it directly, like test_make_seal.py: `python3 scripts/test_release_plan.py`.
 from __future__ import annotations
 
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import release_plan as p  # noqa: E402
+from our_gtests import (  # noqa: E402
+    GTEST_BASE_ENV, GTEST_ROOT_ENV, base_ref, gtest_matches, our_gtests)
 
 #: The release tags the workflow reads from the remote: out of order on purpose
 #: (the number is what counts, not the sort), and with things that are not releases.
@@ -121,8 +129,52 @@ ACCEPTED = [
 ]
 
 
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def gtest_coverage(gtest_filter: str, root: Path | None = None, base: str | None = None) -> list:
+    """The reasons the filter does not cover our gtests: [] when it does. A tree that cannot be
+    read, or that has no gtest of ours, is a reason too: a check that did not run is not a pass."""
+    root = root or Path(os.environ.get(GTEST_ROOT_ENV) or ROOT)
+    if not root.is_dir():
+        return ["the gtest coverage was NOT checked: the tree to read the gtests from, %s, does not exist (set %s)"
+                % (root, GTEST_ROOT_ENV)]
+    try:
+        found = our_gtests(root, base or base_ref(root))
+    except StopIteration:
+        return ["the gtest coverage was NOT checked: no version= in %s/browser/config/upstream_source.txt (set %s)"
+                % (root, GTEST_BASE_ENV)]
+    except OSError as exc:
+        return ["the gtest coverage was NOT checked: %s" % exc]
+    if not found:
+        return ["the gtest coverage was NOT checked: no TEST/TEST_F/TEST_P of ours in %s (wrong tree or base?)" % root]
+    return ["%s: %s is not run by the default gtest filter (add its suite to DEFAULT_GTEST_FILTER in release_plan.py, "
+            "to release.yml and to test_release_path.py)" % (f, n) for f, n, _ in found if not gtest_matches(gtest_filter, n)]
+
+
+#: The matcher itself, against what gtest does: (filter, name, runs).
+GTEST_MATCHING = [
+    ("A*.*", "Alpha.One", True), ("A*.*", "Beta.One", False), ("A*.*:B*.*", "Beta.One", True),
+    ("A*.*-A*.One", "Alpha.One", False), ("A*.*-A*.One", "Alpha.Two", True),
+    ("*", "Any.Thing", True), ("-A*", "Alpha.One", False), ("-A*", "Beta.One", True),
+    ("Suite.Test", "Suite.Test", True), ("Suite.Test", "Suite.Other", False),
+    ("A?.*", "Ab.One", True), ("A?.*", "Abc.One", False), ("A.*", "X/A.One/0", False), ("*/A.*", "X/A.One/0", True),
+]
+
+
 def main() -> int:
     failures = 0
+    for flt, name, want in GTEST_MATCHING:
+        if gtest_matches(flt, name) != want:
+            print(f"FAIL  the gtest matcher: {flt!r} on {name!r} should be {want}")
+            failures += 1
+    reasons = gtest_coverage(p.DEFAULT_GTEST_FILTER)
+    for reason in reasons:
+        print(f"FAIL  {reason}")
+    if reasons:
+        failures += 1
+    else:
+        print("ok    every gtest of ours is named by the default gtest filter")
     for name, args in REFUSED:
         try:
             got = p.plan(*args, release_tags=TAGS)
@@ -180,7 +232,7 @@ def main() -> int:
     if took:
         print("FAIL  the command line took a builder")
         failures += 1
-    total = len(REFUSED) + len(NO_TAGS) + len(ACCEPTED) + 3
+    total = len(REFUSED) + len(NO_TAGS) + len(ACCEPTED) + 3 + len(GTEST_MATCHING) + 1
     print(f"{total - failures}/{total} cases as expected")
     return 1 if failures else 0
 

@@ -346,6 +346,10 @@ jobs:
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
             tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py \
             tests/test_webgl2_exists_without_host_mesa_linux_e2e.py \
+            tests/test_fontconfig_reads_nothing_of_the_host_linux_e2e.py \
+            tests/test_math_sin_cos_tan_are_windows_e2e.py \
+            tests/test_css_calc_is_windows_e2e.py \
+            tests/test_screenshot_of_text_returns_linux_e2e.py \
             -m e2e -o addopts='' -q
 
       # HOST GATE, this leg's half: everything the page in the wrapper's
