@@ -1,31 +1,3 @@
-diff --git a/gfx/skia/skia/src/core/SkScalerContext.cpp b/gfx/skia/skia/src/core/SkScalerContext.cpp
-index 85edc26a3f7930ec9ffff752141ffacb881e7e23..6eb0b241ba11e834e3306778ada63aaf6f4ecccd 100644
---- a/gfx/skia/skia/src/core/SkScalerContext.cpp
-+++ b/gfx/skia/skia/src/core/SkScalerContext.cpp
-@@ -42,6 +42,8 @@
- #include "src/core/SkWriteBuffer.h"
- #include "src/utils/SkFloatUtils.h"
- #include "src/utils/SkMatrix22.h"
-+// STEALTH-HOOK(fingerprint/fonts/metrics)
-+#include "mozilla/gfx/StealthGlyphCoverage.h"
- 
- #include <algorithm>
- #include <cstring>
-@@ -653,6 +655,14 @@ void SkScalerContext::getImage(const SkGlyph& origGlyph) {
-         }
-     }
- 
-+    // STEALTH-HOOK(fingerprint/fonts/metrics)
-+    if (unfilteredGlyph->maskFormat() == SkMask::kA8_Format) {
-+        mozilla::gfx::StealthQuantiseGlyphCoverage(
-+                static_cast<uint8_t*>(unfilteredGlyph->fImage),
-+                unfilteredGlyph->width(), unfilteredGlyph->height(),
-+                unfilteredGlyph->rowBytes());
-+    }
-+
-     if (fMaskFilter) {
-         // k3D_Format should not be mask filtered.
-         SkASSERT(SkMask::k3D_Format != unfilteredGlyph->fMaskFormat);
 diff --git a/gfx/thebes/gfxDWriteFonts.cpp b/gfx/thebes/gfxDWriteFonts.cpp
 index ce52760aeeed01b32648a6d9164cf9384acf3889..eef93f418127388a6619b476018658c429493254 100644
 --- a/gfx/thebes/gfxDWriteFonts.cpp
@@ -73,18 +45,19 @@ index ce52760aeeed01b32648a6d9164cf9384acf3889..eef93f418127388a6619b476018658c4
      if (prefInt >= 0 && prefInt <= 100) {
        clearTypeLevel = float(prefInt / 100.0);
 diff --git a/gfx/thebes/gfxFT2FontBase.cpp b/gfx/thebes/gfxFT2FontBase.cpp
-index 6cf3d24740f15fd830576024f327a94bd8dcac59..65853b0ccd150f1c1546fb3ab2c4d85512a0448f 100644
+index 6cf3d24740f15fd830576024f327a94bd8dcac59..835c44059ef47db5a377ef027eeb2a497825ae92 100644
 --- a/gfx/thebes/gfxFT2FontBase.cpp
 +++ b/gfx/thebes/gfxFT2FontBase.cpp
-@@ -21,6 +21,7 @@
+@@ -21,6 +21,8 @@
  #include FT_TRUETYPE_TABLES_H
  #include FT_ADVANCES_H
  #include FT_MULTIPLE_MASTERS_H
 +#include "StealthDesignMetrics.h"  // STEALTH-HOOK(fingerprint/fonts/metrics)
++#include "StealthSyntheticBold.h"  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
  
  #ifndef FT_LOAD_COLOR
  #  define FT_LOAD_COLOR (1L << 20)
-@@ -558,6 +559,7 @@ void gfxFT2FontBase::InitExtraMetrics(gfxFloat aEmHeight,
+@@ -558,6 +560,7 @@ void gfxFT2FontBase::InitExtraMetrics(gfxFloat aEmHeight,
    if (mMetrics.aveCharWidth == 0.0) {
      mMetrics.aveCharWidth = mMetrics.spaceWidth;
    }
@@ -92,7 +65,15 @@ index 6cf3d24740f15fd830576024f327a94bd8dcac59..65853b0ccd150f1c1546fb3ab2c4d855
    // Apparently hinting can mean that max_advance is not always accurate.
    mMetrics.maxAdvance = std::max(mMetrics.maxAdvance, mMetrics.aveCharWidth);
  
-@@ -723,7 +725,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
+@@ -590,6 +593,7 @@ void gfxFT2FontBase::InitExtraMetrics(gfxFloat aEmHeight,
+   mMetrics.emDescent = mMetrics.emHeight - mMetrics.emAscent;
+ 
+   SanitizeMetrics(false);
++  StealthSyntheticBoldMetrics(*this, mMetrics);  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
+ 
+ #if 0
+     //    printf("font name: %s %f\n", NS_ConvertUTF16toUTF8(GetName()).get(), GetStyle()->size);
+@@ -723,7 +727,7 @@ bool gfxFT2FontBase::GetFTGlyphExtents(uint16_t aGID, int32_t* aAdvance,
    // Due to freetype bug 52683 we MUST use the linearHoriAdvance field when
    // dealing with a variation font; also use it for scalable fonts when not
    // applying hinting. Otherwise, prefer hinted width from glyph->advance.x.
@@ -101,7 +82,7 @@ index 6cf3d24740f15fd830576024f327a94bd8dcac59..65853b0ccd150f1c1546fb3ab2c4d855
      FT_Fixed advance;
      if (!roundX || FT_HAS_MULTIPLE_MASTERS(face.get())) {
        advance = face.get()->glyph->linearHoriAdvance;
-@@ -824,6 +826,9 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
+@@ -824,6 +828,9 @@ gfxFT2FontBase::GlyphMetrics gfxFT2FontBase::GetCachedGlyphMetrics(
  
  bool gfxFT2FontBase::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
                                      bool aTight) {

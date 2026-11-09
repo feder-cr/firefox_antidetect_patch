@@ -1,0 +1,44 @@
+diff --git a/gfx/skia/skia/src/opts/SkRasterPipeline_opts.h b/gfx/skia/skia/src/opts/SkRasterPipeline_opts.h
+index 9a0edd9594d7de40d3494efee440dd2755c5c935..d95d7376f2832764e9abfd8935acebc00e5e66f9 100644
+--- a/gfx/skia/skia/src/opts/SkRasterPipeline_opts.h
++++ b/gfx/skia/skia/src/opts/SkRasterPipeline_opts.h
+@@ -117,6 +117,7 @@ using NoCtx = const void*;
+ #else
+     #include <immintrin.h>
+ #endif
++#include "src/opts/StealthSkiaRcpHook.h"  // STEALTH-HOOK(fingerprint/canvas/skia-math)
+ 
+ // Notes:
+ // * rcp_fast and rcp_precise both produce a reciprocal, but rcp_fast is an estimate with at least
+@@ -801,6 +802,7 @@ namespace SK_OPTS_NS {
+     }
+ #endif
+ 
++#include "src/opts/StealthSkiaMadBegin.h"  // STEALTH-HOOK(fingerprint/canvas/skia-math)
+     SI F   mad(F f, F m, F a)  { return a+f*m;              }
+     SI F  nmad(F f, F m, F a)  { return a-f*m;              }
+     SI F   abs_(F v)           { return _mm_and_ps(v, 0-v); }
+@@ -812,6 +814,7 @@ namespace SK_OPTS_NS {
+     SI F   rcp_approx(F v)     { return _mm_rcp_ps  (v);    }  // use rcp_fast instead
+     SI F   rcp_precise (F v)   { F e = rcp_approx(v); return e * (2.0f - v * e); }
+     SI F   rsqrt_approx(F v)   { return _mm_rsqrt_ps(v);    }
++#include "src/opts/StealthSkiaMadEnd.h"  // STEALTH-HOOK(fingerprint/canvas/skia-math)
+     SI F    sqrt_(F v)         { return _mm_sqrt_ps (v);    }
+ 
+     SI I32 iround(F v)         { return (I32)_mm_cvtps_epi32(v); }
+@@ -1509,6 +1512,7 @@ static void restore_memory_contexts(
+     }
+ }
+ 
++#include "src/opts/StealthSkiaRcpFastBegin.h"  // STEALTH-HOOK(fingerprint/canvas/skia-math)
+ #if defined(SKRP_CPU_SCALAR) || defined(SKRP_CPU_SSE2)
+     // In scalar and SSE2 mode, we always use precise math so we can have more predictable results.
+     // Chrome will use the SSE2 implementation when --disable-skia-runtime-opts is set. (b/40042946)
+@@ -1518,6 +1522,7 @@ static void restore_memory_contexts(
+     SI F rcp_fast(F v) { return rcp_approx(v); }
+     SI F rsqrt(F v)    { return rsqrt_approx(v); }
+ #endif
++#include "src/opts/StealthSkiaRcpFastEnd.h"  // STEALTH-HOOK(fingerprint/canvas/skia-math)
+ 
+ // Our fundamental vector depth is our pixel stride.
+ static constexpr size_t N = sizeof(F) / sizeof(float);

@@ -58,6 +58,7 @@ void DeclareText(int32_t aQuality) {
   // The engine on needs the graphics declaration too (StealthGfxFeatureStatus refuses
   // an empty one at the first feature query).
   Preferences::SetCString("zoom.stealth.gfx.feature_status", kGfxFeatureStatus);
+  Preferences::SetCString("zoom.stealth.cpu.vendor", "intel");  // the gate wants the CPU vendor too
   Preferences::SetInt("zoom.stealth.text.system_quality", aQuality);
   Preferences::SetInt("gfx.font_rendering.cleartype_params.rendering_mode", 0);
   // The engine on, last: with it on a change of the text prefs updates the text vars.

@@ -4,7 +4,8 @@
 
 /*
  * The input domains of invisible_DWriteCore's reimpl/math_check.c, calling the C library by
- * name (sin, cos, tan, sinf, cosf, tanf, powf, hypot) instead of idwr_*: whatever those names
+ * name (sin, cos, tan, sinf, cosf, tanf, powf, hypot, expf, logf, asinf, acosf, atanf, atan2f) instead of
+ * idwr_*: whatever those names
  * bind to in the library that includes this file. Each run of items [lo, hi) of a test returns
  * the FNV-1a 64 hash of its outputs in item order, exactly as math_check prints it without a
  * reference (the Linux leg), so it equals the chunk hashes recorded from ucrtbase.dll in
@@ -27,7 +28,8 @@
 enum {
   LUC_TANF_WR, LUC_TAN_GECKO, LUC_POWF_WR, LUC_POWF_SKIA, LUC_HYPOT_WR, LUC_TANF,
   LUC_TAN_RAND, LUC_POWF_RAND, LUC_HYPOT_RAND, LUC_SINCOSF_COLR, LUC_SINF, LUC_COSF,
-  LUC_SINCOS_CSS, LUC_SINCOS_RAND
+  LUC_SINCOS_CSS, LUC_SINCOS_RAND, LUC_EXPF, LUC_LOGF, LUC_ASINF, LUC_ACOSF, LUC_ATANF,
+  LUC_ATAN2F_Y, LUC_ATAN2F_X
 };
 
 typedef struct { uint64_t h; } luc_state;
@@ -49,6 +51,13 @@ static inline double luc_tan(luc_state* st, double x) { double r = tan(x); luc_h
 static inline double luc_sin(luc_state* st, double x) { double r = sin(x); luc_hash(st, &r, 8); return r; }
 static inline double luc_cos(luc_state* st, double x) { double r = cos(x); luc_hash(st, &r, 8); return r; }
 static inline double luc_hypot(luc_state* st, double x, double y) { double r = hypot(x, y); luc_hash(st, &r, 8); return r; }
+
+static inline float luc_expf(luc_state* st, float x) { float r = expf(x); luc_hash(st, &r, 4); return r; }
+static inline float luc_logf(luc_state* st, float x) { float r = logf(x); luc_hash(st, &r, 4); return r; }
+static inline float luc_asinf(luc_state* st, float x) { float r = asinf(x); luc_hash(st, &r, 4); return r; }
+static inline float luc_acosf(luc_state* st, float x) { float r = acosf(x); luc_hash(st, &r, 4); return r; }
+static inline float luc_atanf(luc_state* st, float x) { float r = atanf(x); luc_hash(st, &r, 4); return r; }
+static inline float luc_atan2f(luc_state* st, float y, float x) { float r = atan2f(y, x); luc_hash(st, &r, 4); return r; }
 
 static inline uint64_t luc_splitmix(uint64_t* s) {
   uint64_t z = (*s += 0x9e3779b97f4a7c15ull);
@@ -270,6 +279,27 @@ static inline uint64_t luc_run(int t, uint64_t lo, uint64_t hi) {
         luc_sin(s, x);
         luc_cos(s, x);
       }
+      break;
+    case LUC_EXPF:
+      for (i = lo; i < hi; i++) luc_expf(s, luc_u2f((uint32_t)i));
+      break;
+    case LUC_LOGF:
+      for (i = lo; i < hi; i++) luc_logf(s, luc_u2f((uint32_t)i));
+      break;
+    case LUC_ASINF:
+      for (i = lo; i < hi; i++) luc_asinf(s, luc_u2f((uint32_t)i));
+      break;
+    case LUC_ACOSF:
+      for (i = lo; i < hi; i++) luc_acosf(s, luc_u2f((uint32_t)i));
+      break;
+    case LUC_ATANF:
+      for (i = lo; i < hi; i++) luc_atanf(s, luc_u2f((uint32_t)i));
+      break;
+    case LUC_ATAN2F_Y:
+      for (i = lo; i < hi; i++) luc_atan2f(s, luc_u2f((uint32_t)i), 1.0f);
+      break;
+    case LUC_ATAN2F_X:
+      for (i = lo; i < hi; i++) luc_atan2f(s, 1.0f, luc_u2f((uint32_t)i));
       break;
     default:
       return 0;

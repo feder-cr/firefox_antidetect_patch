@@ -5,8 +5,8 @@
 """libxul's dynamic symbol table has no entry for the math it defines itself.
 
 gfx/idwr/libm_ucrt.c gives libxul hidden definitions of sin, cos, tan, sinf, cosf,
-tanf, powf, hypot, sincos and sincosf (ucrtbase's results, outside Windows). Two
-ways to lose them, and both leave a dynamic symbol of one of these names:
+tanf, powf, hypot, sincos, sincosf, pow, expf, logf, asinf, acosf, atanf and atan2f
+(ucrtbase's results, outside Windows). Two ways to lose them, and both leave a dynamic symbol of one of these names:
 - an undefined one, versioned GLIBC_*: some reference still binds to the host
   libm (the definition is missing, or LTO dropped it before code generation
   emitted a call to it, such as a sin and a cos merged into sincos);
@@ -27,7 +27,8 @@ import sys
 class Unreadable(Exception):
     """The file cannot be checked: the result would say nothing about it."""
 
-NAMES = ("sin", "cos", "tan", "sinf", "cosf", "tanf", "powf", "hypot", "sincos", "sincosf")
+NAMES = ("sin", "cos", "tan", "sinf", "cosf", "tanf", "powf", "hypot", "sincos", "sincosf",
+         "pow", "expf", "logf", "asinf", "acosf", "atanf", "atan2f")
 
 
 def dynamic_symbols(path):

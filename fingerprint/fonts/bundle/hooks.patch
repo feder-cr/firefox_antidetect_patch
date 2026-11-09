@@ -371,10 +371,10 @@ index 121abbea9808dd46cbbcd67f5783f645a0db4fbb..cb41535c08833514d48c21aa712d986e
      return nullptr;
    }
 diff --git a/gfx/thebes/moz.build b/gfx/thebes/moz.build
-index ab172d9588a03526bb904289ee451ab652dbfdaa..a46556af96946ee576b4fae26e2c3b4ac489c994 100644
+index ab172d9588a03526bb904289ee451ab652dbfdaa..6847bcc7511f62b1e0a185d3e2d86835118dbd9a 100644
 --- a/gfx/thebes/moz.build
 +++ b/gfx/thebes/moz.build
-@@ -243,6 +243,13 @@ USE_LIBS += [
+@@ -243,6 +243,14 @@ USE_LIBS += [
  ]
  
  include("/ipc/chromium/chromium-config.mozbuild")
@@ -385,6 +385,7 @@ index ab172d9588a03526bb904289ee451ab652dbfdaa..a46556af96946ee576b4fae26e2c3b4a
 +include("StealthDesignMetrics.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/metrics)
 +include("StealthIdwrTextVars.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/idwr)
 +include("StealthColorProfile.mozbuild")  # STEALTH-HOOK(fingerprint/canvas/color-profile)
++include("StealthSyntheticBold.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
  
  FINAL_LIBRARY = "xul"
  

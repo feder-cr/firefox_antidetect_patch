@@ -3,14 +3,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// sin, cos, tan, sinf, cosf, tanf, powf and hypot, as code inside libxul calls
-// them, give ucrtbase.dll's results. On Windows they are ucrtbase; elsewhere they
+// sin, cos, tan, sinf, cosf, tanf, powf, hypot, pow, expf, logf, asinf, acosf, atanf and
+// atan2f, as code inside libxul calls them, give ucrtbase.dll's results. On Windows they are ucrtbase; elsewhere they
 // are libxul's own hidden definitions (gfx/idwr/libm_ucrt.c), and the last test
 // also checks that the names bind inside libxul and are not exported from it.
 //
 // Expected values: hashes of ucrtbase 10.0.26100.9711's outputs over the input
 // domains of invisible_DWriteCore's reimpl/math_check.c, copied from its
-// reimpl/math_reference.json (sha256 40e1a9b9...622c3815). Each case hashes the
+// reimpl/math_reference.json (sha256 40e1a9b9...622c3815; the expf, logf, asinf, acosf, atanf and
+// atan2f chunks from the same file at sha256 d9b3922b...6799cea5, which keeps the earlier
+// hashes unchanged). Each case hashes the
 // same items in the same order as math_check, calling the functions by name
 // (LibmUcrtCases.h), so a sin and a cos of one value go through whatever the
 // compiler makes of them here (on GNU targets, one sincos call).
@@ -108,6 +110,85 @@ TEST(IdwrLibm, Samples)
   ExpectChunks(kChunks, std::size(kChunks));
 }
 
+// Chunks of the float domains of the functions CSS calc() reaches (servo style's
+// calc.rs runs f32::asin, acos, atan, atan2, ln and exp, i.e. asinf, acosf, atanf,
+// atan2f, logf and expf): every float in [0.5, 2) for each (chunk 63), [2, 8) and
+// [-128, -32) for expf (64, 194), [16, 32) for logf and atanf (65), [-2, -0.5) for
+// asinf and acosf (191), and atan2f(y, 1) and atan2f(1, x) over [0.5, 2). glibc's
+// asinf and acosf differ from ucrtbase on half of all floats, logf on one in 8,500
+// and expf on one in 22,000.
+TEST(IdwrLibm, CalcFunctionDomains)
+{
+  const Chunk kChunks[] = {
+      {LUC_EXPF, 4294967296ull, 16777216, 63, 0x484376a31ef68357ull},
+      {LUC_EXPF, 4294967296ull, 16777216, 64, 0xa4e179e4a0e25f40ull},
+      {LUC_EXPF, 4294967296ull, 16777216, 194, 0xa79a04deff35b01cull},
+      {LUC_LOGF, 4294967296ull, 16777216, 63, 0xb27b6ec137895ae9ull},
+      {LUC_LOGF, 4294967296ull, 16777216, 65, 0x0aee9eae055b91b6ull},
+      {LUC_ASINF, 4294967296ull, 16777216, 63, 0x9c60f6551f78eb09ull},
+      {LUC_ASINF, 4294967296ull, 16777216, 191, 0x5367861752a10089ull},
+      {LUC_ACOSF, 4294967296ull, 16777216, 63, 0x7bc3ef757c38856full},
+      {LUC_ACOSF, 4294967296ull, 16777216, 191, 0x1fde9420b8b6172aull},
+      {LUC_ATANF, 4294967296ull, 16777216, 63, 0xec53f838ddf1625full},
+      {LUC_ATANF, 4294967296ull, 16777216, 65, 0xca45e73c5ac4d0f9ull},
+      {LUC_ATAN2F_Y, 4294967296ull, 16777216, 63, 0x067994f1e17915ebull},
+      {LUC_ATAN2F_X, 4294967296ull, 16777216, 63, 0x749f1075474dd641ull},
+  };
+  ExpectChunks(kChunks, std::size(kChunks));
+}
+
+// The inputs of the wrapper's tests/data/ucrt_css_calc.txt where the CSS calc() text of
+// Windows Firefox and of Firefox on glibc differ: asin(0.59423828125) is 36.4583deg,
+// acos(0.615234375) 52.031deg, log(1.0966796875) 0.0922872, log(24.4873046875) 3.19816,
+// log(31.2861328125) 3.44317 (those five differ on glibc 2.39 and 2.43, one ulp each; then
+// three more of the file: glibc 2.43 differs on two of them, logf(16.7880859375) agrees on
+// both). The expected bits are ucrtbase 10.0.26100.9711's, measured on Windows.
+TEST(IdwrLibm, CalcInputsWherePageTextDiffers)
+{
+  float (*volatile asinf_p)(float) = &::asinf;
+  float (*volatile acosf_p)(float) = &::acosf;
+  float (*volatile logf_p)(float) = &::logf;
+  struct Case {
+    const char* what;
+    float (*volatile* fn)(float);
+    uint32_t in, want;
+  };
+  const Case kCases[] = {
+      {"asinf(0.59423828125)", &asinf_p, 0x3f182000u, 0x3f22e5c0u},
+      {"acosf(0.615234375)", &acosf_p, 0x3f1d8000u, 0x3f687a19u},
+      {"logf(1.0966796875)", &logf_p, 0x3f8c6000u, 0x3dbd010cu},
+      {"logf(24.4873046875)", &logf_p, 0x41c3e600u, 0x404cae92u},
+      {"logf(31.2861328125)", &logf_p, 0x41fa4a00u, 0x405c5cfau},
+      {"asinf(-0.27099609375)", &asinf_p, 0xbe8ac000u, 0xbe8c81c9u},
+      {"acosf(-0.61669921875)", &acosf_p, 0xbf1de000u, 0x400f0fccu},
+      {"logf(16.7880859375)", &logf_p, 0x41864e00u, 0x403485d9u},
+  };
+  for (const Case& c : kCases) {
+    float in, r;
+    memcpy(&in, &c.in, 4);
+    r = (*c.fn)(in);
+    uint32_t got;
+    memcpy(&got, &r, 4);
+    EXPECT_EQ(got, c.want) << c.what << " differs from ucrtbase";
+  }
+}
+
+// pow(3803691534.2437644, -3.7239311377732847): ucrtbase gives 0x38866be77bbc275b, glibc
+// 2.43 0x38866be77bbc275c (the witness of pow_special, where glibc differs on 10 of 6,401 items).
+// Math.pow in js/src/builtin/Math.cpp is std::pow.
+TEST(IdwrLibm, PowWitness)
+{
+  double (*volatile f)(double, double) = &::pow;
+  uint64_t xb = 0x41ec56f741c7ccebull, yb = 0xc00dca9c688a56b0ull;
+  double x, y;
+  memcpy(&x, &xb, 8);
+  memcpy(&y, &yb, 8);
+  double r = f(x, y);
+  uint64_t u;
+  memcpy(&u, &r, 8);
+  EXPECT_EQ(u, 0x38866be77bbc275bull);
+}
+
 // Math.sin(Math.PI / 4), which a page reads: ucrtbase's 0x3fe6a09e667f3bcd
 // (0.7071067811865476), where glibc and fdlibm give ...bcc.
 TEST(IdwrLibm, PageValue)
@@ -146,6 +227,14 @@ TEST(IdwrLibm, BoundInsideLibxulNotExported)
       {"powf", reinterpret_cast<void*>(&::powf)},
       {"hypot",
        reinterpret_cast<void*>(static_cast<double (*)(double, double)>(&::hypot))},
+      {"pow",
+       reinterpret_cast<void*>(static_cast<double (*)(double, double)>(&::pow))},
+      {"expf", reinterpret_cast<void*>(&::expf)},
+      {"logf", reinterpret_cast<void*>(&::logf)},
+      {"asinf", reinterpret_cast<void*>(&::asinf)},
+      {"acosf", reinterpret_cast<void*>(&::acosf)},
+      {"atanf", reinterpret_cast<void*>(&::atanf)},
+      {"atan2f", reinterpret_cast<void*>(&::atan2f)},
   };
   for (const Name& n : kNames) {
     Dl_info where;

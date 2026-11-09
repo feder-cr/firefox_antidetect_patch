@@ -208,12 +208,6 @@ bool StealthBundleFontList::Load() {
                                                FontVisibility::Base));
       continue;
     }
-    // NOTE: the L| coverage ladder used to be parsed here. It moved to
-    // invisible_core and arrives as zoom.stealth.canvas.alpha_ladder, because
-    // it is not a property of any font FILE - it is what the rasteriser does to
-    // an edge. Nothing read mCoverageLadder after that move, so the member, the
-    // accessor and this branch were dead, and the record in the manifest was a
-    // second copy of a value the core already declares. Removed 2026-08-08.
     // P|T|Y|Z - the four fixed common-fallback lists (v4). Each is one line,
     // in gfxWindowsPlatform's order; see GetCommonFallback for how they compose.
     {

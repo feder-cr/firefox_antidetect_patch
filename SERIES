@@ -37,11 +37,13 @@ fingerprint/audio/sample-rate
 fingerprint/canvas/as-drawn
 fingerprint/canvas/color-profile
 fingerprint/canvas/noise-projection
+fingerprint/canvas/skia-math
 fingerprint/canvas/text-metrics
 fingerprint/fonts/bundle
 fingerprint/fonts/font-list
 fingerprint/fonts/idwr
 fingerprint/fonts/metrics
+fingerprint/fonts/synthetic-bold
 fingerprint/hardware/concurrency
 fingerprint/hardware/profile
 fingerprint/hardware/storage-quota

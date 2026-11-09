@@ -354,21 +354,20 @@ index 88ec520156fcf4d84098f546286aeb2ca138729f..a34337b63bed9f5f9365dbba82a6b9a4
    f(ACCESSIBLEID, RecordedAccessibleId);                           \
    f(DESTINATION, RecordedDestination);
 diff --git a/gfx/2d/moz.build b/gfx/2d/moz.build
-index 2abc9c45814d6931ad1edcb9daacab750909d597..d39be1c5d9166a3bc0ed56d73e3934e66b4b6cc4 100644
+index 2abc9c45814d6931ad1edcb9daacab750909d597..c7b00391552b5cafd1bf68f0e76ae13f48108663 100644
 --- a/gfx/2d/moz.build
 +++ b/gfx/2d/moz.build
-@@ -60,6 +60,10 @@ EXPORTS.mozilla.gfx += [
+@@ -60,6 +60,9 @@ EXPORTS.mozilla.gfx += [
      "Types.h",
      "UserData.h",
  ]
 +EXPORTS.mozilla.gfx += ["StealthCanvasProjection.h"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
-+EXPORTS.mozilla.gfx += ["StealthGlyphCoverage.h"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
 +EXPORTS.mozilla.gfx += ["StealthRefuse.h"]  # STEALTH-HOOK(platform/declaration-gate)
 +SOURCES += ["StealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
      EXPORTS.mozilla.gfx += [
-@@ -85,6 +89,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+@@ -85,6 +88,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
          "ScaledFontDWrite.cpp",
          "SourceSurfaceD3D11.cpp",
      ]
@@ -376,30 +375,30 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..d39be1c5d9166a3bc0ed56d73e3934e6
      DEFINES["WIN32"] = True
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("android", "gtk"):
-@@ -100,6 +105,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+@@ -100,6 +104,10 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
      SOURCES += [
          "ScaledFontFontconfig.cpp",
      ]
 +    SOURCES += ["StealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    EXPORTS.mozilla.gfx += ["StealthFontDescriptorPath.h"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    SOURCES += ["StealthSkiaIdwrFontconfig.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
++    EXPORTS.mozilla.gfx += ["StealthMultistrikeBold.h"]  # STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
      SOURCES += [
-@@ -170,6 +178,8 @@ UNIFIED_SOURCES += [
+@@ -170,6 +178,7 @@ UNIFIED_SOURCES += [
      "Swizzle.cpp",
      "Types.cpp",
  ]
 +UNIFIED_SOURCES += ["StealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
-+UNIFIED_SOURCES += ["StealthGlyphCoverage.cpp"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
  
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..ab674504dd4416e1aa6380f2f689647fde54ffaf 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..643c0d1f55085f1e636617f8fa6d3633054e2004 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -32,6 +32,11 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,13 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
@@ -407,11 +406,13 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..ab674504dd4416e1aa6380f2f689647f
 +UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp", "TestStealthWebGPUExternalTexture.cpp"]  # STEALTH-HOOK(fingerprint/webgpu)
 +SOURCES += ["TestStealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
 +SOURCES += ["TestStealthSkiaIdwrThreads.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
++SOURCES += ["TestStealthSkiaStrokeLevels.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
 +SOURCES += ["TestStealthColorProfile.cpp"]  # STEALTH-HOOK(fingerprint/canvas/color-profile)
++SOURCES += ["TestStealthSkiaMath.cpp"]  # STEALTH-HOOK(fingerprint/canvas/skia-math)
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +47,19 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +49,19 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  
@@ -431,7 +432,7 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..ab674504dd4416e1aa6380f2f689647f
  if CONFIG["OS_TARGET"] == "Darwin":
      # Not in UNIFIED_SOURCES: MacIOSurface.h includes Carbon headers (MacTypes.h)
      # which would make Rect/Point/Size ambiguous in all subsequent unified files.
-@@ -87,5 +105,6 @@ LOCAL_INCLUDES += [
+@@ -87,5 +107,6 @@ LOCAL_INCLUDES += [
      "/layout/base",
      "/third_party/xsimd/include",
  ]

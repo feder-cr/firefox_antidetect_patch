@@ -2822,6 +2822,26 @@
   }
  },
  {
+  "file": "gfx/2d/ScaledFontFontconfig.h",
+  "category": "spoof",
+  "feature": "fonts-synthetic-bold",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "the InstanceData flags enum",
+  "evidence": [
+   "+    STEALTH_MULTISTRIKE_BOLD = 1 << 6,  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)"
+  ],
+  "notes": "A flag of the font instance that says Gecko does the bold with several strikes, as Windows does for a webfont, so that neither FreeType nor idwr embolden the same face.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
+  }
+ },
+ {
   "file": "gfx/2d/UnscaledFontDWrite.h",
   "category": "other",
   "feature": "font-bundle-file-path",
@@ -3076,6 +3096,26 @@
     "notes"
    ],
    "why": "The claim that this is the only Mozilla header in Skia is false (SkMemory_mozalloc.cpp, SkASAN.h, SkMacros.h, SkTypeface_win_dw.h include mozilla headers); it holds only for this file."
+  }
+ },
+ {
+  "file": "gfx/skia/skia/src/opts/SkRasterPipeline_opts.h",
+  "category": "spoof",
+  "feature": "canvas-skia-math",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 5,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the system includes; around the SSE2 mad/nmad/rcp_precise and the rcp_fast/rsqrt dispatch",
+  "evidence": [
+   "+#include \"StealthSkiaRcpHook.h\"  // STEALTH-HOOK(fingerprint/canvas/skia-math)"
+  ],
+  "notes": "Five added lines (one include of the wrappers of the reciprocal intrinsics, two Begin/End pairs that rename the stock functions by macro): with the engine on the highp raster pipeline uses an exact FMA and the RCPPS/RSQRTPS model of the declared CPU vendor, with it off the stock functions; no line of Skia is rewritten.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
   }
  },
  {

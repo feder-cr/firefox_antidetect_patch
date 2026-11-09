@@ -399,6 +399,7 @@ const char kGfxFeatureStatus[] =
 
 void DeclareEngine() {
   Preferences::SetCString("zoom.stealth.gfx.feature_status", kGfxFeatureStatus);
+  Preferences::SetCString("zoom.stealth.cpu.vendor", "intel");  // the gate wants the CPU vendor too
   Preferences::SetInt("zoom.stealth.text.system_quality", 5);
   Preferences::SetInt("gfx.font_rendering.cleartype_params.rendering_mode", 0);
   Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);

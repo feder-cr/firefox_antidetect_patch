@@ -108,6 +108,7 @@
   "gfx/tests/gtest/TestStealthIdwrTextVars.cpp": "100644",
   "gfx/tests/gtest/TestStealthSkiaIdwr.cpp": "100644",
   "gfx/tests/gtest/TestStealthSkiaIdwrThreads.cpp": "100644",
+  "gfx/tests/gtest/TestStealthSkiaStrokeLevels.cpp": "100644",
   "gfx/tests/gtest/gen_skia_text_golden.py": "100644",
   "gfx/thebes/StealthIdwrTextVars.cpp": "100644",
   "gfx/thebes/StealthIdwrTextVars.h": "100644",

@@ -3,15 +3,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
- * libxul's own sin, cos, tan, sinf, cosf, tanf, powf and hypot, outside Windows.
+ * libxul's own sin, cos, tan, sinf, cosf, tanf, powf, hypot, pow, expf, logf, asinf, acosf,
+ * atanf and atan2f, outside Windows.
  *
  * Windows Firefox takes these from ucrtbase.dll; elsewhere the same calls went to the host's
  * libm, whose last bits differ (glibc's tanf is correctly rounded, ucrtbase's is not; see
  * invisible_DWriteCore notes/math.md). Defined here, hidden, every reference inside libxul
- * binds to these at link time: C and C++ (js/src/builtin/Math.cpp's std::sin/cos/tan,
+ * binds to these at link time: C and C++ (js/src/builtin/Math.cpp's std::sin/cos/tan/pow,
  * gfx/2d's rotations, Skia's SkScalarPow) and Rust (style's calc functions, WebRender's
  * GammaLut and compute_scale), with no edit at any call site. The bodies are idwr_math's,
  * the ucrtbase 10.0.26100.9711 FMA3 code, bit for bit.
+ *
+ * - The calc() functions of servo/components/style/values/generics/calc.rs run in f32:
+ *   f32::sin/cos/tan, asin, acos, atan, atan2, powf, ln (and log, as ln(a) / ln(b)), exp, which
+ *   Rust lowers to sinf, cosf, tanf, asinf, acosf, atanf, atan2f, powf, logf and expf. A page
+ *   reads them with getComputedStyle (word-spacing, rotate), written to 6 significant digits,
+ *   so a last-bit difference in glibc's asinf, acosf or logf changes the text.
+ * - Each name here is one idwr_math function proved equal to ucrtbase on every float input
+ *   (expf, logf, asinf, acosf, atanf, atan2f(y, 1) and atan2f(1, x): 2^32 each), on random
+ *   pairs (atan2f, 2^30; pow, 2^30 double pairs) and on every pair of special values; the
+ *   numbers are in invisible_DWriteCore's notes/math.md. pow (double) is std::pow in
+ *   js/src/builtin/Math.cpp (Math.pow) and f64::powf in Rust; on Windows both are ucrtbase's.
  *
  * - Hidden: the definitions are not exported. libxul's dynamic symbol table keeps no entry
  *   for these names, neither an import from libm nor an export that a page-side probe of
@@ -44,6 +56,13 @@ LIBM_UCRT_HIDDEN float cosf(float x) { return idwr_cosf(x); }
 LIBM_UCRT_HIDDEN float tanf(float x) { return idwr_tanf(x); }
 LIBM_UCRT_HIDDEN float powf(float x, float y) { return idwr_powf(x, y); }
 LIBM_UCRT_HIDDEN double hypot(double x, double y) { return idwr_hypot(x, y); }
+LIBM_UCRT_HIDDEN double pow(double x, double y) { return idwr_pow(x, y); }
+LIBM_UCRT_HIDDEN float expf(float x) { return idwr_expf(x); }
+LIBM_UCRT_HIDDEN float logf(float x) { return idwr_logf(x); }
+LIBM_UCRT_HIDDEN float asinf(float x) { return idwr_asinf(x); }
+LIBM_UCRT_HIDDEN float acosf(float x) { return idwr_acosf(x); }
+LIBM_UCRT_HIDDEN float atanf(float x) { return idwr_atanf(x); }
+LIBM_UCRT_HIDDEN float atan2f(float y, float x) { return idwr_atan2f(y, x); }
 
 LIBM_UCRT_HIDDEN void sincos(double x, double* s, double* c) {
   *s = idwr_sin(x);

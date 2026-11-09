@@ -218,39 +218,6 @@ def _stretch_range(tt, os2):
 # OS/2 fsSelection bit 7: "use the sTypo* fields as the default line spacing".
 USE_TYPO_METRICS = 1 << 7
 
-# DirectWrite's grayscale glyph-coverage ladder - the alpha values a Windows
-# Firefox actually produces when it rasterises text.
-#
-# WHY THIS EXISTS. The coverage of a glyph's antialiased edge is computed by the
-# platform rasteriser, and the two disagree STRUCTURALLY, not marginally.
-# Measured 2026-08-07 over 48 combinations (4 families x 6 sizes x 2 weights),
-# black text on transparent so the alpha channel IS the coverage:
-#
-#     Windows / DirectWrite :   9-19 distinct alpha levels per render
-#     Linux   / FreeType    : 193-256 distinct levels; 16 of the 48 used all 256
-#
-# So a detector does not need to compare a hash to tell the two apart - it can
-# COUNT the levels. That is a far more robust tell than a hash mismatch, because
-# two genuine Windows machines produce different hashes anyway (the value varies
-# with the Windows build and the ClearType settings) while both produce a level
-# COUNT in the low tens.
-#
-# THE VALUES. Union over the 48 Windows cases was 32 levels, but they are not 32
-# independent ladders: 9 of these appear in all 48 renders and 8 more in about
-# half, while the remaining 15 show up in 1-8 cases each. The 17 below are the
-# ones present in >=10 of 48 - i.e. the ladder itself, with the rest being
-# occasional extras. The step sizes narrow towards the top
-# (18,17,18,17,17,17,17,17,15,16,16,15,15,15,13,12), which is the signature of
-# gamma-corrected quantisation.
-#
-# This is MEASURED data, not derived from the font files, so unlike everything
-# else in this generator it is a constant here rather than something read out of
-# the fonts. It is shipped in the manifest so the runtime has one canonical copy
-# and no platform computes it.
-DWRITE_COVERAGE_LADDER = [
-    0, 18, 35, 53, 70, 87, 104, 121, 138, 153, 169, 185, 200, 215, 230, 243, 255
-]
-
 
 def _vertical_metrics(tt, os2, head):
     """Vertical metrics in FONT UNITS, resolved the way DirectWrite resolves
