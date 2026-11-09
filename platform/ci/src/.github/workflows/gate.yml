@@ -184,7 +184,15 @@ jobs:
         run: |
           set -e
           SUDO='${{ matrix.container == '' && 'sudo ' || '' }}'
-          $SUDO apt-get purge -y -qq ffmpeg libavcodec* libavutil* gstreamer1.0-libav 2>&1 | tail -3 || true
+          # Like the Mesa purge above: dpkg --purge --force-depends on the packages that
+          # actually own these files (dpkg -S), never apt-get purge. apt-get resolves the
+          # whole dependency graph first and the Mesa purge just above already left dpkg in
+          # a state apt refuses to touch ("Unmet dependencies"); force-depends bypasses that.
+          libs=$(ldconfig -p | grep -E 'libavcodec\.so|libavutil\.so' | awk '{print $NF}')
+          pkgs=$(for f in $libs; do dpkg -S "$f" 2>/dev/null | cut -d: -f1; done | sort -u)
+          if [ -n "$pkgs" ]; then
+            $SUDO dpkg --purge --force-depends $pkgs 2>&1 | tail -5 || true
+          fi
           left=$(ldconfig -p | grep -E 'libavcodec|libavutil' || true)
           if [ -n "$left" ]; then
             echo "ERROR: a host libavcodec/libavutil is still installed, the test would not prove anything:"
@@ -368,6 +376,7 @@ jobs:
             tests/test_webgl_mediump_is_full_precision_e2e.py \
             tests/test_webgl2_exists_without_host_mesa_linux_e2e.py \
             tests/test_webcodecs_h264_without_host_libavcodec_linux_e2e.py \
+            tests/test_webcodecs_h264_bframe_pts_order_e2e.py \
             tests/test_fontconfig_reads_nothing_of_the_host_linux_e2e.py \
             tests/test_math_sin_cos_tan_are_windows_e2e.py \
             tests/test_css_calc_is_windows_e2e.py \

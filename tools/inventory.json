@@ -1633,6 +1633,48 @@
   }
  },
  {
+  "file": "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp",
+  "category": "port-fix",
+  "feature": "ffvpx-decoders-no-host-libavcodec",
+  "prefs": [],
+  "added": 31,
+  "removed": 1,
+  "hunks": 4,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "FFmpegVideoDecoder<LIBAV_VER>::DoDecode / the software CreateImage() call",
+  "evidence": [
+   "+      mPendingFrameTimes.AppendElement(",
+   "+      int64_t pts = GetFramePts(mFrame);"
+  ],
+  "notes": "ff_h264_decoder has no FF_CODEC_CAP_SETS_FRAME_PROPS, so ffmpeg's generic layer (media/ffvpx/libavcodec/decode.c) stamps every frame it returns with the pts/pkt_dts/best_effort_timestamp of the MOST RECENTLY SENT packet, not the packet that produced that image; confirmed with a real build (MOZ_LOG) and confirmed identical on retail Firefox 159.0 Linux with the distro's own libavcodec.so.59, so this is a Mozilla-wrapper-level gap, not specific to our ffvpx. Pushes the real (time, duration) of every sample before avcodec_send_packet, pops the smallest pending time (not the oldest sent one: B-frame pts is not monotonic in send order) for the frame CreateImage() actually receives, instead of trusting GetFramePts(mFrame)/Duration(mFrame). Software CreateImage() path only.",
+  "verifier": {
+   "changed": [],
+   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
+  }
+ },
+ {
+  "file": "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h",
+  "category": "port-fix",
+  "feature": "ffvpx-decoders-no-host-libavcodec",
+  "prefs": [],
+  "added": 25,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "FFmpegVideoDecoder<LIBAV_VER>::DoDecode / the software CreateImage() call",
+  "evidence": [
+   "+  struct PendingFrameTime {",
+   "+  nsTArray<PendingFrameTime> mPendingFrameTimes;"
+  ],
+  "notes": "Declares mPendingFrameTimes (the pending (time, duration) queue the .cpp pushes/pops) and documents why none of ffmpeg's own pts/dts/opaque/best_effort_timestamp fields can be trusted for this decoder, with the evidence (real build + retail Linux comparison) cited in the comment.",
+  "verifier": {
+   "changed": [],
+   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
+  }
+ },
+ {
   "file": "dom/media/platforms/wmf/WMFDecoderModule.cpp",
   "category": "build",
   "feature": "ffvpx-decoders-no-host-libavcodec",

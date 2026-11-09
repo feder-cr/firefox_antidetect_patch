@@ -1,3 +1,103 @@
+diff --git a/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp b/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp
+index ce8305cf1b0689ccde4a2fcba3fbd2b7a4ada384..09d17af2556a1852edfe1e18bfd9461fc6c84980 100644
+--- a/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp
++++ b/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp
+@@ -1650,6 +1650,15 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
+ #  endif
+   if (aData || !mHasSentDrainPacket) {
+     packet->duration = aSample->mDuration.ToMicroseconds();
++    if (aData) {
++      // See mPendingFrameTimes: ffmpeg's own pts/dts/best_effort_timestamp
++      // for this packet cannot be trusted for decoders without
++      // FF_CODEC_CAP_SETS_FRAME_PROPS (e.g. H.264), so we remember the
++      // sample's real time/duration ourselves instead.
++      mPendingFrameTimes.AppendElement(
++          PendingFrameTime{aSample->mTime.ToMicroseconds(),
++                           aSample->mDuration.ToMicroseconds()});
++    }
+     int res = mLib->avcodec_send_packet(mCodecContext, packet);
+     if (res < 0) {
+       // In theory, avcodec_send_packet could sent -EAGAIN should its internal
+@@ -1659,6 +1668,10 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
+       char errStr[AV_ERROR_MAX_STRING_SIZE];
+       mLib->av_strerror(res, errStr, AV_ERROR_MAX_STRING_SIZE);
+       FFMPEG_LOG("avcodec_send_packet error: {} (code={})", errStr, res);
++      if (aData && !mPendingFrameTimes.IsEmpty()) {
++        // The packet we just pushed for was not actually accepted.
++        mPendingFrameTimes.RemoveLastElement();
++      }
+       nsresult rv;
+       if (res == int(AVERROR_EOF)) {
+         rv = MaybeQueueDrain(aResults) ? NS_ERROR_NOT_AVAILABLE
+@@ -1785,7 +1798,23 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
+ #  endif
+     {
+       mDecodeStats.UpdateDecodeTimes(Duration(mFrame));
+-      rv = CreateImage(fpos, GetFramePts(mFrame), Duration(mFrame), aResults);
++      // Do not trust GetFramePts(mFrame)/Duration(mFrame) here: see
++      // mPendingFrameTimes. Pop the smallest pending time (not the oldest
++      // sent one: B-frame streams are not monotonic in send order).
++      int64_t pts = GetFramePts(mFrame);
++      int64_t duration = Duration(mFrame);
++      if (!mPendingFrameTimes.IsEmpty()) {
++        size_t minIndex = 0;
++        for (size_t i = 1; i < mPendingFrameTimes.Length(); i++) {
++          if (mPendingFrameTimes[i].mTime < mPendingFrameTimes[minIndex].mTime) {
++            minIndex = i;
++          }
++        }
++        pts = mPendingFrameTimes[minIndex].mTime;
++        duration = mPendingFrameTimes[minIndex].mDuration;
++        mPendingFrameTimes.RemoveElementAt(minIndex);
++      }
++      rv = CreateImage(fpos, pts, duration, aResults);
+     }
+     if (NS_FAILED(rv)) {
+       return rv;
+@@ -2548,6 +2577,7 @@ FFmpegVideoDecoder<LIBAV_VER>::ProcessFlush() {
+   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
+ #if LIBAVCODEC_VERSION_MAJOR >= 58
+   mHasSentDrainPacket = false;
++  mPendingFrameTimes.Clear();
+ #endif
+ #if LIBAVCODEC_VERSION_MAJOR < 58
+   mPtsContext.Reset();
+diff --git a/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h b/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h
+index ae239c49209801eb790b70f542f0646c04ed5bfb..1da442c1da27a14c4124d5f4b8929dbbd8c3a4e8 100644
+--- a/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h
++++ b/dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h
+@@ -314,6 +314,31 @@ class FFmpegVideoDecoder<LIBAV_VER>
+ 
+ #if LIBAVCODEC_VERSION_MAJOR >= 58
+   bool mHasSentDrainPacket = false;
++
++  // ff_h264_decoder (h264dec.c) does not set FF_CODEC_CAP_SETS_FRAME_PROPS.
++  // For such decoders the generic ffmpeg layer (media/ffvpx/libavcodec/
++  // decode.c) stamps every frame coming out of avcodec_receive_frame()
++  // with the pts/pkt_dts/opaque of the MOST RECENTLY SENT packet
++  // (avci->last_pkt_props), not the packet that actually produced that
++  // image; frame->best_effort_timestamp (guess_correct_pts()) is derived
++  // from that same wrong pts/pkt_dts, so it inherits the same mislabeling
++  // (confirmed with a real build: MOZ_LOG="FFmpegVideo:5" on a 1080p
++  // B-frame clip, has_b_frames=2; also confirmed identical on Firefox
++  // 159.0 retail Linux using the distro's own libavcodec.so.59, so this
++  // is a Mozilla-wrapper-level gap, not specific to our ffvpx). With
++  // B-frames the image can come out several packets after it was sent,
++  // so none of those labels can be trusted here, while the IMAGE order
++  // itself is already correct. We track the real (time, duration) of
++  // every sample we send ourselves: one entry is pushed before each
++  // avcodec_send_packet(), and the entry with the smallest pending time
++  // is popped for every frame avcodec_receive_frame() actually returns
++  // (not the oldest sent one: with real B-frames, pts is not monotonic
++  // in send order).
++  struct PendingFrameTime {
++    int64_t mTime;
++    int64_t mDuration;
++  };
++  nsTArray<PendingFrameTime> mPendingFrameTimes;
+ #endif
+ 
+ #if LIBAVCODEC_VERSION_MAJOR < 58
 diff --git a/dom/media/platforms/wmf/WMFDecoderModule.cpp b/dom/media/platforms/wmf/WMFDecoderModule.cpp
 index 28aa34283ae2efc0fb8be6f73026695a71930702..16c5f6faa19925be7e74261fbd0ec7559ba747b3 100644
 --- a/dom/media/platforms/wmf/WMFDecoderModule.cpp
