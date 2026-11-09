@@ -192,6 +192,24 @@ TEST(StealthAngleAlu, TheNvidiaClassEmitsTheFmaChainForTwoThreeAndFour)
   EXPECT_NE(on, TranslateToHLSL(kDotShader, false));
 }
 
+// A zero keeps its sign through the chain: with a*b = -0 and a running sum of -0 the fused result is
+// -0, and the emitted nv_fma must leave the sum as it is instead of adding a +0 correction term
+// (a page reads the sign with 1/x). The helper adds -0 when the correction term is zero; the text
+// is the one checked on Intel, the RTX 5080 and WARP by nv_fma_zero_test.py of the study repo.
+TEST(StealthAngleAlu, TheFmaHelperKeepsTheSignOfAZeroSum)
+{
+  const std::string on = TranslateToHLSL(kDotShader, true);
+  const size_t fma = on.find("precise float nv_fma(");
+  ASSERT_NE(fma, std::string::npos);
+  const std::string body = on.substr(fma, on.find("precise float nv_dot2(") - fma);
+  EXPECT_NE(body.find("0x80000000u"), std::string::npos);
+  EXPECT_NE(body.find("vz"), std::string::npos);
+  EXPECT_EQ(body.find("t.x + v;"), std::string::npos);  // the sum is t.x + vz
+  EXPECT_NE(body.find("t.x + vz;"), std::string::npos);
+  // class 0 has no helper at all
+  EXPECT_EQ(TranslateToHLSL(kDotShader, false).find("0x80000000u"), std::string::npos);
+}
+
 // A shader with no dot of two to four components: the option changes nothing.
 TEST(StealthAngleAlu, ANeutralShaderIsTheSameInBothClasses)
 {

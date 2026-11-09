@@ -52,7 +52,10 @@ precise float nv_fma(precise float a, precise float b, precise float c) {
   precise float2 u = nv_two_prod(a, b);
   precise float2 t = nv_two_sum(c, u.x);
   precise float v = nv_round_to_odd_add(t.y, u.y);
-  precise float z = t.x + v;
+  // signed zero: with a*b = +-0 and c = -0 the sum t.x + (+0) would be +0 where the fused result is -0; adding -0 instead leaves t.x as it is
+  uint vb = asuint(v);
+  precise float vz = asfloat((vb & 0x7FFFFFFFu) == 0u ? 0x80000000u : vb);
+  precise float z = t.x + vz;
   return z;
 }
 // dot, length(squared part), distance(squared part): one fma chain, left to right, first product rounded.

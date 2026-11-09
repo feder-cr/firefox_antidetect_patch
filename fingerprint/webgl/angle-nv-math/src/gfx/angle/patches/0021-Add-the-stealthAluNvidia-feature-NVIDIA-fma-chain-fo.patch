@@ -9,7 +9,7 @@ Subject: [PATCH] Add the stealthAluNvidia feature: NVIDIA fma chain for float
  .../platform/autogen/FeaturesD3D_autogen.h    |  6 ++
  src/compiler/translator/hlsl/OutputHLSL.cpp   | 19 ++++++
  src/compiler/translator/hlsl/OutputHLSL.h     |  1 +
- src/compiler/translator/hlsl/StealthNvMath.h  | 66 +++++++++++++++++++
+ src/compiler/translator/hlsl/StealthNvMath.h  | 69 +++++++++++++++++++
  src/libANGLE/renderer/d3d/ShaderD3D.cpp       |  4 ++
  6 files changed, 100 insertions(+)
 
@@ -113,7 +113,7 @@ new file mode 100644
 index 0000000000..5a6e05d8ff
 --- /dev/null
 +++ b/src/compiler/translator/hlsl/StealthNvMath.h
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,69 @@
 +//
 +// Copyright 2026 The ANGLE Project Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
@@ -168,7 +168,10 @@ index 0000000000..5a6e05d8ff
 +  precise float2 u = nv_two_prod(a, b);
 +  precise float2 t = nv_two_sum(c, u.x);
 +  precise float v = nv_round_to_odd_add(t.y, u.y);
-+  precise float z = t.x + v;
++  // signed zero: with a*b = +-0 and c = -0 the sum t.x + (+0) would be +0 where the fused result is -0; adding -0 instead leaves t.x as it is
++  uint vb = asuint(v);
++  precise float vz = asfloat((vb & 0x7FFFFFFFu) == 0u ? 0x80000000u : vb);
++  precise float z = t.x + vz;
 +  return z;
 +}
 +// dot, length(squared part), distance(squared part): one fma chain, left to right, first product rounded.
