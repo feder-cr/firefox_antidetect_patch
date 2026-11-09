@@ -100,6 +100,7 @@ FEATURES = {
     "webgl-shader-output-language": "fingerprint/webgl/shader-language",
     "webgl-multisample": "fingerprint/webgl/multisample",
     "webgl-own-gl": "fingerprint/webgl/own-gl",
+    "webgl-angle-nv-math": "fingerprint/webgl/angle-nv-math",
     # fingerprint: audio, media
     "audio-context-values": "fingerprint/audio/context-values",
     "audio-fingerprint-noise": "fingerprint/audio/noise",
@@ -172,6 +173,10 @@ OWN_FILES = [
     (r"^gfx/gl/StealthGLMultisample\.", "fingerprint/webgl/multisample"),
     (r"^gfx/gl/gtest/TestStealthGLMultisample\.cpp$", "fingerprint/webgl/multisample"),
     (r"^gfx/gl/StealthOwnGL\.", "fingerprint/webgl/own-gl"),
+    (r"^gfx/gl/StealthAngleAlu\.", "fingerprint/webgl/angle-nv-math"),
+    (r"^gfx/gl/gtest/TestStealthAngleAlu\.cpp$", "fingerprint/webgl/angle-nv-math"),
+    (r"^gfx/angle/patches/0021-Add-the-stealthAluNvidia-feature", "fingerprint/webgl/angle-nv-math"),
+    (r"^third_party/angle/src/compiler/translator/hlsl/StealthNvMath\.h$", "fingerprint/webgl/angle-nv-math"),
     (r"^toolkit/xre/dllservices/StealthOwnBinaries\.", "platform/untrusted-modules"),
     (r"^js/xpconnect/loader/StealthScriptCache\-inl\.", "platform/script-cache"),
     (r"^toolkit/components/urlformatter/tests/unit/test_stealth_apikeys\.", "stillborn/api-keys"),

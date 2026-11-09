@@ -395,6 +395,7 @@ jobs:
             tests/test_system_fonts_and_colors_are_windows_e2e.py \
             tests/test_a_missing_system_theme_pref_refuses_the_launch_e2e.py \
             tests/test_canvas_icc_readback_is_windows_e2e.py \
+            tests/test_webgl_dot_has_the_declared_gpu_s_bits_e2e.py \
             -m e2e -o addopts='' -q
 
       # HOST GATE, this leg's half: everything the page in the wrapper's

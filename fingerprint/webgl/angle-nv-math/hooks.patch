@@ -1,0 +1,136 @@
+diff --git a/gfx/gl/GLLibraryEGL.h b/gfx/gl/GLLibraryEGL.h
+index 136b6076e269914f273bdd0c5eac58f5e7c962d0..5a04517afb11a1935d45a201bc5d289980f403cc 100644
+--- a/gfx/gl/GLLibraryEGL.h
++++ b/gfx/gl/GLLibraryEGL.h
+@@ -38,6 +38,7 @@
+ #endif
+ 
+ struct ID3D11Device;
++namespace mozilla::gl { bool StealthAngleAluDeclared(); const EGLAttrib* StealthAngleAluPlatformAttribs(EGLenum, const EGLAttrib*); }  // STEALTH-HOOK(fingerprint/webgl/angle-nv-math): ours, in StealthAngleAlu.cpp
+ 
+ extern "C" {
+ struct AHardwareBuffer;
+@@ -242,11 +243,13 @@ class GLLibraryEGL final {
+ 
+  public:
+   EGLDisplay fGetDisplay(void* display_id) const {
++    if (StealthAngleAluDeclared()) return fGetPlatformDisplay(LOCAL_EGL_PLATFORM_ANGLE_ANGLE, display_id, nullptr);  // STEALTH-HOOK(fingerprint/webgl/angle-nv-math): the declared ALU class rides the display's feature overrides
+     WRAP(fGetDisplay(display_id));
+   }
+ 
+   EGLDisplay fGetPlatformDisplay(EGLenum platform, void* native_display,
+                                  const EGLAttrib* attrib_list) const {
++    attrib_list = StealthAngleAluPlatformAttribs(platform, attrib_list);  // STEALTH-HOOK(fingerprint/webgl/angle-nv-math): add the declared ALU class's feature
+     WRAP(fGetPlatformDisplay(platform, native_display, attrib_list));
+   }
+ 
+diff --git a/third_party/angle/include/GLSLANG/ShaderLang.h b/third_party/angle/include/GLSLANG/ShaderLang.h
+index 408dfee2986bb239bb3d6b02add477b24410f935..afc33745407db1e95162d86450894c225dd99869 100644
+--- a/third_party/angle/include/GLSLANG/ShaderLang.h
++++ b/third_party/angle/include/GLSLANG/ShaderLang.h
+@@ -487,6 +487,10 @@ struct ShCompileOptions
+     // Whether ESSL300 fragment outputs should be expanded to vec4s.
+     uint64_t expandFragmentOutputsToVec4 : 1;
+ 
++    // HLSL output only: emit float dot() of two vec2, vec3 or vec4 as the NVIDIA fma chain
++    // (nv_dot2, nv_dot3, nv_dot4: IEEE-only `precise` helpers) so every adapter gives the same bits.
++    uint64_t stealthAluNvidia : 1;
++
+     ShCompileOptionsMetal metal;
+     ShPixelLocalStorageOptions pls;
+ };
+diff --git a/third_party/angle/include/platform/autogen/FeaturesD3D_autogen.h b/third_party/angle/include/platform/autogen/FeaturesD3D_autogen.h
+index 4141d6bc01f30a048bf06eeca01d7de654790600..caa9f812d41e3043fc12d6db9e017058211cd44a 100644
+--- a/third_party/angle/include/platform/autogen/FeaturesD3D_autogen.h
++++ b/third_party/angle/include/platform/autogen/FeaturesD3D_autogen.h
+@@ -170,6 +170,12 @@ struct FeaturesD3D : FeatureSetBase
+         &members,
+     };
+ 
++    FeatureInfo stealthAluNvidia = {
++        "stealthAluNvidia",
++        FeatureCategory::D3DWorkarounds,
++        &members,
++    };
++
+ };
+ 
+ inline FeaturesD3D::FeaturesD3D()  = default;
+diff --git a/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.cpp b/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.cpp
+index 272f3428a65370b056710094b028df2cfb66e411..e3c60f377511d2049564278e33175aefa5731c72 100644
+--- a/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.cpp
++++ b/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.cpp
+@@ -21,6 +21,7 @@
+ #include "compiler/translator/hlsl/BuiltInFunctionEmulatorHLSL.h"
+ #include "compiler/translator/hlsl/ImageFunctionHLSL.h"
+ #include "compiler/translator/hlsl/ResourcesHLSL.h"
++#include "compiler/translator/hlsl/StealthNvMath.h"
+ #include "compiler/translator/hlsl/StructureHLSL.h"
+ #include "compiler/translator/hlsl/TextureFunctionHLSL.h"
+ #include "compiler/translator/hlsl/TranslatorHLSL.h"
+@@ -321,6 +322,7 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
+     mUsesDiscardRewriting        = false;
+     mUsesNestedBreak             = false;
+     mRequiresIEEEStrictCompiling = false;
++    mUsesNvMath                  = false;
+     mUseZeroArray                = false;
+     mUsesSecondaryColor          = false;
+ 
+@@ -656,6 +658,11 @@ void OutputHLSL::header(TInfoSinkBase &out,
+         out << "#define ANGLE_REQUIRES_IEEE_STRICT_COMPILING\n";
+     }
+ 
++    if (mUsesNvMath)
++    {
++        out << "\n// NVIDIA arithmetic helpers\n\n" << kStealthNvMathHLSL;
++    }
++
+     out << "#ifdef ANGLE_ENABLE_LOOP_FLATTEN\n"
+            "#define LOOP [loop]\n"
+            "#define FLATTEN [flatten]\n"
+@@ -2385,6 +2392,18 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
+             outputTriplet(out, visit, "distance(", ", ", ")");
+             break;
+         case EOpDot:
++            if (mCompileOptions.stealthAluNvidia)
++            {
++                const int nvDotSize = node->getChildNode(0)->getAsTyped()->getNominalSize();
++                if (nvDotSize >= 2 && nvDotSize <= 4)
++                {
++                    mUsesNvMath = true;
++                    outputTriplet(out, visit,
++                                  nvDotSize == 2 ? "nv_dot2(" : nvDotSize == 3 ? "nv_dot3(" : "nv_dot4(",
++                                  ", ", ")");
++                    break;
++                }
++            }
+             outputTriplet(out, visit, "dot(", ", ", ")");
+             break;
+         case EOpCross:
+diff --git a/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.h b/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.h
+index dd592e80bc72ea82e3cc8106c90c01ac1897112c..5dad6c5386d0f521a06ecf95ad8c51051ec6bc65 100644
+--- a/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.h
++++ b/third_party/angle/src/compiler/translator/hlsl/OutputHLSL.h
+@@ -217,6 +217,7 @@ class OutputHLSL : public TIntermTraverser
+     bool mUsesDiscardRewriting;
+     bool mUsesNestedBreak;
+     bool mRequiresIEEEStrictCompiling;
++    bool mUsesNvMath;
+     mutable bool mUseZeroArray;
+     bool mUsesSecondaryColor;
+ 
+diff --git a/third_party/angle/src/libANGLE/renderer/d3d/ShaderD3D.cpp b/third_party/angle/src/libANGLE/renderer/d3d/ShaderD3D.cpp
+index 33351fd4cbb1078fd295a0dd1c388b8948b159e0..22cb1ca4416aebf0286f414be4f15acd0907d6b1 100644
+--- a/third_party/angle/src/libANGLE/renderer/d3d/ShaderD3D.cpp
++++ b/third_party/angle/src/libANGLE/renderer/d3d/ShaderD3D.cpp
+@@ -323,6 +323,10 @@ std::shared_ptr<ShaderTranslateTask> ShaderD3D::compile(const gl::Context *conte
+     {
+         options->allowTranslateUniformBlockToStructuredBuffer = true;
+     }
++    if (features.stealthAluNvidia.enabled)
++    {
++        options->stealthAluNvidia = true;
++    }
+     if (extensions.multiviewOVR)
+     {
+         options->initializeBuiltinsForInstancedMultiview = true;

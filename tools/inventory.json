@@ -2930,22 +2930,46 @@
   }
  },
  {
+  "file": "gfx/gl/GLLibraryEGL.h",
+  "category": "spoof",
+  "feature": "webgl-angle-nv-math",
+  "prefs": [
+   "zoom.stealth.webgl.alu_class"
+  ],
+  "added": 3,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after struct ID3D11Device;, and at the top of fGetDisplay and fGetPlatformDisplay",
+  "evidence": [
+   "+    attrib_list = StealthAngleAluPlatformAttribs(platform, attrib_list);  // STEALTH-HOOK(fingerprint/webgl/angle-nv-math): add the declared ALU class's feature"
+  ],
+  "notes": "Every EGL_PLATFORM_ANGLE_ANGLE display Gecko asks ANGLE for carries the ANGLE feature of the declared arithmetic class (zoom.stealth.webgl.alu_class), through the display's feature overrides; the logic is in gfx/gl/StealthAngleAlu.cpp.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-09."
+  }
+ },
+ {
   "file": "gfx/gl/gtest/moz.build",
   "category": "spoof",
   "feature": "webgl-multisample",
   "prefs": [
    "webgl.msaa-samples"
   ],
-  "added": 1,
+  "added": 3,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "after the UNIFIED_SOURCES list (TestColorspaces.cpp)",
   "evidence": [
-   "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
+   "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)",
+   "+UNIFIED_SOURCES += [\"TestStealthAngleAlu.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)",
+   "+LOCAL_INCLUDES += [\"/third_party/angle/include\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)"
   ],
-  "notes": "Builds TestStealthGLMultisample.cpp.",
+  "notes": "Builds TestStealthGLMultisample.cpp and, for fingerprint/webgl/angle-nv-math, TestStealthAngleAlu.cpp with ANGLE's include directory (the test calls the translator).",
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
@@ -2958,16 +2982,17 @@
   "prefs": [
    "webgl.msaa-samples"
   ],
-  "added": 1,
+  "added": 2,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "after the SOURCES list (GLScreenBuffer.cpp)",
   "evidence": [
-   "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
+   "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)",
+   "+UNIFIED_SOURCES += [\"StealthAngleAlu.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)"
   ],
-  "notes": "Builds StealthGLMultisample.cpp.",
+  "notes": "Builds StealthGLMultisample.cpp and, for fingerprint/webgl/angle-nv-math, StealthAngleAlu.cpp.",
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
@@ -5428,6 +5453,116 @@
   "anchor": "TEST(StartupCache, WritesNeverLowerIOPriority) (new)",
   "evidence": [],
   "notes": "Fix of a 157 priority inversion (commit 044fdc985f): StartupCache writes no longer take nsAutoLowPriorityIO, whose THREAD_MODE_BACKGROUND_BEGIN starved the writer while it held mTableLock and so the main thread in GetBuffer() (7-27 s stalls with eleven browsers). 151 had no lowered priority here."
+ },
+ {
+  "file": "third_party/angle/include/GLSLANG/ShaderLang.h",
+  "category": "spoof",
+  "feature": "webgl-angle-nv-math",
+  "prefs": [
+   "zoom.stealth.webgl.alu_class"
+  ],
+  "added": 4,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after expandFragmentOutputsToVec4 in ShCompileOptions",
+  "evidence": [
+   "+    uint64_t stealthAluNvidia : 1;"
+  ],
+  "notes": "The ShCompileOptions bit that asks the HLSL output for the NVIDIA fma chain. Part of ANGLE patch 0021; it enters the shader cache key by itself.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-09."
+  }
+ },
+ {
+  "file": "third_party/angle/include/platform/autogen/FeaturesD3D_autogen.h",
+  "category": "spoof",
+  "feature": "webgl-angle-nv-math",
+  "prefs": [
+   "zoom.stealth.webgl.alu_class"
+  ],
+  "added": 6,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the last FeatureInfo of FeaturesD3D",
+  "evidence": [
+   "+        \"stealthAluNvidia\","
+  ],
+  "notes": "The D3D feature the declared NVIDIA classes turn on. Part of ANGLE patch 0021.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-09."
+  }
+ },
+ {
+  "file": "third_party/angle/src/compiler/translator/hlsl/OutputHLSL.cpp",
+  "category": "spoof",
+  "feature": "webgl-angle-nv-math",
+  "prefs": [
+   "zoom.stealth.webgl.alu_class"
+  ],
+  "added": 19,
+  "removed": 0,
+  "hunks": 4,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the ResourcesHLSL.h include, in the OutputHLSL constructor, in OutputHLSL::header, and at the top of case EOpDot in visitAggregate",
+  "evidence": [
+   "+                    mUsesNvMath = true;"
+  ],
+  "notes": "With ShCompileOptions::stealthAluNvidia on, float dot() of two, three or four components is emitted as nv_dot2/3/4 and the shader header defines the helpers (text in StealthNvMath.h), only in a shader that uses one. With it off not one character of the HLSL changes; Mozilla's dot() line is left as it is. Part of ANGLE patch 0021.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-09."
+  }
+ },
+ {
+  "file": "third_party/angle/src/compiler/translator/hlsl/OutputHLSL.h",
+  "category": "spoof",
+  "feature": "webgl-angle-nv-math",
+  "prefs": [
+   "zoom.stealth.webgl.alu_class"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after mRequiresIEEEStrictCompiling",
+  "evidence": [
+   "+    bool mUsesNvMath;"
+  ],
+  "notes": "The flag that a shader uses one of the NVIDIA helpers. Part of ANGLE patch 0021.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-09."
+  }
+ },
+ {
+  "file": "third_party/angle/src/libANGLE/renderer/d3d/ShaderD3D.cpp",
+  "category": "spoof",
+  "feature": "webgl-angle-nv-math",
+  "prefs": [
+   "zoom.stealth.webgl.alu_class"
+  ],
+  "added": 4,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after allowTranslateUniformBlockToStructuredBuffer in ShaderD3D::compile",
+  "evidence": [
+   "+        options->stealthAluNvidia = true;"
+  ],
+  "notes": "Fills the ShCompileOptions bit from the D3D feature. Part of ANGLE patch 0021.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-09."
+  }
  },
  {
   "file": "third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc",

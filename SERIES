@@ -67,6 +67,7 @@ fingerprint/screen-window/geometry
 fingerprint/screen-window/occlusion
 fingerprint/screen-window/popup-position
 fingerprint/screen-window/screen
+fingerprint/webgl/angle-nv-math
 fingerprint/webgl/multisample
 fingerprint/webgl/own-gl
 fingerprint/webgl/parameters

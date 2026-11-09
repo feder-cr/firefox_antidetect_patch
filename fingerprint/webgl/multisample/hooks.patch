@@ -27,26 +27,29 @@ index d6c5caf5691f63252ce75c69a091c18351a330a9..6606d0c63caf4241cf851ad8bb93b421
    if (IsExtensionSupported(GLContext::ARB_pixel_buffer_object)) {
      MOZ_ASSERT(
 diff --git a/gfx/gl/gtest/moz.build b/gfx/gl/gtest/moz.build
-index 83897f8de699bd4e1d547e21f6b2f94da98ac202..32b5fd1d20070ae5cb5256441ac4c80416124809 100644
+index 83897f8de699bd4e1d547e21f6b2f94da98ac202..2db1bfeefe8e98108281ab2b08c86382e0e79f89 100644
 --- a/gfx/gl/gtest/moz.build
 +++ b/gfx/gl/gtest/moz.build
-@@ -11,6 +11,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
+@@ -11,6 +11,9 @@ include("/ipc/chromium/chromium-config.mozbuild")
  UNIFIED_SOURCES += [
      "TestColorspaces.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthGLMultisample.cpp"]  # STEALTH-HOOK(fingerprint/webgl/multisample)
++UNIFIED_SOURCES += ["TestStealthAngleAlu.cpp"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)
++LOCAL_INCLUDES += ["/third_party/angle/include"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
      UNIFIED_SOURCES += [
 diff --git a/gfx/gl/moz.build b/gfx/gl/moz.build
-index c041b023b749ba6e9ed4c7b30597a03f9d371382..cea4df1336d39648769d6310715cbbf24d3b49de 100644
+index c041b023b749ba6e9ed4c7b30597a03f9d371382..2d62976c5ae38564372d27efab60a6231b73bc99 100644
 --- a/gfx/gl/moz.build
 +++ b/gfx/gl/moz.build
-@@ -136,6 +136,7 @@ UNIFIED_SOURCES += [
+@@ -136,6 +136,8 @@ UNIFIED_SOURCES += [
  SOURCES += [
      "GLScreenBuffer.cpp",
  ]
 +UNIFIED_SOURCES += ["StealthGLMultisample.cpp"]  # STEALTH-HOOK(fingerprint/webgl/multisample)
++UNIFIED_SOURCES += ["StealthAngleAlu.cpp"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)
  
  TEST_DIRS += [
      "gtest",

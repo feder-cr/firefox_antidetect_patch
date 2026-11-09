@@ -1,0 +1,200 @@
+From dc2a59a38e7e52ee46e49c4105c877410d6df25f Mon Sep 17 00:00:00 2001
+From: feder-cr <85809106+feder-cr@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 13:38:53 +0100
+Subject: [PATCH] Add the stealthAluNvidia feature: NVIDIA fma chain for float
+ dot() in the HLSL output
+
+---
+ include/GLSLANG/ShaderLang.h                  |  4 ++
+ .../platform/autogen/FeaturesD3D_autogen.h    |  6 ++
+ src/compiler/translator/hlsl/OutputHLSL.cpp   | 19 ++++++
+ src/compiler/translator/hlsl/OutputHLSL.h     |  1 +
+ src/compiler/translator/hlsl/StealthNvMath.h  | 66 +++++++++++++++++++
+ src/libANGLE/renderer/d3d/ShaderD3D.cpp       |  4 ++
+ 6 files changed, 100 insertions(+)
+
+diff --git a/include/GLSLANG/ShaderLang.h b/include/GLSLANG/ShaderLang.h
+index 408dfee298..afc3374540 100644
+--- a/include/GLSLANG/ShaderLang.h
++++ b/include/GLSLANG/ShaderLang.h
+@@ -487,6 +487,10 @@ struct ShCompileOptions
+     // Whether ESSL300 fragment outputs should be expanded to vec4s.
+     uint64_t expandFragmentOutputsToVec4 : 1;
+ 
++    // HLSL output only: emit float dot() of two vec2, vec3 or vec4 as the NVIDIA fma chain
++    // (nv_dot2, nv_dot3, nv_dot4: IEEE-only `precise` helpers) so every adapter gives the same bits.
++    uint64_t stealthAluNvidia : 1;
++
+     ShCompileOptionsMetal metal;
+     ShPixelLocalStorageOptions pls;
+ };
+diff --git a/include/platform/autogen/FeaturesD3D_autogen.h b/include/platform/autogen/FeaturesD3D_autogen.h
+index 4141d6bc01..caa9f812d4 100644
+--- a/include/platform/autogen/FeaturesD3D_autogen.h
++++ b/include/platform/autogen/FeaturesD3D_autogen.h
+@@ -170,6 +170,12 @@ struct FeaturesD3D : FeatureSetBase
+         &members,
+     };
+ 
++    FeatureInfo stealthAluNvidia = {
++        "stealthAluNvidia",
++        FeatureCategory::D3DWorkarounds,
++        &members,
++    };
++
+ };
+ 
+ inline FeaturesD3D::FeaturesD3D()  = default;
+diff --git a/src/compiler/translator/hlsl/OutputHLSL.cpp b/src/compiler/translator/hlsl/OutputHLSL.cpp
+index 272f3428a6..e3c60f3775 100644
+--- a/src/compiler/translator/hlsl/OutputHLSL.cpp
++++ b/src/compiler/translator/hlsl/OutputHLSL.cpp
+@@ -21,6 +21,7 @@
+ #include "compiler/translator/hlsl/BuiltInFunctionEmulatorHLSL.h"
+ #include "compiler/translator/hlsl/ImageFunctionHLSL.h"
+ #include "compiler/translator/hlsl/ResourcesHLSL.h"
++#include "compiler/translator/hlsl/StealthNvMath.h"
+ #include "compiler/translator/hlsl/StructureHLSL.h"
+ #include "compiler/translator/hlsl/TextureFunctionHLSL.h"
+ #include "compiler/translator/hlsl/TranslatorHLSL.h"
+@@ -321,6 +322,7 @@ OutputHLSL::OutputHLSL(sh::GLenum shaderType,
+     mUsesDiscardRewriting        = false;
+     mUsesNestedBreak             = false;
+     mRequiresIEEEStrictCompiling = false;
++    mUsesNvMath                  = false;
+     mUseZeroArray                = false;
+     mUsesSecondaryColor          = false;
+ 
+@@ -656,6 +658,11 @@ void OutputHLSL::header(TInfoSinkBase &out,
+         out << "#define ANGLE_REQUIRES_IEEE_STRICT_COMPILING\n";
+     }
+ 
++    if (mUsesNvMath)
++    {
++        out << "\n// NVIDIA arithmetic helpers\n\n" << kStealthNvMathHLSL;
++    }
++
+     out << "#ifdef ANGLE_ENABLE_LOOP_FLATTEN\n"
+            "#define LOOP [loop]\n"
+            "#define FLATTEN [flatten]\n"
+@@ -2385,6 +2392,18 @@ bool OutputHLSL::visitAggregate(Visit visit, TIntermAggregate *node)
+             outputTriplet(out, visit, "distance(", ", ", ")");
+             break;
+         case EOpDot:
++            if (mCompileOptions.stealthAluNvidia)
++            {
++                const int nvDotSize = node->getChildNode(0)->getAsTyped()->getNominalSize();
++                if (nvDotSize >= 2 && nvDotSize <= 4)
++                {
++                    mUsesNvMath = true;
++                    outputTriplet(out, visit,
++                                  nvDotSize == 2 ? "nv_dot2(" : nvDotSize == 3 ? "nv_dot3(" : "nv_dot4(",
++                                  ", ", ")");
++                    break;
++                }
++            }
+             outputTriplet(out, visit, "dot(", ", ", ")");
+             break;
+         case EOpCross:
+diff --git a/src/compiler/translator/hlsl/OutputHLSL.h b/src/compiler/translator/hlsl/OutputHLSL.h
+index dd592e80bc..5dad6c5386 100644
+--- a/src/compiler/translator/hlsl/OutputHLSL.h
++++ b/src/compiler/translator/hlsl/OutputHLSL.h
+@@ -217,6 +217,7 @@ class OutputHLSL : public TIntermTraverser
+     bool mUsesDiscardRewriting;
+     bool mUsesNestedBreak;
+     bool mRequiresIEEEStrictCompiling;
++    bool mUsesNvMath;
+     mutable bool mUseZeroArray;
+     bool mUsesSecondaryColor;
+ 
+diff --git a/src/compiler/translator/hlsl/StealthNvMath.h b/src/compiler/translator/hlsl/StealthNvMath.h
+new file mode 100644
+index 0000000000..5a6e05d8ff
+--- /dev/null
++++ b/src/compiler/translator/hlsl/StealthNvMath.h
+@@ -0,0 +1,66 @@
++//
++// Copyright 2026 The ANGLE Project Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++//
++// StealthNvMath.h:
++//   The HLSL helpers that give float dot() of two, three or four components the bits of the
++//   NVIDIA hardware with IEEE-only arithmetic. OutputHLSL writes them into the shader header
++//   when ShCompileOptions::stealthAluNvidia is on and the shader uses one.
++//
++
++#ifndef COMPILER_TRANSLATOR_HLSL_STEALTHNVMATH_H_
++#define COMPILER_TRANSLATOR_HLSL_STEALTHNVMATH_H_
++
++namespace sh
++{
++
++// Text of reimpl/angle_nv/nv_math.hlsl of the invisible_D3D11Core study, verbatim (every
++// operation `precise`).
++constexpr char kStealthNvMathHLSL[] = R"HLSL(// HLSL helpers that reproduce NVIDIA arithmetic with IEEE float32 only (every operation `precise`).
++// Same text on every adapter; bit-exact against the RTX 5080 (see scripts/nv_dot_proto.py).
++// fma_nv(a,b,c) = RN(a*b + c), ONE rounding: TwoProd (Dekker/Veltkamp split) + TwoSum + round-to-odd (Boldo-Melquiond).
++// Domain: finite values whose products and splits do not overflow (|x| < 2^100) and no denormal intermediates.
++precise float2 nv_two_sum(precise float a, precise float b) {
++  precise float s = a + b;
++  precise float bb = s - a;
++  precise float e = (a - (s - bb)) + (b - bb);
++  return float2(s, e);
++}
++precise float2 nv_split(precise float x) {
++  precise float t = 4097.0 * x;
++  precise float hi = t - (t - x);
++  return float2(hi, x - hi);
++}
++precise float2 nv_two_prod(precise float a, precise float b) {
++  precise float p = a * b;
++  precise float2 sa = nv_split(a);
++  precise float2 sb = nv_split(b);
++  precise float e = ((sa.x * sb.x - p) + sa.x * sb.y + sa.y * sb.x) + sa.y * sb.y;
++  return float2(p, e);
++}
++precise float nv_round_to_odd_add(precise float x, precise float y) {
++  precise float2 s = nv_two_sum(x, y);
++  uint bits = asuint(s.x);
++  if (s.y != 0.0 && (bits & 1u) == 0u) {
++    bool same_sign = (s.y > 0.0) == (s.x > 0.0);
++    bits = same_sign ? bits + 1u : bits - 1u;
++  }
++  return asfloat(bits);
++}
++precise float nv_fma(precise float a, precise float b, precise float c) {
++  precise float2 u = nv_two_prod(a, b);
++  precise float2 t = nv_two_sum(c, u.x);
++  precise float v = nv_round_to_odd_add(t.y, u.y);
++  precise float z = t.x + v;
++  return z;
++}
++// dot, length(squared part), distance(squared part): one fma chain, left to right, first product rounded.
++precise float nv_dot2(precise float2 a, precise float2 b) { precise float t = a.x * b.x; return nv_fma(a.y, b.y, t); }
++precise float nv_dot3(precise float3 a, precise float3 b) { precise float t = a.x * b.x; t = nv_fma(a.y, b.y, t); return nv_fma(a.z, b.z, t); }
++precise float nv_dot4(precise float4 a, precise float4 b) { precise float t = a.x * b.x; t = nv_fma(a.y, b.y, t); t = nv_fma(a.z, b.z, t); return nv_fma(a.w, b.w, t); }
++)HLSL";
++
++}  // namespace sh
++
++#endif  // COMPILER_TRANSLATOR_HLSL_STEALTHNVMATH_H_
+diff --git a/src/libANGLE/renderer/d3d/ShaderD3D.cpp b/src/libANGLE/renderer/d3d/ShaderD3D.cpp
+index 33351fd4cb..22cb1ca441 100644
+--- a/src/libANGLE/renderer/d3d/ShaderD3D.cpp
++++ b/src/libANGLE/renderer/d3d/ShaderD3D.cpp
+@@ -323,6 +323,10 @@ std::shared_ptr<ShaderTranslateTask> ShaderD3D::compile(const gl::Context *conte
+     {
+         options->allowTranslateUniformBlockToStructuredBuffer = true;
+     }
++    if (features.stealthAluNvidia.enabled)
++    {
++        options->stealthAluNvidia = true;
++    }
+     if (extensions.multiviewOVR)
+     {
+         options->initializeBuiltinsForInstancedMultiview = true;
+-- 
+2.55.0.windows.5
+

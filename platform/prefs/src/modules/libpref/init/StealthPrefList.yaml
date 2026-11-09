@@ -308,6 +308,19 @@
   value: ""
   mirror: always
 
+# The arithmetic class of the GPU the persona declares, for the HLSL ANGLE emits
+# for WebGL (Windows). 0 = the HLSL of the host's own adapter, byte for byte as
+# without this pref. 1 = NVIDIA Maxwell and Pascal, 2 = NVIDIA Volta and later:
+# float dot() of two, three or four components is emitted as the fma chain of
+# the NVIDIA hardware (IEEE-only `precise` helpers, the same text and the same
+# bits on every adapter), the same for both classes. Read where the ANGLE
+# display is created (gfx/gl/StealthAngleAlu.h) and passed to ANGLE as the
+# feature `stealthAluNvidia`. Declared by invisible_core.
+- name: zoom.stealth.webgl.alu_class
+  type: RelaxedAtomicInt32
+  value: 0
+  mirror: always
+
 # Lo STILE DI HINTING con cui FreeType carica un glifo, e se l'antialias e'
 # acceso. Sono i due soli parametri, dei sei che `PrepareFontOptions` chiedeva
 # al pattern fontconfig, che spostano i pixel: misurato il 2026-08-16, un
