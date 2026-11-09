@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "ScaledFontFontconfig.h"
+#include "UnscaledFontFreeType.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceDefs.h"

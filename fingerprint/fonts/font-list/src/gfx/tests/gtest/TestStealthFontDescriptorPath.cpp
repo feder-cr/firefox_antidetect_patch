@@ -80,8 +80,10 @@ TEST(StealthFontDescriptorPath, UntrustedIndex)
         path.size(), aIndex);
   };
   // Bit 31 (negative for FreeType) is refused at once.
-  EXPECT_FALSE(make(0x80000000u));
-  EXPECT_FALSE(make(0xffffffffu));
+  RefPtr<UnscaledFont> negative = make(0x80000000u);
+  EXPECT_FALSE(negative);
+  RefPtr<UnscaledFont> allBits = make(0xffffffffu);
+  EXPECT_FALSE(allBits);
   // Out-of-range face, non-existent instance, or both: no crash. The face is
   // opened later by FreeType (UnscaledFontFreeType::InitFace), which fails for
   // an index that does not exist, and CreateScaledFont answers nullptr; here
@@ -89,7 +91,9 @@ TEST(StealthFontDescriptorPath, UntrustedIndex)
   for (uint32_t index : {0u, 7u, 0xffffu, 0x10000u, 0x10005u, 0x7fffffffu}) {
     RefPtr<UnscaledFont> font = make(index);
     if (font) {
-      EXPECT_FALSE(font->CreateScaledFont(12.0f, nullptr, 0, nullptr, 0));
+      RefPtr<ScaledFont> scaled =
+          font->CreateScaledFont(12.0f, nullptr, 0, nullptr, 0);
+      EXPECT_FALSE(scaled);
     }
   }
 }
