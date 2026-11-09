@@ -77,10 +77,10 @@ RELEASE_BRANCH = "main"
 AUTOMATIC_EVENTS = ("push", "schedule")
 # What an automatic candidate runs, and what a run by hand runs when its input is
 # empty: the same list as release.yml's gtest_filter default. By prefix, so that a
-# gtest of ours is run without anyone adding it here (the Stealth*, Idwr* and FFVPXAac*
+# gtest of ours is run without anyone adding it here (the Stealth*, Idwr* and FFVPX*
 # suites, and the one test we added to Mozilla's StartupCache suite);
 # scripts/test_release_plan.py fails on a gtest of ours that this does not name.
-DEFAULT_GTEST_FILTER = ("Stealth*.*:Idwr*.*:FFVPXAac*.*:"
+DEFAULT_GTEST_FILTER = ("Stealth*.*:Idwr*.*:FFVPX*.*:"
                         "StartupCache.WritesNeverLowerIOPriority")
 DEFAULT_REF = "main"
 

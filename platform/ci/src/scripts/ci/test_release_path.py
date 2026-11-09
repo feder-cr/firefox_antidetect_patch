@@ -42,7 +42,7 @@ ROOT = HERE.parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 # The default filter of the plan and of release.yml: the engine's own gtests by prefix
 # (the run 41402916724 that went green ran a hand-written list, all of it inside this).
-GREEN_FILTER = ("Stealth*.*:Idwr*.*:FFVPXAac*.*:"
+GREEN_FILTER = ("Stealth*.*:Idwr*.*:FFVPX*.*:"
                 "StartupCache.WritesNeverLowerIOPriority")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.

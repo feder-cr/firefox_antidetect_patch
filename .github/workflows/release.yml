@@ -98,7 +98,7 @@ on:
         # The engine's own gtests by prefix: a new one runs without anyone listing it
         # (scripts/test_release_plan.py fails on one that this does not name).
         description: "gtests=true only: which, as mach gtest takes them; * is all, and has never gone green here"
-        default: 'Stealth*.*:Idwr*.*:FFVPXAac*.*:StartupCache.WritesNeverLowerIOPriority'
+        default: 'Stealth*.*:Idwr*.*:FFVPX*.*:StartupCache.WritesNeverLowerIOPriority'
       relaunch_of:
         description: >
           Set by the watch of a run whose machine was lost, to that run's id: this run
