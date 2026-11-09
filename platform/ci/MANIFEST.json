@@ -27,6 +27,8 @@
   "scripts/ci/lavapipe/0007-cpu-profile-with-f16c-without-fma.patch": "100644",
   "scripts/ci/lavapipe/0008-lavapipe-limits-it-honours.patch": "100644",
   "scripts/ci/lavapipe/0009-gallium-gl-glibc-floor-thread-atexit.patch": "100644",
+  "scripts/ci/lavapipe/0010-llvmpipe-unorm-blend-in-float.patch": "100644",
+  "scripts/ci/lavapipe/0011-llvmpipe-mediump-is-highp.patch": "100644",
   "scripts/ci/lavapipe/VERSIONS.json": "100644",
   "scripts/ci/lavapipe/proof/big.comp": "100644",
   "scripts/ci/lavapipe/proof/gl_proof.c": "100644",

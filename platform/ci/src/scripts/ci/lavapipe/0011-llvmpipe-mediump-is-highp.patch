@@ -1,0 +1,44 @@
+--- a/src/gallium/auxiliary/gallivm/lp_bld_limits.h
++++ b/src/gallium/auxiliary/gallivm/lp_bld_limits.h
+@@ -107,11 +107,20 @@
+    caps->indirect_const_addr = true;
+    caps->subroutines = true;
+    caps->integers = true;
++   /*
++    * Firefox's bundled llvmpipe: mediump and lowp are 32-bit, floats and ints.
++    * Direct3D 11 computes them at 32 bit, and the precision formats declared to
++    * pages already say so (float 127/127/23, int 31/30/0). With fp16 or int16 on,
++    * GLSL ES lowers every mediump/lowp value to 16 bits, and with the default
++    * lowp sampler precision that includes every texture fetch: an 8-bit texel
++    * comes back up to 0.12 LSB off its exact byte/255 value, and a mediump int
++    * wraps at 16 bits. lavapipe keeps its own shaderFloat16 (lvp_device.c).
++    */
+    caps->fp16 =
+-   caps->fp16_derivatives = lp_has_fp16();
++   caps->fp16_derivatives = false;
+    //enabling this breaks GTF-GL46.gtf21.GL2Tests.glGetUniform.glGetUniform
+    caps->fp16_const_buffers = false;
+-   caps->int16 = true;
++   caps->int16 = false;
+    caps->glsl_16bit_consts = true;
+    caps->glsl_16bit_load_dst = true;
+    caps->max_texture_samplers = PIPE_MAX_SAMPLERS;
+--- a/src/gallium/frontends/lavapipe/lvp_device.c
++++ b/src/gallium/frontends/lavapipe/lvp_device.c
+@@ -31,6 +31,7 @@
+ #include "vk_sampler.h"
+ #include "vk_util.h"
+ #include "util/detect.h"
++#include "util/u_cpu_detect.h"
+ #include "pipe/p_defines.h"
+ #include "pipe/p_state.h"
+ #include "pipe/p_context.h"
+@@ -505,7 +506,7 @@
+       .storagePushConstant8 = true,
+       .shaderBufferInt64Atomics = true,
+       .shaderSharedInt64Atomics = true,
+-      .shaderFloat16 = pdevice->pscreen->shader_caps[MESA_SHADER_FRAGMENT].fp16,
++      .shaderFloat16 = util_get_cpu_caps()->has_f16c || DETECT_ARCH_AARCH64,
+       .shaderInt8 = true,
+ 
+       .descriptorIndexing = true,

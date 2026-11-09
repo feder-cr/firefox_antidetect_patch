@@ -39,7 +39,10 @@ libgallium-<mesa>.so they need, found next to them through RUNPATH $ORIGIN),
 surfaceless only, with no GLX, no glvnd and no window-system platform. Before,
 WebGL drew on whatever GL the host had: its Mesa version, or its GPU driver,
 decided which extensions could be served and every pixel. 0001, 0002, 0003 and
-0007 reach llvmpipe as they reach lavapipe; 0009 is 0005 for libgallium. Every
+0007 reach llvmpipe as they reach lavapipe; 0009 is 0005 for libgallium. 0010 and
+0011 make what a page reads back as Windows' Direct3D 11 gives it: blending on a
+UNORM target is done in float on the unquantized shader output and rounded once
+(0010), and mediump and lowp stay 32-bit (0011). Every
 build proves the GL by drawing with it (scripts/ci/lavapipe/proof/gl_proof.c).
 Firefox loads the three files by path and never the host's libEGL
 (gfx/gl/StealthOwnGL.h); without them WebGL has no context.
