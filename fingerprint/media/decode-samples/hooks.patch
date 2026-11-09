@@ -125,6 +125,68 @@ index 28aa34283ae2efc0fb8be6f73026695a71930702..16c5f6faa19925be7e74261fbd0ec755
        // Audio only supports software decode
        return media::DecodeSupport::SoftwareDecode;
      }
+diff --git a/dom/media/webcodecs/DecoderTemplate.cpp b/dom/media/webcodecs/DecoderTemplate.cpp
+index 5875dbc122cb1eb4d6de0f31bbb0d62ee51e8d91..009a1796c4916fb45926f6792821d118f6687a09 100644
+--- a/dom/media/webcodecs/DecoderTemplate.cpp
++++ b/dom/media/webcodecs/DecoderTemplate.cpp
+@@ -9,6 +9,7 @@
+ 
+ #include "DecoderTypes.h"
+ #include "MediaInfo.h"
++#include "StealthDeclarationGate.h"  // STEALTH-HOOK(fingerprint/media/decode-samples)
+ #include "mozilla/ScopeExit.h"
+ #include "mozilla/Try.h"
+ #include "mozilla/dom/DOMException.h"
+@@ -54,6 +55,15 @@ namespace mozilla::dom {
+ #define AUTO_DECODER_MARKER(var, postfix) \
+   AutoWebCodecsMarker var(DecoderType::Name.get(), postfix);
+ 
++// STEALTH-HOOK(fingerprint/media/decode-samples)
++// See the declaration in DecoderTemplate.h.
++bool ShouldPreferSoftwareDecoder(HardwareAcceleration aPref) {
++  if (mozilla::gfx::StealthEngineActive()) {
++    return true;
++  }
++  return aPref == HardwareAcceleration::Prefer_software;
++}
++
+ /*
+  * Below are ControlMessage classes implementations
+  */
+@@ -521,8 +531,8 @@ MessageProcessedResult DecoderTemplate<DecoderType>::ProcessConfigureMessage(
+   LOG("{} {} now blocks message-queue-processing", DecoderType::Name.get(),
+       fmt::ptr(this));
+ 
+-  bool preferSW = mActiveConfig->mHardwareAcceleration ==
+-                  HardwareAcceleration::Prefer_software;
++  bool preferSW =
++      ShouldPreferSoftwareDecoder(mActiveConfig->mHardwareAcceleration);
+   bool lowLatency = mActiveConfig->mOptimizeForLatency.isSome() &&
+                     mActiveConfig->mOptimizeForLatency.value();
+ 
+diff --git a/dom/media/webcodecs/DecoderTemplate.h b/dom/media/webcodecs/DecoderTemplate.h
+index 49da895d89d501cc370f9676689cae1471464287..4401966a965d5a20595e31e08ce330a932bbc5af 100644
+--- a/dom/media/webcodecs/DecoderTemplate.h
++++ b/dom/media/webcodecs/DecoderTemplate.h
+@@ -28,6 +28,18 @@ namespace dom {
+ class WebCodecsErrorCallback;
+ class Promise;
+ enum class CodecState : uint8_t;
++enum class HardwareAcceleration : uint8_t;
++
++// STEALTH-HOOK(fingerprint/media/decode-samples)
++// Whether the decoder must run in software, regardless of what the page's
++// `hardwareAcceleration` asked for. With the engine on, WebCodecs' D3D11/DXVA
++// hardware path does its NV12->RGB conversion in the GPU
++// (ID3D11VideoContext::VideoProcessorBlt), which depends on the driver - a
++// host dependency (invisible_WebCodecs/notes/nv12-rgb-conversion.md). So the
++// engine always decodes in software (libyuv, fixed Firefox code) and never
++// lets the page's preference reach the agent. With the engine off this is
++// stock Firefox: only an explicit "prefer-software" asks for software.
++bool ShouldPreferSoftwareDecoder(HardwareAcceleration aPref);
+ 
+ template <typename DecoderType>
+ class DecoderTemplate : public DOMEventTargetHelper {
 diff --git a/media/ffvpx/README_MOZILLA b/media/ffvpx/README_MOZILLA
 index 04af9ff38aa59b36b5e558dc8550c07ea97d1c2a..c26fe94a68c185a4813bcab32e9df13a36c02f07 100644
 --- a/media/ffvpx/README_MOZILLA

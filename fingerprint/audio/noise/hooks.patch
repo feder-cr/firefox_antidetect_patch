@@ -1,13 +1,14 @@
 diff --git a/dom/media/gtest/moz.build b/dom/media/gtest/moz.build
-index 392fef3d32dd2835fc68c1411910feeec77e2ab5..546c548b995a55a882f5de8afdc4f2f188eb7c21 100644
+index 392fef3d32dd2835fc68c1411910feeec77e2ab5..823e8853aa305477fce97e74112af6a8b12ecec5 100644
 --- a/dom/media/gtest/moz.build
 +++ b/dom/media/gtest/moz.build
-@@ -101,6 +101,8 @@ UNIFIED_SOURCES += [
+@@ -101,6 +101,9 @@ UNIFIED_SOURCES += [
      "TestYUVBufferGenerator.cpp",
      "YUVBufferGenerator.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthAudioNoise.cpp"]  # STEALTH-HOOK(fingerprint/audio/noise)
 +UNIFIED_SOURCES += ["TestStealthMediaDeclaration.cpp"]  # STEALTH-HOOK(fingerprint/media/decode-declaration)
++UNIFIED_SOURCES += ["TestStealthWebCodecsSoftwareDecode.cpp"]  # STEALTH-HOOK(fingerprint/media/decode-samples)
  
  if CONFIG["MOZ_WEBRTC"]:
      LOCAL_INCLUDES += [

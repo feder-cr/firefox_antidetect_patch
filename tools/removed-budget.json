@@ -24,6 +24,7 @@
  "dom/interfaces/base/nsIDOMWindowUtils.idl": 1,
  "dom/media/MediaManager.cpp": 13,
  "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp": 1,
+ "dom/media/webcodecs/DecoderTemplate.cpp": 2,
  "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp": 1,
  "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp": 6,
  "dom/quota/OriginOperations.cpp": 1,

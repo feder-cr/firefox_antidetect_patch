@@ -377,6 +377,7 @@ jobs:
             tests/test_webgl2_exists_without_host_mesa_linux_e2e.py \
             tests/test_webcodecs_h264_without_host_libavcodec_linux_e2e.py \
             tests/test_webcodecs_h264_bframe_pts_order_e2e.py \
+            tests/test_webcodecs_h264_software_decode_ignores_hardware_request_e2e.py \
             tests/test_fontconfig_reads_nothing_of_the_host_linux_e2e.py \
             tests/test_math_sin_cos_tan_are_windows_e2e.py \
             tests/test_css_calc_is_windows_e2e.py \

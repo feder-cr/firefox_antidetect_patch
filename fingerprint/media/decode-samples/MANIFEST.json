@@ -3,6 +3,8 @@
   "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp",
   "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h",
   "dom/media/platforms/wmf/WMFDecoderModule.cpp",
+  "dom/media/webcodecs/DecoderTemplate.cpp",
+  "dom/media/webcodecs/DecoderTemplate.h",
   "media/ffvpx/README_MOZILLA",
   "media/ffvpx/config_components_audio_video.h",
   "media/ffvpx/config_override.h",
@@ -20,6 +22,7 @@
   "media/ffvpx/moz.build"
  ],
  "added": {
+  "dom/media/gtest/TestStealthWebCodecsSoftwareDecode.cpp": "100644",
   "media/ffvpx/config_components.asm": "100644",
   "media/ffvpx/gtest/TestFFVPXAac.cpp": "100644",
   "media/ffvpx/gtest/TestFFVPXH264BFramePts.cpp": "100644",
@@ -291,6 +294,49 @@
     "+        return media::DecodeSupportSet{};"
    ],
    "notes": "With the engine's identity declared, WMFDecoderModule refuses to support audio (so AAC) at all: the host's own msauddecmft.dll varies by Windows build, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs, so without this hook AAC would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port that equals a specific declared Media Foundation. Video (H.264/HEVC, the DXVA hardware path) is unaffected: only the audio branch returns early.",
+   "verifier": {
+    "changed": [],
+    "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
+   }
+  },
+  {
+   "file": "dom/media/webcodecs/DecoderTemplate.cpp",
+   "category": "port-fix",
+   "feature": "ffvpx-decoders-no-host-libavcodec",
+   "prefs": [],
+   "added": 12,
+   "removed": 2,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "hard",
+   "anchor": "DecoderTemplate<DecoderType>::ProcessConfigureMessage, the preferSW computation",
+   "evidence": [
+    "+bool ShouldPreferSoftwareDecoder(HardwareAcceleration aPref) {",
+    "+  if (mozilla::gfx::StealthEngineActive()) {",
+    "+    return true;",
+    "+  }"
+   ],
+   "notes": "ProcessConfigureMessage's preferSW now comes from ShouldPreferSoftwareDecoder (declared in DecoderTemplate.h) instead of reading mActiveConfig->mHardwareAcceleration inline: with the engine declared it always returns true, so WebCodecs decode never takes the D3D11/DXVA hardware path, whatever the page's VideoDecoderConfig.hardwareAcceleration asks for. REA (invisible_WebCodecs/notes/nv12-rgb-conversion.md) found that path's NV12->RGB conversion for copyTo() runs on the GPU (ID3D11VideoContext::VideoProcessorBlt, driver-dependent) -- a host dependency. With the engine off, behaves exactly as before (follows the page's own preference).",
+   "verifier": {
+    "changed": [],
+    "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
+   }
+  },
+  {
+   "file": "dom/media/webcodecs/DecoderTemplate.h",
+   "category": "port-fix",
+   "feature": "ffvpx-decoders-no-host-libavcodec",
+   "prefs": [],
+   "added": 12,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "hard",
+   "anchor": "DecoderTemplate<DecoderType>::ProcessConfigureMessage, the preferSW computation",
+   "evidence": [
+    "+bool ShouldPreferSoftwareDecoder(HardwareAcceleration aPref);"
+   ],
+   "notes": "Declares ShouldPreferSoftwareDecoder and documents why (the host-dependent hardware NV12->RGB conversion found by REA), with a forward declaration of enum class HardwareAcceleration so the header doesn't need the full WebCodecs IDL binding.",
    "verifier": {
     "changed": [],
     "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."

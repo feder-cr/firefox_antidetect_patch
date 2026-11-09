@@ -221,6 +221,7 @@ OWN_FILES = [
     (r"^js/src/vm/StealthStackFrames\.", "fingerprint/js-surface/stack-frames"),
     (r"^gfx/2d/StealthRecordedProjection\.", "fingerprint/canvas/noise-projection"),
     (r"^dom/workers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
+    (r"^dom/media/gtest/TestStealthWebCodecsSoftwareDecode\.", "fingerprint/media/decode-samples"),
     (r"^dom/media/webspeech/synth/test/test_stealth_voices\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/webspeech/synth/StealthSpeechVoice\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/webspeech/synth/StealthSpeechVoices\.", "fingerprint/media/speech-voices"),

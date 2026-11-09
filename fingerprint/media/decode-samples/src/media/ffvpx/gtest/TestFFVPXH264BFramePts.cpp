@@ -174,7 +174,23 @@ bool DecodeAllFrames(nsTArray<std::pair<int64_t, int64_t>>& aOut) {
   info.mMimeType = "video/avc"_ns;
   info.mExtraData = avcc;
 
+  // PDMFactory::CreateDefaultPDMs tries WMFDecoderModule before ffvpx for
+  // ANY video codec it supports (StartupPDM order), unconditionally -- there
+  // is no engine-on hook on the video branch of WMFDecoderModule::Supports
+  // (unlike audio; H.264/HEVC through WMF's real DXVA path is retail
+  // behaviour we keep for the browser). A plain gtest process has no real
+  // compositor/GPU process behind it, and WMFVideoMFTManager::Init() crashed
+  // the whole binary rather than failing cleanly when probed that way
+  // (candidate gtest-reports-win-x86_64: "FFVPXH264: exited 1, left no
+  // report"). This test means to exercise ffvpx specifically ("the raw
+  // ffvpx decoder" below), so WMF is kept out of the PDM list entirely
+  // (media.wmf.enabled=false) instead of relying on ordering;
+  // CreateVideoDecoder/AsyncCreateDecoder are protected on
+  // PlatformDecoderModule (friends only: PDMFactory, EMEDecoderModule,
+  // RemoteDecoderModule, MediaChangeMonitor), so PDMFactory::CreateDecoder
+  // is the only public way in, same as every other gtest in this tree.
   ScopedPrefSetter decoderPrefs({
+      {"media.wmf.enabled", false},
       {"media.gpu-process-decoder", false},
       {"media.rdd-process.enabled", false},
       {"media.utility-process.enabled", false},
