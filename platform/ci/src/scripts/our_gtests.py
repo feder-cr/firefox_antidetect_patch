@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""The engine's own gtests, read from the source: every TEST, TEST_F and TEST_P that the
-series adds to Mozilla's tree (a file we add whole, and the TEST lines we add to a Mozilla
-file), by `git diff` against the tag of the Firefox it is applied to.
+"""The engine's own gtests, read from the series: every TEST, TEST_F and TEST_P that the
+series adds to Mozilla's tree (a file it adds whole, from its MANIFEST.json and src/, and
+the TEST lines its hooks.patch adds to a Mozilla file).
+
+The series is the source of the list, never a `git diff` against Mozilla's tag: the tree a
+job builds is made by `engine.py materialize`, which may borrow its objects from another
+checkout and has no ref for the tag. A tree that is read through git can be unreadable; the
+series is files, read the same everywhere, with or without git.
 
 Two places need that list and read it from here, never from a copy of their own:
   - scripts/test_release_plan.py: every one is named by the default gtest filter;
   - scripts/ci/gtest_run.py: every one the filter selects was run, in the reports.
 
-    python3 scripts/our_gtests.py --tree DIR [--base REF] [--out FILE]
+    python3 scripts/our_gtests.py [--series DIR] [--out FILE]
 
 prints (or writes) one `Suite.Test` per line, a TEST_P as `X/Suite.Test/0`: the form
 gtest_matches() takes. The build job writes it beside the binaries of the gtest jobs,
@@ -16,17 +21,18 @@ which have no source tree (gtest-run/our-gtests.txt); gtest_run.py reads it ther
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
-#: The tree to read the gtests from (default: the tree this script is in) and the
-#: git ref that is Mozilla's, to tell what is ours (default: the tag that
-#: browser/config/upstream_source.txt names, FIREFOX_<version>_RELEASE).
-GTEST_ROOT_ENV, GTEST_BASE_ENV = "ENGINE_GTEST_ROOT", "ENGINE_GTEST_BASE"
+#: The series to read the gtests from. Default: the `.series` beside the tree the jobs
+#: check out (see release.yml), else the series this script is in (the script is at
+#: platform/ci/src/scripts/ in it).
+SERIES_ROOT_ENV = "ENGINE_SERIES_ROOT"
 GTEST_DEFINITION = re.compile(r"^\s*(TEST|TEST_F|TEST_P)\(\s*(\w+)\s*,\s*(\w+)\s*\)", re.MULTILINE)
+SOURCE_SUFFIXES = (".cpp", ".cc", ".mm")
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -47,64 +53,98 @@ def suite_of(name: str) -> str:
     return name.split(".", 1)[0].rsplit("/", 1)[-1]
 
 
-def base_ref(root: Path) -> str:
-    if os.environ.get(GTEST_BASE_ENV):
-        return os.environ[GTEST_BASE_ENV]
-    text = (root / "browser" / "config" / "upstream_source.txt").read_text(encoding="utf-8")
-    version = next(l.split("=", 1)[1].strip() for l in text.splitlines() if l.startswith("version="))
-    return "FIREFOX_%s_RELEASE" % version.replace(".", "_")
+def is_series(path: Path) -> bool:
+    return (path / "SERIES").is_file() and (path / "UPSTREAM.json").is_file()
 
 
-def our_gtests(root: Path, base: str) -> list:
-    """(file, `Suite.Test`, macro) for every test the tree adds to Mozilla's `base`: a file
-    we add whole, and the TEST lines we add to a Mozilla file, as committed (the tree a
-    candidate builds is a commit: `engine.py materialize`). Raises OSError with what to fix."""
-    if not root.is_dir():
-        raise OSError("the tree to read the gtests from, %s, does not exist (set %s)" % (root, GTEST_ROOT_ENV))
-    git = ["git", "-c", "safe.directory=*", "-C", str(root)]
-    try:
-        done = subprocess.run(git + ["diff", "-U0", "--no-color", "--no-ext-diff", base, "HEAD", "--", "*.cpp", "*.cc", "*.mm"],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
-    except FileNotFoundError as exc:
-        raise OSError("git is not installed: our gtests are what differs from Mozilla's %s" % base) from exc
-    if done.returncode:
-        raise OSError("git diff %s in %s failed (not a git tree, or no such ref; set %s): %s"
-                      % (base, root, GTEST_BASE_ENV, done.stderr.strip()[-300:]))
-    added, found, name = {}, [], None
-    for line in done.stdout.splitlines():
-        if line.startswith("+++ "):
-            name = line[6:] if line.startswith("+++ b/") else None
-        elif name and line.startswith("+"):
-            added.setdefault(name, []).append(line[1:])
-    for name, lines in sorted(added.items()):
-        for m in GTEST_DEFINITION.finditer(chr(10).join(lines)):
-            # a TEST_P runs as `Instantiation/Suite.Test/N`, any instantiation: the filter must name that
-            full = "X/%s.%s/0" % (m.group(2), m.group(3)) if m.group(1) == "TEST_P" else "%s.%s" % (m.group(2), m.group(3))
-            found.append((name, full, m.group(1)))
+def series_root() -> Path:
+    """The series to read: ENGINE_SERIES_ROOT, else ROOT/.series, else the one this script is
+    in. Raises OSError, saying what to set, when there is none."""
+    if os.environ.get(SERIES_ROOT_ENV):
+        return Path(os.environ[SERIES_ROOT_ENV])
+    for candidate in [ROOT / ".series", *Path(__file__).resolve().parents]:
+        if is_series(candidate):
+            return candidate
+    raise OSError("no series to read the gtests from (%s/.series, or a checkout of the series this script is in): set %s"
+                  % (ROOT, SERIES_ROOT_ENV))
+
+
+def series_folders(series: Path) -> list:
+    """The folders of SERIES, in order: one line each, comments and blanks aside."""
+    lines = (series / "SERIES").read_text(encoding="utf-8").splitlines()
+    return [l.strip() for l in lines if l.strip() and not l.lstrip().startswith("#")]
+
+
+def tests_in(text: str) -> list:
+    """(`Suite.Test`, macro) for every definition in the text; a TEST_P runs as
+    `Instantiation/Suite.Test/N`, any instantiation: the filter must name that."""
+    found = []
+    for m in GTEST_DEFINITION.finditer(text):
+        full = "X/%s.%s/0" % (m.group(2), m.group(3)) if m.group(1) == "TEST_P" else "%s.%s" % (m.group(2), m.group(3))
+        found.append((full, m.group(1)))
     return found
 
 
-def our_test_names(root: Path | None = None, base: str | None = None) -> list:
+def added_lines(patch: str) -> dict:
+    """The lines a unified diff adds, by file (the b/ side), for the C++ sources only."""
+    added, name = {}, None
+    for line in patch.splitlines():
+        if line.startswith("+++ "):
+            name = line[6:] if line.startswith("+++ b/") else None
+            if name is not None and not name.endswith(SOURCE_SUFFIXES):
+                name = None
+        elif name and line.startswith("+"):
+            added.setdefault(name, []).append(line[1:])
+    return added
+
+
+def our_gtests(series: Path) -> list:
+    """(file, `Suite.Test`, macro) for every test the series adds to Mozilla's tree: the
+    files of each folder's MANIFEST.json "added" (stored under the folder's src/), and the
+    lines of its hooks.patch. Raises OSError with what to fix."""
+    if not is_series(series):
+        raise OSError("%s is not a series (no SERIES and UPSTREAM.json there): set %s" % (series, SERIES_ROOT_ENV))
+    found = []
+    for folder in series_folders(series):
+        where = series / folder
+        try:
+            manifest = json.loads((where / "MANIFEST.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise OSError("%s/MANIFEST.json of the series cannot be read: %s" % (folder, exc)) from exc
+        for path in sorted(manifest.get("added", {})):
+            if not path.endswith(SOURCE_SUFFIXES):
+                continue
+            stored = where / "src" / path
+            try:
+                text = stored.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                raise OSError("%s is in the MANIFEST.json of %s and is not stored under its src/: %s" % (path, folder, exc)) from exc
+            found += [(path, n, m) for n, m in tests_in(text)]
+        patch = where / "hooks.patch"
+        if patch.is_file():
+            hooks = added_lines(patch.read_text(encoding="utf-8", errors="replace"))
+            for path, lines in sorted(hooks.items()):
+                found += [(path, n, m) for n, m in tests_in(chr(10).join(lines))]
+    return found
+
+
+def our_test_names(series: Path | None = None) -> list:
     """The `Suite.Test` of every gtest of ours. Raises OSError, saying what to fix, when the
-    tree cannot be read or has none of ours: a list that was not read is not an empty one."""
-    root = root or Path(os.environ.get(GTEST_ROOT_ENV) or ROOT)
-    try:
-        found = our_gtests(root, base or base_ref(root))
-    except StopIteration as exc:
-        raise OSError("no version= in %s/browser/config/upstream_source.txt (set %s)" % (root, GTEST_BASE_ENV)) from exc
+    series cannot be read or has none of ours: a list that was not read is not an empty one."""
+    series = series or series_root()
+    found = our_gtests(series)
     if not found:
-        raise OSError("no TEST/TEST_F/TEST_P of ours in %s (wrong tree or base?)" % root)
+        raise OSError("no TEST/TEST_F/TEST_P of ours in %s (wrong series?)" % series)
     return [n for _, n, _ in found]
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--tree", type=Path, default=None, help="the source tree (default: ENGINE_GTEST_ROOT, else this one)")
-    ap.add_argument("--base", default=None, help="Mozilla's ref (default: the tag of upstream_source.txt)")
+    ap.add_argument("--series", type=Path, default=None, help="the series (default: ENGINE_SERIES_ROOT, else .series, else this one)")
     ap.add_argument("--out", type=Path, default=None, help="write here instead of stdout")
     args = ap.parse_args(argv)
     try:
-        names = our_test_names(args.tree.resolve() if args.tree else None, args.base)
+        names = our_test_names(args.series.resolve() if args.series else None)
     except OSError as exc:
         print("ERROR: our gtests were NOT read: %s" % exc, file=sys.stderr)
         return 1

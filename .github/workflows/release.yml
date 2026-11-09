@@ -1010,9 +1010,10 @@ jobs:
           python3 scripts/ci phase gtest -- ./mach build recurse_gtest
           # And _tests/gtest, the directory mach runs them from: what they read at run time.
           mkdir -p obj-rel/_tests/gtest
-          # And the gtests of ours, read from this tree: the job that runs them has none, and
+          # And the gtests of ours, read from the series (.series, checked out above, with no
+          # git and no ref of Mozilla's tag): the job that runs them has none, and
           # gtest_run.py is red for a suite of ours that the filter selects and that did not run.
-          python3 scripts/our_gtests.py --tree . --out obj-rel/our-gtests.txt
+          python3 scripts/our_gtests.py --series .series --out obj-rel/our-gtests.txt
           tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest -C .. our-gtests.txt
       - name: Engine gtests - keep them
         # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.

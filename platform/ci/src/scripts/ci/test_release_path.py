@@ -250,12 +250,12 @@ def group_gtest(doc) -> list:
         (tree / "obj-rel" / "dist" / "bin").mkdir(parents=True)
         (tree / "obj-rel" / "dist" / "bin" / "firefox").write_text("x")
         make = build_steps["Engine gtests - build them, for the jobs that run them"]["run"].splitlines()
-        # the list is read from a real git tree (the case on a repo below), so the command that writes it
-        # is not run on this one: its output is put in place, and the tar must carry it
+        # the list is read from a series (the case on a fake one below), so the command that writes it
+        # is not run on this tree: its output is put in place, and the tar must carry it
         lines = [l for l in make if l.strip() and "phase gtest" not in l and "our_gtests.py" not in l and not l.strip().startswith("#")]
         (tree / "obj-rel" / "our-gtests.txt").write_text("Suite.One\n")
-        out.append(("gtests: the node writes the list of ours, from the tree, into the tar that the job that has no tree reads",
-                    any("our_gtests.py --tree . --out obj-rel/our-gtests.txt" in l for l in make)
+        out.append(("gtests: the node writes the list of ours, from the series, into the tar that the job that has no tree reads",
+                    any("our_gtests.py --series .series --out obj-rel/our-gtests.txt" in l for l in make)
                     and any("tar -chf gtest-bin.tar" in l and "-C .. %s" % gtest_run.OURS_FILE in l for l in make)))
         done = subprocess.run(["bash", "-ec", "\n".join(lines)], cwd=tree, capture_output=True, text=True)
         listed = subprocess.run(["tar", "-tf", str(tree / "gtest-bin.tar")], capture_output=True, text=True).stdout.split()
@@ -331,13 +331,13 @@ def group_gtest(doc) -> list:
                     go("Stealth*", suites="StealthA", ours=["StealthA.One", "StealthBundledCollection.One"])[0] == 0
                     and go("Stealth*", suites="StealthA", ours=["StealthA.One", "StealthFcFontList.One"])[0] != 0))
         # Where the list comes from: nothing is a refusal before any suite starts, never a pass.
-        stale = {k: os.environ[k] for k in (our_gtests.GTEST_ROOT_ENV,) if k in os.environ}
-        os.environ.pop(our_gtests.GTEST_ROOT_ENV, None)
+        stale = {k: os.environ[k] for k in (our_gtests.SERIES_ROOT_ENV,) if k in os.environ}
+        os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
         try:
             record.write_text("")
             said = []
             code = gtest_run.run(root, "Suite*", out=said.append)
-            out.append(("gtests: no list of ours (no file, no tree) is red before any suite runs, saying what is missing",
+            out.append(("gtests: no list of ours (no file, no series) is red before any suite runs, saying what is missing",
                         code != 0 and not record.read_text() and any("NOT read" in l and gtest_run.OURS_FILE in l for l in said)))
             (root / gtest_run.OURS_FILE).write_text("", encoding="utf-8")
             out.append(("gtests: an empty list of ours is red too", gtest_run.run(root, "Suite*", out=lambda _: None) != 0))
@@ -354,60 +354,78 @@ def group_gtest(doc) -> list:
             out.append(("gtests: the list in the file beside bin/ is the one used: a suite of it that did not run is red, all of them run is green",
                         code_file != 0 and code_ok == 0))
             (root / gtest_run.OURS_FILE).unlink()
-            os.environ[our_gtests.GTEST_ROOT_ENV] = str(tree / "nowhere")
+            os.environ[our_gtests.SERIES_ROOT_ENV] = str(tree / "nowhere")
             said = []
             code = gtest_run.run(root, "Suite*", out=said.append)
-            out.append(("gtests: a tree that is not there is red, naming it", code != 0 and any("nowhere" in l for l in said)))
+            out.append(("gtests: a series that is not there is red, naming it", code != 0 and any("nowhere" in l for l in said)))
         finally:
-            os.environ.pop(our_gtests.GTEST_ROOT_ENV, None)
+            os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
             os.environ.update(stale)
-        # The list read from a real git tree, by the one function the plan's coverage test uses.
-        git_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        repo = tree / "engine"
-        (repo / "browser" / "config").mkdir(parents=True)
-        (repo / "browser" / "config" / "upstream_source.txt").write_text("version=1.2.3\n")
-        (repo / "a").mkdir()
-        (repo / "a" / "TestMozilla.cpp").write_text("TEST(Moz, Old) {}\n")
-
-        def git(*args):
-            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false",
-                            "-C", str(repo), *args], check=True, capture_output=True, env=git_env)
-        git("init", "-q")
-        git("add", "-A")
-        git("commit", "-q", "-m", "mozilla")
-        git("tag", "FIREFOX_1_2_3_RELEASE")
-        (repo / "a" / "TestMozilla.cpp").write_text("TEST(Moz, Old) {}\nTEST(Moz, Ours) {}\n")
-        (repo / "a" / "TestOurs.cpp").write_text("TEST(OursA, One) {}\nTEST_F(OursB, Two) {}\nTEST_P(OursC, Three) {}\n")
-        git("add", "-A")
-        git("commit", "-q", "-m", "ours")
+        # The list read from the series, as files: no git, no ref of Mozilla's tag (a tree materialized from a
+        # shared checkout has none, and a `git diff` against the tag was the way the build job stopped on candidate
+        # 42574168024). By the one function the plan's coverage test uses.
+        series = tree / "series"
+        (series / "a" / "one" / "src" / "a").mkdir(parents=True)
+        (series / "a" / "two").mkdir(parents=True)
+        (series / "SERIES").write_text("# folders\na/one\n\na/two\n")
+        (series / "UPSTREAM.json").write_text("{}\n")
+        (series / "a" / "one" / "MANIFEST.json").write_text(json.dumps(
+            {"modified": ["a/TestMozilla.cpp"], "added": {"a/TestOurs.cpp": "100644", "a/notes.md": "100644"}}))
+        (series / "a" / "one" / "src" / "a" / "TestOurs.cpp").write_text(
+            "TEST(OursA, One) {}\nTEST_F(OursB, Two) {}\nTEST_P(OursC, Three) {}\n")
+        (series / "a" / "one" / "src" / "a" / "notes.md").write_text("TEST(NotCode, Md) {}\n")
+        (series / "a" / "one" / "hooks.patch").write_text(
+            "diff --git a/a/TestMozilla.cpp b/a/TestMozilla.cpp\n--- a/a/TestMozilla.cpp\n+++ b/a/TestMozilla.cpp\n"
+            "@@ -1,2 +1,3 @@\n TEST(Moz, Old) {}\n-TEST(Moz, Gone) {}\n+TEST(Moz, Ours) {}\n"
+            "diff --git a/a/mozilla.build b/a/mozilla.build\n--- a/a/mozilla.build\n+++ b/a/mozilla.build\n"
+            "@@ -1 +1,2 @@\n+TEST(Moz, InABuildFile) {}\n")
+        (series / "a" / "two" / "MANIFEST.json").write_text(json.dumps({"modified": [], "added": {}}))
+        nogit = tree / "nogit-bin"
+        nogit.mkdir()
         old = dict(os.environ)
         os.environ.clear()
-        os.environ.update(git_env)
+        os.environ.update({k: v for k, v in old.items() if not k.startswith("GIT_")})
+        os.environ["PATH"] = str(nogit)  # no git, nothing: the list is read from files
+        os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
         try:
-            names = our_gtests.our_test_names(repo)
+            names = our_gtests.our_test_names(series)
             written = tree / "ours.txt"
-            code = our_gtests.main(["--tree", str(repo), "--out", str(written)])
-            os.environ[our_gtests.GTEST_ROOT_ENV] = str(repo)
-            from_tree = gtest_run.read_ours(root)
-            (repo / "browser" / "config" / "upstream_source.txt").write_text("version=9.9.9\n")
-            try:
-                our_gtests.our_test_names(repo)
-                refused = False
-            except OSError:
-                refused = True
+            code = our_gtests.main(["--series", str(series), "--out", str(written)])
+            os.environ[our_gtests.SERIES_ROOT_ENV] = str(series)
+            from_series = gtest_run.read_ours(root)
+            from_default = our_gtests.our_test_names()
+            os.environ.pop(our_gtests.SERIES_ROOT_ENV)
+
+            def refused(change):
+                bad = tree / "bad-series"
+                shutil.rmtree(bad, ignore_errors=True)
+                shutil.copytree(series, bad)
+                change(bad)
+                try:
+                    our_gtests.our_test_names(bad)
+                    return False
+                except OSError:
+                    return True
+            no_series_file = refused(lambda d: (d / "SERIES").unlink())
+            lost_source = refused(lambda d: (d / "a" / "one" / "src" / "a" / "TestOurs.cpp").unlink())
+            none_of_ours = refused(lambda d: ((d / "a" / "one" / "hooks.patch").write_text(""),
+                                              (d / "a" / "one" / "MANIFEST.json").write_text(json.dumps({"added": {}}))))
         finally:
             os.environ.clear()
             os.environ.update(old)
-        out.append(("gtests: the list of ours is what the series adds to Mozilla's tag, a TEST_P as X/Suite.Test/0, read by the CLI and by gtest_run alike; no such tag is an error",
+        out.append(("gtests: the list of ours is read from the series, with no git: a file it adds whole and the TEST lines of its hooks.patch "
+                    "in C++ sources only, a TEST_P as X/Suite.Test/0, by the CLI and by gtest_run alike",
                     sorted(names) == ["Moz.Ours", "OursA.One", "OursB.Two", "X/OursC.Three/0"] and code == 0
-                    and sorted(written.read_text().split()) == sorted(names) == sorted(from_tree) and refused))
+                    and sorted(written.read_text().split()) == sorted(names) == sorted(from_series) == sorted(from_default)))
+        out.append(("gtests: a series without SERIES, a file its manifest adds and its src/ lost, and a series with no gtest of ours are errors, never an empty list",
+                    no_series_file and lost_source and none_of_ours))
         import test_release_plan
         out.append(("gtests: one function: the plan's coverage test and gtest_run read the list, and match the filter, with the same code",
                     test_release_plan.our_gtests is our_gtests.our_gtests and test_release_plan.gtest_matches is our_gtests.gtest_matches
                     and gtest_run.our_gtests is our_gtests))
         known = {"StealthWebGPUAdapter", "StealthWebGPUInstanceEnv", "StealthWebGPUBundledVulkan"}
         try:
-            ours_now = {our_gtests.suite_of(n) for n in our_gtests.our_test_names(ROOT)}
+            ours_now = {our_gtests.suite_of(n) for n in our_gtests.our_test_names()}
         except OSError as exc:
             ours_now = None
             print("skip  gtests: NOT_ON names only suites of ours: %s" % exc)

@@ -15,10 +15,10 @@ of each suite stays in --reports, for comparing runs.
 
 And red if a gtest of ours that the filter selects did not run, whatever way the filter
 names it (a prefix names no suite, so a suite of ours that left the build would pass): the
-list of ours is read from the source by scripts/our_gtests.py, the same function that
+list of ours is read from the series by scripts/our_gtests.py, the same function that
 scripts/test_release_plan.py checks the filter with. This job has no source tree, so the
 build job writes the list beside the binaries (ROOT/our-gtests.txt, in gtest-bin.tar);
-with ENGINE_GTEST_ROOT set to a tree it is read from that tree instead. With neither the
+with ENGINE_SERIES_ROOT set to a series it is read from that series instead. With neither the
 run is refused before any suite starts: a check that could not run is not a pass.
 
 On Windows firefox.exe is the launcher: --wait-for-browser, as the green candidate ran it.
@@ -86,16 +86,16 @@ def missing_suites(gtest_filter: str, suites: list, platform: str) -> list:
 
 
 def read_ours(root: Path, environ=None) -> list:
-    """`Suite.Test` of every gtest of ours: from the tree ENGINE_GTEST_ROOT names, else from
+    """`Suite.Test` of every gtest of ours: from the series ENGINE_SERIES_ROOT names, else from
     ROOT/our-gtests.txt. Raises OSError, saying what is missing, when it can be had from neither."""
     environ = os.environ if environ is None else environ
-    if environ.get(our_gtests.GTEST_ROOT_ENV):
-        return our_gtests.our_test_names(Path(environ[our_gtests.GTEST_ROOT_ENV]))
+    if environ.get(our_gtests.SERIES_ROOT_ENV):
+        return our_gtests.our_test_names(Path(environ[our_gtests.SERIES_ROOT_ENV]))
     listed = root / OURS_FILE
     if not listed.is_file():
-        raise OSError("no list of our gtests: %s is not there and %s names no source tree. The build job writes it "
-                      "(python3 scripts/our_gtests.py --tree . --out <dir>/%s, into gtest-bin.tar)"
-                      % (listed, our_gtests.GTEST_ROOT_ENV, OURS_FILE))
+        raise OSError("no list of our gtests: %s is not there and %s names no series. The build job writes it "
+                      "(python3 scripts/our_gtests.py --series .series --out <dir>/%s, into gtest-bin.tar)"
+                      % (listed, our_gtests.SERIES_ROOT_ENV, OURS_FILE))
     names = [l.strip() for l in listed.read_text(encoding="utf-8").splitlines() if l.strip()]
     if not names:
         raise OSError("%s lists no gtest of ours" % listed)

@@ -44,8 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import release_plan as p  # noqa: E402
-from our_gtests import (  # noqa: E402
-    GTEST_BASE_ENV, GTEST_ROOT_ENV, base_ref, gtest_matches, our_gtests)
+from our_gtests import gtest_matches, our_gtests, series_root  # noqa: E402
 
 #: The release tags the workflow reads from the remote: out of order on purpose
 #: (the number is what counts, not the sort), and with things that are not releases.
@@ -132,22 +131,16 @@ ACCEPTED = [
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def gtest_coverage(gtest_filter: str, root: Path | None = None, base: str | None = None) -> list:
-    """The reasons the filter does not cover our gtests: [] when it does. A tree that cannot be
+def gtest_coverage(gtest_filter: str, series: Path | None = None) -> list:
+    """The reasons the filter does not cover our gtests: [] when it does. A series that cannot be
     read, or that has no gtest of ours, is a reason too: a check that did not run is not a pass."""
-    root = root or Path(os.environ.get(GTEST_ROOT_ENV) or ROOT)
-    if not root.is_dir():
-        return ["the gtest coverage was NOT checked: the tree to read the gtests from, %s, does not exist (set %s)"
-                % (root, GTEST_ROOT_ENV)]
     try:
-        found = our_gtests(root, base or base_ref(root))
-    except StopIteration:
-        return ["the gtest coverage was NOT checked: no version= in %s/browser/config/upstream_source.txt (set %s)"
-                % (root, GTEST_BASE_ENV)]
+        series = series or series_root()
+        found = our_gtests(series)
     except OSError as exc:
         return ["the gtest coverage was NOT checked: %s" % exc]
     if not found:
-        return ["the gtest coverage was NOT checked: no TEST/TEST_F/TEST_P of ours in %s (wrong tree or base?)" % root]
+        return ["the gtest coverage was NOT checked: no TEST/TEST_F/TEST_P of ours in %s (wrong series?)" % series]
     return ["%s: %s is not run by the default gtest filter (add its suite to DEFAULT_GTEST_FILTER in release_plan.py, "
             "to release.yml and to test_release_path.py)" % (f, n) for f, n, _ in found if not gtest_matches(gtest_filter, n)]
 
