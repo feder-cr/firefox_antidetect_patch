@@ -16,6 +16,7 @@
 #include "mozilla/net/StealthBranding.h"
 #include "nsIFile.h"
 #include "nsString.h"
+#include "StealthSystemFonts.h"
 
 namespace mozilla {
 namespace gfx {
@@ -307,6 +308,23 @@ void StealthAssertDeclarationsComplete() {
   for (const char* name : kRasterInts) {
     if (Preferences::GetInt(name, -1) < 0) {
       RefuseUndeclared(name);
+    }
+  }
+
+  // The CSS system fonts (ui.font.* and their sizes), added 2026-11-08: the
+  // GTK widget no longer asks Pango, so a missing one has no host to fall to.
+  {
+    nsAutoCString undeclaredFont;
+    if (widget::StealthFirstUndeclaredSystemFont(undeclaredFont)) {
+      RefuseUndeclared(undeclaredFont.get());
+    }
+  }
+
+  // The system colours no stand-in covers (the palette of invisible_core).
+  {
+    nsAutoCString undeclaredColor;
+    if (widget::StealthFirstUndeclaredSystemColor(undeclaredColor)) {
+      RefuseUndeclared(undeclaredColor.get());
     }
   }
 

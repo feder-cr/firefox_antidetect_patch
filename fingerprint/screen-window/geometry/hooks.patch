@@ -149,14 +149,16 @@ index 8613fdfd1976a3df90d995ce59753c2ef1919f7f..b9d832e43134dd4a374b507a96ca4574
  
    /**
 diff --git a/widget/moz.build b/widget/moz.build
-index 67a8082de98eb985cfa40c9af158b0518ec577de..b15202b39ae70edadb66b0ecaa1939ba8fa9f4e7 100644
+index 67a8082de98eb985cfa40c9af158b0518ec577de..5f8507786146e765b636488bb7ac99bdb4488836 100644
 --- a/widget/moz.build
 +++ b/widget/moz.build
-@@ -320,6 +320,7 @@ SOURCES += [
+@@ -320,6 +320,9 @@ SOURCES += [
      "nsIWidget.cpp",
      "ScreenManager.cpp",
  ]
 +UNIFIED_SOURCES += ["StealthFullscreen.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)
++SOURCES += ["StealthSystemFonts.cpp"]  # STEALTH-HOOK(fingerprint/fonts/bundle)
++EXPORTS += ["StealthSystemFonts.h"]  # STEALTH-HOOK(fingerprint/fonts/bundle)
  
  EXPORTS.ipc = [
      "nsGUIEventIPC.h",
@@ -184,14 +186,15 @@ index 39411305c2b853b90a386d88b0c1fbae9449796e..9b379d51c28d08b854f62e120317c11e
      // Move to fill the screen.
      doReposition(DesktopRect(screen->GetRectDisplayPix()));
 diff --git a/widget/tests/gtest/moz.build b/widget/tests/gtest/moz.build
-index 6df00b19b64a0a066b05e4abd8e65551a71688f6..a80cdb175901d91abe4ddeb2ed444d290e294bce 100644
+index 6df00b19b64a0a066b05e4abd8e65551a71688f6..e90f04c2efa9b3b2d3558ad36f3a10aa6c056552 100644
 --- a/widget/tests/gtest/moz.build
 +++ b/widget/tests/gtest/moz.build
-@@ -10,6 +10,7 @@ UNIFIED_SOURCES = [
+@@ -10,6 +10,8 @@ UNIFIED_SOURCES = [
      "TestWidgetMouseEventCtors.cpp",
      "TestWidgetTouchEventCtors.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthFullscreen.cpp"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)
++UNIFIED_SOURCES += ["TestStealthSystemFonts.cpp"]  # STEALTH-HOOK(fingerprint/fonts/bundle)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
      UNIFIED_SOURCES += [

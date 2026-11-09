@@ -116,12 +116,19 @@ TEST(StealthFontList, PrependGoesToIndexZeroOnlyUnderBundleOnly)
   mozilla::Preferences::ClearUser("zoom.stealth.fonts.generics");
 }
 
-TEST(StealthFontList, SystemUiIsSegoeUi)
+TEST(StealthFontList, SystemUiFollowsTheDeclaredMenuFont)
 {
+  nsTArray<nsCString> none;
+  mozilla::Preferences::ClearUser("ui.font.menu");
+  StealthSystemUIFamilies(none);
+  EXPECT_EQ(none.Length(), 0u);  // no compiled name
+
+  mozilla::Preferences::SetCString("ui.font.menu", "Declared Menu Family");
   nsTArray<nsCString> fams;
   StealthSystemUIFamilies(fams);
   ASSERT_EQ(fams.Length(), 1u);
-  EXPECT_TRUE(fams[0].EqualsLiteral("Segoe UI"));
+  EXPECT_TRUE(fams[0].EqualsLiteral("Declared Menu Family"));
+  mozilla::Preferences::ClearUser("ui.font.menu");
 }
 
 TEST(StealthFontList, AliasIsIdentityWhenNotBundleOnly)

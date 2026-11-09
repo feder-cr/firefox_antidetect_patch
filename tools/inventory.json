@@ -6344,6 +6344,26 @@
   }
  },
  {
+  "file": "toolkit/xre/nsXREDirProvider.cpp",
+  "category": "spoof",
+  "feature": "font-bundle-files",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "the include block and nsXREDirProvider::InitializeUserPrefs, after Preferences::InitializeUserPrefs",
+  "evidence": [
+   "+    mozilla::widget::StealthSystemThemeAfterUserPrefs();  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+  ],
+  "notes": "Checks, once the user prefs are in, that the system fonts and colours the engine declares are all there (widget/StealthSystemFonts.cpp); nothing is read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
+  }
+ },
+ {
   "file": "uriloader/exthandler/moz.build",
   "category": "build",
   "feature": "juggler-download-interceptor",
@@ -6566,6 +6586,26 @@
   }
  },
  {
+  "file": "widget/headless/HeadlessLookAndFeelGTK.cpp",
+  "category": "spoof",
+  "feature": "font-bundle-files",
+  "prefs": [],
+  "added": 3,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "the include block, HeadlessLookAndFeel::NativeGetColor and NativeGetFont, first line",
+  "evidence": [
+   "+  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+  ],
+  "notes": "Refuses, with the engine on, a system font or colour that the declaration lacks, before the headless defaults answer.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
+  }
+ },
+ {
   "file": "widget/moz.build",
   "category": "spoof",
   "feature": "window-geometry",
@@ -6653,6 +6693,27 @@
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/nsXPLookAndFeel.cpp",
+  "category": "spoof",
+  "feature": "font-bundle-files",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "the include block, nsXPLookAndFeel::FillStores (first line) and GetUncachedColor (before the toolkit colour)",
+  "evidence": [
+   "+  widget::StealthSystemThemeFillStores();  // STEALTH-HOOK(fingerprint/fonts/bundle)",
+   "+  if (auto dark = widget::StealthDarkSystemColor(aID, aScheme)) {  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+  ],
+  "notes": "Fills the system theme stores from the declared palette, and answers a dark system colour from it (HighlightText follows the foreground, as on retail).",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff; no correction needed."
   }
  },
  {

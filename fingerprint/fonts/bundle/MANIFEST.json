@@ -13,7 +13,10 @@
   "gfx/thebes/gfxFontUtils.h",
   "gfx/thebes/gfxPlatformGtk.cpp",
   "gfx/thebes/gfxTextRun.cpp",
-  "gfx/thebes/moz.build"
+  "gfx/thebes/moz.build",
+  "toolkit/xre/nsXREDirProvider.cpp",
+  "widget/headless/HeadlessLookAndFeelGTK.cpp",
+  "widget/nsXPLookAndFeel.cpp"
  ],
  "added": {
   "browser/fonts/LEELAWUI.TTF": "100644",
@@ -140,7 +143,11 @@
   "gfx/thebes/StealthBundleFontList.cpp": "100644",
   "gfx/thebes/StealthBundleFontList.h": "100644",
   "gfx/thebes/StealthBundleFontList.mozbuild": "100644",
-  "gfx/thebes/StealthDWriteFontList.cpp": "100644"
+  "gfx/thebes/StealthDWriteFontList.cpp": "100644",
+  "widget/StealthSystemFonts.cpp": "100644",
+  "widget/StealthSystemFonts.h": "100644",
+  "widget/tests/gtest/TestStealthSystemFonts.cpp": "100644",
+  "widget/tests/test_stealth_no_host_fonts.py": "100644"
  },
  "inventory": [
   {
@@ -436,6 +443,67 @@
    "verifier": {
     "changed": [],
     "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "toolkit/xre/nsXREDirProvider.cpp",
+   "category": "spoof",
+   "feature": "font-bundle-files",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "the include block and nsXREDirProvider::InitializeUserPrefs, after Preferences::InitializeUserPrefs",
+   "evidence": [
+    "+    mozilla::widget::StealthSystemThemeAfterUserPrefs();  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+   ],
+   "notes": "Checks, once the user prefs are in, that the system fonts and colours the engine declares are all there (widget/StealthSystemFonts.cpp); nothing is read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "widget/headless/HeadlessLookAndFeelGTK.cpp",
+   "category": "spoof",
+   "feature": "font-bundle-files",
+   "prefs": [],
+   "added": 3,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "the include block, HeadlessLookAndFeel::NativeGetColor and NativeGetFont, first line",
+   "evidence": [
+    "+  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+   ],
+   "notes": "Refuses, with the engine on, a system font or colour that the declaration lacks, before the headless defaults answer.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "widget/nsXPLookAndFeel.cpp",
+   "category": "spoof",
+   "feature": "font-bundle-files",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "the include block, nsXPLookAndFeel::FillStores (first line) and GetUncachedColor (before the toolkit colour)",
+   "evidence": [
+    "+  widget::StealthSystemThemeFillStores();  // STEALTH-HOOK(fingerprint/fonts/bundle)",
+    "+  if (auto dark = widget::StealthDarkSystemColor(aID, aScheme)) {  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+   ],
+   "notes": "Fills the system theme stores from the declared palette, and answers a dark system colour from it (HighlightText follows the foreground, as on retail).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff; no correction needed."
    }
   }
  ]

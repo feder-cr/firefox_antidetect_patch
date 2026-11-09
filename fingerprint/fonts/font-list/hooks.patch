@@ -657,22 +657,47 @@ index 4719c99e05d8b71dc8ccc95f57f3918b8f4fef17..34fa07fcd5a2e13e9906a9ed42eefe7c
    // This is an owning reference; we are responsible to delete the FontList at
    // appropriate times.
 diff --git a/widget/gtk/nsLookAndFeel.cpp b/widget/gtk/nsLookAndFeel.cpp
-index a2b5aa458018964a800f2d0d55abeb78f213db67..6b6a0f6bf1ba033a732e84abaa860fbccaf9a4d6 100644
+index a2b5aa458018964a800f2d0d55abeb78f213db67..431103748dc5c2ed5db45afd278131ca98bd46f0 100644
 --- a/widget/gtk/nsLookAndFeel.cpp
 +++ b/widget/gtk/nsLookAndFeel.cpp
-@@ -20,6 +20,7 @@
+@@ -20,6 +20,8 @@
  #include "GtkWidgets.h"
  #include "ScreenHelperGTK.h"
  #include "ScrollbarDrawing.h"
++#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
 +#include "StealthFcEmptyConfig.h"  // STEALTH-HOOK(fingerprint/fonts/font-list)
  #include "WidgetUtils.h"
  #include "gfxFontConstants.h"
  #include "gfxPlatformGtk.h"
-@@ -397,6 +398,7 @@ nsLookAndFeel::nsLookAndFeel() {
+@@ -397,6 +399,7 @@ nsLookAndFeel::nsLookAndFeel() {
      }
    }
  
 +  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)
    FcInit();
+ }
+ 
+@@ -636,6 +639,7 @@ void nsLookAndFeel::NativeInit() { EnsureInit(); }
+ 
+ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
+                                        nscolor& aColor) {
++  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   EnsureInit();
+ 
+   const auto& theme =
+@@ -1262,6 +1266,7 @@ nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+ 
+ static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
+                               gfxFontStyle* aFontStyle) {
++  if (StealthSystemFontsDeclared()) return;  // STEALTH-HOOK(fingerprint/fonts/bundle) the fonts are the core's declaration, see NativeGetFont
+   aFontStyle->style = FontSlantStyle::NORMAL;
+ 
+   // As in
+@@ -1302,6 +1307,7 @@ static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
+ 
+ bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
+                                   gfxFontStyle& aFontStyle) {
++  if (StealthSystemFontsDeclared()) return StealthNativeSystemFont(aID, aFontName, aFontStyle);  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   return mSystemTheme.GetFont(aID, aFontName, aFontStyle, mTextScaleFactor);
  }
  

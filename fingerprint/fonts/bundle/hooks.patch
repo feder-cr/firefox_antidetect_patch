@@ -370,3 +370,79 @@ index ab172d9588a03526bb904289ee451ab652dbfdaa..e12bb4f502137a569dee7ba23b762386
  
  FINAL_LIBRARY = "xul"
  
+diff --git a/toolkit/xre/nsXREDirProvider.cpp b/toolkit/xre/nsXREDirProvider.cpp
+index 2f4f5aab15d14289fdbb62eb4c73abd27fab6302..2aae59c0ec9726772ae5d70ee8cc50241631d8f5 100644
+--- a/toolkit/xre/nsXREDirProvider.cpp
++++ b/toolkit/xre/nsXREDirProvider.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include "nsAppRunner.h"
+ #include "nsXREDirProvider.h"
++#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
+ #ifndef ANDROID
+ #  include "commonupdatedir.h"
+ #endif
+@@ -599,6 +600,7 @@ nsXREDirProvider::GetDirectory(nsIFile** aResult) {
+ void nsXREDirProvider::InitializeUserPrefs() {
+   if (!mPrefsInitialized) {
+     mozilla::Preferences::InitializeUserPrefs();
++    mozilla::widget::StealthSystemThemeAfterUserPrefs();  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   }
+ }
+ 
+diff --git a/widget/headless/HeadlessLookAndFeelGTK.cpp b/widget/headless/HeadlessLookAndFeelGTK.cpp
+index d6e94f053c22d9ed5df36b1c20cd408c2605bdc5..85ef62d131774b22a96be1a73d7f87c595b9cec7 100644
+--- a/widget/headless/HeadlessLookAndFeelGTK.cpp
++++ b/widget/headless/HeadlessLookAndFeelGTK.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "HeadlessLookAndFeel.h"
++#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
+ #include "nsStyleConsts.h"
+ 
+ namespace mozilla::widget {
+@@ -15,6 +16,7 @@ HeadlessLookAndFeel::~HeadlessLookAndFeel() = default;
+ 
+ nsresult HeadlessLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
+                                              nscolor& aResult) {
++  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   aResult = GetStandinForNativeColor(aID, aScheme);
+   return NS_OK;
+ }
+@@ -193,6 +195,7 @@ nsresult HeadlessLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
+ 
+ bool HeadlessLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
+                                         gfxFontStyle& aFontStyle) {
++  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   // Default to san-serif for everything.
+   aFontStyle.style = FontSlantStyle::NORMAL;
+   aFontStyle.weight = FontWeight::NORMAL;
+diff --git a/widget/nsXPLookAndFeel.cpp b/widget/nsXPLookAndFeel.cpp
+index 25411602badd91fc2bc4519bd181fd804645c536..0c4b9875bb59d3fb81a621c0bd50f5e3d97de56b 100644
+--- a/widget/nsXPLookAndFeel.cpp
++++ b/widget/nsXPLookAndFeel.cpp
+@@ -8,6 +8,7 @@
+ 
+ #include "HeadlessLookAndFeel.h"
+ #include "RemoteLookAndFeel.h"
++#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
+ #include "SurfaceCacheUtils.h"
+ #include "Theme.h"
+ #include "gfxFont.h"
+@@ -376,6 +377,7 @@ nsXPLookAndFeel* nsXPLookAndFeel::GetInstance() {
+ }
+ 
+ void nsXPLookAndFeel::FillStores(nsXPLookAndFeel* aInst) {
++  widget::StealthSystemThemeFillStores();  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   MOZ_RELEASE_ASSERT(NS_IsMainThread());
+   for (IntID id : MakeEnumeratedRange(IntID(0), IntID::End)) {
+     int32_t value = 0;
+@@ -1008,6 +1010,7 @@ nsresult nsXPLookAndFeel::GetColorValue(ColorID aID, ColorScheme aScheme,
+ Maybe<nscolor> nsXPLookAndFeel::GetUncachedColor(ColorID aID,
+                                                  ColorScheme aScheme,
+                                                  UseStandins aUseStandins) {
++  if (auto dark = widget::StealthDarkSystemColor(aID, aScheme)) return dark;  // STEALTH-HOOK(fingerprint/fonts/bundle)
+   if (aUseStandins == UseStandins::Yes) {
+     return Some(GetStandinForNativeColor(aID, aScheme));
+   }
