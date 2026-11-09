@@ -68,7 +68,7 @@
  "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp": 31,
  "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h": 25,
  "dom/media/platforms/PDMFactory.cpp": 9,
- "dom/media/platforms/wmf/WMFDecoderModule.cpp": 9,
+ "dom/media/platforms/wmf/WMFDecoderModule.cpp": 5,
  "dom/media/webaudio/AnalyserNode.cpp": 5,
  "dom/media/webaudio/AudioContext.cpp": 11,
  "dom/media/webaudio/AudioDestinationNode.cpp": 4,

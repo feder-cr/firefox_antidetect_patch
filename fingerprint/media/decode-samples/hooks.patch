@@ -99,32 +99,28 @@ index ae239c49209801eb790b70f542f0646c04ed5bfb..1da442c1da27a14c4124d5f4b8929dbb
  
  #if LIBAVCODEC_VERSION_MAJOR < 58
 diff --git a/dom/media/platforms/wmf/WMFDecoderModule.cpp b/dom/media/platforms/wmf/WMFDecoderModule.cpp
-index 28aa34283ae2efc0fb8be6f73026695a71930702..16c5f6faa19925be7e74261fbd0ec7559ba747b3 100644
+index 28aa34283ae2efc0fb8be6f73026695a71930702..825ef626156617d502de253981fa7e1a8a431587 100644
 --- a/dom/media/platforms/wmf/WMFDecoderModule.cpp
 +++ b/dom/media/platforms/wmf/WMFDecoderModule.cpp
 @@ -13,6 +13,7 @@
  #include "MP4Decoder.h"
  #include "MediaInfo.h"
  #include "PDMFactory.h"
-+#include "StealthDeclarationGate.h"  // STEALTH-HOOK(fingerprint/media/decode-samples)
++#include "StealthWmfCodecGate.h"  // STEALTH-HOOK(fingerprint/media/decode-samples)
  #include "VPXDecoder.h"
  #include "WMFAudioMFTManager.h"
  #include "WMFMediaDataDecoder.h"
-@@ -371,6 +372,14 @@ media::DecodeSupportSet WMFDecoderModule::Supports(
+@@ -367,6 +368,10 @@ media::DecodeSupportSet WMFDecoderModule::Supports(
+   }
+ 
+   if (CanCreateMFTDecoder(type)) {
++    // STEALTH-HOOK(fingerprint/media/decode-samples)
++    if (StealthWmfRefusesCodec(type)) {
++      return media::DecodeSupportSet{};
++    }
+     if (StreamTypeIsVideo(type)) {
        return sDXVAEnabled ? media::DecodeSupport::HardwareDecode
                            : media::DecodeSupport::SoftwareDecode;
-     } else {
-+      // STEALTH-HOOK(fingerprint/media/decode-samples)
-+      // The host's own msauddecmft.dll varies by Windows build; with the
-+      // engine's identity declared, AAC must come from our own ffvpx port
-+      // (bit-exact to a specific declared Media Foundation), never from
-+      // whatever the real machine happens to have installed.
-+      if (gfx::StealthEngineActive()) {
-+        return media::DecodeSupportSet{};
-+      }
-       // Audio only supports software decode
-       return media::DecodeSupport::SoftwareDecode;
-     }
 diff --git a/dom/media/webcodecs/DecoderTemplate.cpp b/dom/media/webcodecs/DecoderTemplate.cpp
 index 5875dbc122cb1eb4d6de0f31bbb0d62ee51e8d91..009a1796c4916fb45926f6792821d118f6687a09 100644
 --- a/dom/media/webcodecs/DecoderTemplate.cpp

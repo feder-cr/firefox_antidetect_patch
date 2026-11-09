@@ -225,6 +225,7 @@ OWN_FILES = [
     (r"^gfx/tests/gtest/TestStealthColorProfile\.", "fingerprint/canvas/color-profile"),
     (r"^dom/workers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
     (r"^dom/media/gtest/TestStealthWebCodecsSoftwareDecode\.", "fingerprint/media/decode-samples"),
+    (r"^dom/media/platforms/wmf/StealthWmfCodecGate\.", "fingerprint/media/decode-samples"),
     (r"^dom/media/webspeech/synth/test/test_stealth_voices\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/webspeech/synth/StealthSpeechVoice\.", "fingerprint/media/speech-voices"),
     (r"^dom/media/webspeech/synth/StealthSpeechVoices\.", "fingerprint/media/speech-voices"),

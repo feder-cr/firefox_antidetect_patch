@@ -1681,17 +1681,18 @@
   "category": "build",
   "feature": "ffvpx-decoders-no-host-libavcodec",
   "prefs": [],
-  "added": 9,
+  "added": 5,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "WMFDecoderModule::Supports, the audio branch (CanCreateMFTDecoder(type) && !StreamTypeIsVideo(type))",
+  "anchor": "WMFDecoderModule::Supports, right after CanCreateMFTDecoder(type) succeeds",
   "evidence": [
-   "+      if (gfx::StealthEngineActive()) {",
-   "+        return media::DecodeSupportSet{};"
+   "+#include \"StealthWmfCodecGate.h\"  // STEALTH-HOOK(fingerprint/media/decode-samples)",
+   "+    if (StealthWmfRefusesCodec(type)) {",
+   "+      return media::DecodeSupportSet{};"
   ],
-  "notes": "With the engine's identity declared, WMFDecoderModule refuses to support audio (so AAC) at all: the host's own msauddecmft.dll varies by Windows build, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs, so without this hook AAC would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port that equals a specific declared Media Foundation. Video (H.264/HEVC, the DXVA hardware path) is unaffected: only the audio branch returns early.",
+  "notes": "A single hook point, one line, decides for both the video and audio branches: StealthWmfRefusesCodec (StealthWmfCodecGate.h, a file of ours) says whether the stealth engine is on and, if so, whether aType is audio (always refused, so AAC) or H.264/HEVC (refused; VP8/VP9/AV1 untouched). The host's own Media Foundation (msauddecmft.dll, the H.264/HEVC MFTs) varies by Windows build and GPU driver, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs/CreateContentPDMs, so without this hook these codecs would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port. Feeds plain <video> (readable via drawImage) and WebCodecs alike; WebCodecs' own HEVC rejection on Windows (WebCodecsUtils::IsSupportedVideoCodec) is untouched.",
   "verifier": {
    "changed": [],
    "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."

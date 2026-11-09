@@ -23,6 +23,7 @@
  ],
  "added": {
   "dom/media/gtest/TestStealthWebCodecsSoftwareDecode.cpp": "100644",
+  "dom/media/platforms/wmf/StealthWmfCodecGate.h": "100644",
   "media/ffvpx/config_components.asm": "100644",
   "media/ffvpx/gtest/TestFFVPXAac.cpp": "100644",
   "media/ffvpx/gtest/TestFFVPXH264BFramePts.cpp": "100644",
@@ -283,17 +284,20 @@
    "category": "build",
    "feature": "ffvpx-decoders-no-host-libavcodec",
    "prefs": [],
-   "added": 9,
+   "added": 20,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "WMFDecoderModule::Supports, the audio branch (CanCreateMFTDecoder(type) && !StreamTypeIsVideo(type))",
+   "anchor": "WMFDecoderModule::Supports, the video branch (H.264/HEVC) and the audio branch (CanCreateMFTDecoder(type))",
    "evidence": [
+    "+      if (gfx::StealthEngineActive() &&",
+    "+          (type == WMFStreamType::H264 || type == WMFStreamType::HEVC)) {",
+    "+        return media::DecodeSupportSet{};",
     "+      if (gfx::StealthEngineActive()) {",
     "+        return media::DecodeSupportSet{};"
    ],
-   "notes": "With the engine's identity declared, WMFDecoderModule refuses to support audio (so AAC) at all: the host's own msauddecmft.dll varies by Windows build, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs, so without this hook AAC would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port that equals a specific declared Media Foundation. Video (H.264/HEVC, the DXVA hardware path) is unaffected: only the audio branch returns early.",
+   "notes": "With the engine's identity declared, WMFDecoderModule refuses to support H.264/HEVC (video branch) and all audio (audio branch, so AAC) at all: the host's own Media Foundation (msauddecmft.dll, the H.264/HEVC MFTs) varies by Windows build and GPU driver, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs/CreateContentPDMs, so without these hooks H.264/HEVC and AAC would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port. This single choke point in Supports() feeds plain <video> (readable via drawImage) and WebCodecs alike; WebCodecs' own HEVC rejection on Windows (WebCodecsUtils::IsSupportedVideoCodec) is untouched. VP8/VP9/AV1 (the DXVA hardware path) are unaffected: only H.264/HEVC and audio return early.",
    "verifier": {
     "changed": [],
     "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
