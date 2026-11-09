@@ -63,7 +63,7 @@ NOT_ON = {
               "StealthSkiaIdwrWin"},  # XP_WIN in TestStealthSkiaIdwr.cpp
     "win": {"StealthWebGPUBundledVulkan",  # XP_LINUX in TestStealthWebGPUDeclaration.cpp
             "StealthFcEmptyConfig", "StealthFcFontList", "StealthFontDescriptorPath",
-            "StealthFontMetrics",  # MOZ_WIDGET_TOOLKIT == gtk in gfx/tests/gtest/moz.build
+            "StealthFontMetrics", "StealthSyntheticBoldRule",  # MOZ_WIDGET_TOOLKIT == gtk in gfx/tests/gtest/moz.build
             "StealthIdwrFontconfig", "StealthIdwrTextVars",  # TestStealthIdwrTextVars.cpp: gtk block of gfx/tests/gtest/moz.build
             "StealthSystemTheme"},  # MOZ_WIDGET_GTK in widget/tests/gtest/TestStealthSystemFonts.cpp
 }

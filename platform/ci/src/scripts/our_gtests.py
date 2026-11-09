@@ -158,3 +158,55 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+#: `if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":` and its kin: what a moz.build condition says of the two
+#: platforms the engine builds. (value, is-equal) -> the platform that has the file.
+_CONDITION = re.compile(r'CONFIG\[\s*"(OS_TARGET|MOZ_WIDGET_TOOLKIT)"\s*\]\s*(==|!=)\s*"(\w+)"')
+_PLATFORM_OF = {("OS_TARGET", "WINNT"): "win", ("OS_TARGET", "Linux"): "linux", ("MOZ_WIDGET_TOOLKIT", "gtk"): "linux",
+                ("MOZ_WIDGET_TOOLKIT", "windows"): "win"}
+
+
+def only_on(tree: Path, path: str):
+    """`linux` or `win` when the moz.build that lists the source `path` (relative to the tree) lists it only under a
+    condition that one of the two platforms meets (OS_TARGET, MOZ_WIDGET_TOOLKIT, == or !=); None when it lists it
+    unconditionally, in a block this cannot read (else:, an `and`), or not at all. The nearest moz.build up from the file."""
+    where = (tree / path).parent
+    name = Path(path).name
+    while True:
+        build = where / "moz.build"
+        if build.is_file():
+            lines = build.read_text(encoding="utf-8", errors="replace").splitlines()
+            for i, line in enumerate(lines):
+                if '"%s"' % name not in line and "'%s'" % name not in line:
+                    continue
+                if line.lstrip().startswith("#"):
+                    continue
+                verdict, indent = None, len(line) - len(line.lstrip())
+                for j in range(i - 1, -1, -1):
+                    above = lines[j]
+                    if not above.strip() or above.lstrip().startswith("#"):
+                        continue
+                    here = len(above) - len(above.lstrip())
+                    if here >= indent:
+                        continue
+                    indent = here
+                    head = above.strip()
+                    if head.startswith(("else", "elif")):
+                        return None
+                    if head.startswith("if "):
+                        found = _CONDITION.findall(head.split("#", 1)[0])
+                        rest = _CONDITION.sub("", head.split("#", 1)[0])
+                        if len(found) != 1 or " and " in rest or " or " in rest:
+                            return None
+                        key, op, value = found[0]
+                        platform = _PLATFORM_OF.get((key, value))
+                        if platform is None:
+                            return None
+                        verdict = platform if op == "==" else ("linux" if platform == "win" else "win")
+                    if here == 0:
+                        break
+                return verdict
+        if where == tree or where == where.parent:
+            return None
+        where = where.parent

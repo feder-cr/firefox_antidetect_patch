@@ -438,6 +438,30 @@ def group_gtest(doc) -> list:
             every = set().union(*gtest_run.NOT_ON.values())
             out.append(("gtests: every suite in NOT_ON is one of ours (a stale or misspelt name would lose a check), none is on both platforms, and the first three stay",
                         every <= ours_now and not set(gtest_run.NOT_ON["linux"]) & set(gtest_run.NOT_ON["win"]) and known <= every))
+            # A suite of ours that its moz.build lists only under a condition one platform meets is in the other
+            # platform's NOT_ON, in the commit that adds it (candidate 42661012039: StealthSyntheticBoldRule, gtk only,
+            # was missing from win's, and the suites' check stopped the run: "did not run").
+            missing = sorted((suite, platform) for path, name, _ in our_gtests.our_gtests(our_gtests.series_root())
+                             for suite in [our_gtests.suite_of(name)]
+                             for platform in [{"linux": "win", "win": "linux"}.get(our_gtests.only_on(ROOT, path))]
+                             if platform and suite not in gtest_run.NOT_ON[platform])
+            if missing:
+                print("      gtests: in no NOT_ON though a moz.build builds them on one platform only: %s" % missing)
+            out.append(("gtests: every suite of ours that a moz.build builds on one platform only (OS_TARGET, MOZ_WIDGET_TOOLKIT) is in the other platform's NOT_ON", not missing))
+            fake = tree / "fake-mozbuild"
+            (fake / "d").mkdir(parents=True)
+            (fake / "d" / "moz.build").write_text(
+                'UNIFIED_SOURCES += ["TestAll.cpp"]\n'
+                'if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":  # c\n    UNIFIED_SOURCES += ["TestGtk.cpp"]\n'
+                'if CONFIG["OS_TARGET"] == "WINNT":\n    UNIFIED_SOURCES += [\n        "TestWin.cpp",\n    ]\n'
+                'if CONFIG["OS_TARGET"] != "WINNT":\n    SOURCES += ["TestNotWin.cpp"]\n'
+                'if CONFIG["OS_TARGET"] == "WINNT":\n    SOURCES += ["TestA.cpp"]\nelse:\n    SOURCES += ["TestElse.cpp"]\n'
+                'if CONFIG["OS_TARGET"] == "WINNT" and CONFIG["CC_TYPE"] == "clang":\n    SOURCES += ["TestAnd.cpp"]\n')
+            seen = {n: our_gtests.only_on(fake, "d/%s.cpp" % n) for n in
+                    ("TestAll", "TestGtk", "TestWin", "TestNotWin", "TestElse", "TestAnd", "TestNowhere")}
+            out.append(("gtests: the moz.build reader says linux for gtk, win for WINNT, linux for != WINNT, and None for an unconditional, else:, and, or unlisted file",
+                        seen == {"TestAll": None, "TestGtk": "linux", "TestWin": "win", "TestNotWin": "linux",
+                                 "TestElse": None, "TestAnd": None, "TestNowhere": None}))
         kept = tree / "kept"
 
         def go_kept():
