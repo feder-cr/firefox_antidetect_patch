@@ -43,6 +43,7 @@
   "juggler/screencast/nsScreencastService.h": "100644",
   "juggler/tests/bfcache_reattach.test.mjs": "100644",
   "juggler/tests/caller_world.test.mjs": "100644",
+  "juggler/tests/context_ends_leaves_no_process.test.mjs": "100644",
   "juggler/tests/cookies_are_set_as_asked_or_refused.test.mjs": "100644",
   "juggler/tests/crashed_tab_is_closed.test.mjs": "100644",
   "juggler/tests/dispose_leaves_nothing_of_the_documents.test.mjs": "100644",
