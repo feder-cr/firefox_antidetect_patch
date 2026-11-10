@@ -45,6 +45,8 @@ function handler({mainRootId = 1} = {}) {
   const object = new Function('return {\n' + methods + '\n};')();
   Object.assign(object, {
     _lastHitEventId: 0,
+    // the ids this page sent (1-100 here): an ack of an id that is not one of them is another page's
+    _ownEventIds: new Set(Array.from({length: 100}, (_, i) => i + 1)),
     _hitWaiters: new Set(),
     _landingVerdicts: new Map(),
     _contentChannel: mux,

@@ -43,9 +43,13 @@ function pageHandler() {
   const handler = Object.create(PageHandler.prototype);
   handler._session = { emitEvent: (name, payload) => events.push([name, JSON.parse(JSON.stringify(payload))]) };
   handler._reportedFrameIds = new Set();
+  handler._droppedFrameIds = new Set();
   handler._liveFrameIds = new Set();
   handler._parentOfFrame = new Map();
+  handler._heldBackFrames = new Map();
+  handler._frameNavigations = { forget() {} };
   handler._frameEventsBeforeFrame = new Map();
+  handler._eventsAfterName = new Map();
   handler._contextFrame = new Map();
   handler._contextsOfFrame = new Map();
   handler._workers = new Map();
@@ -302,4 +306,110 @@ test('the commit of a subframe forgets only the frames below it', () => {
     ['Page.navigationCommitted', 'subframe-2'],
     ['Page.frameAttached', 'subframe-3'],
   ], 'the frame that committed and its sibling stay announced; only its child is told again');
+});
+
+// A frame the parent sees attach while its parent frame navigates would be dropped by the client at once: the client
+// forgets the frames below a frame when a document commits in it. (Measured: attach, commit, attach again left the
+// first, dropped Frame object in the client's child_frames: main_frame.child_frames == [Frame(url=''), payment].)
+function navigatingPage() {
+  const { handler, events } = pageHandler();
+  const pending = new Set();
+  handler._frameNavigations = { forget() {}, pendingNavigationId: frameId => (pending.has(frameId) ? 'nav-1' : undefined) };
+  const below = [];
+  handler._frameLifecycle = { framesBelow: () => below, reannounceBelow() {} };
+  handler._onFrameAttached({ frameId: 'mainframe-1', parentFrameId: undefined });
+  events.length = 0;
+  return { handler, events, pending, below };
+}
+
+test('a frame that attaches while its parent navigates is held back, and told when the parent commits', () => {
+  const { handler, events, pending, below } = navigatingPage();
+  pending.add('mainframe-1');
+  const child = { frameId: 'subframe-2', parentFrameId: 'mainframe-1' };
+  const grandchild = { frameId: 'subframe-3', parentFrameId: 'subframe-2' };
+  handler._onFrameSeenByTheParent(child);
+  handler._onFrameSeenByTheParent(grandchild);
+  assert.deepEqual(events, [], 'nothing is told while the parent navigates, and the child of a held frame is held too');
+
+  pending.clear();
+  below.push(child, grandchild);
+  handler._onNavigationCommitted({ frameId: 'mainframe-1', navigationId: 'nav-1', url: 'https://example.test/' });
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.frameId]), [
+    ['Page.navigationCommitted', 'mainframe-1'],
+    ['Page.frameAttached', 'subframe-2'],
+    ['Page.frameAttached', 'subframe-3'],
+  ], 'the commit comes first, then the frames that attached meanwhile, parents first, once');
+
+  events.length = 0;
+  handler._onNavigationCommitted({ frameId: 'mainframe-1', navigationId: 'nav-2', url: 'https://example.test/' });
+  assert.deepEqual(events.map(([name]) => name), ['Page.navigationCommitted'], 'a later commit does not tell them again');
+});
+
+test('a frame that attaches while its parent does not navigate is told at once', () => {
+  const { handler, events } = navigatingPage();
+  handler._onFrameSeenByTheParent({ frameId: 'subframe-2', parentFrameId: 'mainframe-1' });
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.frameId]), [['Page.frameAttached', 'subframe-2']]);
+});
+
+test('a held frame that goes before the commit is never told, and its detach says nothing', () => {
+  const { handler, events, pending, below } = navigatingPage();
+  pending.add('mainframe-1');
+  const child = { frameId: 'subframe-2', parentFrameId: 'mainframe-1' };
+  handler._onFrameSeenByTheParent(child);
+  handler._onFrameDetached('subframe-2');
+  pending.clear();
+  below.push(child);
+  handler._onNavigationCommitted({ frameId: 'mainframe-1', navigationId: 'nav-1', url: 'https://example.test/' });
+  assert.deepEqual(events.map(([name]) => name), ['Page.navigationCommitted']);
+});
+
+// The name of a frame is the name, else the id, of its <iframe>, which only the embedder's process can read. A frame that
+// is the root of its own process cannot say it: the commit carries the empty name and the client could not find the frame
+// by name (test_a_frame_is_found_by_the_name_or_the_id_of_its_iframe).
+function namedPage({ ownRoot = true, answer }) {
+  const { handler, events } = pageHandler();
+  const asked = [];
+  const browsingContext = { id: 7 };
+  handler._pageTarget = { frameIdToBrowsingContext: frameId => (frameId === 'subframe-7' ? browsingContext : undefined) };
+  handler._contentChannel = { frameRootOf: bc => (ownRoot ? bc.id : 1) };
+  handler._contentPage = { send: (method, params) => { asked.push([method, params]); return answer(); } };
+  handler._pageNetwork = { onMainFrameNavigationCommitted() {} };
+  handler._frameNavigations = { forget() {} };
+  handler._heldBackFrames = new Map();
+  handler._onFrameAttached({ frameId: 'subframe-7', parentFrameId: 'mainframe-1' });
+  events.length = 0;
+  return { handler, events, asked };
+}
+
+test('the commit of a frame that is the root of its process waits for the name its embedder gives, and what follows waits behind it', async () => {
+  let reply;
+  const { handler, events, asked } = namedPage({ answer: () => new Promise(resolve => { reply = resolve; }) });
+  handler._onNavigationCommitted({ frameId: 'subframe-7', navigationId: 'nav-1', url: 'https://b.test/', name: '' });
+  handler._emitFrameKeyed('Page.eventFired', { frameId: 'subframe-7', name: 'load' }, 'subframe-7');
+  assert.deepEqual(JSON.parse(JSON.stringify(asked)), [['frameName', { childFrameId: 'subframe-7' }]], 'the embedder is asked for the name of the child');
+  assert.deepEqual(events, [], 'nothing of the frame leaves while the name is awaited');
+  reply({ name: 'pay' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.name]), [
+    ['Page.navigationCommitted', 'pay'],
+    ['Page.eventFired', 'load'],
+  ], 'the commit carries the name and comes first');
+});
+
+test('a frame that is not the root of its process, or that has a name already, is committed at once', () => {
+  let { handler, events, asked } = namedPage({ ownRoot: false, answer: () => Promise.resolve({ name: 'x' }) });
+  handler._onNavigationCommitted({ frameId: 'subframe-7', navigationId: 'nav-1', url: 'https://b.test/', name: '' });
+  assert.deepEqual(events.map(([name]) => name), ['Page.navigationCommitted']);
+  assert.deepEqual(asked, []);
+  ({ handler, events, asked } = namedPage({ answer: () => Promise.resolve({ name: 'x' }) }));
+  handler._onNavigationCommitted({ frameId: 'subframe-7', navigationId: 'nav-1', url: 'https://b.test/', name: 'given' });
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.name]), [['Page.navigationCommitted', 'given']]);
+  assert.deepEqual(asked, []);
+});
+
+test('an embedder that cannot say the name leaves the commit with the name it had', async () => {
+  const { handler, events } = namedPage({ answer: () => Promise.reject(new Error('Frame has been detached')) });
+  handler._onNavigationCommitted({ frameId: 'subframe-7', navigationId: 'nav-1', url: 'https://b.test/', name: '' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.name]), [['Page.navigationCommitted', '']]);
 });

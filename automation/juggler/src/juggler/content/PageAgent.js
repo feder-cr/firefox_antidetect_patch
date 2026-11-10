@@ -59,10 +59,16 @@ export class PageAgent {
   constructor(browserChannel, frameTree) {
     this._browserChannel = browserChannel;
     this._browserPage = browserChannel.connect('page');
+    // What the parent needs of this process to keep the navigations of the page: it assigns the ids and says
+    // started, committed, aborted (FrameNavigations). This process says what only it sees.
+    this._framesChannel = browserChannel.connect('frames');
     this._frameTree = frameTree;
     this._runtime = frameTree.runtime();
 
     this._workerData = new Map();
+    // The document of this root is in the back-forward cache: its workers were said ended (enterCache) and are said
+    // again when it is the current document again (leaveCache).
+    this._inCache = false;
     // Elements pointer events are meant for, resolved BEFORE the events are
     // sent and read when the page has handled them (`_armLanding`). [B230]
     this._armedLandings = new Map();
@@ -75,11 +81,10 @@ export class PageAgent {
     for (const frame of this._frameTree.frames())
       this._reportFrame(frame);
 
-    // Report created workers.
-    for (const worker of this._frameTree.workers())
-      this._onWorkerCreated(worker);
-
+    // The contexts first, then the workers: the parent takes `runtimeExecutionContextsCleared` as "these agents
+    // start over" and ends the workers it knew of this root, so the ones said after it are the ones that are here.
     this._reportExecutionContexts();
+    this._reportWorkers();
 
     if (this._frameTree.isPageReady()) {
       this._browserPage.emit('pageReady', {});
@@ -110,7 +115,9 @@ export class PageAgent {
       helper.on(this._frameTree, 'frameattached', this._onFrameAttached.bind(this)),
       helper.on(this._frameTree, 'framedetached', this._onFrameDetached.bind(this)),
       helper.on(this._frameTree, 'navigationstarted', this._onNavigationStarted.bind(this)),
-      helper.on(this._frameTree, 'navigationcommitted', this._onNavigationCommitted.bind(this)),
+      helper.on(this._frameTree, 'documentinserted', this._onDocumentInserted.bind(this)),
+      helper.on(this._frameTree, 'navigationcommitted', this._onInitialDocumentCommitted.bind(this)),
+      helper.on(this._frameTree, 'navigationcommitted', () => this._pruneArmedLandings()),
       // A document restored from the back-forward cache is loaded
       // already: its two lifecycle events fired the first time round and
       // will not fire again, so they are reported here or a caller waits
@@ -199,10 +206,15 @@ export class PageAgent {
   // flight. What the client is told of a page it attaches to.
   _reportFrame(frame) {
     this._onFrameAttached(frame);
-    if (frame.url())
-      this._onNavigationCommitted(frame);
-    if (frame.pendingNavigationId())
-      this._onNavigationStarted(frame);
+    if (frame.url() || frame.pendingNavigationId()) {
+      this._framesChannel.emit('frameKnown', {
+        frameId: frame.id(),
+        url: frame.url(),
+        name: frame.name(),
+        navigationId: frame.lastCommittedNavigationId() || undefined,
+        pendingNavigationId: frame.pendingNavigationId() || undefined,
+      });
+    }
   }
 
   // Every execution context there is, after the client drops the ones it held.
@@ -222,12 +234,42 @@ export class PageAgent {
    * again, so a caller waiting for them would wait for good.
    */
   _onDocumentRestored(mainFrame) {
+    // The parent counts the restores of the page and makes the navigation of this one (started, committed).
+    this._framesChannel.emit('frameDocumentRestored', {
+      frameId: mainFrame.id(),
+      url: mainFrame.url(),
+      name: mainFrame.name(),
+    });
     for (const frame of this._frameTree.frames()) {
       if (frame !== mainFrame)
         this._reportFrame(frame);
     }
     this._reportExecutionContexts();
+    // The contexts first, then the workers (see the constructor).
+    this.leaveCache();
     this._emitAllEvents(mainFrame);
+  }
+
+  // The document of this root goes into the back-forward cache (its `pagehide` with `persisted`, said BEFORE the
+  // channel detaches: what is said after waits for the restore). A worker belongs to the current document, so the
+  // workers of this root end for the client now, not when the document comes back. The worker itself lives on,
+  // frozen, in the cache: its WorkerData stays, and `leaveCache` says it again.
+  enterCache() {
+    if (this._inCache)
+      return;
+    this._inCache = true;
+    for (const workerId of this._workerData.keys())
+      this._browserPage.emit('pageWorkerDestroyed', { workerId });
+  }
+
+  // The document of this root is the current one again (the channel is attached again, in main.js). Said once, by
+  // whichever of the restore of the main document and the reattachment comes first: every root has this, the one
+  // that restores a main document and the ones that do not.
+  leaveCache() {
+    if (!this._inCache)
+      return;
+    this._inCache = false;
+    this._reportWorkers();
   }
 
   _emitAllEvents(frame) {
@@ -254,9 +296,26 @@ export class PageAgent {
     });
   }
 
+  // Every worker there is, said again after `runtimeExecutionContextsCleared` (which makes the parent forget the
+  // workers of this root). A worker already followed keeps its WorkerData; it is only announced anew.
+  _reportWorkers() {
+    for (const worker of this._frameTree.workers()) {
+      if (this._workerData.has(worker.id()))
+        this._announceWorker(worker);
+      else
+        this._onWorkerCreated(worker);
+    }
+  }
+
   _onWorkerCreated(worker) {
     const workerData = new WorkerData(this, this._browserChannel, worker);
     this._workerData.set(worker.id(), workerData);
+    // In the cache the client holds no worker of this root; `leaveCache` says every worker there is.
+    if (!this._inCache)
+      this._announceWorker(worker);
+  }
+
+  _announceWorker(worker) {
     this._browserPage.emit('pageWorkerCreated', {
       workerId: worker.id(),
       frameId: worker.frame().id(),
@@ -270,6 +329,9 @@ export class PageAgent {
       return;
     this._workerData.delete(worker.id());
     workerData.dispose();
+    // Already said ended when the document went into the cache: not twice.
+    if (this._inCache)
+      return;
     this._browserPage.emit('pageWorkerDestroyed', {
       workerId: worker.id(),
     });
@@ -345,22 +407,47 @@ export class PageAgent {
     });
   }
 
+  // The load of a frame began in this process: the parent hears of it here when no request tells it (about:blank,
+  // data:, a navigation the network never sees).
   _onNavigationStarted(frame) {
-    this._browserPage.emit('pageNavigationStarted', {
+    this._framesChannel.emit('frameNavigationStarted', {
       frameId: frame.id(),
       navigationId: frame.pendingNavigationId(),
     });
   }
 
+  // A document appeared in a frame of this process. The parent knows whether a navigation of the frame is in flight.
+  _onDocumentInserted(frame, navigationId) {
+    this._framesChannel.emit('frameDocumentInserted', {
+      frameId: frame.id(),
+      navigationId,
+      url: frame.url(),
+      name: frame.name(),
+    });
+  }
+
+  // The first document of a frame, which no navigation made (the about:blank a tree finds when it is born): the
+  // parent has no navigation for it, so it is said as a frame that is already loaded.
+  _onInitialDocumentCommitted(frame) {
+    if (frame.lastCommittedNavigationId())
+      return;
+    this._framesChannel.emit('frameKnown', {
+      frameId: frame.id(),
+      url: frame.url(),
+      name: frame.name(),
+    });
+  }
+
+  // A navigation of this process ended in an error, or Firefox refused it before any channel reported progress. This
+  // process says so because it is the one that sees the end of the load in order with the documents it inserts: a
+  // navigation whose document was inserted before the load was cut (a page that navigates from its first script) has
+  // committed, and is not aborted.
   _onNavigationAborted(frame, navigationId, errorText) {
-    this._browserPage.emit('pageNavigationAborted', {
+    this._framesChannel.emit('frameNavigationAborted', {
       frameId: frame.id(),
       navigationId,
       errorText,
     });
-    if (!frame._initialNavigationDone && !this._frameTree._isPageMain(frame))
-      this._emitAllEvents(frame);
-    frame._initialNavigationDone = true;
   }
 
   _onSameDocumentNavigation(frame) {
@@ -368,16 +455,6 @@ export class PageAgent {
       frameId: frame.id(),
       url: frame.url(),
     });
-  }
-
-  _onNavigationCommitted(frame) {
-    this._browserPage.emit('pageNavigationCommitted', {
-      frameId: frame.id(),
-      navigationId: frame.lastCommittedNavigationId() || undefined,
-      url: frame.url(),
-      name: frame.name(),
-    });
-    frame._initialNavigationDone = true;
   }
 
   // The root of a fragment that is not the page's main frame (a frame whose parent is in another process) is
@@ -424,6 +501,7 @@ export class PageAgent {
     } finally {
       this._workerData.clear();
       this._armedLandings.clear();
+      this._framesChannel.dispose();
       helper.removeListeners(this._eventListeners);
     }
   }
@@ -925,6 +1003,7 @@ export class PageAgent {
     const node = frame.unsafeObject(objectId);
     if (!node)
       throw new Error('Object not found for id = ' + objectId);
+    this._pruneArmedLandings();
     const token = ++this._lastLandingToken;
     this._armedLandings.set(token, node);
     // An armed landing that no ack ever reads (the event went to another document) does not stay for good.
@@ -934,10 +1013,31 @@ export class PageAgent {
   }
 
   /**
+   * The armed nodes of a document that is not the current one of its window any more are let go: a navigation replaced
+   * the document, and the node would keep the whole old document alive until the page closes.
+   */
+  _pruneArmedLandings() {
+    for (const [token, node] of [...this._armedLandings]) {
+      let stale = true;
+      try {
+        // A document that left its window (a navigation replaced it) has no `defaultView`. (Not compared with
+        // `window.document`: the node and the window reach us through different wrappers, and `!==` of two views of one
+        // document is true.) A document in the back-forward cache keeps its window, and its nodes.
+        stale = !node.ownerDocument || !node.ownerDocument.defaultView;
+      } catch (e) {
+        // a dead object: stale
+      }
+      if (stale)
+        this._armedLandings.delete(token);
+    }
+  }
+
+  /**
    * One verdict per armed landing and per type FrameTree records (mousemove, mousedown, mouseup), read in
    * the process that heard the ack. The key is this root's token; the parent composes it with the root.
    */
   _landingVerdictsFor() {
+    this._pruneArmedLandings();
     const verdicts = {};
     for (const [rootToken, node] of this._armedLandings) {
       verdicts[rootToken] = {

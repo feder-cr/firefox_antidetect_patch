@@ -65,6 +65,7 @@ const { PageHandler } = load('protocol/PageHandler.js', {
 let nextId = 100;
 function context({ parent = null, browserId = 9 } = {}) {
   const bc = { id: nextId++, parent, browserId, isContent: true, webProgress: {}, currentRemoteType: 'web', children: [] };
+  bc.top = parent ? parent.top : bc;
   if (parent) parent.children.push(bc);
   return bc;
 }
@@ -80,13 +81,17 @@ function page() {
   const handler = Object.create(PageHandler.prototype);
   handler._session = { emitEvent: (name, payload) => sent.push([name, JSON.parse(JSON.stringify(payload))]) };
   handler._reportedFrameIds = new Set();
+  handler._droppedFrameIds = new Set();
   handler._liveFrameIds = new Set();
   handler._workers = new Map();
   handler._parentOfFrame = new Map();
   handler._frameEventsBeforeFrame = new Map();
+  handler._eventsAfterName = new Map();
   handler._contextFrame = new Map();
   handler._contextsOfFrame = new Map();
   handler._frameLifecycle = lifecycle;
+  handler._heldBackFrames = new Map();
+  handler._frameNavigations = { forget() {}, pendingNavigationId() {} };
   lifecycle.on('frameattached', (_, payload) => handler._onFrameAttached(payload));
   lifecycle.on('framedetached', (_, { frameId }) => handler._onFrameDetached(frameId));
   lifecycle.start();
@@ -140,4 +145,23 @@ test('the removed frame leaves the client, and is not said again by a later rest
   sent.length = 0;
   handler._onNavigationCommitted({ frameId: 'mainframe-9', navigationId: 'nav-bfcache-3', url: 'http://a.test/top' });
   assert.deepEqual(attached(sent), []);
+});
+
+test('a restore says again the frames of the document that came back, not those of the other cached documents of the page', () => {
+  const top1 = context();
+  const child1 = context({ parent: top1 });
+  const browser = { browsingContext: top1 };
+  const lifecycle = new FrameLifecycle(browser);
+  lifecycle.on('frameattached', () => {});
+  lifecycle.start();
+  // the page navigates: a new top, with a frame of its own; the old document and its frame go to the cache
+  const top2 = context();
+  browser.browsingContext = top2;
+  obs.notify(top2, 'browsing-context-attached', 'replace');
+  const child2 = context({ parent: top2 });
+  obs.notify(child2, 'browsing-context-attached', 'attach');
+  assert.deepEqual(Array.from(lifecycle.framesBelow('mainframe-9'), f => f.frameId), ['subframe-' + child2.id]);
+  // back: the first top is the page's again
+  browser.browsingContext = top1;
+  assert.deepEqual(Array.from(lifecycle.framesBelow('mainframe-9'), f => f.frameId), ['subframe-' + child1.id]);
 });

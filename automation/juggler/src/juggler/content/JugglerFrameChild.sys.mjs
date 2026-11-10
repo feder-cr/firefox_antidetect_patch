@@ -45,9 +45,14 @@ export class JugglerFrameChild extends JSWindowActorChild {
       // another process. A frame served by the agents of its root (its parent is in this process) is not a root.
       if (!aEvent.persisted || !helper.isFragmentRoot(this.browsingContext) || aEvent.target !== this.document)
         return;
-      if (aEvent.type === 'pagehide')
+      if (aEvent.type === 'pagehide') {
+        // A worker belongs to the current document: the workers of this root end for the client now, over the
+        // channel that is still attached (what is said after the detach waits for the restore). A channel that
+        // is not attached will not be reattached, so nothing is said then.
+        if (agents.channel.isReady())
+          agents.pageAgent.enterCache();
         agents.channel.detachFromPeer();
-      else
+      } else
         this.sendAsyncMessage('juggler:became-current', {});
       return;
     }

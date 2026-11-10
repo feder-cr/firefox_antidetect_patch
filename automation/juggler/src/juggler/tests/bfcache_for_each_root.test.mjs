@@ -41,7 +41,7 @@ const { JugglerFrameChild } = load('content/JugglerFrameChild.sys.mjs', {
 function frame(parent) {
   const document = {};
   const actor = new JugglerFrameChild();
-  const agents = { channel: { detached: 0, detachFromPeer() { this.detached++; } } };
+  const agents = { channel: { detached: 0, isReady: () => true, detachFromPeer() { this.detached++; } }, pageAgent: { enterCache() {} } };
   actor._agents = () => agents;
   actor.sent = [];
   actor.sendAsyncMessage = (name, obj) => actor.sent.push(name);

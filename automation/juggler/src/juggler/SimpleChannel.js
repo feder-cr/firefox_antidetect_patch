@@ -113,6 +113,11 @@ var SimpleChannel = class SimpleChannel {
     this._detached = true;
   }
 
+  // Attached to a peer and sending: what a document that goes into the cache can still say.
+  isReady() {
+    return this._ready;
+  }
+
   /**
    * `callback` runs when a detached end is attached again, before what it
    * queued while detached goes out, so that what it says there is heard

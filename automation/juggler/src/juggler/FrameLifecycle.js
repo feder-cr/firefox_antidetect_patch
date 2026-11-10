@@ -82,14 +82,20 @@ export class FrameLifecycle {
     if (this._frames.has(frameId))
       return;
     const parentFrameId = parentBrowsingContext ? helper.browsingContextToFrameId(parentBrowsingContext) : undefined;
-    this._frames.set(frameId, {parentFrameId});
+    // `top`: the top this frame was announced under. Every top of the page has the same frame id, and the frames of the
+    // documents in the back-forward cache stay here while they are cached.
+    this._frames.set(frameId, {parentFrameId, top: browsingContext.top ? browsingContext.top.id : browsingContext.id});
     this.emit('frameattached', {frameId, parentFrameId});
   }
 
-  // The frames announced below `frameId` (its children, theirs, ...), parents first: the order they were announced.
+  // The frames announced below `frameId` (its children, theirs, ...), parents first: the order they were announced,
+  // and only those of the document that is the page's now - the cached ones belong to other tops.
   framesBelow(frameId) {
     const below = [];
-    for (const [id, {parentFrameId}] of this._frames) {
+    const top = this._browser.browsingContext.id;
+    for (const [id, {parentFrameId, top: frameTop}] of this._frames) {
+      if (frameTop !== top)
+        continue;
       for (let parent = parentFrameId; parent !== undefined; parent = this._frames.get(parent)?.parentFrameId) {
         if (parent === frameId) {
           below.push({frameId: id, parentFrameId});

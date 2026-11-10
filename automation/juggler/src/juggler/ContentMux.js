@@ -34,6 +34,12 @@ const retryingOnRootGone = route => Object.assign(params => route(params), {retr
 // The same as RootTransport.sys.mjs:32 (MAX_RETRY_ATTEMPTS) in the BiDi transport.
 export const MAX_RETRY_ATTEMPTS = 10;
 
+// How long a command for a frame waits for the frame's root to be known (the window global of a context in
+// navigation is not there yet): this many looks, `ROOT_UNKNOWN_WAIT_MS` apart. Nothing has been sent while it
+// waits, so any command may.
+export const ROOT_UNKNOWN_ATTEMPTS = 100;
+export const ROOT_UNKNOWN_WAIT_MS = 30;
+
 export const ROUTES = {
   // by execution context
   evaluate: byContext,
@@ -85,8 +91,11 @@ export class ContentMux {
   // makes one end of a channel to one content process (a SimpleChannel). `nextTask(callback)` runs the
   // callback in a later task of the parent's main thread (the engine passes Services.tm.dispatchToMainThread);
   // without one a microtask is used, which is enough to let the rest of the task that discarded a root finish.
-  constructor({pageTarget, name, uid, createChannel, nextTask}) {
+  constructor({pageTarget, name, uid, createChannel, nextTask, wait}) {
     this._nextTask = nextTask || (callback => void Promise.resolve().then(callback));
+    // `wait(ms)` is a promise that resolves after ms (the engine passes a timer); without one the looks that wait
+    // for a root to be known follow each other at once.
+    this._wait = wait || (() => Promise.resolve());
     this._pageTarget = pageTarget;
     this._name = name;
     this._uid = uid || name;
@@ -136,20 +145,36 @@ export class ContentMux {
       this.disposeRoot(rootId);
   }
 
+  // A document that is not a process root was created for the browsing context of a root: the frame is now served
+  // by the root of its parent, and the root that was has no process to wait for. The browsing context is NOT
+  // discarded, so nothing else would end it (and a read in flight on it would wait for good).
+  onRootTurnedLocal(rootId) {
+    const endpoint = this._endpoints.get(rootId);
+    if (endpoint && !endpoint.isMain)
+      this.disposeRoot(rootId);
+  }
+
+  // The process of a frame crashed: the roots of that frame and of the frames below it are gone with it.
+  disposeRootsOf(browsingContext) {
+    for (const endpoint of [...this._endpoints.values()]) {
+      if (endpoint.isMain || !endpoint.bc)
+        continue;
+      for (let bc = endpoint.bc; bc; bc = bc.parent) {
+        if (bc === browsingContext) {
+          this.disposeRoot(endpoint.rootId);
+          break;
+        }
+      }
+    }
+  }
+
   // Nothing is left of a root: what waits for it is refused, what it held is forgotten, its workers end.
   disposeRoot(rootId) {
     const endpoint = this._endpoints.get(rootId);
     if (!endpoint)
       return;
     this._endpoints.delete(rootId);
-    const handlers = this._registrations.get('page');
-    for (const workerId of [...endpoint.workers]) {
-      this._workerRoot.delete(workerId);
-      // The WorkerHandler of a worker whose root went without saying so is disposed by the handler.
-      if (handlers && handlers.pageWorkerDestroyed)
-        handlers.pageWorkerDestroyed({workerId}, {rootId});
-    }
-    endpoint.workers.clear();
+    this._endWorkersOf(endpoint, this._registrations.get('page'));
     for (const id of [...endpoint.contexts])
       this._contexts.delete(id);
     endpoint.contexts.clear();
@@ -161,6 +186,17 @@ export class ContentMux {
     // sender of a command that can be asked again (`_send`), by this and by nothing in the message.
     endpoint.gone = true;
     endpoint.channel.dispose();
+  }
+
+  // The workers a root announced are gone: forgotten here and, by `handlers.pageWorkerDestroyed`, in the handler,
+  // which disposes the WorkerHandler of a worker whose root went without saying so.
+  _endWorkersOf(endpoint, handlers) {
+    for (const workerId of [...endpoint.workers]) {
+      this._workerRoot.delete(workerId);
+      endpoint.workers.delete(workerId);
+      if (handlers && handlers.pageWorkerDestroyed)
+        handlers.pageWorkerDestroyed({workerId}, {rootId: endpoint.rootId});
+    }
   }
 
   rootIds() {
@@ -299,6 +335,12 @@ export class ContentMux {
   }
 
   _connectorOn(endpoint, connector) {
+    // A connector that lives as long as the page's handler must not keep the roots that ended.
+    for (const used of [...connector.owns.keys()]) {
+      if (used.gone) {
+        connector.owns.delete(used);
+      }
+    }
     let own = connector.owns.get(endpoint);
     if (!own) {
       own = endpoint.channel.connect(connector.namespace);
@@ -345,9 +387,7 @@ export class ContentMux {
       case 'ctx':
         return this._sendToRoot(connector, this.contextRoot(route.id), method, args, used);
       case 'frame': {
-        const rootId = this.rootOf(route.id);
-        if (rootId === null)
-          throw new Error('root of frame ' + route.id + ' unknown, retry');
+        const rootId = await this._rootKnown(() => this.rootOf(route.id), route.id);
         if (method === 'adoptNode' && params.executionContextId !== undefined && this.contextRoot(params.executionContextId) !== rootId)
           return {remoteObject: null};
         const result = await this._sendToRoot(connector, rootId, method, args, used);
@@ -362,15 +402,31 @@ export class ContentMux {
         const child = this._pageTarget.frameIdToBrowsingContext(route.id);
         if (!child || !child.parent)
           throw new Error('Failed to find frame with id = ' + route.id);
-        const rootId = this.frameRootOf(child.parent);
-        if (rootId === null)
-          throw new Error('root of frame ' + route.id + ' unknown, retry');
+        const rootId = await this._rootKnown(() => {
+          const current = this._pageTarget.frameIdToBrowsingContext(route.id);
+          if (!current || !current.parent)
+            throw new Error('Failed to find frame with id = ' + route.id);
+          return this.frameRootOf(current.parent);
+        }, route.id);
         return this._sendToRoot(connector, rootId, method, args, used);
       }
       case 'main':
         return this._sendToRoot(connector, this.mainRootId(), method, args, used);
     }
     throw new Error('ContentMux: unknown kind of route ' + route.kind + ' for ' + method);
+  }
+
+  // The root of a frame, once it is known: `look()` answers null while the window global of a context in navigation is
+  // not there. Nothing has been sent yet, so the wait is for every command; it ends with the error that says why.
+  async _rootKnown(look, frameId) {
+    for (let attempts = 0;; attempts++) {
+      const rootId = look();
+      if (rootId !== null)
+        return rootId;
+      if (attempts >= ROOT_UNKNOWN_ATTEMPTS)
+        throw new Error('root of frame ' + frameId + ' unknown, retry');
+      await this._wait(ROOT_UNKNOWN_WAIT_MS);
+    }
   }
 
   _sendToRoot(connector, rootId, method, args, used) {
@@ -427,6 +483,7 @@ export class ContentMux {
   _onEvent(name, payload, rootId, handlers) {
     const endpoint = this._endpoints.get(rootId);
     if (endpoint && name === 'runtimeExecutionContextCreated') {
+      this._endContextsOfTheFrameInOtherRoots(payload, rootId, handlers);
       this._contexts.set(payload.executionContextId, {id: payload.executionContextId, auxData: payload.auxData, rootId});
       endpoint.contexts.add(payload.executionContextId);
     } else if (endpoint && name === 'runtimeExecutionContextDestroyed') {
@@ -443,6 +500,21 @@ export class ContentMux {
     return handlers[name](payload, {rootId});
   }
 
+  // A frame is in one process at a time. A root that announces a context for a frame says the frame is there now, so
+  // the contexts the frame still has in another root are the ones of the process it left (a local iframe that went to a
+  // site of its own, or came back), which nothing else would end before the frame is detached.
+  _endContextsOfTheFrameInOtherRoots(payload, rootId, handlers) {
+    const frameId = payload.auxData && payload.auxData.frameId;
+    if (frameId === undefined)
+      return;
+    for (const context of [...this._contexts.values()]) {
+      if (context.rootId === rootId || !context.auxData || context.auxData.frameId !== frameId)
+        continue;
+      this._forgetContext(context.id);
+      handlers.runtimeExecutionContextDestroyed({executionContextId: context.id}, {rootId: context.rootId});
+    }
+  }
+
   _forgetContext(executionContextId) {
     const context = this._contexts.get(executionContextId);
     if (!context)
@@ -456,8 +528,15 @@ export class ContentMux {
   // A root dropped the contexts it announced. The client drops everything on this event, so the main
   // root's is forwarded and the contexts of the others are announced again at once; a root that is not
   // the main one only loses its own.
+  //
+  // The agents of a root say this when they start over (new agents in a process, a document restored from the
+  // back-forward cache) and then say again the workers they hold: the old agents may have died without saying
+  // that a worker ended, so the workers this root announced before are ended here, or they would stay in
+  // `_workerRoot` and in the handler for good. A document that went into the cache ended its workers at its
+  // pagehide (PageAgent.enterCache): there is nothing left to end here at its restore, so no worker ends twice.
   _onContextsCleared(endpoint, payload, handlers) {
     const {rootId} = endpoint;
+    this._endWorkersOf(endpoint, handlers);
     if (endpoint.isMain) {
       for (const id of [...endpoint.contexts])
         this._forgetContext(id);

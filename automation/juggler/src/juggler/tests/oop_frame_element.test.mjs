@@ -213,9 +213,13 @@ function describingHandler(answer) {
   handler._contentPage = { send: async (method, params) => (sent.push([method, params]), { ...answer }) };
   handler._session = { emitEvent() {} };
   handler._reportedFrameIds = new Set();
+  handler._droppedFrameIds = new Set();
   handler._liveFrameIds = new Set();
   handler._parentOfFrame = new Map();
+  handler._heldBackFrames = new Map();
+  handler._frameNavigations = { forget() {} };
   handler._frameEventsBeforeFrame = new Map();
+  handler._eventsAfterName = new Map();
   handler._contextFrame = new Map();
   handler._contextsOfFrame = new Map();
   handler._workers = new Map();

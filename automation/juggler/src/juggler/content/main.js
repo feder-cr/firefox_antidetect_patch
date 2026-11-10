@@ -91,7 +91,11 @@ export function initialize(browsingContext, docShell) {
   // its channel is attached again, before anything it said meanwhile goes
   // out: the client learns the document before it hears it. The detachment
   // and the request to be bound again are JugglerFrameChild's.
-  data.channel.onReattached(() => data.frameTree.announceRestoredDocument());
+  data.channel.onReattached(() => {
+    data.frameTree.announceRestoredDocument();
+    // The workers of the document are said again once it is the current one (a no-op if the restore did).
+    data.pageAgent.leaveCache();
+  });
   data.frameTree.setDocShellSettings({ interceptFileChooser: !!pageCrossProcessCookie.interceptFileChooserDialog });
 
   data.channel.register('', {

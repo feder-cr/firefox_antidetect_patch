@@ -329,6 +329,44 @@ test('5b. cleared from the main root: forwarded, then the contexts of the other 
   assert.equal((await w.page.send('evaluate', {executionContextId: 10})).answeredBy, 'root2');
 });
 
+test('5c. a root that announces a context for a frame ends the contexts the frame still has in another root', {timeout: 10000}, async () => {
+  // A local iframe that goes to a site of its own: the process of the top keeps its contexts until the frame is
+  // detached, which is never (the frame stays). The root that now holds the frame says so by announcing its contexts.
+  const w = world();
+  w.register();
+  const m = await w.root(MAIN, {isMain: true});
+  const b = await w.root(2);
+  await m.emit('runtimeExecutionContextCreated', {executionContextId: 1, auxData: {frameId: 'fm'}});
+  await m.emit('runtimeExecutionContextCreated', {executionContextId: 5, auxData: {frameId: 'fb', name: ''}});
+  await m.emit('runtimeExecutionContextCreated', {executionContextId: 6, auxData: {frameId: 'fb', name: 'w'}});
+  w.events.length = 0;
+
+  await b.emit('runtimeExecutionContextCreated', {executionContextId: 10, auxData: {frameId: 'fb', name: ''}});
+  assert.deepEqual(w.events, [
+    {name: 'runtimeExecutionContextDestroyed', payload: {executionContextId: 5}, rootId: MAIN},
+    {name: 'runtimeExecutionContextDestroyed', payload: {executionContextId: 6}, rootId: MAIN},
+    {name: 'runtimeExecutionContextCreated', payload: {executionContextId: 10, auxData: {frameId: 'fb', name: ''}}, rootId: 2},
+  ], "the frame's old contexts end first, then the new one is told; the top's own context stays");
+  assert.equal(w.mux.contextRoot(1), MAIN);
+  assert.equal(w.mux.contextRoot(10), 2);
+  assert.throws(() => w.mux.contextRoot(5), /Failed to find execution context/);
+
+  // The worlds of the frame in the root that holds it do not end each other.
+  w.events.length = 0;
+  await b.emit('runtimeExecutionContextCreated', {executionContextId: 11, auxData: {frameId: 'fb', name: 'w'}});
+  assert.deepEqual(w.events.map(e => e.name), ['runtimeExecutionContextCreated']);
+  assert.equal(w.mux.contextRoot(10), 2);
+
+  // And back: the frame is local again, the process it left ends its contexts.
+  w.events.length = 0;
+  await m.emit('runtimeExecutionContextCreated', {executionContextId: 7, auxData: {frameId: 'fb', name: ''}});
+  assert.deepEqual(w.events.map(e => [e.name, e.payload.executionContextId, e.rootId]), [
+    ['runtimeExecutionContextDestroyed', 10, 2],
+    ['runtimeExecutionContextDestroyed', 11, 2],
+    ['runtimeExecutionContextCreated', 7, MAIN],
+  ]);
+});
+
 test('6. unbinding an actor that is no longer the bound one does nothing', {timeout: 10000}, async () => {
   const w = world();
   w.frame('ft', bc(MAIN, null, true));

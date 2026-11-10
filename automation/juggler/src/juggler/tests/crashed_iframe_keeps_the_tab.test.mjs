@@ -62,9 +62,14 @@ test('the target names the crashed frame the way the content side does, and tell
   assert.match(frameCrashed, /Events\.FrameCrashed/);
   assert.doesNotMatch(frameCrashed, /Events\.Crashed|closeCrashedTab|dispose\(/);
 
+  // the page handler forgets the frame and the frames below it as it forgets a frame the lifecycle detached, which is
+  // what tells the client (`Page.frameDetached`) for those it knows
   const handler = code('protocol/PageHandler.js');
   const wiring = handler.slice(handler.indexOf('PageTarget.Events.FrameCrashed'));
-  assert.match(wiring.slice(0, 200), /emitEvent\('Page\.frameDetached', \{ frameId \}\)/);
+  assert.match(wiring.slice(0, 500), /framesBelow\(frameId\)[\s\S]*this\._onFrameDetached\(id\)/);
+  assert.doesNotMatch(wiring.slice(0, 500), /emitEvent\('Page\.frameDetached'/);
+  // and the mux ends the roots of the crashed frame before the client is told
+  assert.match(frameCrashed, /this\._contentMux\.disposeRootsOf\(browsingContext\);\s*this\.emit\(/);
 });
 
 test('the engine passes the crashed context\'s id as the notification data, and nothing when it does not know it', () => {

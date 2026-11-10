@@ -428,10 +428,15 @@ export class FrameTree {
       dump(`WARNING: ${event.type} for unknown frame ${helper.browsingContextToFrameId(docShell.browsingContext)}\n`);
       return;
     }
-    if (frame._pendingNavigationId) {
+    const navigationId = frame._pendingNavigationId;
+    if (navigationId) {
       docShell.QueryInterface(Ci.nsIWebNavigation);
       this._frameNavigationCommitted(frame, docShell.currentURI.spec);
     }
+
+    // Said to the parent for every document, with the navigation this process had in flight for it, if it had one
+    // (the navigation may have begun in another process, and then the parent knows its id).
+    this.emit(FrameTree.Events.DocumentInserted, frame, navigationId || undefined);
 
     if (this._isPageMain(frame)) {
       this._installMainFrameInputListeners(docShell);
@@ -492,7 +497,11 @@ export class FrameTree {
       // commit. So the pending navigation is cleared at once, and the abort is
       // reported unless, by the end of this task, the document has gone the
       // swap's way.
-      if (this._isPageMain(frame) && status === Cr.NS_BINDING_ABORTED) {
+      //
+      // A frame in a page of its own process is no different: an iframe that goes to another site is cut by the
+      // process it leaves in the same way (its docShell is being destroyed), and the document that commits in the new
+      // process must find its navigation still in flight.
+      if (status === Cr.NS_BINDING_ABORTED) {
         if (docShell.isBeingDestroyed())
           return;
         Services.tm.dispatchToMainThread(() => {
@@ -669,6 +678,7 @@ FrameTree.Events = {
   DocumentRestored: 'documentrestored',
   NavigationCommitted: 'navigationcommitted',
   NavigationAborted: 'navigationaborted',
+  DocumentInserted: 'documentinserted',
   SameDocumentNavigation: 'samedocumentnavigation',
   PageReady: 'pageready',
   InputEvent: 'inputevent',
@@ -706,7 +716,6 @@ class Frame {
     this._textInputProcessor = null;
 
     this._worldNameToContext = new Map();
-    this._initialNavigationDone = false;
 
     this._webSocketListenerInnerWindowId = 0;
     // WebSocketListener calls frameReceived event before webSocketOpened.

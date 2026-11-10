@@ -260,6 +260,21 @@ export class TargetRegistry {
       }
     }, 'browsing-context-discarded');
 
+    // A document that is not a process root, created for the browsing context of a root: the frame turned local (it
+    // navigated to the site of its parent). The browsing context stays, so the root would stay with it.
+    Services.obs.addObserver({
+      observe: (windowGlobal, topic, data) => {
+        try {
+          const browsingContext = windowGlobal.browsingContext;
+          if (!browsingContext.parent || windowGlobal.isProcessRoot)
+            return;
+          this._browserIdToTarget.get(browsingContext.browserId)?._contentMux.onRootTurnedLocal(browsingContext.id);
+        } catch (e) {
+          // a window global of a context that is going: nothing to do
+        }
+      }
+    }, 'window-global-created');
+
     const onTabOpenListener = (appWindow, window, event) => {
       const tab = event.target;
       const userContextId = tab.userContextId;
@@ -616,6 +631,7 @@ export class PageTarget {
       uid: 'target-' + this._targetId,
       createChannel: (name, uid) => new SimpleChannel(name, uid),
       nextTask: callback => Services.tm.dispatchToMainThread(callback),
+      wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
     });
     this._dialogs = new Map();
     this.disableCache = false;
@@ -628,7 +644,12 @@ export class PageTarget {
 
     const navigationListener = {
       QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
-      onLocationChange: (aWebProgress, aRequest, aLocation) => this._onNavigated(aLocation),
+      // The progress of a frame climbs to the browsing contexts above it (BrowsingContextWebProgress): without the
+      // test the address of an iframe became the page's url, and the page's permissions were asked for it.
+      onLocationChange: (aWebProgress, aRequest, aLocation) => {
+        if (aWebProgress.isTopLevel)
+          this._onNavigated(aLocation);
+      },
     };
     this._eventListeners = [
       helper.addObserver(this._updateModalDialogs.bind(this), 'common-dialog-loaded'),
@@ -986,6 +1007,9 @@ export class PageTarget {
    * it exists; here the page keeps working, which is the part that was broken.
    */
   frameCrashed(browsingContext) {
+    // The roots of the crashed frame and of the frames below it end: what waits for them is refused, what they held is
+    // forgotten. Then the client is told.
+    this._contentMux.disposeRootsOf(browsingContext);
     this.emit(PageTarget.Events.FrameCrashed, {
       frameId: helper.browsingContextToFrameId(browsingContext),
     });

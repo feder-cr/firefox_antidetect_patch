@@ -59,6 +59,8 @@ function pageHandlerOn(obs) {
     ChromeUtils: { importESModule: url => modules[url] },
   }, ['FrameLifecycle']);
   modules['resource://gre/modules/juggler/FrameLifecycle.js'] = { FrameLifecycle };
+  const { FrameNavigations } = load('FrameNavigations.js', {}, ['FrameNavigations']);
+  modules['resource://gre/modules/juggler/FrameNavigations.js'] = { FrameNavigations };
 
   const helper = new Helper();
   const network = {};
