@@ -4,6 +4,7 @@
 
 # Read by gfx/thebes/moz.build (one include line).
 
+# dom/canvas reads the coverage ladder through the exported header.
 EXPORTS += [
     "StealthBundleFontList.h",
 ]

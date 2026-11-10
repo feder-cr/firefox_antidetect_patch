@@ -6,9 +6,6 @@
 
 UNIFIED_SOURCES += ["TestIdwr.cpp"]
 
-# Not unified: LibmUcrtCases.h turns off FP contraction for the rest of its file.
-SOURCES += ["TestIdwrLibm.cpp"]
-
 LOCAL_INCLUDES += ["../../src/gecko_golden"]
 
 FINAL_LIBRARY = "xul-gtest"

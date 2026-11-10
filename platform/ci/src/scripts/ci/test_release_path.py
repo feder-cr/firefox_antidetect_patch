@@ -34,16 +34,14 @@ sys.path.insert(0, str(HERE))
 import background  # noqa: E402
 import gh_expr as e  # noqa: E402
 import gtest_run  # noqa: E402
-import our_gtests  # noqa: E402
 import legs  # noqa: E402
 import linker_shim  # noqa: E402
 
 ROOT = HERE.parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
-# The default filter of the plan and of release.yml: the engine's own gtests by prefix
-# (the run 41402916724 that went green ran a hand-written list, all of it inside this).
-GREEN_FILTER = ("Stealth*.*:Idwr*.*:FFVPX*.*:"
-                "StartupCache.WritesNeverLowerIOPriority")
+# The filter of run 41402916724, from its log.
+GREEN_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
+                "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.
 CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure", "browser/moz.configure", "build/moz.configure/*.configure")
@@ -124,11 +122,8 @@ if "--gtest_list_tests" in sys.argv:
 with open(%r, "a") as f:
     f.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "env": dict(env)}) + "\\n")
 suite = env["GTEST_FILTER"]
-report = env["GTEST_OUTPUT"][5:]
-ran = os.path.basename(report)[:-5].replace("_", "/")
-with open(report, "w") as f:
-    json.dump({"tests": 1, "failures": 0, "disabled": 0, "errors": 0,
-               "testsuites": [{"name": ran, "tests": 1, "disabled": 0}] if ran not in env.get("FAKE_SILENT", "").split() else []}, f)
+with open(env["GTEST_OUTPUT"][5:], "w") as f:
+    json.dump({"tests": 1, "failures": 0, "disabled": 0, "errors": 0, "testsuites": []}, f)
 if env.get("FAKE_CRASH") and suite.startswith(env["FAKE_CRASH"]):
     import signal
     if env.get("FAKE_CORES"):
@@ -137,72 +132,6 @@ if env.get("FAKE_CRASH") and suite.startswith(env["FAKE_CRASH"]):
 sys.exit(3 if env.get("FAKE_FAIL") and suite.startswith(env["FAKE_FAIL"]) else 0)
 """ % str(record), encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
-
-
-#: How the gtests are run when not through gtest_run.py: `mach gtest`, the gtest libxul, `firefox -unittest`.
-GTEST_OWN_COMMAND = re.compile(r"mach\s+gtest\b|xul-gtest|-unittest\b")
-#: Unpacking the binaries the build job hands over (gtest-bin.tar): the job that does it runs them. Building
-#: them (`tar -c`, the upload) is not running them.
-GTEST_UNPACK = re.compile(r"\btar\b[^\n]*\s-\w*x[^\n]*gtest-bin")
-
-
-def commands(step) -> str:
-    """A step's `run`, without its comment lines."""
-    return "\n".join(l for l in str(step.get("run", "")).splitlines() if not l.strip().startswith("#"))
-
-
-def gtest_executors(doc) -> dict:
-    """{job: its commands that run gtests by their own command (mach gtest, -unittest, xul-gtest)} for every job
-    that executes gtests, recognised by its commands, never by its name: it runs one of those, unpacks
-    gtest-bin.tar, or downloads an artifact gtest-bin-*."""
-    found = {}
-    for name, job in (doc.get("jobs") or {}).items():
-        steps = job.get("steps") or []
-        own = [commands(s) for s in steps if GTEST_OWN_COMMAND.search(commands(s))]
-        if own or any(GTEST_UNPACK.search(commands(s)) for s in steps) or any(
-                "download-artifact" in str(s.get("uses", "")) and str((s.get("with") or {}).get("name", "")).startswith("gtest-bin")
-                for s in steps):
-            found[name] = own
-    return found
-
-
-def gtest_job_flaws(doc) -> dict:
-    """{job: what is wrong} for every job that executes gtests and does not do it only through
-    scripts/ci/gtest_run.py: no step calls it, or a step runs them by another command too, which
-    gtest_run.py's check that every suite of ours ran cannot see."""
-    flaws = {}
-    for name, own in gtest_executors(doc).items():
-        steps = doc["jobs"][name].get("steps") or []
-        if not any("gtest_run.py" in commands(s) for s in steps):
-            flaws[name] = "executes gtests and no step calls gtest_run.py"
-        elif own:
-            flaws[name] = "runs gtests by another command too: %s" % GTEST_OWN_COMMAND.search(own[0]).group(0)
-    return flaws
-
-
-def group_one_gtest_road(doc) -> list:
-    """Every job of every workflow that executes gtests does it through gtest_run.py."""
-    out = []
-    import yaml
-    seen, flawed = [], {}
-    for path in sorted(WORKFLOW.parent.glob("*.yml")):
-        other_doc = doc if path == WORKFLOW else yaml.safe_load(path.read_text(encoding="utf-8"))
-        for job, what in gtest_job_flaws(other_doc).items():
-            flawed["%s:%s" % (path.name, job)] = what
-        seen += ["%s:%s" % (path.name, j) for j in gtest_executors(other_doc)]
-    out.append(("gtests: every job of every workflow that executes gtests does it through gtest_run.py, so its check of ours holds everywhere: %s"
-                % (flawed or "none flawed"), not flawed and len(seen) >= 2))  # it did find the gtest jobs: the check is not empty
-    # The recognition is by commands: a job under any name, with the old hosted step's command, is caught
-    old = {"jobs": {"anything": {"steps": [{"run": 'python3 scripts/ci phase gtest -- xvfb-run -a ./mach gtest "$F"'}]},
-                    "unpacks": {"steps": [{"run": "tar -C x -xf x/gtest-bin.tar\nxvfb-run -a ./firefox -unittest"}]},
-                    "takes": {"steps": [{"uses": "actions/download-artifact@v4", "with": {"name": "gtest-bin-linux"}}]},
-                    "both": {"steps": [{"run": "python3 .series/scripts/ci/gtest_run.py --root r"}, {"run": "./mach gtest 'A*'"}]},
-                    "good": {"steps": [{"run": "tar -xf gtest-bin.tar\npython3 .series/scripts/ci/gtest_run.py --root r"}]},
-                    "builds": {"steps": [{"run": "./mach build recurse_gtest\ntar -chf gtest-bin.tar bin"}]},
-                    "other": {"steps": [{"run": "# mach gtest is not run here\necho hi"}]}}}
-    out.append(("gtests: the check names a gtest job by its commands (mach gtest, -unittest, gtest-bin), not by a list of names",
-                sorted(gtest_job_flaws(old)) == ["anything", "both", "takes", "unpacks"]))
-    return out
 
 
 def group_gtest(doc) -> list:
@@ -219,7 +148,7 @@ def group_gtest(doc) -> list:
                 if key.startswith("GTEST_FILTER"):
                     values.append((job, str(value)))
     out.append(("gtests: an empty filter never turns into *: no job falls back on its own (%d read it)" % len(values),
-                len(values) == 2 and all(e.render(v, context(gtest_filter="")) == "" for _, v in values)
+                len(values) == 3 and all(e.render(v, context(gtest_filter="")) == "" for _, v in values)
                 and all(e.render(v, context()) == GREEN_FILTER for _, v in values)))
     linux = jobs["gtest-linux"]
     steps = {s.get("name", ""): s for s in linux["steps"]}
@@ -249,34 +178,25 @@ def group_gtest(doc) -> list:
         tree = Path(tmp)
         (tree / "obj-rel" / "dist" / "bin").mkdir(parents=True)
         (tree / "obj-rel" / "dist" / "bin" / "firefox").write_text("x")
-        make = build_steps["Engine gtests - build them, for the jobs that run them"]["run"].splitlines()
-        # the list is read from a series (the case on a fake one below), so the command that writes it
-        # is not run on this tree: its output is put in place, and the tar must carry it
-        lines = [l for l in make if l.strip() and "phase gtest" not in l and "our_gtests.py" not in l and not l.strip().startswith("#")]
-        (tree / "obj-rel" / "our-gtests.txt").write_text("Suite.One\n")
-        out.append(("gtests: the node writes the list of ours, from the series, into the tar that the job that has no tree reads",
-                    any("our_gtests.py --series .series --out obj-rel/our-gtests.txt" in l for l in make)
-                    and any("tar -chf gtest-bin.tar" in l and "-C .. %s" % gtest_run.OURS_FILE in l for l in make)))
+        make = build_steps["The node - its gtest binaries, for a job on GitHub's runners"]["run"].splitlines()
+        lines = [l for l in make if l.strip() and "phase gtest" not in l and not l.strip().startswith("#")]
         done = subprocess.run(["bash", "-ec", "\n".join(lines)], cwd=tree, capture_output=True, text=True)
         listed = subprocess.run(["tar", "-tf", str(tree / "gtest-bin.tar")], capture_output=True, text=True).stdout.split()
         out.append(("gtests: the node's tar holds bin and the directory mach ran them from, also when that is empty (%s)" % done.stderr[:80],
-                    done.returncode == 0 and "bin/firefox" in listed and "gtest/" in listed and gtest_run.OURS_FILE in listed))
+                    done.returncode == 0 and "bin/firefox" in listed and "gtest/" in listed))
 
         root = tree / "run"
         (root / "bin").mkdir(parents=True)
         record = tree / "calls.jsonl"
         fake_firefox(root / "bin" / "firefox", record=record)
 
-        # The gtests of ours that a run is asked to find: as read from the source, `Suite.Test` each.
-        fake_ours = ["SuiteA.One", "SuiteB.One"]
-
-        def go(gtest_filter, suites="SuiteA SuiteB", fail="", ours=fake_ours, silent=""):
+        def go(gtest_filter, suites="SuiteA SuiteB", fail=""):
             record.write_text("")
             old = dict(os.environ)
-            os.environ.update(FAKE_SUITES=suites, FAKE_FAIL=fail, FAKE_SILENT=silent)
+            os.environ.update(FAKE_SUITES=suites, FAKE_FAIL=fail)
             said = []
             try:
-                code = gtest_run.run(root, gtest_filter, out=said.append, ours=ours)
+                code = gtest_run.run(root, gtest_filter, out=said.append)
             finally:
                 os.environ.clear()
                 os.environ.update(old)
@@ -307,168 +227,13 @@ def group_gtest(doc) -> list:
         out.append(("gtests: a name in the negative part is not asked for", go("SuiteA.*:SuiteB.*-Gone.*")[0] == 0))
         out.append(("gtests: a suite of the other platform only is no loss here, of this one it is",
                     go("SuiteA.*:StealthWebGPUAdapter.*")[0] == 0 and go("SuiteA.*:StealthWebGPUBundledVulkan.*")[0] != 0))
-        # Our suites must have run: a prefix in the filter names none of them, so the list read from the source does.
-        code, calls, said = go("Suite*")
-        out.append(("gtests: every suite of ours the filter selects ran, in the reports: green", code == 0))
-        code, calls, said = go("Suite*", silent="SuiteB")
-        out.append(("gtests: a suite of ours that did not run (not in the reports) is red, naming it, and the others ran",
-                    code != 0 and len(calls) == 2
-                    and any("did not run" in l and l.endswith(": SuiteB") for l in said)))
-        code, calls, said = go("Suite*", suites="SuiteA")
-        out.append(("gtests: a suite of ours that is not even built (not listed) is red too, with a prefix filter",
-                    code != 0 and any("did not run" in l and l.endswith(": SuiteB") for l in said)))
-        out.append(("gtests: a suite of Mozilla's that did not run is no concern of this check",
-                    go("Suite*:Moz*", suites="SuiteA SuiteB Moz", silent="Moz")[0] == 0))
-        out.append(("gtests: a suite of ours that the filter does not select need not run",
-                    go("SuiteA.*", silent="SuiteB")[0] == 0 and go("SuiteA.*", silent="SuiteA")[0] != 0))
-        out.append(("gtests: one test of ours named in the filter selects its suite",
-                    go("SuiteA.One", ours=["SuiteA.One"], silent="SuiteA")[0] != 0
-                    and go("SuiteA.Two", ours=["SuiteA.One"], silent="SuiteA")[0] == 0))
-        out.append(("gtests: a TEST_P of ours (X/Suite.Test/0) is its suite, whatever the instantiation",
-                    go("*/SuiteP.*", suites="SuiteA Inst/SuiteP", ours=["X/SuiteP.One/0"], silent="Inst/SuiteP")[0] != 0
-                    and go("*/SuiteP.*", suites="SuiteA Inst/SuiteP", ours=["X/SuiteP.One/0"])[0] == 0))
-        out.append(("gtests: a suite of ours the platform does not build is no loss: StealthBundledCollection is not on Linux, StealthFcFontList is",
-                    go("Stealth*", suites="StealthA", ours=["StealthA.One", "StealthBundledCollection.One"])[0] == 0
-                    and go("Stealth*", suites="StealthA", ours=["StealthA.One", "StealthFcFontList.One"])[0] != 0))
-        # The suites that exist on one platform only (candidate 42604417318 stopped both gtest jobs on them).
-        every = ["StealthA.One", "StealthSkiaIdwrWin.One", "StealthIdwrFontconfig.One", "StealthIdwrTextVars.One", "StealthSystemTheme.One"]
-        out.append(("gtests: the suites built for one platform only are no loss on the other: StealthSkiaIdwrWin is Windows', StealthIdwrFontconfig, StealthIdwrTextVars and StealthSystemTheme are GTK's",
-                    gtest_run.expected_suites("Stealth*.*", every, "linux") == ["StealthA", "StealthIdwrFontconfig", "StealthIdwrTextVars", "StealthSystemTheme"]
-                    and gtest_run.expected_suites("Stealth*.*", every, "win") == ["StealthA", "StealthSkiaIdwrWin"]))
-        # Where the list comes from: nothing is a refusal before any suite starts, never a pass.
-        stale = {k: os.environ[k] for k in (our_gtests.SERIES_ROOT_ENV,) if k in os.environ}
-        os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
-        try:
-            record.write_text("")
-            said = []
-            code = gtest_run.run(root, "Suite*", out=said.append)
-            out.append(("gtests: no list of ours (no file, no series) is red before any suite runs, saying what is missing",
-                        code != 0 and not record.read_text() and any("NOT read" in l and gtest_run.OURS_FILE in l for l in said)))
-            (root / gtest_run.OURS_FILE).write_text("", encoding="utf-8")
-            out.append(("gtests: an empty list of ours is red too", gtest_run.run(root, "Suite*", out=lambda _: None) != 0))
-            (root / gtest_run.OURS_FILE).write_text("SuiteA.One\nSuiteB.One\n", encoding="utf-8")
-            old = dict(os.environ)
-            os.environ.update(FAKE_SUITES="SuiteA SuiteB", FAKE_FAIL="", FAKE_SILENT="SuiteB")
-            try:
-                code_file = gtest_run.run(root, "Suite*", out=lambda _: None)
-                os.environ["FAKE_SILENT"] = ""
-                code_ok = gtest_run.run(root, "Suite*", out=lambda _: None)
-            finally:
-                os.environ.clear()
-                os.environ.update(old)
-            out.append(("gtests: the list in the file beside bin/ is the one used: a suite of it that did not run is red, all of them run is green",
-                        code_file != 0 and code_ok == 0))
-            (root / gtest_run.OURS_FILE).unlink()
-            os.environ[our_gtests.SERIES_ROOT_ENV] = str(tree / "nowhere")
-            said = []
-            code = gtest_run.run(root, "Suite*", out=said.append)
-            out.append(("gtests: a series that is not there is red, naming it", code != 0 and any("nowhere" in l for l in said)))
-        finally:
-            os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
-            os.environ.update(stale)
-        # The list read from the series, as files: no git, no ref of Mozilla's tag (a tree materialized from a
-        # shared checkout has none, and a `git diff` against the tag was the way the build job stopped on candidate
-        # 42574168024). By the one function the plan's coverage test uses.
-        series = tree / "series"
-        (series / "a" / "one" / "src" / "a").mkdir(parents=True)
-        (series / "a" / "two").mkdir(parents=True)
-        (series / "SERIES").write_text("# folders\na/one\n\na/two\n")
-        (series / "UPSTREAM.json").write_text("{}\n")
-        (series / "a" / "one" / "MANIFEST.json").write_text(json.dumps(
-            {"modified": ["a/TestMozilla.cpp"], "added": {"a/TestOurs.cpp": "100644", "a/notes.md": "100644"}}))
-        (series / "a" / "one" / "src" / "a" / "TestOurs.cpp").write_text(
-            "TEST(OursA, One) {}\nTEST_F(OursB, Two) {}\nTEST_P(OursC, Three) {}\n")
-        (series / "a" / "one" / "src" / "a" / "notes.md").write_text("TEST(NotCode, Md) {}\n")
-        (series / "a" / "one" / "hooks.patch").write_text(
-            "diff --git a/a/TestMozilla.cpp b/a/TestMozilla.cpp\n--- a/a/TestMozilla.cpp\n+++ b/a/TestMozilla.cpp\n"
-            "@@ -1,2 +1,3 @@\n TEST(Moz, Old) {}\n-TEST(Moz, Gone) {}\n+TEST(Moz, Ours) {}\n"
-            "diff --git a/a/mozilla.build b/a/mozilla.build\n--- a/a/mozilla.build\n+++ b/a/mozilla.build\n"
-            "@@ -1 +1,2 @@\n+TEST(Moz, InABuildFile) {}\n")
-        (series / "a" / "two" / "MANIFEST.json").write_text(json.dumps({"modified": [], "added": {}}))
-        nogit = tree / "nogit-bin"
-        nogit.mkdir()
-        old = dict(os.environ)
-        os.environ.clear()
-        os.environ.update({k: v for k, v in old.items() if not k.startswith("GIT_")})
-        os.environ["PATH"] = str(nogit)  # no git, nothing: the list is read from files
-        os.environ.pop(our_gtests.SERIES_ROOT_ENV, None)
-        try:
-            names = our_gtests.our_test_names(series)
-            written = tree / "ours.txt"
-            code = our_gtests.main(["--series", str(series), "--out", str(written)])
-            os.environ[our_gtests.SERIES_ROOT_ENV] = str(series)
-            from_series = gtest_run.read_ours(root)
-            from_default = our_gtests.our_test_names()
-            os.environ.pop(our_gtests.SERIES_ROOT_ENV)
-
-            def refused(change):
-                bad = tree / "bad-series"
-                shutil.rmtree(bad, ignore_errors=True)
-                shutil.copytree(series, bad)
-                change(bad)
-                try:
-                    our_gtests.our_test_names(bad)
-                    return False
-                except OSError:
-                    return True
-            no_series_file = refused(lambda d: (d / "SERIES").unlink())
-            lost_source = refused(lambda d: (d / "a" / "one" / "src" / "a" / "TestOurs.cpp").unlink())
-            none_of_ours = refused(lambda d: ((d / "a" / "one" / "hooks.patch").write_text(""),
-                                              (d / "a" / "one" / "MANIFEST.json").write_text(json.dumps({"added": {}}))))
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-        out.append(("gtests: the list of ours is read from the series, with no git: a file it adds whole and the TEST lines of its hooks.patch "
-                    "in C++ sources only, a TEST_P as X/Suite.Test/0, by the CLI and by gtest_run alike",
-                    sorted(names) == ["Moz.Ours", "OursA.One", "OursB.Two", "X/OursC.Three/0"] and code == 0
-                    and sorted(written.read_text().split()) == sorted(names) == sorted(from_series) == sorted(from_default)))
-        out.append(("gtests: a series without SERIES, a file its manifest adds and its src/ lost, and a series with no gtest of ours are errors, never an empty list",
-                    no_series_file and lost_source and none_of_ours))
-        import test_release_plan
-        out.append(("gtests: one function: the plan's coverage test and gtest_run read the list, and match the filter, with the same code",
-                    test_release_plan.our_gtests is our_gtests.our_gtests and test_release_plan.gtest_matches is our_gtests.gtest_matches
-                    and gtest_run.our_gtests is our_gtests))
-        known = {"StealthWebGPUAdapter", "StealthWebGPUInstanceEnv", "StealthWebGPUBundledVulkan"}
-        try:
-            ours_now = {our_gtests.suite_of(n) for n in our_gtests.our_test_names()}
-        except OSError as exc:
-            ours_now = None
-            print("skip  gtests: NOT_ON names only suites of ours: %s" % exc)
-        if ours_now is not None:
-            every = set().union(*gtest_run.NOT_ON.values())
-            out.append(("gtests: every suite in NOT_ON is one of ours (a stale or misspelt name would lose a check), none is on both platforms, and the first three stay",
-                        every <= ours_now and not set(gtest_run.NOT_ON["linux"]) & set(gtest_run.NOT_ON["win"]) and known <= every))
-            # A suite of ours that its moz.build lists only under a condition one platform meets is in the other
-            # platform's NOT_ON, in the commit that adds it (candidate 42661012039: StealthSyntheticBoldRule, gtk only,
-            # was missing from win's, and the suites' check stopped the run: "did not run").
-            missing = sorted((suite, platform) for path, name, _ in our_gtests.our_gtests(our_gtests.series_root())
-                             for suite in [our_gtests.suite_of(name)]
-                             for platform in [{"linux": "win", "win": "linux"}.get(our_gtests.only_on(ROOT, path))]
-                             if platform and suite not in gtest_run.NOT_ON[platform])
-            if missing:
-                print("      gtests: in no NOT_ON though a moz.build builds them on one platform only: %s" % missing)
-            out.append(("gtests: every suite of ours that a moz.build builds on one platform only (OS_TARGET, MOZ_WIDGET_TOOLKIT) is in the other platform's NOT_ON", not missing))
-            fake = tree / "fake-mozbuild"
-            (fake / "d").mkdir(parents=True)
-            (fake / "d" / "moz.build").write_text(
-                'UNIFIED_SOURCES += ["TestAll.cpp"]\n'
-                'if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":  # c\n    UNIFIED_SOURCES += ["TestGtk.cpp"]\n'
-                'if CONFIG["OS_TARGET"] == "WINNT":\n    UNIFIED_SOURCES += [\n        "TestWin.cpp",\n    ]\n'
-                'if CONFIG["OS_TARGET"] != "WINNT":\n    SOURCES += ["TestNotWin.cpp"]\n'
-                'if CONFIG["OS_TARGET"] == "WINNT":\n    SOURCES += ["TestA.cpp"]\nelse:\n    SOURCES += ["TestElse.cpp"]\n'
-                'if CONFIG["OS_TARGET"] == "WINNT" and CONFIG["CC_TYPE"] == "clang":\n    SOURCES += ["TestAnd.cpp"]\n')
-            seen = {n: our_gtests.only_on(fake, "d/%s.cpp" % n) for n in
-                    ("TestAll", "TestGtk", "TestWin", "TestNotWin", "TestElse", "TestAnd", "TestNowhere")}
-            out.append(("gtests: the moz.build reader says linux for gtk, win for WINNT, linux for != WINNT, and None for an unconditional, else:, and, or unlisted file",
-                        seen == {"TestAll": None, "TestGtk": "linux", "TestWin": "win", "TestNotWin": "linux",
-                                 "TestElse": None, "TestAnd": None, "TestNowhere": None}))
         kept = tree / "kept"
 
         def go_kept():
             old = dict(os.environ)
             os.environ.update(FAKE_SUITES="SuiteA SuiteB/x", FAKE_FAIL="")
             try:
-                return gtest_run.run(root, "Suite*", reports=kept, out=lambda _: None, ours=["SuiteA.One", "X/x.One/0"])
+                return gtest_run.run(root, "Suite*", reports=kept, out=lambda _: None)
             finally:
                 os.environ.clear()
                 os.environ.update(old)
@@ -489,7 +254,7 @@ def group_gtest(doc) -> list:
                               FAKE_CORES=str(cores) if with_cores else "")
             said = []
             try:
-                code = gtest_run.run(root, "Suite*", reports=crash_kept, out=said.append, ours=fake_ours,
+                code = gtest_run.run(root, "Suite*", reports=crash_kept, out=said.append,
                                      cores=cores if with_cores else None, debugger=str(gdb))
             finally:
                 os.environ.clear()
@@ -781,8 +546,8 @@ def group_beside(doc) -> list:
     for step, name in ((worth, "worth"), (save, "the save"), (tools, "the toolchains' save")):
         out.append(("beside the link: %s has a limit under the link's time, and past it the job goes on" % name,
                     0 < step.get("timeout-minutes", 0) <= 35 and step.get("continue-on-error") is True))
-    keep = steps["Engine gtests - keep them"]
-    out.append(("gtests: the upload of the gtest binaries has a limit", 0 < keep.get("timeout-minutes", 0) <= 60))
+    keep = steps["The node - keep them"]
+    out.append(("gtests: the upload of the node's gtest binaries has a limit", 0 < keep.get("timeout-minutes", 0) <= 60))
     start, done = steps["WebGPU's Vulkan driver (linux-x86_64) - build"], steps["WebGPU's Vulkan driver (linux-x86_64) - done"]
     gate = "Compile cache - the build used the pinned sccache"
     out.append(("beside the link: the saves come between the compiles and the link's end, the statistics' gate after it",
@@ -1019,7 +784,7 @@ def cases() -> list:
         return [("release path: the workflow can be read (PyYAML is missing)", False)]
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     out = []
-    for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_one_gtest_road, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
+    for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
                         (group_stage_package, (doc,))):
         try:
             out += group(*args)

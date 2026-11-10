@@ -2,7 +2,7 @@
 
 Category: own files only
 Prefs: none read directly
-Test: scripts/test_release_plan.py; scripts/ci/test_release_path.py
+Test: TODO
 
 ## What it does
 

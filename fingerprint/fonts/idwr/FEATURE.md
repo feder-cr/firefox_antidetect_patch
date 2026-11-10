@@ -2,7 +2,7 @@
 
 Category: build
 Prefs: none read directly
-Test: gtest IdwrLibm.* (gfx/idwr/tests/gtest/TestIdwrLibm.cpp), gfx/idwr/tests/check_libxul_math.py on the linked libxul.so, and invisible_playwright tests/test_math_sin_cos_tan_are_windows_e2e.py
+Test: TODO
 
 ## What it does
 

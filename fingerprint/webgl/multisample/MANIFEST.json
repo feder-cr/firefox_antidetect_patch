@@ -39,18 +39,16 @@
    "prefs": [
     "webgl.msaa-samples"
    ],
-   "added": 3,
+   "added": 1,
    "removed": 0,
-   "hunks": 2,
+   "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "after the UNIFIED_SOURCES list (TestColorspaces.cpp)",
    "evidence": [
-    "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)",
-    "+UNIFIED_SOURCES += [\"TestStealthAngleAlu.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)",
-    "+LOCAL_INCLUDES += [\"/third_party/angle/include\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)"
+    "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
    ],
-   "notes": "Builds TestStealthGLMultisample.cpp and, for fingerprint/webgl/angle-nv-math, TestStealthAngleAlu.cpp with ANGLE's include directory (the test calls the translator).",
+   "notes": "Builds TestStealthGLMultisample.cpp.",
    "verifier": {
     "changed": [],
     "why": "Written with the hook, 2026-11-01."
@@ -63,17 +61,16 @@
    "prefs": [
     "webgl.msaa-samples"
    ],
-   "added": 2,
+   "added": 1,
    "removed": 0,
-   "hunks": 2,
+   "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "after the SOURCES list (GLScreenBuffer.cpp)",
    "evidence": [
-    "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)",
-    "+UNIFIED_SOURCES += [\"StealthAngleAlu.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)"
+    "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
    ],
-   "notes": "Builds StealthGLMultisample.cpp and, for fingerprint/webgl/angle-nv-math, StealthAngleAlu.cpp.",
+   "notes": "Builds StealthGLMultisample.cpp.",
    "verifier": {
     "changed": [],
     "why": "Written with the hook, 2026-11-01."

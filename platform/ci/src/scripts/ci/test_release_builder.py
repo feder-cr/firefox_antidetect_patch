@@ -468,7 +468,7 @@ def group_node_steps(doc, jobs, build, steps) -> list:
     done = subprocess.run([sys.executable, "-B", str(HERE), "mozconfig", "--help"], env=dict(os.environ, CI_PARALLEL=""), capture_output=True, text=True)
     out.append(("node: an empty CI_PARALLEL does not crash the tool (finding 16)", done.returncode == 0))
     out.append(("node: the build job's token reads, no more", build.get("permissions") == {"contents": "read"}))
-    gtests = steps.get("Engine gtests - build them, for the jobs that run them", {})
+    gtests = steps.get("The node - its gtest binaries, for a job on GitHub's runners", {})
     out.append(("node: it only compiles its gtests, and a job on GitHub's runners runs Linux's",
                 "recurse_gtest" in gtests.get("run", "") and "mach gtest" not in gtests.get("run", "")
                 and jobs.get("gtest-linux", {}).get("runs-on") == "ubuntu-24.04"

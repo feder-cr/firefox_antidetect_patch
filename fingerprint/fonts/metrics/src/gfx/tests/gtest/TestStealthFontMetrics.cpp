@@ -22,10 +22,7 @@
 
 #include <utility>
 
-#include <fontconfig/fontconfig.h>
-
 #include "FontData.h"
-#include "StealthSyntheticBold.h"
 #include "gfxFont.h"
 #include "gfxFontEntry.h"
 #include "gfxPlatform.h"
@@ -33,9 +30,6 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/StealthMultistrikeBold.h"
-#include "mozilla/webrender/WebRenderTypes.h"
 #include "nsCOMPtr.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
@@ -172,12 +166,10 @@ class StealthFontMetrics : public ::testing::Test {
                        << " at:" << tried.get();
   }
   void DeclareEngine(int32_t aQuality, int32_t aRenderingMode) {
+    mozilla::Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);
     mozilla::Preferences::SetInt("zoom.stealth.text.system_quality", aQuality);
     mozilla::Preferences::SetInt(
         "gfx.font_rendering.cleartype_params.rendering_mode", aRenderingMode);
-    // The engine on, last: with it on a change of the text prefs updates the text vars, and a
-    // declaration without the rendering mode is refused.
-    mozilla::Preferences::SetInt("zoom.stealth.fpp.hw_seed", 7);
   }
   RestoreStealthFontMetricsStock mRestore;
   RefPtr<FontData> mData;
@@ -265,166 +257,4 @@ TEST_F(StealthFontMetrics, MetricsOffTheMainThreadReadTheDeclaration)
     EXPECT_TRUE(offMainThread);
     EXPECT_EQ(round.mExpected, ave) << round.mRenderingMode;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Synthetic bold on Linux (gfx/thebes/StealthSyntheticBold.h): with the engine
-// on the decision is the one gfxDWriteFont takes on Windows retail with
-// gfx.font_rendering.directwrite.bold_simulation = 1.
-// ---------------------------------------------------------------------------
-
-// The rule, from its facts.
-TEST(StealthSyntheticBoldRule, WebfontOrColrOnlyWhenBoldIsSynthesised)
-{
-  using mozilla::gfx::StealthMultistrikeBoldRule;
-  //                                 engine  needs  webfont colr
-  EXPECT_TRUE(StealthMultistrikeBoldRule(true, true, true, false));  // webfont
-  EXPECT_TRUE(StealthMultistrikeBoldRule(true, true, false, true));  // COLR
-  EXPECT_TRUE(StealthMultistrikeBoldRule(true, true, true, true));
-  // An installed font without COLR keeps the rasteriser's simulation.
-  EXPECT_FALSE(StealthMultistrikeBoldRule(true, true, false, false));
-  // No synthetic bold asked (the face has a bold, or the style is not bold).
-  EXPECT_FALSE(StealthMultistrikeBoldRule(true, false, true, true));
-  // Engine off: stock Linux, which never multi-strikes.
-  EXPECT_FALSE(StealthMultistrikeBoldRule(false, true, true, true));
-}
-
-// The answer is left in the render pattern: no FC_EMBOLDEN (so neither FreeType
-// nor idwr embolden the face) and the property the two readers look at.
-TEST(StealthSyntheticBoldRule, PatternCarriesTheAnswer)
-{
-  FcPattern* pattern = FcPatternCreate();
-  FcPatternAddBool(pattern, FC_EMBOLDEN, FcTrue);
-  FcBool embolden = FcFalse;
-
-  // Not multi-struck (installed font, or engine off): the pattern is as it was.
-  mozilla::gfx::StealthDeclareMultistrikeBold(pattern, false);
-  EXPECT_EQ(FcResultMatch, FcPatternGetBool(pattern, FC_EMBOLDEN, 0, &embolden));
-  EXPECT_TRUE(embolden);
-  EXPECT_FALSE(mozilla::gfx::StealthPatternMultistrikeBold(pattern));
-
-  mozilla::gfx::StealthDeclareMultistrikeBold(pattern, true);
-  EXPECT_EQ(FcResultNoMatch,
-            FcPatternGetBool(pattern, FC_EMBOLDEN, 0, &embolden));
-  EXPECT_TRUE(mozilla::gfx::StealthPatternMultistrikeBold(pattern));
-  FcPatternDestroy(pattern);
-}
-
-namespace {
-
-// ScaledFontFontconfig::InstanceData starts with its flags byte, whose bit 2 is
-// EMBOLDEN (private to the class; the layout is what GetFontInstanceData hands
-// to the other process).
-constexpr uint8_t kStealthInstanceEmbolden = 1 << 2;
-
-void StealthTakeFlagsByte(const uint8_t* aData, uint32_t aLength,
-                          const mozilla::wr::FontVariation*, uint32_t,
-                          void* aBaton) {
-  *static_cast<int*>(aBaton) = aLength ? aData[0] : -1;
-}
-
-// The flags byte of the instance data of aFont's scaled font; -1 when there is
-// none.
-int StealthInstanceFlags(gfxFont* aFont, bool* aWrSyntheticBold) {
-  RefPtr<mozilla::gfx::ScaledFont> scaled = aFont->GetScaledFont(nullptr);
-  if (!scaled) {
-    return -1;
-  }
-  int flags = -1;
-  if (!scaled->GetFontInstanceData(StealthTakeFlagsByte, &flags)) {
-    return -1;
-  }
-  mozilla::Maybe<mozilla::wr::FontInstanceOptions> options;
-  mozilla::Maybe<mozilla::wr::FontInstancePlatformOptions> platformOptions;
-  std::vector<mozilla::wr::FontVariation> variations;
-  *aWrSyntheticBold =
-      scaled->GetWRFontInstanceOptions(&options, &platformOptions,
-                                       &variations) &&
-      options.isSome() &&
-      bool(options->flags & mozilla::wr::FontInstanceFlags::SYNTHETIC_BOLD);
-  return flags;
-}
-
-already_AddRefed<gfxFont> StealthMakeConsolasAt(gfxFontEntry* aEntry,
-                                                bool aBold) {
-  gfxFontStyle style;
-  style.size = kStealthConsolasSize;
-  if (aBold) {
-    style.weight = mozilla::FontWeight::BOLD;
-  }
-  RefPtr<gfxFont> font = aEntry->FindOrMakeFont(&style);
-  return (font && font->Valid()) ? font.forget() : nullptr;
-}
-
-}  // namespace
-
-// A webfont that has only a regular face, asked for bold: Gecko strikes it
-// (mApplySyntheticBold), the metrics and the cluster advances grow by
-// GetSyntheticBoldOffset() once, and the glyph advance itself is the regular
-// one (stock Linux added the FreeType embolden strength to it, so that a bold
-// webfont was wider than on Windows). The scaled font carries no embolden, which
-// is what keeps FreeType and idwr's kSimulationBold off the same face.
-TEST_F(StealthFontMetrics, WebfontBoldIsMultistruckAsOnWindows)
-{
-  DeclareEngine(5, 0);
-  RefPtr<gfxFontEntry> fe = StealthMakeConsolasEntry(mData);
-  ASSERT_TRUE(fe);
-  RefPtr<gfxFont> regular = StealthMakeConsolasAt(fe, false);
-  RefPtr<gfxFont> bold = StealthMakeConsolasAt(fe, true);
-  ASSERT_TRUE(regular);
-  ASSERT_TRUE(bold);
-  ASSERT_NE(regular.get(), bold.get());
-
-  EXPECT_FALSE(regular->ApplySyntheticBold());
-  EXPECT_TRUE(bold->ApplySyntheticBold());
-
-  const double delta = bold->GetSyntheticBoldOffset();
-  EXPECT_GT(delta, 0.25);
-  const auto& r = regular->GetMetrics(nsFontMetrics::eHorizontal);
-  const auto& b = bold->GetMetrics(nsFontMetrics::eHorizontal);
-  EXPECT_DOUBLE_EQ(r.spaceWidth + delta, b.spaceWidth);
-  EXPECT_DOUBLE_EQ(r.aveCharWidth + delta, b.aveCharWidth);
-  EXPECT_DOUBLE_EQ(r.maxAdvance + delta, b.maxAdvance);
-  EXPECT_DOUBLE_EQ(r.zeroWidth + delta, b.zeroWidth);
-
-  // The advance of a glyph is not widened by the font: Gecko widens the cluster.
-  EXPECT_DOUBLE_EQ(regular->GetCharAdvance('H'), bold->GetCharAdvance('H'));
-
-  bool wrBold = false;
-  int flags = StealthInstanceFlags(bold, &wrBold);
-  ASSERT_NE(-1, flags);
-  EXPECT_EQ(0, flags & kStealthInstanceEmbolden);
-  EXPECT_TRUE(wrBold);  // WebRender, with no multi-strike on FreeType, still bolds
-  flags = StealthInstanceFlags(regular, &wrBold);
-  ASSERT_NE(-1, flags);
-  EXPECT_EQ(0, flags & kStealthInstanceEmbolden);
-  EXPECT_FALSE(wrBold);
-}
-
-// Engine off: stock Linux. The rasteriser embolden is asked for and the font
-// does not multi-strike.
-TEST_F(StealthFontMetrics, EngineOffBoldStaysStock)
-{
-  RefPtr<gfxFontEntry> fe = StealthMakeConsolasEntry(mData);
-  ASSERT_TRUE(fe);
-  RefPtr<gfxFont> bold = StealthMakeConsolasAt(fe, true);
-  ASSERT_TRUE(bold);
-  EXPECT_FALSE(bold->ApplySyntheticBold());
-  bool wrBold = false;
-  const int flags = StealthInstanceFlags(bold, &wrBold);
-  ASSERT_NE(-1, flags);
-  EXPECT_EQ(kStealthInstanceEmbolden, flags & kStealthInstanceEmbolden);
-  EXPECT_TRUE(wrBold);
-}
-
-// A webfont that does not need synthetic bold (the style is not bold) draws as
-// always, engine on.
-TEST_F(StealthFontMetrics, WebfontRegularIsNotMultistruck)
-{
-  DeclareEngine(5, 0);
-  RefPtr<gfxFontEntry> fe = StealthMakeConsolasEntry(mData);
-  ASSERT_TRUE(fe);
-  RefPtr<gfxFont> regular = StealthMakeConsolasAt(fe, false);
-  ASSERT_TRUE(regular);
-  EXPECT_FALSE(regular->ApplySyntheticBold());
 }

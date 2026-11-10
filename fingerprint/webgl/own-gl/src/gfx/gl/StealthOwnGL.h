@@ -7,7 +7,6 @@
 
 #include "GLLibraryEGL.h"
 #include "StealthDeclarationGate.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "nsString.h"
 #include "prlink.h"
 
@@ -28,45 +27,13 @@ namespace mozilla::gl {
 // fail closed: our files or no context, never a fallback to the host's libEGL
 // (GLLibraryEGL::Init); always EGL's surfaceless platform, never the host's
 // X11, Wayland or render nodes (CreateDisplayLocked); always EGL, never GLX
-// (GLContextProviderLinux::CreateHeadless, and UseEGL forced where it is born,
-// gfxPlatformGtk's constructor); no host GLX vsync and no host DMABuf.
+// (GLContextProviderLinux::CreateHeadless).
 inline bool StealthOwnGLRequired() {
 #if defined(MOZ_WIDGET_GTK)
   return gfx::StealthEngineActive();
 #else
   return false;
 #endif
-}
-
-// UseEGL is born in gfxPlatformGtk's constructor, in the parent, from the host:
-// Wayland, or an X11 Mesa that turns X11_EGL on. On an X11 host where it stays
-// off, the compositor's context, the global context and the X11 visual took the
-// host's GLX and mapped its libGL and libgallium. With the engine on it is always
-// EGL, so every choice made on it is the same on every host and none is GLX.
-inline void StealthOwnGLForceEGL() {
-  if (StealthOwnGLRequired()) {
-    gfx::gfxVars::SetUseEGL(true);
-  }
-}
-
-// DMABuf imports buffers through the host's gbm and DRM render node, the host's
-// Mesa; with the engine on it is off before anything probes the device (forcing
-// EGL would otherwise lift its "Requires EGL" refusal).
-template <class Feature, class StatusT>
-inline void StealthOwnGLNoHostDMABuf(Feature& aFeature, StatusT aStatus) {
-  if (StealthOwnGLRequired()) {
-    aFeature.ForceDisable(aStatus, "The engine draws on its own GL",
-                          "FEATURE_FAILURE_STEALTH_OWN_GL"_ns);
-  }
-}
-
-// GLX SGI video sync opens a GLX context on the host's libGL, and is taken when
-// EGL is off or the driver is Mesa. With EGL forced, clearing isMesa leaves the
-// software vsync and the host's libGL unloaded.
-inline void StealthOwnGLNoHostGLXVsync(bool& aIsMesa) {
-  if (StealthOwnGLRequired()) {
-    aIsMesa = false;
-  }
 }
 
 // With the engine on, loads llvmpipe/libEGL.so.1 and llvmpipe/libGLESv2.so.2,

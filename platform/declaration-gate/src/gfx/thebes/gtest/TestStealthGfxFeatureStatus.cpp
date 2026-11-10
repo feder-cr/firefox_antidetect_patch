@@ -155,10 +155,7 @@ TEST(StealthGfxFeatureStatus, EveryBrokenRuleIsRefused)
 }
 
 // On GTK the only WebGL path is native GL, which WEBGL_OPENGL gates; on
-// Windows it gates WGL, which retail never takes (ANGLE is the path). On GTK
-// the answer is the declared WEBGL one and nothing the host has or lacks moves
-// it: the GL that serves WebGL ships with the engine, so a host with no Mesa
-// still has WebGL2 (before, the host's glxtest blocked it).
+// Windows it gates WGL, which retail never takes (ANGLE is the path).
 TEST(StealthGfxFeatureStatus, WebglOpenglGatesTheWebglPathOfThisPlatform)
 {
   StealthGfxFeatureTable table;
@@ -168,23 +165,20 @@ TEST(StealthGfxFeatureStatus, WebglOpenglGatesTheWebglPathOfThisPlatform)
   nsAutoCString failure;
   int32_t status = 0;
   ASSERT_TRUE(StealthAnswerGfxFeature(table, nsIGfxInfo::FEATURE_WEBGL_OPENGL,
-                                      failure, &status));
+                                      true, failure, &status));
 #ifdef MOZ_WIDGET_GTK
   EXPECT_EQ(status, int32_t(nsIGfxInfo::FEATURE_STATUS_OK));
   EXPECT_TRUE(failure.IsEmpty());
-  nsAutoCString webglFailure;
-  int32_t webglStatus = 0;
-  ASSERT_TRUE(StealthAnswerGfxFeature(table, nsIGfxInfo::FEATURE_WEBGL,
-                                      webglFailure, &webglStatus));
-  EXPECT_EQ(status, webglStatus);
-  EXPECT_TRUE(failure.Equals(webglFailure));
+  ASSERT_TRUE(StealthAnswerGfxFeature(table, nsIGfxInfo::FEATURE_WEBGL_OPENGL,
+                                      false, failure, &status));
+  EXPECT_EQ(status, int32_t(nsIGfxInfo::FEATURE_BLOCKED_DEVICE));
 #else
   EXPECT_EQ(status, int32_t(nsIGfxInfo::FEATURE_DISCOURAGED));
   EXPECT_TRUE(failure.EqualsLiteral("WEBGL_NATIVE_GL_OLD_INTEL"));
 #endif
   // Outside the live set nothing is answered: Mozilla's path keeps it.
   EXPECT_FALSE(StealthAnswerGfxFeature(table, nsIGfxInfo::FEATURE_INVALID,
-                                       failure, &status));
+                                       true, failure, &status));
 }
 
 // Every live feature, through the real nsIGfxInfo, answers the declared
@@ -204,6 +198,11 @@ TEST(StealthGfxFeatureStatus, EveryLiveFeatureAnswersFromTheDeclaration)
   nsAutoCString error;
   ASSERT_TRUE(StealthParseGfxFeatureStatus(nsDependentCString(kUhd620), table,
                                            error));
+  bool probe = true;
+#ifdef MOZ_WIDGET_GTK
+  nsAutoString testType;
+  probe = NS_SUCCEEDED(gfxInfo->GetTestType(testType)) && !testType.IsEmpty();
+#endif
   for (int32_t id = nsIGfxInfo::FEATURE_START; id < nsIGfxInfo::FEATURE_COUNT;
        ++id) {
     if (!LiveFeature(id)) {
@@ -214,7 +213,7 @@ TEST(StealthGfxFeatureStatus, EveryLiveFeatureAnswersFromTheDeclaration)
     ASSERT_EQ(gfxInfo->GetFeatureStatus(id, failure, &status), NS_OK) << id;
     nsAutoCString wantFailure;
     int32_t want = 0;
-    ASSERT_TRUE(StealthAnswerGfxFeature(table, id, wantFailure, &want));
+    ASSERT_TRUE(StealthAnswerGfxFeature(table, id, probe, wantFailure, &want));
     EXPECT_EQ(status, want) << id;
     EXPECT_TRUE(failure.Equals(wantFailure)) << id;
   }

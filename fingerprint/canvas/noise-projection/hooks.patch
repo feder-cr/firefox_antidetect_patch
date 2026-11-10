@@ -354,7 +354,7 @@ index 88ec520156fcf4d84098f546286aeb2ca138729f..a34337b63bed9f5f9365dbba82a6b9a4
    f(ACCESSIBLEID, RecordedAccessibleId);                           \
    f(DESTINATION, RecordedDestination);
 diff --git a/gfx/2d/moz.build b/gfx/2d/moz.build
-index 2abc9c45814d6931ad1edcb9daacab750909d597..c7b00391552b5cafd1bf68f0e76ae13f48108663 100644
+index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f1e7228df 100644
 --- a/gfx/2d/moz.build
 +++ b/gfx/2d/moz.build
 @@ -60,6 +60,9 @@ EXPORTS.mozilla.gfx += [
@@ -362,65 +362,39 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..c7b00391552b5cafd1bf68f0e76ae13f
      "UserData.h",
  ]
 +EXPORTS.mozilla.gfx += ["StealthCanvasProjection.h"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
++EXPORTS.mozilla.gfx += ["StealthGlyphCoverage.h"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
 +EXPORTS.mozilla.gfx += ["StealthRefuse.h"]  # STEALTH-HOOK(platform/declaration-gate)
-+SOURCES += ["StealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
      EXPORTS.mozilla.gfx += [
-@@ -85,6 +88,7 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
-         "ScaledFontDWrite.cpp",
-         "SourceSurfaceD3D11.cpp",
-     ]
-+    SOURCES += ["StealthSkiaIdwrWin.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
-     DEFINES["WIN32"] = True
- 
- if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("android", "gtk"):
-@@ -100,6 +104,10 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
-     SOURCES += [
-         "ScaledFontFontconfig.cpp",
-     ]
-+    SOURCES += ["StealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
-+    EXPORTS.mozilla.gfx += ["StealthFontDescriptorPath.h"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
-+    SOURCES += ["StealthSkiaIdwrFontconfig.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
-+    EXPORTS.mozilla.gfx += ["StealthMultistrikeBold.h"]  # STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
- 
- if CONFIG["MOZ_WIDGET_TOOLKIT"] == "android":
-     SOURCES += [
-@@ -170,6 +178,7 @@ UNIFIED_SOURCES += [
+@@ -170,6 +173,8 @@ UNIFIED_SOURCES += [
      "Swizzle.cpp",
      "Types.cpp",
  ]
 +UNIFIED_SOURCES += ["StealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
++UNIFIED_SOURCES += ["StealthGlyphCoverage.cpp"]  # STEALTH-HOOK(fingerprint/fonts/metrics)
  
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..643c0d1f55085f1e636617f8fa6d3633054e2004 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..b51becd548ea84cb31d401187fc334d405e7a715 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -32,6 +32,13 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,8 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
 +UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp", "TestStealthWebGPUExternalTexture.cpp"]  # STEALTH-HOOK(fingerprint/webgpu)
-+SOURCES += ["TestStealthSkiaIdwr.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
-+SOURCES += ["TestStealthSkiaIdwrThreads.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
-+SOURCES += ["TestStealthSkiaStrokeLevels.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
-+SOURCES += ["TestStealthColorProfile.cpp"]  # STEALTH-HOOK(fingerprint/canvas/color-profile)
-+SOURCES += ["TestStealthSkiaMath.cpp"]  # STEALTH-HOOK(fingerprint/canvas/skia-math)
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +49,19 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +44,16 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  
 +if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +    UNIFIED_SOURCES += ["TestStealthFcFontList.cpp", "TestStealthFontMetrics.cpp"]
-+    SOURCES += ["TestStealthFcEmptyConfig.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
-+    SOURCES += ["TestStealthFontDescriptorPath.cpp"]  # STEALTH-HOOK(fingerprint/fonts/font-list)
-+    SOURCES += ["TestStealthIdwrTextVars.cpp"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
 +    CXXFLAGS += CONFIG["CAIRO_FT_CFLAGS"]
 +if CONFIG["OS_TARGET"] == "WINNT":
 +    # gfxDWriteFonts' text quality and ClearType parameters, Windows only.
@@ -432,10 +406,3 @@ index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..643c0d1f55085f1e636617f8fa6d3633
  if CONFIG["OS_TARGET"] == "Darwin":
      # Not in UNIFIED_SOURCES: MacIOSurface.h includes Carbon headers (MacTypes.h)
      # which would make Rect/Point/Size ambiguous in all subsequent unified files.
-@@ -87,5 +107,6 @@ LOCAL_INCLUDES += [
-     "/layout/base",
-     "/third_party/xsimd/include",
- ]
-+LOCAL_INCLUDES += CONFIG["SKIA_INCLUDES"]  # STEALTH-HOOK(fingerprint/fonts/idwr)
- 
- FINAL_LIBRARY = "xul-gtest"

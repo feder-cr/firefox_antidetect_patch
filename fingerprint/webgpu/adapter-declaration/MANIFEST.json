@@ -150,22 +150,18 @@
    "category": "spoof",
    "feature": "webgpu-adapter-declaration",
    "prefs": [
-    "dom.webgpu.external-texture.enabled",
-    "javascript.options.use_fdlibm_for_sin_cos_tan",
-    "media.ffmpeg.enabled"
+    "dom.webgpu.external-texture.enabled"
    ],
-   "added": 3,
-   "removed": 3,
-   "hunks": 3,
+   "added": 1,
+   "removed": 1,
+   "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "dom.webgpu.external-texture.enabled, javascript.options.use_fdlibm_for_sin_cos_tan and media.ffmpeg.enabled, the non-Windows value of each",
+   "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
    "evidence": [
-    "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS",
-    "+  value: false  # STEALTH-HOOK(fingerprint/fonts/idwr): Windows' value; libxul's sin/cos/tan are ucrtbase's (gfx/idwr/libm_ucrt.c)",
-    "+    value: false  # STEALTH-HOOK(media/ffvpx-decoders): ffvpx decodes H.264, HEVC and AAC, never the system libavcodec"
+    "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
    ],
-   "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else. Same for the second line, owned by fingerprint/fonts/idwr (one record per file, so the file stays here): with javascript.options.use_fdlibm_for_sin_cos_tan false on every OS, Math.sin/cos/tan call the libm names libxul now defines itself (gfx/idwr/libm_ucrt.c, ucrtbase's results) instead of fdlibm. Same for the third line, owned by media/ffvpx-decoders (one record per file, so the file stays here): media.ffmpeg.enabled false means FFmpegDecoderModule never falls back to a system libavcodec for H.264, HEVC or AAC, so what a page can decode depends only on ffvpx."
+   "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
   }
  ]
 }
