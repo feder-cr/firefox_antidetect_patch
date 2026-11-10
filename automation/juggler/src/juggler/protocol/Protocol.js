@@ -479,9 +479,6 @@ const Heap = {
     'collectGarbage': {
       params: {},
     },
-    'minimizeMemory': {
-      params: {},
-    },
   },
 };
 

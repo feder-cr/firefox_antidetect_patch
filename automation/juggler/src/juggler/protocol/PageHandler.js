@@ -13,7 +13,6 @@ const {setTimeout, clearTimeout} = ChromeUtils.importESModule('resource://gre/mo
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const Cu = Components.utils;
-const MINIMIZE_MEMORY_TIMEOUT_MS = 30000;
 const XUL_NS = 'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul';
 const helper = new Helper();
 
@@ -346,27 +345,6 @@ export class PageHandler {
 
   async ['Runtime.disposeObject'](options) {
     return await this._contentPage.send('disposeObject', options);
-  }
-
-  // The memory manager's MinimizeMemoryUsage, which is what about:memory's "Minimize memory usage" runs in the
-  // parent: three heap-minimize memory-pressure notifications in this process (ContentParent forwards each to
-  // every child process, which collect, drop decoded images and caches, and give their free pages back), then
-  // jemalloc_free_dirty_pages. about:memory also sends child-mmu-request first, so that each child minimizes
-  // itself in full: measured here, it changes nothing (content 127 MB, parent -79 MB, both ways), so it is left out. Measured on five heavy pages after about:blank:
-  // the content process falls to 127 MB where collectGarbage's GC and CC leave 199 and nothing leaves 254, and the
-  // parent loses 80 MB where collectGarbage's loses 11. Resolves when this process is done (the children go on
-  // by themselves); bounded, so a callback that never comes cannot hold the command for good.
-  async ['Heap.minimizeMemory']() {
-    const mgr = Cc['@mozilla.org/memory-reporter-manager;1'].getService(Ci.nsIMemoryReporterManager);
-    let timer;
-    try {
-      await Promise.race([
-        new Promise(resolve => mgr.minimizeMemoryUsage(resolve)),
-        new Promise(resolve => { timer = setTimeout(resolve, MINIMIZE_MEMORY_TIMEOUT_MS); }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-    }
   }
 
   async ['Heap.collectGarbage']() {
