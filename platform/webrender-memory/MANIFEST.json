@@ -19,10 +19,10 @@
    "hookable": "movable",
    "anchor": "RenderBackend (the shared font resources are kept in the backend; clear_namespace clears them whether or not the window is still registered)",
    "evidence": [
-    "+    fn clear_shared_font_namespace(",
-    "+        self.shared_fonts.clear_namespace(namespace)"
+    "+    fn clear_namespace(&mut self, backend_id: RenderBackendId, id: IdNamespace) {",
+    "+            self.fonts.clear_namespace(id);"
    ],
-   "notes": "A namespace whose window left first used to skip the cleanup of the font resources the windows share (UnregisterWindow reaches the backend on the direct channel, ClearNamespace on the low-priority queue): the fonts, instances and glyph data of a closed window stayed in the shared pool. The backend now clears the shared font resources itself. Fixes Mozilla's own code; follows Mozilla when they change it.",
+   "notes": "A namespace whose window left first used to skip the cleanup of the font resources the windows share (UnregisterWindow reaches the backend on the direct channel, ClearNamespace on the low-priority queue): the font templates, font instances and key mappings of a closed window stayed in the shared font resources of the pool (the glyph cache lives in the window's own ResourceCache and goes with it). The backend now clears the shared font resources itself. Fixes Mozilla's own code; follows Mozilla when they change it.",
    "verifier": {
     "changed": [],
     "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
