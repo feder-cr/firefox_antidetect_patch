@@ -311,10 +311,35 @@ class Runtime {
     });
   }
 
+  // A runtime that is disposed keeps nothing of the documents it served: its contexts hold their windows (and
+  // their remote objects hold the page's objects), and the debugger holds its debuggees until it is told otherwise.
   dispose() {
-    for (const tearDown of this._eventListeners)
-      tearDown.call(null);
-    this._eventListeners = [];
+    let failure = null;
+    // Every listener is removed, even when one refuses: each of them holds this runtime, and with it the contexts.
+    for (const tearDown of this._eventListeners) {
+      try {
+        tearDown.call(null);
+      } catch (e) {
+        failure = failure || { error: e };
+      }
+    }
+    try {
+      this._eventListeners = [];
+      for (const context of [...this._executionContexts.values()]) {
+        try {
+          this.destroyExecutionContext(context);
+        } catch (e) {
+          dump('Runtime.dispose: a context failed to be destroyed: ' + e.message + '\n');
+        }
+      }
+      this._executionContexts.clear();
+      this._windowToExecutionContext.clear();
+      this._pendingPromises.clear();
+      this._debugger.removeAllDebuggees();
+    } finally {
+      if (failure)
+        throw failure.error;
+    }
   }
 
   async _awaitPromise(executionContext, obj, exceptionDetails = {}) {

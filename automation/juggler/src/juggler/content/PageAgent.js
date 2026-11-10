@@ -393,10 +393,19 @@ export class PageAgent {
   }
 
   dispose() {
-    for (const workerData of this._workerData.values())
-      workerData.dispose();
-    this._workerData.clear();
-    helper.removeListeners(this._eventListeners);
+    try {
+      for (const workerData of this._workerData.values()) {
+        try {
+          workerData.dispose();
+        } catch (e) {
+          if (e) dump(`[PageAgent] dispose of a worker's data failed: ${e.message}\n`);
+        }
+      }
+    } finally {
+      this._workerData.clear();
+      this._armedLandings.clear();
+      helper.removeListeners(this._eventListeners);
+    }
   }
 
   async _adoptNode({frameId, objectId, executionContextId}) {

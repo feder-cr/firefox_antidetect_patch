@@ -26,6 +26,10 @@ const helper = new Helper();
 
 // Cap response storage with 100Mb per tracked tab.
 const MAX_RESPONSE_STORAGE_SIZE = 100 * 1024 * 1024;
+// A response whose body was dropped stays as a small marker, so that Network.getResponseBody says "evicted" and
+// not "not found"; the markers of a tab are capped by number.
+const MAX_RESPONSE_STORAGE_ENTRIES = 2000;
+const MAX_NAVIGATION_STARTS = 100;
 
 const pageNetworkSymbol = Symbol('PageNetwork');
 
@@ -59,6 +63,13 @@ export class PageNetwork {
 
   setExtraHTTPHeaders(headers) {
     this._extraHTTPHeaders = headers;
+  }
+
+  // The main frame committed a navigation: the bodies of the documents it left are not readable any more, as in
+  // Chromium (InspectorNetworkAgent::DidCommitLoad clears every loader but the one that committed). Without it a
+  // tab keeps up to MAX_RESPONSE_STORAGE_SIZE of bodies of pages nobody can ask about.
+  onMainFrameNavigationCommitted(navigationId) {
+    this._responseStorage?.evictBeforeNavigation(navigationId);
   }
 
   getResponseBody(requestId) {
@@ -526,6 +537,8 @@ class NetworkRequest {
     const pageNetwork = this._pageNetwork;
     if (!pageNetwork)
       return;
+    if (this.navigationId && !this.redirectedFromId)
+      pageNetwork._responseStorage?.noteNavigationStart(this.navigationId);
     const loadInfo = this.httpChannel.loadInfo;
     const causeType = loadInfo?.externalContentPolicyType || Ci.nsIContentPolicy.TYPE_OTHER;
     const internalCauseType = loadInfo?.internalContentPolicyType || Ci.nsIContentPolicy.TYPE_OTHER;
@@ -635,6 +648,9 @@ class NetworkRequest {
       pageNetwork._interceptedRequests.delete(this.requestId);
     this._interceptedChannel = undefined;
     this._networkObserver._channelToRequest.delete(this.httpChannel);
+    // A redirect that was expected of this request and never came (the new channel did not reach
+    // http-on-modify-request) would keep it, with its channel and load info, for as long as the browser lives.
+    this._networkObserver._forgetExpectedRedirects(this);
   }
 
   _sendOnRequestFinished() {
@@ -764,6 +780,13 @@ export class NetworkObserver {
     }
   }
 
+  _forgetExpectedRedirects(request) {
+    for (const [channelId, expectedFrom] of this._expectedRedirect) {
+      if (expectedFrom === request)
+        this._expectedRedirect.delete(channelId);
+    }
+  }
+
   _onRequest(channel, topic) {
     if (!(channel instanceof Ci.nsIHttpChannel))
       return;
@@ -777,6 +800,8 @@ export class NetworkObserver {
       const serviceWorkerImport = type === Ci.nsIContentPolicy.TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS &&
           requestHeaders(httpChannel).some(header => header.name.toLowerCase() === 'service-worker' && header.value === 'script');
       if (type === Ci.nsIContentPolicy.TYPE_INTERNAL_SERVICE_WORKER || serviceWorkerImport) {
+        // This channel is cancelled before a request is made for it: the redirect that was expected for it is not.
+        this._expectedRedirect.delete(httpChannel.channelId + '');
         httpChannel.cancel(Cr.NS_ERROR_NET_RESET);
         return;
       }
@@ -1064,11 +1089,68 @@ PageNetwork.Events = {
 // un decimo per singola risposta, con sfratto quando si supera.
 
 class ResponseStorage {
-  constructor(maxTotalSize, maxResponseSize) {
+  constructor(maxTotalSize, maxResponseSize, maxEntries = MAX_RESPONSE_STORAGE_ENTRIES) {
     this._totalSize = 0;
     this._maxResponseSize = maxResponseSize;
     this._maxTotalSize = maxTotalSize;
+    this._maxEntries = maxEntries;
     this._responses = new Map();
+    // What a navigation found stored when its main document was requested: everything before it belongs to the
+    // documents the tab is leaving, everything after to the document that is coming (its sub-resources have no
+    // navigation id of their own).
+    this._sequence = 0;
+    this._navigationStarts = new Map();
+  }
+
+  // The main document of a navigation was requested.
+  noteNavigationStart(navigationId) {
+    this._navigationStarts.set(navigationId, this._sequence);
+    // A navigation that never commits (aborted, replaced) leaves its mark: only the latest ones are kept.
+    for (const id of this._navigationStarts.keys()) {
+      if (this._navigationStarts.size <= MAX_NAVIGATION_STARTS)
+        break;
+      this._navigationStarts.delete(id);
+    }
+  }
+
+  // The documents the main frame left: their bodies go, their entries stay as evicted markers. What stays is what
+  // belongs to the navigation that committed: its own entries, and everything stored since its main document was
+  // requested. A commit without an id (the agent reporting a frame it has just met) says nothing about a
+  // navigation, and evicts nothing.
+  evictBeforeNavigation(navigationId) {
+    if (navigationId === undefined)
+      return;
+    // A restored document (a navigation id of its own, no request) has no start: everything stored is older.
+    const boundary = this._navigationStarts.has(navigationId) ? this._navigationStarts.get(navigationId) : this._sequence;
+    this._navigationStarts.delete(navigationId);
+    for (const response of this._responses.values()) {
+      if (response.evicted)
+        continue;
+      if (response.navigationId === navigationId || response.sequence > boundary)
+        continue;
+      this._totalSize -= response.body.length;
+      response.body = '';
+      response.encodings = [];
+      response.evicted = true;
+    }
+    this._trimEntries();
+  }
+
+  // Over the number of entries, the markers of evicted bodies go first, the oldest first (a Map keeps the order of
+  // insertion); only when every entry still holds a body does the oldest of those go, and its size with it.
+  _trimEntries() {
+    for (const [requestId, response] of this._responses) {
+      if (this._responses.size <= this._maxEntries)
+        return;
+      if (response.evicted)
+        this._responses.delete(requestId);
+    }
+    for (const [requestId, response] of this._responses) {
+      if (this._responses.size <= this._maxEntries)
+        return;
+      this._totalSize -= response.body.length;
+      this._responses.delete(requestId);
+    }
   }
 
   addResponseBody(request, body) {
@@ -1076,7 +1158,9 @@ class ResponseStorage {
       this._responses.set(request.requestId, {
         evicted: true,
         body: '',
+        sequence: ++this._sequence,
       });
+      this._trimEntries();
       return;
     }
     let encodings = [];
@@ -1085,7 +1169,7 @@ class ResponseStorage {
       const encodingHeader = request.httpChannel.getResponseHeader("Content-Encoding");
       encodings = encodingHeader.split(/\s*\t*,\s*\t*/);
     }
-    this._responses.set(request.requestId, {body, encodings});
+    this._responses.set(request.requestId, {body, encodings, navigationId: request.navigationId, sequence: ++this._sequence});
     this._totalSize += body.length;
     if (this._totalSize > this._maxTotalSize) {
       for (let [requestId, response] of this._responses) {
@@ -1096,6 +1180,7 @@ class ResponseStorage {
           break;
       }
     }
+    this._trimEntries();
   }
 
   getBase64EncodedResponse(requestId) {

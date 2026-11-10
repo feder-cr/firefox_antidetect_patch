@@ -99,9 +99,19 @@ export class JugglerFrameChild extends JSWindowActorChild {
 
     topBrowingContextToAgents.delete(this.browsingContext);
 
-    agents.channel.resetTransport();
-    agents.pageAgent.dispose();
-    agents.frameTree.dispose();
+    // Independent, in this order: none of them may stop the next one. A tree that is not disposed keeps every
+    // document it served alive (its observers, its debugger, its contexts).
+    for (const [name, dispose] of [
+      ['channel', () => agents.channel.resetTransport()],
+      ['pageAgent', () => agents.pageAgent.dispose()],
+      ['frameTree', () => agents.frameTree.dispose()],
+    ]) {
+      try {
+        dispose();
+      } catch (e) {
+        if (e) dump(`[JugglerFrameChild] disposing the ${name} failed: ${e.message}\n`);
+      }
+    }
   }
 
   receiveMessage() { }
