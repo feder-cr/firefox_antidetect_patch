@@ -20,8 +20,10 @@ if CONFIG["MOZ_WEBRTC"]:
 # cannot tell which files exist. A renamed package would only move the tell.
 FINAL_TARGET_FILES.modules.juggler += [
     "ChannelEventSink.sys.mjs",
+    "ContentMux.js",
     "content/JugglerFrameChild.jsm",
     "content/JugglerFrameChild.sys.mjs",
+    "FrameLifecycle.js",
     "Helper.js",
     "JugglerFrameParent.jsm",
     "JugglerFrameParent.sys.mjs",

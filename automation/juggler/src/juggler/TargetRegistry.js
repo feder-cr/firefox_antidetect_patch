@@ -5,6 +5,7 @@
 const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
 const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
+const {ContentMux} = ChromeUtils.importESModule('resource://gre/modules/juggler/ContentMux.js');
 const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs");
@@ -14,6 +15,11 @@ const {AppConstants} = ChromeUtils.importESModule("resource://gre/modules/AppCon
 const Cr = Components.results;
 
 const helper = new Helper();
+
+// A root is told apart by its page and by its browsing context.
+function rootKey(browserId, rootId) {
+  return browserId + '/' + rootId;
+}
 
 
 // Chrome flag of a popup whose window.open features give a size: the value
@@ -191,7 +197,10 @@ export class TargetRegistry {
     // so every page that navigated twice left a stale entry behind, and the
     // first new tab whose browserId equalled that number lost its actor.
     // Browser.newPage then never answered (the fifth page, measured).
-    this._browserIdToActor = new Map();
+    //
+    // A page has one actor per fragment root: the top, and every frame whose parent is in another
+    // process. The key is the page and the root together (see rootKey).
+    this._rootActors = new Map();
 
     this._proxiesWithClashingAuthCacheKeys = new Set();
     this._browserProxy = null;
@@ -216,11 +225,40 @@ export class TargetRegistry {
         if (!target) {
           return;
         }
+        // ⛔ AN IFRAME'S PROCESS CRASHING IS NOT THE TAB CRASHING. The owner
+        // element of an out-of-process iframe's BrowserParent is the <browser>
+        // of the TAB (BrowserBridgeParent::Init, SetOwnerElement), so this
+        // observer is called with the tab's frameloader for either crash, and
+        // before the engine passed the crashed BrowsingContext's id as `data`
+        // (nsFrameLoader::MaybeNotifyCrashed) the branch below closed the whole
+        // page for a crash of one iframe. `data` is that id, empty when the
+        // notification does not say (a frameloader that failed to build).
+        const crashed = data ? BrowsingContext.get(data) : null;
+        if (crashed && crashed.parent) {
+          target.frameCrashed(crashed);
+          return;
+        }
         target.emit(PageTarget.Events.Crashed);
         target.dispose();
         target.closeCrashedTab();
       }
     }, 'oop-frameloader-crashed');
+
+    // A root whose browsing context is discarded has no process to wait for: without this its endpoint
+    // would stay in the page's mux with no actor. The main root is not touched here; it changes its
+    // browsing context with the top and ends with the page.
+    Services.obs.addObserver({
+      observe: (browsingContext, topic, data) => {
+        let browserId;
+        try {
+          browserId = browsingContext.browserId;
+        } catch (e) {
+          return;
+        }
+        this._browserIdToTarget.get(browserId)?._contentMux.onRootRemoved(browsingContext.id);
+        this._rootActors.delete(rootKey(browserId, browsingContext.id));
+      }
+    }, 'browsing-context-discarded');
 
     const onTabOpenListener = (appWindow, window, event) => {
       const tab = event.target;
@@ -522,15 +560,16 @@ export class TargetRegistry {
   // Called by JugglerFrameParent for the actor of a CURRENT top-level document
   // only: when it is created, and when a document restored from the bfcache
   // becomes current again.
-  onActorCreated(actor, browserId) {
-    this._browserIdToActor.set(browserId, actor);
-    this._browserIdToTarget.get(browserId)?.setActor(actor);
+  onActorCreated(actor, browserId, rootId) {
+    this._rootActors.set(rootKey(browserId, rootId), actor);
+    this._browserIdToTarget.get(browserId)?.setActor(actor, rootId);
   }
 
-  onActorDestroyed(actor, browserId) {
-    this._browserIdToTarget.get(browserId)?.removeActor(actor);
-    if (this._browserIdToActor.get(browserId) === actor)
-      this._browserIdToActor.delete(browserId);
+  onActorDestroyed(actor, browserId, rootId) {
+    this._browserIdToTarget.get(browserId)?.removeActor(actor, rootId);
+    const key = rootKey(browserId, rootId);
+    if (this._rootActors.get(key) === actor)
+      this._rootActors.delete(key);
   }
 
   targetForId(targetId) {
@@ -569,9 +608,14 @@ export class PageTarget {
     this._initialDPPX = this._linkedBrowser.browsingContext.overrideDPPX;
     this._url = 'about:blank';
     this._openerId = opener ? opener.id() : undefined;
-    this._actor = undefined;
     this._actorSequenceNumber = 0;
-    this._channel = new SimpleChannel(`browser::page[${this._targetId}]`, 'target-' + this._targetId);
+    // What the page's handler talks through: one channel to the content process of each fragment root.
+    this._contentMux = new ContentMux({
+      pageTarget: this,
+      name: `browser::page[${this._targetId}]`,
+      uid: 'target-' + this._targetId,
+      createChannel: (name, uid) => new SimpleChannel(name, uid),
+    });
     this._dialogs = new Map();
     this.disableCache = false;
     this.mediumOverride = '';
@@ -598,9 +642,13 @@ export class PageTarget {
     browserContext.pages.add(this);
     this._registry._browserToTarget.set(this._linkedBrowser, this);
     this._registry._browserIdToTarget.set(this._browserId, this);
-    const actor = this._registry._browserIdToActor.get(this._browserId);
-    if (actor)
-      this.setActor(actor);
+    // The actors that were there before the target: the top first, so a root that is not the main one finds
+    // the main endpoint made.
+    const prefix = this._browserId + '/';
+    const actors = [...this._registry._rootActors].filter(([key]) => key.startsWith(prefix));
+    actors.sort(([, a], [, b]) => (a.browsingContext.parent ? 1 : 0) - (b.browsingContext.parent ? 1 : 0));
+    for (const [, actor] of actors)
+      this.setActor(actor, actor.browsingContext.id);
 
     this._registry.emit(TargetRegistry.Events.TargetCreated, this);
   }
@@ -637,26 +685,27 @@ export class PageTarget {
     return ++this._actorSequenceNumber;
   }
 
-  setActor(actor) {
-    this._actor = actor;
+  setActor(actor, rootId = actor.browsingContext.id) {
     actor.actorName = `browser::page[${this._targetId}]/${actor.browsingContext.browserId}/${actor.browsingContext.id}/${this.nextActorSequenceNumber()}`;
-    this._channel.bindToActor(actor);
+    const isMain = !actor.browsingContext.parent;
+    this._contentMux.onRootAdded(rootId, actor.browsingContext);
+    this._contentMux.bindRoot(rootId, actor, {isMain});
   }
 
-  removeActor(actor) {
+  removeActor(actor, rootId) {
     // Note: the order between setActor and removeActor is non-deterministic.
-    // Therefore we check that we are still bound to the actor that is being removed.
-    if (this._actor !== actor)
+    // Therefore we check that we are still bound to the actor that is being removed. The root comes from
+    // the registry: the actor may not be readable any more.
+    const endpoint = this._contentMux.unbindRoot(rootId, actor);
+    if (!endpoint)
       return;
-    this._actor = undefined;
     // ⛔ THE CHANNEL GOES QUIET HERE AND MIGHT NEVER SPEAK AGAIN. `resetTransport`
     // keeps every pending request in the hope that a new actor binds and
     // replays it; measured 2026-09-19, a reload during a drag removed this
     // actor and NO replacement ever arrived. Whoever holds a request that only
     // the old document could answer has to hear about it, so this is emitted
     // whether or not a replacement follows. [B216]
-    this.emit(PageTarget.Events.ContentDetached);
-    this._channel.resetTransport();
+    this.emit(PageTarget.Events.ContentDetached, {rootId: endpoint.rootId, isMain: endpoint.isMain});
   }
 
   dialog(dialogId) {
@@ -841,7 +890,7 @@ export class PageTarget {
    */
   async _awaitContentSize(width, height) {
     const scale = this._window.devicePixelRatio;
-    await this._channel.connect('').send('awaitViewportDimensions', {
+    await this._contentMux.connect('').send('awaitViewportDimensions', {
       deviceWidth: Math.round(width * scale),
       deviceHeight: Math.round(height * scale),
     });
@@ -868,7 +917,7 @@ export class PageTarget {
   async setInterceptFileChooserDialog(enabled) {
     this.crossProcessCookie.interceptFileChooserDialog = enabled;
     this._updateCrossProcessCookie();
-    await this._channel.connect('').send('setInterceptFileChooserDialog', enabled).catch(e => {});
+    await this._contentMux.connect('').send('setInterceptFileChooserDialog', enabled).catch(e => {});
   }
 
   async setViewportSize(viewportSize) {
@@ -906,8 +955,24 @@ export class PageTarget {
     this._gBrowser.removeTab(this._tab, { skipPermitUnload: true });
   }
 
+  /**
+   * The process of an iframe crashed; the tab and its top document are alive.
+   * The client is told the frame is gone (Page.frameDetached, the event it
+   * already knows, for the crashed frame: the client removes the frames below
+   * it with it) and no Page.crashed is sent: that event is the tab's.
+   *
+   * What the crashed process held besides the frame (its execution contexts
+   * and workers) is the content multiplexer's to announce as destroyed, when
+   * it exists; here the page keeps working, which is the part that was broken.
+   */
+  frameCrashed(browsingContext) {
+    this.emit(PageTarget.Events.FrameCrashed, {
+      frameId: helper.browsingContextToFrameId(browsingContext),
+    });
+  }
+
   channel() {
-    return this._channel;
+    return this._contentMux;
   }
 
   id() {
@@ -943,7 +1008,7 @@ export class PageTarget {
   }
 
   async ensurePermissions() {
-    await this._channel.connect('').send('ensurePermissions', {}).catch(e => void e);
+    await this._contentMux.connect('').send('ensurePermissions', {}).catch(e => void e);
   }
 
   async setInitScripts(scripts) {
@@ -953,17 +1018,17 @@ export class PageTarget {
   }
 
   async pushInitScripts() {
-    await this._channel.connect('').send('setInitScripts', [...this._browserContext.crossProcessCookie.initScripts, ...this.crossProcessCookie.initScripts]).catch(e => void e);
+    await this._contentMux.connect('').send('setInitScripts', [...this._browserContext.crossProcessCookie.initScripts, ...this.crossProcessCookie.initScripts]).catch(e => void e);
   }
 
   async addBinding(worldName, name, script) {
     this.crossProcessCookie.bindings.push({ worldName, name, script });
     this._updateCrossProcessCookie();
-    await this._channel.connect('').send('addBinding', { worldName, name, script }).catch(e => void e);
+    await this._contentMux.connect('').send('addBinding', { worldName, name, script }).catch(e => void e);
   }
 
   async applyContextSetting(name, value) {
-    await this._channel.connect('').send('applyContextSetting', { name, value }).catch(e => void e);
+    await this._contentMux.connect('').send('applyContextSetting', { name, value }).catch(e => void e);
   }
 
   /**
@@ -1070,6 +1135,14 @@ export class PageTarget {
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._browserId);
+    // The page's roots: what waits for them is refused, and the registry forgets their actors.
+    for (const rootId of this._contentMux.rootIds())
+      this._contentMux.disposeRoot(rootId);
+    const prefix = this._browserId + '/';
+    for (const key of [...this._registry._rootActors.keys()]) {
+      if (key.startsWith(prefix))
+        this._registry._rootActors.delete(key);
+    }
     if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {
       Services.ppmm.sharedData.delete(this._crossProcessCookieKey());
       Services.ppmm.sharedData.flush();
@@ -1090,6 +1163,7 @@ PageTarget.Events = {
   ContentDetached: Symbol('PageTarget.ContentDetached'),
   Crashed: Symbol('PageTarget.Crashed'),
   DialogOpened: Symbol('PageTarget.DialogOpened'),
+  FrameCrashed: Symbol('PageTarget.FrameCrashed'),
   ScreencastFrame: Symbol('PageTarget.ScreencastFrame'),
 };
 

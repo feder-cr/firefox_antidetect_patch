@@ -41,8 +41,11 @@ export class FrameTree {
     this._frameIdToFrame = new Map();
     this._pageReady = false;
     this._javaScriptDisabled = false;
-    for (const browsingContext of helper.collectAllBrowsingContexts(rootBrowsingContext))
-      this._createFrame(browsingContext);
+    for (const browsingContext of helper.collectAllBrowsingContexts(rootBrowsingContext)) {
+      // The local leaf of a -> b -> a is a fragment root of its own: it is not in the tree of the top.
+      if (this._belongsHere(browsingContext))
+        this._createFrame(browsingContext);
+    }
     this._mainFrame = this.frameForBrowsingContext(rootBrowsingContext);
 
     const webProgress = rootBrowsingContext.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
@@ -239,6 +242,10 @@ export class FrameTree {
     const frame = this.frameForDocShell(window.docShell);
     if (!frame)
       return;
+    // A local iframe whose docShell was not born at its attach is announced with its first window
+    // (and its contexts are made by the announcement: they are not made twice).
+    if (this._announceIfLocal(frame))
+      return;
     frame._onGlobalObjectCleared();
   }
 
@@ -348,8 +355,18 @@ export class FrameTree {
     return docShell ? this.frameForBrowsingContext(docShell.browsingContext) : null;
   }
 
+  // A frame of this tree is one with a docShell in this process: a Frame without one is either the stand-in of a
+  // frame in another process or a local iframe whose docShell is not born yet, and the client knows neither.
   frame(frameId) {
-    return this._frameIdToFrame.get(frameId) || null;
+    const frame = this._frameIdToFrame.get(frameId);
+    return frame && frame.docShell() ? frame : null;
+  }
+
+  // The browsing context of a frame id, local or not: every process holds the whole tree of browsing
+  // contexts, while only its local frames have a Frame here. Undefined when the id is not in the tree.
+  browsingContextOf(frameId) {
+    return helper.collectAllBrowsingContexts(this._rootBrowsingContext)
+                 .find(browsingContext => helper.browsingContextToFrameId(browsingContext) === frameId);
   }
 
   frames() {
@@ -358,6 +375,8 @@ export class FrameTree {
     return result;
 
     function collect(frame) {
+      if (!frame.docShell())
+        return;
       result.push(frame);
       for (const subframe of frame._children)
         collect(subframe);
@@ -366,6 +385,16 @@ export class FrameTree {
 
   mainFrame() {
     return this._mainFrame;
+  }
+
+  // The main frame of the PAGE: the one with no parent. In the tree of a fragment root `mainFrame()` is the root
+  // of this process's part, which has a parent in another process.
+  _isPageMain(frame) {
+    return !frame._browsingContext.parent;
+  }
+
+  _belongsHere(browsingContext) {
+    return helper.belongsToFragment(browsingContext, this._rootBrowsingContext);
   }
 
   // Every step runs, whatever an earlier one throws: a tree that stays half-disposed keeps its observers, its
@@ -413,7 +442,7 @@ export class FrameTree {
       this._frameNavigationCommitted(frame, docShell.currentURI.spec);
     }
 
-    if (frame === this._mainFrame) {
+    if (this._isPageMain(frame)) {
       this._installMainFrameInputListeners(docShell);
     }
   }
@@ -432,7 +461,7 @@ export class FrameTree {
     frame._lastCommittedNavigationId = navigationId;
     frame._url = url;
     this.emit(FrameTree.Events.NavigationCommitted, frame);
-    if (frame === this._mainFrame)
+    if (this._isPageMain(frame))
       this.forcePageReady();
   }
 
@@ -472,7 +501,7 @@ export class FrameTree {
       // commit. So the pending navigation is cleared at once, and the abort is
       // reported unless, by the end of this task, the document has gone the
       // swap's way.
-      if (frame === this._mainFrame && status === Cr.NS_BINDING_ABORTED) {
+      if (this._isPageMain(frame) && status === Cr.NS_BINDING_ABORTED) {
         if (docShell.isBeingDestroyed())
           return;
         Services.tm.dispatchToMainThread(() => {
@@ -488,7 +517,7 @@ export class FrameTree {
         return;
       }
       this.emit(FrameTree.Events.NavigationAborted, frame, navigationId, errorText);
-      if (frame === this._mainFrame && status !== Cr.NS_BINDING_ABORTED)
+      if (this._isPageMain(frame) && status !== Cr.NS_BINDING_ABORTED)
         this.forcePageReady();
     }
   }
@@ -509,7 +538,7 @@ export class FrameTree {
     frame._pendingNavigationId = null;
     this.emit(FrameTree.Events.NavigationAborted, frame, navigationId,
               helper.getNetworkErrorStatusText(+status));
-    if (frame === this._mainFrame)
+    if (this._isPageMain(frame))
       this.forcePageReady();
   }
 
@@ -534,6 +563,10 @@ export class FrameTree {
   announceRestoredDocument() {
     const frame = this._mainFrame;
     if (!frame || !this._frameIdToFrame.has(frame.id()))
+      return;
+    // A fragment root that is not the page's main frame restores no "main document": the parent says what its
+    // frame did (FrameLifecycle).
+    if (!this._isPageMain(frame))
       return;
     const url = frame.domWindow()?.location?.href;
     if (!url)
@@ -567,7 +600,7 @@ export class FrameTree {
 
   _onBrowsingContextAttached(browsingContext) {
     // If this browsing context doesn't belong to our frame tree - do nothing.
-    if (browsingContext.top !== this._rootBrowsingContext)
+    if (!this._belongsHere(browsingContext))
       return;
     this._createFrame(browsingContext);
   }
@@ -582,7 +615,8 @@ export class FrameTree {
 
   _createFrame(browsingContext) {
     const parentFrame = this.frameForBrowsingContext(browsingContext.parent);
-    if (!parentFrame && this._mainFrame) {
+    // The root of a fragment has no frame for a parent, and that is right (its parent may be in another process).
+    if (!parentFrame && browsingContext !== this._rootBrowsingContext) {
       dump(`WARNING: found docShell with the same root, but no parent!\n`);
       return;
     }
@@ -590,12 +624,24 @@ export class FrameTree {
     this._frameIdToFrame.set(frame.id(), frame);
     if (browsingContext.docShell?.domWindow && browsingContext.docShell?.domWindow.location)
       frame._url = browsingContext.docShell.domWindow.location.href;
+    this._announceIfLocal(frame);
+    return frame;
+  }
+
+  // A browsing context without a docShell is the stand-in of a frame in another process, or a local iframe whose
+  // docShell is not born yet (nsFrameLoader makes the browsing context before the docShell): at the attach the two
+  // cannot be told apart. The Frame stays inert - not announced, out of frames() and frame() - and is announced
+  // the moment it has a docShell. True if this call announced it.
+  _announceIfLocal(frame) {
+    if (frame._announced || !frame.docShell())
+      return false;
+    frame._announced = true;
     this.emit(FrameTree.Events.FrameAttached, frame);
     // Create execution context **after** reporting frame.
     // This is our protocol contract.
     if (frame.domWindow())
       frame._onGlobalObjectCleared();
-    return frame;
+    return true;
   }
 
   _detachFrame(frame) {
@@ -612,7 +658,9 @@ export class FrameTree {
       frame._parentFrame._children.delete(frame);
     frame._parentFrame = null;
     frame.dispose();
-    this.emit(FrameTree.Events.FrameDetached, frame);
+    // A Frame that was never announced (a stand-in) is not detached to a client that never heard of it.
+    if (frame._announced)
+      this.emit(FrameTree.Events.FrameDetached, frame);
   }
 }
 
@@ -654,6 +702,7 @@ class Frame {
     this._children = new Set();
     this._frameId = helper.browsingContextToFrameId(browsingContext);
     this._parentFrame = null;
+    this._announced = false;
     this._url = '';
     if (parentFrame) {
       this._parentFrame = parentFrame;

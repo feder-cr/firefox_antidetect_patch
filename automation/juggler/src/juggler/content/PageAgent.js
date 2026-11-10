@@ -167,13 +167,16 @@ export class PageAgent {
       browserChannel.register('page', {
         adoptNode: this._adoptNode.bind(this),
         describeNode: this._describeNode.bind(this),
+        frameName: this._frameName.bind(this),
+        frameBoxTransform: this._frameBoxTransform.bind(this),
+        frameViewport: this._frameViewport.bind(this),
         elementAtom: this._elementAtom.bind(this),
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchDragEvent: this._dispatchDragEvent.bind(this),
         awaitInputHandled: this._awaitInputHandled.bind(this),
         armLanding: this._armLanding.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
-        getContentQuads: this._getContentQuads.bind(this),
+        getFrameQuads: this._getFrameQuads.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -274,7 +277,9 @@ export class PageAgent {
     const props = subject.QueryInterface(Ci.nsIPropertyBag2);
     const hasUrl = props.hasKey('url');
     const createdDocShell = props.getPropertyAsInterface('createdTabDocShell', Ci.nsIDocShell);
-    if (!hasUrl && createdDocShell === this._docShell && this._frameTree.forcePageReady())
+    // The root of a fragment that is not the page's main frame does not handle a window opened for the page.
+    if (!hasUrl && createdDocShell === this._docShell && this._frameTree._isPageMain(this._frameTree.mainFrame()) &&
+        this._frameTree.forcePageReady())
       this._emitAllEvents(this._frameTree.mainFrame());
   }
 
@@ -296,8 +301,8 @@ export class PageAgent {
 
   _findFrameForNode(node) {
     return this._frameTree.frames().find(frame => {
-      const doc = frame.domWindow().document;
-      return node === doc || node.ownerDocument === doc;
+      const doc = frame.domWindow()?.document;
+      return !!doc && (node === doc || node.ownerDocument === doc);
     });
   }
 
@@ -349,7 +354,7 @@ export class PageAgent {
       navigationId,
       errorText,
     });
-    if (!frame._initialNavigationDone && frame !== this._frameTree.mainFrame())
+    if (!frame._initialNavigationDone && !this._frameTree._isPageMain(frame))
       this._emitAllEvents(frame);
     frame._initialNavigationDone = true;
   }
@@ -371,7 +376,16 @@ export class PageAgent {
     frame._initialNavigationDone = true;
   }
 
+  // The root of a fragment that is not the page's main frame (a frame whose parent is in another process) is
+  // announced by the parent (FrameLifecycle) with the right parent: said from here too, the client would see a
+  // second frame with no parent.
+  _isFragmentRootOfAnotherProcess(frame) {
+    return frame === this._frameTree.mainFrame() && !this._frameTree._isPageMain(frame);
+  }
+
   _onFrameAttached(frame) {
+    if (this._isFragmentRootOfAnotherProcess(frame))
+      return;
     this._browserPage.emit('pageFrameAttached', {
       frameId: frame.id(),
       parentFrameId: frame.parentFrame() ? frame.parentFrame().id() : undefined,
@@ -379,6 +393,8 @@ export class PageAgent {
   }
 
   _onFrameDetached(frame) {
+    if (this._isFragmentRootOfAnotherProcess(frame))
+      return;
     this._browserPage.emit('pageFrameDetached', {
       frameId: frame.id(),
     });
@@ -409,13 +425,21 @@ export class PageAgent {
   }
 
   async _adoptNode({frameId, objectId, executionContextId}) {
-    const frame = this._frameTree.frame(frameId);
-    if (!frame)
-      throw new Error('Failed to find frame with id = ' + frameId);
     let unsafeObject;
     if (!objectId) {
-      unsafeObject = frame.domWindow().frameElement;
+      // The <iframe> of a frame, asked in the process of its parent (ContentMux routes it by the
+      // execution context). The child may be in another process: it has no Frame here, only a browsing
+      // context, and the browsing context knows its embedder element.
+      const browsingContext = this._frameTree.browsingContextOf(frameId);
+      if (!browsingContext)
+        throw new Error('Failed to find frame with id = ' + frameId);
+      unsafeObject = browsingContext.embedderElement;
+      if (!unsafeObject)
+        throw new Error('Frame has been detached');
     } else {
+      const frame = this._frameTree.frame(frameId);
+      if (!frame)
+        throw new Error('Failed to find frame with id = ' + frameId);
       unsafeObject = frame.unsafeObject(objectId);
     }
     const context = this._runtime.findExecutionContext(executionContextId);
@@ -652,14 +676,21 @@ export class PageAgent {
     return { zoom: viewer.deviceFullZoomForTest };
   }
 
-  _getContentQuads({objectId, frameId}) {
+  // The quads of a node in the document of the fragment root of THIS process, with the root's frame id and
+  // the size of its viewport: what the parent needs to carry them across a process boundary
+  // (PageHandler['Page.getContentQuads']). For the main root the fragment root is the top document: the
+  // numbers are those of the page. Everything between the node and the root, however many frames of this
+  // process, is one layout call, transforms included.
+  _getFrameQuads({objectId, frameId}) {
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject.getBoxQuads)
       throw new Error('RemoteObject is not a node');
-    const quads = unsafeObject.getBoxQuads({relativeTo: this._frameTree.mainFrame().domWindow().document, recurseWhenNoFrame: true}).map(quad => {
+    const rootFrame = this._frameTree.mainFrame();
+    const win = rootFrame.domWindow();
+    const quads = unsafeObject.getBoxQuads({relativeTo: win.document}).map(quad => {
       return {
         p1: {x: quad.p1.x, y: quad.p1.y},
         p2: {x: quad.p2.x, y: quad.p2.y},
@@ -667,7 +698,7 @@ export class PageAgent {
         p4: {x: quad.p4.x, y: quad.p4.y},
       };
     });
-    return {quads};
+    return {quads, rootFrameId: rootFrame.id(), viewport: {width: win.innerWidth, height: win.innerHeight}};
   }
 
   _describeNode({objectId, frameId}) {
@@ -675,21 +706,68 @@ export class PageAgent {
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const unsafeObject = frame.unsafeObject(objectId);
-    const browsingContextGroup = frame.docShell().browsingContext.group;
-    const frames = this._frameTree.allFramesInBrowsingContextGroup(browsingContextGroup);
-    let contentFrame;
-    let ownerFrame;
-    for (const frame of frames) {
-      if (unsafeObject.contentWindow && frame.docShell() === unsafeObject.contentWindow.docShell)
-        contentFrame = frame;
-      const document = frame.domWindow().document;
-      if (unsafeObject === document || unsafeObject.ownerDocument === document)
-        ownerFrame = frame;
-    }
+    // The frame of an <iframe>, <object> or <embed> is the frame of the browsing context it holds. The
+    // browsing context is there in every process, also when the content is in another one and has no
+    // docShell here to compare.
+    const contentBrowsingContext = unsafeObject.browsingContext;
+    const contentFrameId = contentBrowsingContext ? helper.browsingContextToFrameId(contentBrowsingContext) : undefined;
+    // The element is in the document of a frame of this process; a frame whose docShell is not here yet
+    // has no window to ask.
+    const ownerFrame = this._frameTree.frames().find(f => {
+      const document = f.domWindow()?.document;
+      return !!document && (unsafeObject === document || unsafeObject.ownerDocument === document);
+    });
     return {
-      contentFrameId: contentFrame ? contentFrame.id() : undefined,
+      contentFrameId,
       ownerFrameId: ownerFrame ? ownerFrame.id() : undefined,
     };
+  }
+
+  // The name (name, else id) of the <iframe> that holds `childFrameId`. Asked in the process of the
+  // embedder (ContentMux routes it by the parent of the child): the attributes of the element exist
+  // only there, and a child in another process has no Frame in this one.
+  _frameName({childFrameId}) {
+    const browsingContext = this._frameTree.browsingContextOf(childFrameId);
+    if (!browsingContext)
+      throw new Error('Failed to find frame with id = ' + childFrameId);
+    const element = browsingContext.embedderElement;
+    return {name: element ? (element.getAttribute('name') || element.getAttribute('id') || '') : ''};
+  }
+
+  // The content box of the <iframe> that holds `childFrameId`, as the affine map that carries the child's
+  // viewport into the CSS pixels of the fragment root of THIS process: O is where the child's origin lands,
+  // Ex and Ey where its x and y axes go. Asked in the process of the embedder (ContentMux routes it by the
+  // parent of the child); the child may be in another process and have no Frame here. The box comes from
+  // the layout of this process, which is always current: the matrix the compositor sends to a child lags
+  // after a scroll. Everything between the element and the fragment root of this process is one
+  // getBoxQuads call, so only the step across a process boundary is an affine map.
+  _frameBoxTransform({childFrameId}) {
+    const browsingContext = this._frameTree.browsingContextOf(childFrameId);
+    if (!browsingContext)
+      throw new Error('Failed to find frame with id = ' + childFrameId);
+    const embedder = browsingContext.embedderElement;
+    if (!embedder)
+      throw new Error('Frame has been detached');
+    const rootFrame = this._frameTree.mainFrame();
+    const [quad] = embedder.getBoxQuads({box: 'content', relativeTo: rootFrame.domWindow().document});
+    // An <iframe> with no box (display: none) has no quad: the answer is empty, not an error.
+    if (!quad)
+      return {empty: true, parentRootFrameId: rootFrame.id()};
+    return {
+      O: {x: quad.p1.x, y: quad.p1.y},
+      Ex: {x: quad.p2.x - quad.p1.x, y: quad.p2.y - quad.p1.y},
+      Ey: {x: quad.p4.x - quad.p1.x, y: quad.p4.y - quad.p1.y},
+      parentRootFrameId: rootFrame.id(),
+    };
+  }
+
+  // The size of the viewport of a frame of this process, in its CSS pixels.
+  _frameViewport({frameId}) {
+    const frame = this._frameTree.frame(frameId);
+    if (!frame)
+      throw new Error('Failed to find frame with id = ' + frameId);
+    const win = frame.domWindow();
+    return {width: win.innerWidth, height: win.innerHeight};
   }
 
   async _scrollIntoViewIfNeeded({objectId, frameId, rect}) {
@@ -736,26 +814,6 @@ export class PageAgent {
       top: (target.top + target.bottom) / 2 - vh / 2,
       behavior: 'instant',
     });
-  }
-
-  _getNodeBoundingBox(unsafeObject) {
-    if (!unsafeObject.getBoxQuads)
-      throw new Error('RemoteObject is not a node');
-    const quads = unsafeObject.getBoxQuads({relativeTo: this._frameTree.mainFrame().domWindow().document});
-    if (!quads.length)
-      return;
-    let x1 = Infinity;
-    let y1 = Infinity;
-    let x2 = -Infinity;
-    let y2 = -Infinity;
-    for (const quad of quads) {
-      const boundingBox = quad.getBounds();
-      x1 = Math.min(boundingBox.x, x1);
-      y1 = Math.min(boundingBox.y, y1);
-      x2 = Math.max(boundingBox.x + boundingBox.width, x2);
-      y2 = Math.max(boundingBox.y + boundingBox.height, y2);
-    }
-    return {x: x1, y: y1, width: x2 - x1, height: y2 - y1};
   }
 
   async _dispatchKeyEvent({type, keyCode, code, key, repeat, location, text, latency}) {

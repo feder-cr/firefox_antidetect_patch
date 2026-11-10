@@ -22,6 +22,11 @@ export function initialize(browsingContext, docShell) {
 
   const applySetting = {
     geolocation: (geolocation) => {
+      // BrowsingContext::SetGeolocationServiceOverride has MOZ_ASSERT(IsTop())
+      // (BrowsingContext.cpp:3873-3877): a fragment root is not the top.
+      // Step 7.5 decides how the override reaches such a root.
+      if (browsingContext !== browsingContext.top)
+        return;
       if (geolocation) {
         browsingContext.setGeolocationServiceOverride({
           coords: {

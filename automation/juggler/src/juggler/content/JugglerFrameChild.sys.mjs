@@ -56,7 +56,7 @@ export class JugglerFrameChild extends JSWindowActorChild {
   }
 
   _agents() {
-    return topBrowingContextToAgents.get(this.browsingContext.top);
+    return topBrowingContextToAgents.get(helper.fragmentRootOf(this.browsingContext));
   }
 
   actorCreated() {
@@ -69,8 +69,8 @@ export class JugglerFrameChild extends JSWindowActorChild {
     if (this.document.documentURI.startsWith('moz-extension://'))
       return;
 
-    // Child frame events will be forwarded to related top-level agents.
-    if (this.browsingContext.parent)
+    // A frame nested in the same process goes through the agents of its fragment root.
+    if (!helper.isFragmentRoot(this.browsingContext))
       return;
 
     let agents = topBrowingContextToAgents.get(this.browsingContext);
@@ -89,7 +89,7 @@ export class JugglerFrameChild extends JSWindowActorChild {
       if (e) dump(`[JugglerFrameChild] removeListeners failed: ${e.message}\n`);
     }
 
-    if (this.browsingContext.parent)
+    if (!helper.isFragmentRoot(this.browsingContext))
       return;
 
     const agents = topBrowingContextToAgents.get(this.browsingContext);

@@ -16,6 +16,37 @@ export class Helper {
     objectToDecorate.emit = emitter.emit.bind(emitter);
   }
 
+  // A fragment root is the browsing context a content process holds at the top
+  // of its part of the page: it has no parent, or its parent's docShell is in
+  // another process. This climbs from `bc` to that root.
+  fragmentRootOf(bc) {
+    let cur = bc;
+    while (cur.parent && cur.parent.docShell)
+      cur = cur.parent;
+    return cur;
+  }
+
+  // True when `bc` is a fragment root: no parent, or a parent that has no
+  // docShell here (it lives in another process).
+  isFragmentRoot(bc) {
+    return !bc.parent || !bc.parent.docShell;
+  }
+
+  // True when `bc` belongs to the tree of the fragment root `root`: climbing the
+  // parents that are in this process (that have a docShell here) arrives at
+  // `root`. `bc` itself counts only if it IS the root: at the attach of a
+  // browsing context its own docShell says nothing about where it lives (a
+  // local iframe's is often not born yet), but its parent's does.
+  belongsToFragment(bc, root) {
+    for (let cur = bc; cur; cur = cur.parent) {
+      if (cur === root)
+        return true;
+      if (!cur.parent || !cur.parent.docShell)
+        return false;
+    }
+    return false;
+  }
+
   collectAllBrowsingContexts(rootBrowsingContext, allBrowsingContexts = []) {
     allBrowsingContexts.push(rootBrowsingContext);
     for (const child of rootBrowsingContext.children)

@@ -254,5 +254,6 @@
  "gfx/wr/webrender/src/render_backend.rs": 75,
  "gfx/wr/webrender/src/render_backend_pool.rs": 2,
  "gfx/wr/webrender/src/resource_cache.rs": 11,
- "gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs": 93
+ "gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs": 93,
+ "dom/base/nsFrameLoader.cpp": 5
 }

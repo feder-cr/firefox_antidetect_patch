@@ -69,11 +69,13 @@ function setup() {
                       currentURI: { spec: 'http://x/old' }, QueryInterface() { return this; } };
   const childShell = { destroyed: false, browsingContext: { isInBFCache: false },
                        isBeingDestroyed() { return this.destroyed; } };
-  const main = { _pendingNavigationId: 'nav-1', _children: new Set() };
-  const child = { _pendingNavigationId: 'nav-2', _children: new Set() };
+  // The page's main frame has no parent browsing context; a child has one (FrameTree._isPageMain).
+  const main = { _pendingNavigationId: 'nav-1', _children: new Set(), _browsingContext: { parent: null } };
+  const child = { _pendingNavigationId: 'nav-2', _children: new Set(), _browsingContext: { parent: {} } };
   const emitted = [];
   const t = {
     _mainFrame: main,
+    _isPageMain: FrameTree.prototype._isPageMain,
     frameForDocShell: shell => shell === mainShell ? main : shell === childShell ? child : null,
     emit: (event, frame, ...args) => emitted.push([event, frame === main ? 'main' : 'child', ...args]),
     forcePageReady: () => emitted.push(['pageReady']),

@@ -210,6 +210,11 @@ function handler() {
   const pageHandler = Object.create(PageHandler.prototype);
   pageHandler._session = { emitEvent: (name, params) => emitted.push([name, params.frameId]) };
   pageHandler._pageNetwork = { onMainFrameNavigationCommitted: id => committed.push(id) };
+  // The frames the client has been told of: a frame's events leave once it is announced.
+  pageHandler._reportedFrameIds = new Set([mainFrameId, subframeId]);
+  pageHandler._frameEventsBeforeFrame = new Map();
+  pageHandler._liveFrameIds = new Set();
+  pageHandler._parentOfFrame = new Map();
   return { pageHandler, emitted, committed };
 }
 
