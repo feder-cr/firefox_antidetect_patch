@@ -97,9 +97,11 @@ function construct(top) {
   const session = { emitEvent: (name, payload) => events.push([name, JSON.parse(JSON.stringify(payload || {}))]) };
   const target = { linkedBrowser: () => ({ browsingContext: top }) };
   helper.decorateAsEventEmitter(target);
-  const channel = { connect: () => ({ send() {}, emit() {}, dispose() {} }), register: () => () => {} };
+  const registered = {};
+  const channel = { connect: () => ({ send() {}, emit() {}, dispose() {} }),
+                    register: (namespace, handlers) => { registered[namespace] = handlers; return () => {}; } };
   const handler = new PageHandler(target, session, channel);
-  return { handler, obs, events };
+  return { handler, obs, events, registered };
 }
 
 test('the main frame and the frames already there are announced with their ids, by the parent', () => {
@@ -145,4 +147,25 @@ test('dispose() removes the observers and the listeners on the lifecycle', async
   assert.equal(obs.count('browsing-context-attached'), 0);
   assert.equal(obs.count('browsing-context-discarded'), 0);
   assert.equal(handler._eventListeners.length, 0);
+});
+
+// test_nested_parent_chain (strategy 1, Linux): an iframe starts in the process of its embedder and leaves it for a process of its
+// own, so the embedder's process says the frame attached (the page agent) as well as the parent. A frame below a frame whose
+// document is about to commit is told after that commit, whoever says it: told before, the client drops it at the commit and keeps
+// a stale unnamed Frame in the parent's child list (payment.child_frames == [Frame(url=''), widget]).
+test('a frame the content process says attached while its parent navigates is held back and told after the commit', () => {
+  const top = context();
+  const payment = context({ parent: top });
+  const { handler, obs, events, registered } = construct(top);
+  const paymentId = 'subframe-' + payment.id;
+  handler._frameNavigations.onDocumentRequest(paymentId, 'nav-pay', 'http://b.test/payment');   // payment navigates
+  events.length = 0;
+  const widgetId = 'subframe-' + (payment.id + 1);
+  registered.page.pageFrameAttached({ frameId: widgetId, parentFrameId: paymentId });
+  assert.deepEqual(events, [], 'not told while its parent navigates');
+  handler._frameNavigations.onDocumentInserted(paymentId, 'http://b.test/payment', 'payment');
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.frameId]), [
+    ['Page.navigationCommitted', paymentId],
+    ['Page.frameAttached', widgetId],
+  ]);
 });

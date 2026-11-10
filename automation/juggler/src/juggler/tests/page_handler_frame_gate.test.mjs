@@ -413,3 +413,22 @@ test('an embedder that cannot say the name leaves the commit with the name it ha
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(events.map(([name, payload]) => [name, payload.name]), [['Page.navigationCommitted', '']]);
 });
+
+// test_nested_parent_chain (strategy 1): a frame in another process, whose commit waits for the name of its <iframe>, has a
+// frame of its own that attaches in the meantime. The navigation of the parent is no longer in flight (the registry
+// committed it) but the client has not been told: told now, the frame is dropped by the commit that follows, and the
+// client keeps a stale, unnamed Frame in the parent's child list (payment.child_frames == [Frame(url=''), widget]).
+test('a frame that attaches while the commit of its parent waits for the name of the parent is told after the commit', async () => {
+  let reply;
+  const { handler, events } = namedPage({ answer: () => new Promise(resolve => { reply = resolve; }) });
+  handler._frameNavigations = { forget() {}, pendingNavigationId: () => undefined };   // the registry has committed it
+  handler._onNavigationCommitted({ frameId: 'subframe-7', navigationId: 'nav-1', url: 'https://b.test/', name: '' });
+  handler._onFrameSeenByTheParent({ frameId: 'subframe-8', parentFrameId: 'subframe-7' });
+  assert.deepEqual(events, [], 'nothing leaves while the name is awaited: not the commit, and not the frame below it');
+  reply({ name: 'pay' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(events.map(([name, payload]) => [name, payload.frameId]), [
+    ['Page.navigationCommitted', 'subframe-7'],
+    ['Page.frameAttached', 'subframe-8'],
+  ], 'the commit first, then the frame that attached meanwhile');
+});

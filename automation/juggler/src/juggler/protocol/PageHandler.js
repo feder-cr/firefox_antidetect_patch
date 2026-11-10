@@ -295,12 +295,15 @@ export class PageHandler {
         pageBindingCalled: emitProtocolEvent('Page.bindingCalled'),
         pageEventFired: emitFrameKeyedEvent('Page.eventFired'),
         pageFileChooserOpened: emitProtocolEvent('Page.fileChooserOpened'),
-        pageFrameAttached: this._onFrameAttached.bind(this),
+        pageFrameAttached: this._onFrameSeenByTheParent.bind(this),
         pageFrameDetached: ({frameId}) => this._onFrameDetached(frameId),
         pageLinkClicked: emitProtocolEvent('Page.linkClicked'),
         pageReady: this._onPageReady.bind(this),
         pageInputEvent: (event, {rootId}) => this._onPageInputEvent(event, {rootId}),
-        pageSameDocumentNavigation: emitFrameKeyedEvent('Page.sameDocumentNavigation'),
+        pageSameDocumentNavigation: p => {
+          this._frameNavigations.onSameDocumentNavigation(p.frameId, p.url);
+          this._emitFrameKeyed('Page.sameDocumentNavigation', p, p.frameId);
+        },
         pageUncaughtError: emitFrameKeyedEvent('Page.uncaughtError'),
         pageWorkerCreated: this._onWorkerCreated.bind(this),
         pageWorkerDestroyed: this._onWorkerDestroyed.bind(this),
@@ -577,7 +580,7 @@ export class PageHandler {
       // parent only, which says them again. A new document has the frames that attached while it was being
       // loaded, which were held back (_onFrameSeenByTheParent); its old frames are not said again.
       if (typeof params.navigationId === 'string' && params.navigationId.startsWith('nav-bfcache-'))
-        this._frameLifecycle.reannounceBelow(params.frameId);
+        this._reannounceAfterRestore(params.frameId);
       else
         this._announceHeldBackFramesBelow(params.frameId);
     }
@@ -624,13 +627,33 @@ export class PageHandler {
     }
   }
 
-  // A frame the parent sees attach. While its parent frame has a navigation in flight it is not told: the client drops
+  // The frames the parent knows below a document restored from the cache come back with it, in every process: each is
+  // announced and committed again with the document it had (the client dropped the frames below the frame at the commit
+  // of the restore, with their addresses), parents first. The content process says the ones it holds as well; the
+  // announcement is told once.
+  _reannounceAfterRestore(frameId) {
+    for (const below of this._frameLifecycle.framesBelow(frameId)) {
+      this._onFrameAttached(below);
+      const document = this._frameNavigations.lastDocument(below.frameId);
+      if (document) {
+        this._emitFrameKeyed('Page.navigationCommitted',
+            {frameId: below.frameId, navigationId: document.navigationId, url: document.url, name: document.name}, below.frameId);
+      }
+    }
+  }
+
+  // A frame attaches, as the parent sees it (FrameLifecycle) or as the process that holds it says (the page agent: an
+  // iframe starts in the process of its embedder and may leave it for a process of its own). While its parent frame has a
+  // navigation in flight it is not told: the client drops
   // the frames below a frame when a document commits in it, and would drop this one at once. The commit says it
   // (_onNavigationCommitted).
   _onFrameSeenByTheParent(frame) {
     const parent = frame.parentFrameId;
+    // The parent's navigation is in flight, or committed but not told yet (the commit of a frame in another process
+    // waits for the name of its <iframe>), or the parent itself is held back.
     if (parent !== undefined &&
-        (this._frameNavigations.pendingNavigationId(parent) !== undefined || this._heldBackFrames.has(parent))) {
+        (this._frameNavigations.pendingNavigationId(parent) !== undefined || this._eventsAfterName.has(parent) ||
+         this._heldBackFrames.has(parent))) {
       this._heldBackFrames.set(frame.frameId, frame);
       return;
     }

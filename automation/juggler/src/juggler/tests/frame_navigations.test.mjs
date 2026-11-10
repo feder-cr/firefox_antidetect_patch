@@ -546,3 +546,19 @@ test('a navigation with no request of its own (about:blank, data:) commits whate
   registry.onDocumentInserted(MAIN, 'about:blank', '');
   assert.deepEqual(events, [committed(MAIN, 'nav-1', 'about:blank', '')]);
 });
+
+// --- the document a frame had, for when it comes back from the cache
+
+test('the last document told committed is kept, its address follows a same-document navigation, and forget drops it', () => {
+  const { registry } = setup();
+  assert.equal(registry.lastDocument(CHILD), undefined);
+  registry.onDocumentRequest(CHILD, 'nav-3', 'http://b/mid');
+  registry.onDocumentInserted(CHILD, 'http://b/mid', 'b');
+  assert.deepEqual({ ...registry.lastDocument(CHILD) }, { navigationId: 'nav-3', url: 'http://b/mid', name: 'b' });
+  registry.onSameDocumentNavigation(CHILD, 'http://b/mid#section');
+  assert.equal(registry.lastDocument(CHILD).url, 'http://b/mid#section');
+  registry.onFrameKnown(CHILD, { url: 'http://b/other', name: 'n', navigationId: 'nav-4' });
+  assert.deepEqual({ ...registry.lastDocument(CHILD) }, { navigationId: 'nav-4', url: 'http://b/other', name: 'n' });
+  registry.forget(CHILD);
+  assert.equal(registry.lastDocument(CHILD), undefined);
+});

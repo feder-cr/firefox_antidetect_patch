@@ -91,7 +91,8 @@ function page() {
   handler._contextsOfFrame = new Map();
   handler._frameLifecycle = lifecycle;
   handler._heldBackFrames = new Map();
-  handler._frameNavigations = { forget() {}, pendingNavigationId() {} };
+  handler._documents = new Map();
+  handler._frameNavigations = { forget() {}, pendingNavigationId() {}, lastDocument: id => handler._documents.get(id) };
   lifecycle.on('frameattached', (_, payload) => handler._onFrameAttached(payload));
   lifecycle.on('framedetached', (_, { frameId }) => handler._onFrameDetached(frameId));
   lifecycle.start();
@@ -164,4 +165,22 @@ test('a restore says again the frames of the document that came back, not those 
   // back: the first top is the page's again
   browser.browsingContext = top1;
   assert.deepEqual(Array.from(lifecycle.framesBelow('mainframe-9'), f => f.frameId), ['subframe-' + child1.id]);
+});
+
+// test_oop_frame_has_its_url_and_answers_after_the_top_comes_back_from_the_cache: the client drops the frames below the top
+// at the commit of the restore, with their addresses; a frame of another process comes back announced, so it comes back
+// committed with the document it had, or `page.frames` lists it with no url and `frame.url == mid` never holds.
+test('the frames that come back with a restored document are committed again with the document they had', () => {
+  const { top, mid, leaf, handler, sent, id } = page();
+  handler._documents.set(id(mid), { navigationId: 'nav-mid', url: 'http://b.test/mid', name: 'b' });
+  handler._documents.set(id(leaf), { navigationId: 'nav-leaf', url: 'http://a.test/leaf', name: 'a' });
+  sent.length = 0;
+  handler._forgetFramesBelow(id(top));
+  handler._reannounceAfterRestore(id(top));
+  assert.deepEqual(sent.map(([name, p]) => [name, p.frameId, p.url]), [
+    ['Page.frameAttached', id(mid), undefined],
+    ['Page.navigationCommitted', id(mid), 'http://b.test/mid'],
+    ['Page.frameAttached', id(leaf), undefined],
+    ['Page.navigationCommitted', id(leaf), 'http://a.test/leaf'],
+  ]);
 });

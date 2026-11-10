@@ -36,6 +36,7 @@ export class FrameNavigations {
     this._replaced = new Map();     // frameId -> Set(navigationId): replaced by a newer navigation before they were heard from
     this._initialDone = new Set();  // frameIds that have had a navigation end
     this._restoredDocuments = 0;
+    this._documents = new Map();    // frameId -> {navigationId, url, name}: the last document told committed
   }
 
   pendingNavigationId(frameId) {
@@ -105,7 +106,7 @@ export class FrameNavigations {
       if (replaced && replaced.delete(navigationId)) {
         this._committed.set(frameId, navigationId);
         this._initialDone.add(frameId);
-        this._emit('navigationcommitted', {frameId, navigationId, url, name}, frameId);
+        this._tellCommit(frameId, navigationId, url, name);
       }
       return;
     }
@@ -120,7 +121,25 @@ export class FrameNavigations {
     this._committed.set(frameId, pending.navigationId);
     this._remember(frameId, pending.navigationId);
     this._initialDone.add(frameId);
-    this._emit('navigationcommitted', {frameId, navigationId: pending.navigationId, url, name}, frameId);
+    this._tellCommit(frameId, pending.navigationId, url, name);
+  }
+
+  _tellCommit(frameId, navigationId, url, name) {
+    this._documents.set(frameId, {navigationId, url, name});
+    this._emit('navigationcommitted', {frameId, navigationId, url, name}, frameId);
+  }
+
+  // The last document told committed in the frame, or undefined: what a frame says again when it comes back with the
+  // page from the back-forward cache, the client having dropped it.
+  lastDocument(frameId) {
+    return this._documents.get(frameId);
+  }
+
+  // The address of the document changed without a new document (pushState, a hash): the next time it is said, it is this.
+  onSameDocumentNavigation(frameId, url) {
+    const document = this._documents.get(frameId);
+    if (document)
+      document.url = url;
   }
 
   // A frame as its process has it, said again: a page the client attaches to as it is, the frames of a document
@@ -135,7 +154,7 @@ export class FrameNavigations {
       if (known)
         this._committed.set(frameId, known);
       this._initialDone.add(frameId);
-      this._emit('navigationcommitted', {frameId, navigationId: known, url, name}, frameId);
+      this._tellCommit(frameId, known, url, name);
     }
     if (pendingNavigationId && !this._pending.has(frameId))
       this._start(frameId, pendingNavigationId, undefined);
@@ -206,6 +225,7 @@ export class FrameNavigations {
     this._committed.delete(frameId);
     this._ended.delete(frameId);
     this._replaced.delete(frameId);
+    this._documents.delete(frameId);
     this._initialDone.delete(frameId);
   }
 }
