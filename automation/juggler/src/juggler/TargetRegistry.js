@@ -615,6 +615,7 @@ export class PageTarget {
       name: `browser::page[${this._targetId}]`,
       uid: 'target-' + this._targetId,
       createChannel: (name, uid) => new SimpleChannel(name, uid),
+      nextTask: callback => Services.tm.dispatchToMainThread(callback),
     });
     this._dialogs = new Map();
     this.disableCache = false;
@@ -686,6 +687,9 @@ export class PageTarget {
   }
 
   setActor(actor, rootId = actor.browsingContext.id) {
+    // Every actor that comes (a new process, a document restored from the back-forward cache, a new top after a
+    // change of browsing context group) finds the setting in place: see updateJavaScriptDisabled.
+    this.updateJavaScriptDisabled();
     actor.actorName = `browser::page[${this._targetId}]/${actor.browsingContext.browserId}/${actor.browsingContext.id}/${this.nextActorSequenceNumber()}`;
     const isMain = !actor.browsingContext.parent;
     this._contentMux.onRootAdded(rootId, actor.browsingContext);
@@ -738,6 +742,22 @@ export class PageTarget {
     this.updateCacheDisabled(browsingContext);
     this.updateLanguageOverride(browsingContext);
     this.updateTimezoneOverride(browsingContext);
+    this.updateJavaScriptDisabled(browsingContext);
+  }
+
+  // Whether scripts run in the page is the BrowsingContext's AllowJavascript field, written here, by the parent,
+  // on the page's top-level context. The field is parent-only, synchronized to every process, inherited by the
+  // contexts born under it (an iframe of any process, a popup) and applied by its DidSet to the documents that
+  // exist; a document that is created later computes it at birth, so no script of its first load runs. A browsing
+  // context group change copies it to the new top (CanonicalBrowsingContext::ReplacedBy). It used to be written
+  // by the content process on the WindowContext of each document, which is owner-or-parent-only: a process that
+  // does not own the document of an iframe could not write it, and the write on a document that exists comes after
+  // its first scripts.
+  updateJavaScriptDisabled(browsingContext = undefined) {
+    const context = browsingContext || this._linkedBrowser.browsingContext;
+    const allowed = !this._browserContext.crossProcessCookie.settings.javaScriptDisabled;
+    if (context.allowJavascript !== allowed)
+      context.allowJavascript = allowed;
   }
 
   // The context's language list goes into the BrowsingContext's
@@ -1028,6 +1048,11 @@ export class PageTarget {
   }
 
   async applyContextSetting(name, value) {
+    // The parent's, not the content's: the content processes are not told.
+    if (name === 'javaScriptDisabled') {
+      this.updateJavaScriptDisabled();
+      return;
+    }
     await this._contentMux.connect('').send('applyContextSetting', { name, value }).catch(e => void e);
   }
 

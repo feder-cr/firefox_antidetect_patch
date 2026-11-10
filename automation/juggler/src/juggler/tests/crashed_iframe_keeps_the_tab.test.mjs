@@ -68,9 +68,18 @@ test('the target names the crashed frame the way the content side does, and tell
 });
 
 test('the engine passes the crashed context\'s id as the notification data, and nothing when it does not know it', () => {
+  // The logic lives in a file of ours; nsFrameLoader.cpp keeps an include and a hook of a few lines.
   const source = strip(fs.readFileSync(path.join(TREE, 'dom/base/nsFrameLoader.cpp'), 'utf8'));
   const fn = source.slice(source.indexOf('void nsFrameLoader::MaybeNotifyCrashed('));
   const notify = fn.slice(0, 1500);
-  assert.match(notify, /crashedBrowsingContextId\.AppendInt\(aBrowsingContext->Id\(\)\)/);
-  assert.match(notify, /"oop-frameloader-crashed",\s*aBrowsingContext \? crashedBrowsingContextId\.get\(\)\s*:\s*nullptr\)/);
+  assert.match(notify, /nsAutoString crashedContext;/);
+  assert.match(notify, /"oop-frameloader-crashed",\s*StealthCrashedContextData\(aBrowsingContext, crashedContext\)\)/);
+  assert.match(source, /#include "StealthFrameCrash\.h"/);
+
+  const header = strip(fs.readFileSync(path.join(TREE, 'dom/base/StealthFrameCrash.h'), 'utf8'));
+  const helper = header.slice(header.indexOf('StealthCrashedContextData('));
+  // nothing when the caller does not say which context crashed; the id as the data otherwise
+  assert.match(helper, /if \(!aBrowsingContext\) \{\s*return nullptr;\s*\}/);
+  assert.match(helper, /aBuffer\.AppendInt\(aBrowsingContext->Id\(\)\)/);
+  assert.match(helper, /return aBuffer\.get\(\);/);
 });

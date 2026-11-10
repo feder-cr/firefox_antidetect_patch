@@ -19,6 +19,9 @@ const helper = new Helper();
 
 // Events that wait for a frame the client does not know yet: past this many the next ones are dropped.
 const MAX_EVENTS_BEFORE_FRAME = 1000;
+// How long Page.screenshot tries again an error of drawSnapshot (a document in navigation throws one) before it
+// throws it. An estimate, to be read against the bench.
+const SNAPSHOT_RETRY_MS = 5000;
 
 /* STEALTHFOX_HUMANIZE_HOOK v1
  *
@@ -141,11 +144,15 @@ function mapQuad(transform, viewport, quad) {
 }
 
 class WorkerHandler {
-  constructor(session, contentChannel, workerId) {
+  // `contentChannel.connect(workerId)` reaches the root that holds the worker: the mux learns it from the
+  // `pageWorkerCreated` that announced the worker, and `register(workerId, ...)` is the fan-in from every root.
+  constructor(session, contentChannel, workerId, frameId) {
     this._session = session;
     this._contentWorker = contentChannel.connect(workerId);
     this._workerConsoleMessages = new Set();
     this._workerId = workerId;
+    // The frame the worker belongs to: its end ends the worker (PageHandler._onFrameDetached).
+    this._frameId = frameId;
 
     const emitWrappedProtocolEvent = eventName => {
       return params => {
@@ -234,6 +241,11 @@ export class PageHandler {
     helper.decorateAsEventEmitter(this._pageEventSink);
 
     this._pendingEventWatchers = new Set();
+    // The renderer's acks of the mouse events, from every root of the page: ids only grow, so "has event N
+    // been handled" is "is the largest acked id at least N". And the verdicts the owner roots pushed with them.
+    this._lastHitEventId = 0;
+    this._hitWaiters = new Set();
+    this._landingVerdicts = new Map();   // rootId + ':' + rootToken -> {id, perType}
     this._eventListeners = [
       helper.on(this._pageTarget, PageTarget.Events.DialogOpened, this._onDialogOpened.bind(this)),
       helper.on(this._pageTarget, PageTarget.Events.ContentDetached,
@@ -262,7 +274,7 @@ export class PageHandler {
         pageNavigationCommitted: this._onNavigationCommitted.bind(this),
         pageNavigationStarted: emitFrameKeyedEvent('Page.navigationStarted'),
         pageReady: this._onPageReady.bind(this),
-        pageInputEvent: (event) => this._pageEventSink.emit(event.type, event),
+        pageInputEvent: (event, {rootId}) => this._onPageInputEvent(event, {rootId}),
         pageSameDocumentNavigation: emitFrameKeyedEvent('Page.sameDocumentNavigation'),
         pageUncaughtError: emitFrameKeyedEvent('Page.uncaughtError'),
         pageWorkerCreated: this._onWorkerCreated.bind(this),
@@ -305,6 +317,8 @@ export class PageHandler {
     this._frameLifecycle.dispose();
     this._frameEventsBeforeFrame.clear();
     this._contentPage.dispose();
+    this._hitWaiters.clear();
+    this._landingVerdicts.clear();
     for (const watcher of this._pendingEventWatchers)
       watcher.dispose();
     helper.removeListeners(this._eventListeners);
@@ -329,7 +343,7 @@ export class PageHandler {
   }
 
   _onWorkerCreated({workerId, frameId, url}) {
-    const worker = new WorkerHandler(this._session, this._contentChannel, workerId);
+    const worker = new WorkerHandler(this._session, this._contentChannel, workerId, frameId);
     this._workers.set(workerId, worker);
     this._emitFrameKeyed('Page.workerCreated', {workerId, frameId, url}, frameId);
   }
@@ -459,6 +473,12 @@ export class PageHandler {
     if (!this._liveFrameIds.delete(frameId))
       return;
     this._parentOfFrame.delete(frameId);
+    // The workers of the frame end with it. The process that held them may be gone (a crashed iframe) or may
+    // never say so; if it does, the worker is already forgotten and its message finds nothing to end.
+    for (const [workerId, worker] of [...this._workers]) {
+      if (worker._frameId === frameId)
+        this._onWorkerDestroyed({workerId});
+    }
     // The frame's contexts first, then the frame: the order the content process kept when it was the only voice.
     const contexts = this._contextsOfFrame.get(frameId);
     if (contexts) {
@@ -577,7 +597,7 @@ export class PageHandler {
   async ['Page.screenshot']({ mimeType, clip, omitDeviceScaleFactor, quality = 80}) {
     const rect = new DOMRect(clip.x, clip.y, clip.width, clip.height);
 
-    const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    let browsingContext = this._pageTarget.linkedBrowser().browsingContext;
     // `win.devicePixelRatio` returns a non-overriden value to priveleged code.
     // See https://bugzilla.mozilla.org/show_bug.cgi?id=1761032
     // See https://phabricator.services.mozilla.com/D141323
@@ -594,9 +614,13 @@ export class PageHandler {
       throw new Error('Cannot take screenshot with more than ' + MAX_CANVAS_AREA + ' pixels');
 
     let snapshot;
+    // Every error is tried again, as it always was, but not for ever: the real one is thrown when the time is up.
+    const deadline = Date.now() + SNAPSHOT_RETRY_MS;
     while (!snapshot) {
+      // Read at each attempt: the top changes with a navigation to another group, and the one read before the
+      // first attempt would be the page that went.
+      browsingContext = this._pageTarget.linkedBrowser().browsingContext;
       try {
-        //TODO(fission): browsingContext will change in case of cross-group navigation.
         snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
           rect,
           scale,
@@ -606,6 +630,8 @@ export class PageHandler {
         // The currentWindowGlobal.drawSnapshot might throw
         // NS_ERROR_LOSS_OF_SIGNIFICANT_DATA if called during navigation.
         // wait a little and re-try.
+        if (Date.now() > deadline)
+          throw e;
         await new Promise(x => setTimeout(x, 50));
       }
     }
@@ -854,8 +880,30 @@ export class PageHandler {
       }
       return;
     }
+    // Inside activateAndRun: the window is focused and the tab chosen, so the focused context is read after the
+    // activation. The root is decided once, before the key's own latency, as the key is already on its way to the
+    // frame that had the focus when it was sent.
     return await this._pageTarget.activateAndRun(() =>
-      this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text, latency}));
+      this._contentChannel.sendTo(this._focusedRootId(), 'page', 'dispatchKeyEvent',
+          {type, keyCode, code, key, repeat, location, text, latency}));
+  }
+
+  /**
+   * The root of the fragment that holds the focused browsing context of THIS page: the process that has to
+   * receive the key, because the text input processor of a process delivers to its own documents only. The
+   * main root when the focus is not in this page's content: in the browser's chrome, in another tab or window
+   * (`focusedContentBrowsingContext` is the browser's, not the page's), or in a root not known yet (a context
+   * moving between processes has no document to receive the key).
+   *
+   * The context is read at every key and not kept: an iframe that changes process with the focus in it keeps
+   * its context and gets a new root.
+   */
+  _focusedRootId() {
+    const main = this._contentChannel.mainRootId();
+    const focused = Services.focus.focusedContentBrowsingContext;
+    if (!focused || focused.top !== this._pageTarget.linkedBrowser().browsingContext)
+      return main;
+    return this._contentChannel.frameRootOf(focused) ?? main;
   }
 
   /**
@@ -1021,9 +1069,70 @@ export class PageHandler {
    * was sent and the page has not handled it, and saying "done" would bring the
    * defect back silently. Five seconds, as the other waits on this ack.
    */
-  async _awaitInputHandled(eventId, type, landingToken) {
-    if (this._pageTarget.dialogs().length)
+  /**
+   * An input event of a root: the ack of a mouse event (from whichever root the APZ hit test sent it to), and
+   * the events the gestures wait for.
+   */
+  _onPageInputEvent(event, {rootId}) {
+    if (event.jugglerEventId > this._lastHitEventId)
+      this._lastHitEventId = event.jugglerEventId;
+    for (const [rootToken, perType] of Object.entries(event.verdicts || {})) {
+      this._landingVerdicts.set(rootId + ':' + rootToken, {id: event.jugglerEventId, perType});
+      if (this._landingVerdicts.size > 16)   // an armed landing no event reads does not stay for good
+        this._landingVerdicts.delete(this._landingVerdicts.keys().next().value);
+    }
+    for (const waiter of [...this._hitWaiters]) {
+      if (this._lastHitEventId >= waiter.id) {
+        this._hitWaiters.delete(waiter);
+        waiter.resolve();
+      }
+    }
+    // A drag is the main root's: the dragstart of an iframe in another process must not make the watcher of
+    // the gesture believe the session is the top's.
+    const isDragSignal = event.type === 'dragstart' || event.type === 'juggler-drag-finalized';
+    if (!isDragSignal || rootId === this._contentChannel.mainRootId())
+      this._pageEventSink.emit(event.type, event);
+  }
+
+  _whenInputHit(id) {
+    if (this._lastHitEventId >= id)
+      return Promise.resolve();
+    return new Promise(resolve => this._hitWaiters.add({id, resolve}));
+  }
+
+  /**
+   * Where the event of `type` landed, as the root that owns the armed landing said it with its ack. Read once:
+   * the armed entry of the mux is taken with it. A root that never acked this event (it went to another
+   * document) has no verdict, and the answer is that it did not land.
+   */
+  _landingVerdict(eventId, type, muxToken) {
+    if (!muxToken)
       return null;
+    const armed = this._contentChannel.takeArmed(muxToken);
+    if (!armed)
+      return null;
+    const key = armed.rootId + ':' + armed.rootToken;
+    const entry = this._landingVerdicts.get(key);
+    this._landingVerdicts.delete(key);
+    if (entry && entry.id >= eventId && entry.perType[type])
+      return entry.perType[type];
+    return {type, landed: false, seen: 0, on: 'the event reached another document'};
+  }
+
+  async _awaitInputHandled(eventId, type, landingToken) {
+    const outcome = await this._awaitBounded(this._whenInputHit(eventId), 'mouse event ' + eventId);
+    return outcome === 'dialog' ? null : this._landingVerdict(eventId, type, landingToken);
+  }
+
+  /**
+   * `promise` bounded, as every wait on the page's input: 5 seconds, and an error when they pass (`what` did not
+   * happen: saying "done" would bring the defect back silently); a dialog ends the wait, because the process that
+   * would answer is inside it, and so does a dialog already open. Resolves to 'dialog' for either, else to what
+   * the promise resolves to.
+   */
+  async _awaitBounded(promise, what) {
+    if (this._pageTarget.dialogs().length)
+      return 'dialog';
     const offs = [];
     const dialogOpened = new Promise(resolve => {
       offs.push(helper.on(this._pageTarget, PageTarget.Events.DialogOpened, resolve));
@@ -1032,15 +1141,13 @@ export class PageHandler {
     const expired = new Promise(resolve => { timer = setTimeout(() => resolve('expired'), 5000); });
     try {
       const outcome = await Promise.race([
-        this._contentPage.send('awaitInputHandled', { eventId, type, landingToken }),
+        promise.then(() => 'done'),
         dialogOpened.then(() => 'dialog'),
         expired,
       ]);
       if (outcome === 'expired')
-        throw new Error('the page did not handle mouse event ' + eventId + ' within 5 s');
-      if (outcome === 'dialog')
-        return null;
-      return (outcome && outcome.landing) || null;
+        throw new Error('the page did not handle ' + what + ' within 5 s');
+      return outcome;
     } finally {
       clearTimeout(timer);
       helper.removeListeners(offs);
@@ -1284,6 +1391,8 @@ export class PageHandler {
     const lineOrPageDeltaY = deltaY > 0 ? Math.floor(deltaY) : Math.ceil(deltaY);
 
     const page = await this._pagePixels();
+    let delivered;
+    const deliveredP = new Promise(resolve => { delivered = resolve; });
     await this._pageTarget.activateAndRun(async () => {
       this._pageTarget.ensureContextMenuClosed();
 
@@ -1303,17 +1412,19 @@ export class PageHandler {
         modifiers,
         lineOrPageDeltaX,
         lineOrPageDeltaY,
-        0 /* options */,
-        null /* callback */,
+        win.windowUtils.WHEEL_EVENT_ASYNC_ENABLED /* the APZ hit test: an iframe of another process gets the wheel */,
+        delivered /* called once the process the event went to has dispatched it */,
         latency || 0 /* [B301] born this many ms before the dispatch */);
     }, { muteNotificationsPopup: true });
+    // Outside the activation, as the ack of a mouse event: the chain of inputs is not held while the page scrolls.
+    await this._awaitBounded(deliveredP, 'the wheel event');
   }
 
   // Same class as `Page.dispatchKeyEvent` above, and the same reason: it is
   // input reaching the page, so it must find the window focused.
   async ['Page.insertText'](options) {
     return await this._pageTarget.activateAndRun(() =>
-      this._contentPage.send('insertText', options));
+      this._contentChannel.sendTo(this._focusedRootId(), 'page', 'insertText', options));
   }
 
   async ['Page.handleDialog']({dialogId, accept, promptText}) {

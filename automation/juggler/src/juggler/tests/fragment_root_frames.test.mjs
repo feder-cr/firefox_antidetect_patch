@@ -57,6 +57,7 @@ function build(root) {
   tree._frameIdToFrame = new Map();
   tree._runtime = {};
   tree._isolatedWorlds = new Map();
+  tree._docShellSettings = {};
   tree._pageReady = false;
   tree._emitted = [];
   tree.emit = (name, ...args) => {
@@ -110,6 +111,9 @@ test('setInitScripts with a stand-in in the tree touches the frames of this proc
   bc({ parent: top, docShell: false });
   const local = bc({ parent: top });
   const tree = build(top);
+  // a window in each frame of this process: a frame with none gets its world with its window
+  for (const frame of tree.frames())
+    frame.docShell().domWindow = {};
   tree.setInitScripts([{ worldName: 'w', script: '' }]);
   assert.deepEqual(tree.log.isolated.map(([id]) => id), ['mainframe-7', 'subframe-' + local.id]);
 });

@@ -7,7 +7,9 @@
 //     `_agents()` finds them from a frame nested under that root;
 //   - content/main.js: the geolocation setter must not call
 //     setGeolocationServiceOverride on a browsing context that is not the top
-//     (BrowsingContext::SetGeolocationServiceOverride asserts IsTop()).
+//     (BrowsingContext::SetGeolocationServiceOverride asserts IsTop()): it calls
+//     it on `.top`, the proxy of the top the process holds, which is what
+//     GetGeolocationServiceOverride reads from any browsing context under it.
 // All three are executed here, loaded the way the content process loads them.
 //
 // Run: node --test juggler/tests/*.test.mjs
@@ -215,7 +217,7 @@ function runInitialize(browsingContext, settings) {
         if (url.endsWith('/Helper.js'))
           return { Helper };
         if (url.endsWith('/FrameTree.js'))
-          return { FrameTree: class { applyCrossProcessState() {} } };
+          return { FrameTree: class { applyCrossProcessState() {} setDocShellSettings() {} } };
         if (url.endsWith('/PageAgent.js'))
           return { PageAgent: class {} };
         throw new Error('unexpected import ' + url);
@@ -229,15 +231,18 @@ function runInitialize(browsingContext, settings) {
   return handlers;
 }
 
+// The calls the override setter gets, on the root itself and on the top: BrowsingContext::SetGeolocationServiceOverride
+// asserts IsTop(), so a root that is not the top must never be the one called.
 function geoBrowsingContext(isTop) {
   const calls = [];
+  const rootCalls = [];
   const b = {
     browserId: 7,
     originAttributes: { userContextId: 0 },
-    setGeolocationServiceOverride(...args) { calls.push(args); },
+    setGeolocationServiceOverride(...args) { (isTop ? calls : rootCalls).push(args); },
   };
-  b.top = isTop ? b : { other: true };
-  return { b, calls };
+  b.top = isTop ? b : { setGeolocationServiceOverride(...args) { calls.push(args); } };
+  return { b, calls, rootCalls };
 }
 
 const GEO = { latitude: 45.1, longitude: 9.2, accuracy: 10 };
@@ -250,18 +255,23 @@ test('geolocation from the shared settings is applied on the top browsing contex
   assert.equal(calls[0][0].coords.longitude, 9.2);
 });
 
-test('geolocation from the shared settings is not applied on a fragment root that is not the top', () => {
-  const { b, calls } = geoBrowsingContext(false);
+test('geolocation from the shared settings is applied on the top, not on a fragment root that is not the top', () => {
+  const { b, calls, rootCalls } = geoBrowsingContext(false);
   runInitialize(b, { geolocation: GEO });
-  assert.equal(calls.length, 0);
+  assert.equal(rootCalls.length, 0);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0].coords.latitude, 45.1);
 });
 
-test('applyContextSetting geolocation (set and cleared) does nothing on a browsing context that is not the top', () => {
-  const { b, calls } = geoBrowsingContext(false);
+test('applyContextSetting geolocation (set and cleared) goes to the top from a browsing context that is not the top', () => {
+  const { b, calls, rootCalls } = geoBrowsingContext(false);
   const handlers = runInitialize(b, {});
   handlers.applyContextSetting({ name: 'geolocation', value: GEO });
   handlers.applyContextSetting({ name: 'geolocation', value: undefined });
-  assert.equal(calls.length, 0);
+  assert.equal(rootCalls.length, 0);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][0].coords.accuracy, 10);
+  assert.equal(calls[1].length, 0);
 });
 
 test('applyContextSetting geolocation still sets and clears the override on the top', () => {

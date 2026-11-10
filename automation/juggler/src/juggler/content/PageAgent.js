@@ -127,6 +127,11 @@ export class PageAgent {
       helper.on(this._frameTree, 'websocketframereceived', event => this._browserPage.emit('webSocketFrameReceived', event)),
       helper.on(this._frameTree, 'websocketclosed', event => this._browserPage.emit('webSocketClosed', event)),
       helper.on(this._frameTree, 'inputevent', inputEvent => {
+        // The verdict of every armed landing is read in the turn of the ack: FrameTree emits the event
+        // synchronously, and the record of where the event landed is the one this event wrote. The parent
+        // aggregates the acks of every root and reads the verdict of the root that owns the landing.
+        if (inputEvent.jugglerEventId)
+          inputEvent.verdicts = this._landingVerdictsFor();
         this._browserPage.emit('pageInputEvent', inputEvent);
         if (inputEvent.type === 'dragstart') {
           // After the dragStart event is dispatched and handled by Web,
@@ -173,7 +178,6 @@ export class PageAgent {
         elementAtom: this._elementAtom.bind(this),
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchDragEvent: this._dispatchDragEvent.bind(this),
-        awaitInputHandled: this._awaitInputHandled.bind(this),
         armLanding: this._armLanding.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
         getFrameQuads: this._getFrameQuads.bind(this),
@@ -709,7 +713,12 @@ export class PageAgent {
     // The frame of an <iframe>, <object> or <embed> is the frame of the browsing context it holds. The
     // browsing context is there in every process, also when the content is in another one and has no
     // docShell here to compare.
-    const contentBrowsingContext = unsafeObject.browsingContext;
+    let contentBrowsingContext = unsafeObject.browsingContext;
+    // An <iframe> nested too deep (nsFrameLoader::DepthTooGreat) has a browsing context that loads nothing, and
+    // `contentWindow` is null for it (nsGenericHTMLFrameElement::GetContentWindowInternal). A frame that is in
+    // another process has a window here, a WindowProxy. No window: no frame for the client to name.
+    if (contentBrowsingContext && (unsafeObject.localName === 'iframe' || unsafeObject.localName === 'frame') && !unsafeObject.contentWindow)
+      contentBrowsingContext = null;
     const contentFrameId = contentBrowsingContext ? helper.browsingContextToFrameId(contentBrowsingContext) : undefined;
     // The element is in the document of a frame of this process; a frame whose docShell is not here yet
     // has no window to ask.
@@ -918,26 +927,26 @@ export class PageAgent {
       throw new Error('Object not found for id = ' + objectId);
     const token = ++this._lastLandingToken;
     this._armedLandings.set(token, node);
+    // An armed landing that no ack ever reads (the event went to another document) does not stay for good.
+    if (this._armedLandings.size > 8)
+      this._armedLandings.delete(this._armedLandings.keys().next().value);
     return { token };
   }
 
   /**
-   * Resolves once the renderer has handled mouse event `eventId`; with a
-   * `landingToken`, also says whether the event of `type` LANDED on the
-   * element armed under it. The parent awaits this before
-   * `Page.dispatchMouseEvent` answers, and bounds it there, where a dialog
-   * that suspends this process can also end the wait. [B230]
-   *
-   * ⛔ THE VERDICT IS READ IN THE SAME TURN AS THE ACK. The record of where the
-   * event landed is written by `FrameTree` while the page handles it; reading
-   * it here, before anything else runs in this process, is what makes it
-   * about THIS event.
+   * One verdict per armed landing and per type FrameTree records (mousemove, mousedown, mouseup), read in
+   * the process that heard the ack. The key is this root's token; the parent composes it with the root.
    */
-  async _awaitInputHandled({eventId, type, landingToken}) {
-    const node = landingToken ? this._armedLandings.get(landingToken) : null;
-    this._armedLandings.delete(landingToken);
-    await this._frameTree.whenEventHit(eventId);
-    return node ? { landing: this._landingOn(node, type) } : {};
+  _landingVerdictsFor() {
+    const verdicts = {};
+    for (const [rootToken, node] of this._armedLandings) {
+      verdicts[rootToken] = {
+        mousemove: this._landingOn(node, 'mousemove'),
+        mousedown: this._landingOn(node, 'mousedown'),
+        mouseup: this._landingOn(node, 'mouseup'),
+      };
+    }
+    return verdicts;
   }
 
   /**

@@ -264,32 +264,20 @@ test('4. landing tokens are the mux\'s: two roots with token 1 are told apart', 
   assert.equal(a.of('armLanding').length, 1);
   assert.equal(b.of('armLanding').length, 1);
 
-  // The wait goes to B with B's own token, and the entry is there while it waits.
-  const gate = defer();
-  b.behavior.awaitInputHandled = () => gate.promise;
-  const waiting = w.page.send('awaitInputHandled', {landingToken: rb.token, extra: 'x'});
-  await settle();
-  assert.deepEqual(plain(b.of('awaitInputHandled').map(call => call.args)), [[{landingToken: 1, extra: 'x'}]]);
-  assert.deepEqual(a.of('awaitInputHandled'), []);
-  const entry = w.mux.armedEntry(rb.token);
-  assert.deepEqual(plain(entry), {rootId: 2, rootToken: 1});
+  // The entries stand for (root, root token), and are read without being taken.
+  assert.deepEqual(plain(w.mux.armedEntry(rb.token)), {rootId: 2, rootToken: 1});
   assert.deepEqual(plain(w.mux.armedEntry(ra.token)), {rootId: MAIN, rootToken: 1});
-  gate.resolve({handled: true});
-  assert.deepEqual(plain(await waiting), {handled: true});
-  assert.equal(w.mux.armedEntry(rb.token), undefined, 'the entry is deleted after the wait');
+  assert.ok(w.mux.armedEntry(rb.token), 'reading does not take it');
+
+  // Taking hands the entry over once; the other landing stays armed.
+  assert.deepEqual(plain(w.mux.takeArmed(rb.token)), {rootId: 2, rootToken: 1});
+  assert.equal(w.mux.armedEntry(rb.token), undefined, 'the entry is gone once taken');
+  assert.equal(w.mux.takeArmed(rb.token), undefined, 'a token already taken, or never armed, is nothing');
+  assert.equal(w.mux.takeArmed(0), undefined);
   assert.ok(w.mux.armedEntry(ra.token), 'the other one is still armed');
 
-  // A token that is 0, absent, or no longer armed goes to the main root, without a token.
-  await w.page.send('awaitInputHandled', {landingToken: 0});
-  await w.page.send('awaitInputHandled', {});
-  await w.page.send('awaitInputHandled', {landingToken: rb.token});
-  assert.deepEqual(a.of('awaitInputHandled').map(call => call.args[0].landingToken), [0, 0, 0]);
-  assert.equal(b.of('awaitInputHandled').length, 1);
-
-  // The entry goes also when the wait fails.
-  a.behavior.awaitInputHandled = () => { throw new Error('closed'); };
-  await rejects(w.page.send('awaitInputHandled', {landingToken: ra.token}), /closed/);
-  assert.equal(w.mux.armedEntry(ra.token), undefined);
+  // Nothing is sent to a root to read a landing: the mux has no route for it.
+  assert.throws(() => routeOf('awaitInputHandled', {}), /no route/);
 });
 
 test('5a. cleared from a root that is not the main one: its contexts are destroyed one by one, nothing is cleared', {timeout: 10000}, async () => {
@@ -521,7 +509,6 @@ test('11b. every method of ROUTES resolves to a route', () => {
   assert.deepEqual(plain(routeOf('adoptNode', {executionContextId: 1})), {kind: 'ctx', id: 1});
   assert.equal(routeOf('setInitScripts', params).kind, 'broadcast');
   assert.equal(routeOf('dispatchKeyEvent', params).kind, 'main');
-  assert.equal(routeOf('awaitInputHandled', params).kind, 'landing');
 });
 
 test('12. a new main root takes over the endpoint of the old one: pending requests, contexts and landings follow', {timeout: 10000}, async () => {

@@ -48,6 +48,7 @@ function pageHandler() {
   handler._frameEventsBeforeFrame = new Map();
   handler._contextFrame = new Map();
   handler._contextsOfFrame = new Map();
+  handler._workers = new Map();
   return { handler, events };
 }
 

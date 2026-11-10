@@ -20,11 +20,19 @@
 
 // Method -> where it goes. `kind`: 'ctx' (by executionContextId), 'frame' (the root of frameId),
 // 'parentOf' (the root of the parent of childFrameId), 'main' (the main root), 'broadcast' (every root
-// with an actor), 'landing' (the root that armed the landing token; inside the mux).
+// with an actor).
 const byContext = p => ({kind: 'ctx', id: p.executionContextId});
 const byFrame = p => ({kind: 'frame', id: p.frameId});
 const toMain = () => ({kind: 'main'});
 const toAll = () => ({kind: 'broadcast'});
+// A command that only READS, for a frame, and can be asked again of whatever root holds the frame by the time
+// the one it was sent to is gone (a frame that left its process for another, or for its parent's). Not the
+// commands with effects, and not those that carry an object or a context: a reference belongs to a document, and
+// "Cannot find object" is the right answer for one that is gone.
+const retryingOnRootGone = route => Object.assign(params => route(params), {retryOnRootGone: true});
+
+// The same as RootTransport.sys.mjs:32 (MAX_RETRY_ATTEMPTS) in the BiDi transport.
+export const MAX_RETRY_ATTEMPTS = 10;
 
 export const ROUTES = {
   // by execution context
@@ -35,21 +43,19 @@ export const ROUTES = {
   // by frame
   describeNode: byFrame,
   elementAtom: byFrame,
-  getFrameQuads: byFrame,
-  frameViewport: byFrame,
+  getFrameQuads: retryingOnRootGone(byFrame),
+  frameViewport: retryingOnRootGone(byFrame),
   scrollIntoViewIfNeeded: byFrame,
   setFileInputFiles: byFrame,
   setUserInput: byFrame,
   selectOptions: byFrame,
   armLanding: byFrame,
   // the frame's parent: the box of a child frame is measured where its element is
-  frameBoxTransform: p => ({kind: 'parentOf', id: p.childFrameId}),
+  frameBoxTransform: retryingOnRootGone(p => ({kind: 'parentOf', id: p.childFrameId})),
   // the name of a child frame is read where its <iframe> is
   frameName: p => ({kind: 'parentOf', id: p.childFrameId}),
   // without an object: the context the node is adopted into; with one: the frame of the object
   adoptNode: p => p.objectId ? {kind: 'frame', id: p.frameId} : {kind: 'ctx', id: p.executionContextId},
-  // the root that armed the token
-  awaitInputHandled: p => ({kind: 'landing', token: p.landingToken}),
   // the main root, until the input steps route them by focus and by gesture
   dispatchKeyEvent: toMain,
   insertText: toMain,
@@ -76,8 +82,11 @@ export function routeOf(method, params) {
 
 export class ContentMux {
   // `pageTarget`: `linkedBrowser()` and `frameIdToBrowsingContext(frameId)`. `createChannel(name, uid)`
-  // makes one end of a channel to one content process (a SimpleChannel).
-  constructor({pageTarget, name, uid, createChannel}) {
+  // makes one end of a channel to one content process (a SimpleChannel). `nextTask(callback)` runs the
+  // callback in a later task of the parent's main thread (the engine passes Services.tm.dispatchToMainThread);
+  // without one a microtask is used, which is enough to let the rest of the task that discarded a root finish.
+  constructor({pageTarget, name, uid, createChannel, nextTask}) {
+    this._nextTask = nextTask || (callback => void Promise.resolve().then(callback));
     this._pageTarget = pageTarget;
     this._name = name;
     this._uid = uid || name;
@@ -148,6 +157,9 @@ export class ContentMux {
       if (armed.rootId === rootId)
         this._armed.delete(token);
     }
+    // The mark comes BEFORE the dispose: the refusal of what waits is read as "this root is gone" by the
+    // sender of a command that can be asked again (`_send`), by this and by nothing in the message.
+    endpoint.gone = true;
     endpoint.channel.dispose();
   }
 
@@ -200,6 +212,7 @@ export class ContentMux {
       channel: this._createChannel(`${this._name}/root-${rootId}`, this._uid),
       contexts: new Set(),
       workers: new Set(),
+      gone: false,
     };
     this._endpoints.set(rootId, endpoint);
     for (const [namespace, handlers] of this._registrations)
@@ -259,6 +272,14 @@ export class ContentMux {
     return this._armed.get(muxToken);
   }
 
+  // The same, consumed: the page handler reads the verdict of an armed landing once, from the acks of the roots,
+  // and nothing is sent to the root to read it.
+  takeArmed(muxToken) {
+    const armed = this._armed.get(muxToken);
+    this._armed.delete(muxToken);
+    return armed;
+  }
+
   // ---- sending --------------------------------------------------------------------------------
 
   // What the PageHandler (and the target) talk through: `send(method, ...args)` is routed, `emit` is
@@ -296,20 +317,40 @@ export class ContentMux {
         throw new Error('Failed to find worker with id = ' + namespace);
       return this._sendToRoot(connector, this._workerRoot.get(namespace), method, args);
     }
+    routeOf(method, args[0]);   // a method with no route is refused before anything else
+    if (!ROUTES[method].retryOnRootGone)
+      return this._dispatch(connector, method, args, null);
+    // Asked again while the root it went to is gone and the frame is still there: the route is read anew
+    // each time, so the command goes to the root that holds the frame now.
+    for (let attempts = 0;;) {
+      const used = {endpoint: null};
+      try {
+        return await this._dispatch(connector, method, args, used);
+      } catch (e) {
+        if (!used.endpoint || !used.endpoint.gone || ++attempts > MAX_RETRY_ATTEMPTS)
+          throw e;
+        await new Promise(resolve => this._nextTask(resolve));
+      }
+    }
+  }
+
+  // `used`, when given, is told the endpoint the command was handed to.
+  async _dispatch(connector, method, args, used) {
+    const namespace = connector.namespace;
     const params = args[0];
     const route = routeOf(method, params);
     switch (route.kind) {
       case 'broadcast':
         return this.broadcast(namespace, method, params);
       case 'ctx':
-        return this._sendToRoot(connector, this.contextRoot(route.id), method, args);
+        return this._sendToRoot(connector, this.contextRoot(route.id), method, args, used);
       case 'frame': {
         const rootId = this.rootOf(route.id);
         if (rootId === null)
           throw new Error('root of frame ' + route.id + ' unknown, retry');
         if (method === 'adoptNode' && params.executionContextId !== undefined && this.contextRoot(params.executionContextId) !== rootId)
           return {remoteObject: null};
-        const result = await this._sendToRoot(connector, rootId, method, args);
+        const result = await this._sendToRoot(connector, rootId, method, args, used);
         if (method === 'armLanding' && result && result.token) {
           const muxToken = ++this._nextToken;
           this._armed.set(muxToken, {rootId, rootToken: result.token});
@@ -324,26 +365,19 @@ export class ContentMux {
         const rootId = this.frameRootOf(child.parent);
         if (rootId === null)
           throw new Error('root of frame ' + route.id + ' unknown, retry');
-        return this._sendToRoot(connector, rootId, method, args);
+        return this._sendToRoot(connector, rootId, method, args, used);
       }
       case 'main':
-        return this._sendToRoot(connector, this.mainRootId(), method, args);
-      case 'landing': {
-        const armed = route.token ? this._armed.get(route.token) : undefined;
-        if (!armed)
-          return this._sendToRoot(connector, this.mainRootId(), method, [{...params, landingToken: 0}]);
-        try {
-          return await this._sendToRoot(connector, armed.rootId, method, [{...params, landingToken: armed.rootToken}]);
-        } finally {
-          this._armed.delete(route.token);
-        }
-      }
+        return this._sendToRoot(connector, this.mainRootId(), method, args, used);
     }
     throw new Error('ContentMux: unknown kind of route ' + route.kind + ' for ' + method);
   }
 
-  _sendToRoot(connector, rootId, method, args) {
-    return this._connectorOn(this._endpointToSend(rootId), connector).send(method, ...args);
+  _sendToRoot(connector, rootId, method, args, used) {
+    const endpoint = this._endpointToSend(rootId);
+    if (used)
+      used.endpoint = endpoint;
+    return this._connectorOn(endpoint, connector).send(method, ...args);
   }
 
   // To one root, past the routing.

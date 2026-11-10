@@ -88,7 +88,13 @@ nsDOMWindowUtils::JugglerSendMouseEvent(
   options.mIgnoreRootScrollFrame = aIgnoreRootScrollFrame;
   options.mIsDOMEventSynthesized = aIsDOMEventSynthesized;
   options.mIsWidgetEventSynthesized = aIsWidgetEventSynthesized;
-  options.mIsAsyncEnabled = false;
+  // Stealthfox [F6]: asynchronous means the APZ hit test: the event gets the
+  // layers id of the process that owns the point (an iframe of another site
+  // is handled in its own process), and EventStateManager sends it there. On
+  // the controller thread (the main thread) the dispatch is still in place,
+  // not queued, so the id this call returns is on the event that is routed.
+  // Without the hit test a click on such an iframe never reaches it.
+  options.mIsAsyncEnabled = true;
 
   auto result = nsContentUtils::SynthesizeMouseEvent(
       presShell, widget, aType, refPoint, mouseEventData, options,

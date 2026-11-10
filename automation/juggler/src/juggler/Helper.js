@@ -47,6 +47,18 @@ export class Helper {
     return false;
   }
 
+  // What a docShell is told by the client, written to every docShell of the page that is in this process: the
+  // flags live on the docShell, and the code that reads them (the CSP bypass, the file chooser of an <input>)
+  // reads the docShell of the document it runs for, not the root's. `settings` names only what it sets.
+  applyDocShellSettings(docShell, settings) {
+    if (!docShell)
+      return;
+    if (settings.bypassCSP !== undefined)
+      docShell.bypassCSPEnabled = !!settings.bypassCSP;
+    if (settings.interceptFileChooser !== undefined)
+      docShell.fileInputInterceptionEnabled = !!settings.interceptFileChooser;
+  }
+
   collectAllBrowsingContexts(rootBrowsingContext, allBrowsingContexts = []) {
     allBrowsingContexts.push(rootBrowsingContext);
     for (const child of rootBrowsingContext.children)

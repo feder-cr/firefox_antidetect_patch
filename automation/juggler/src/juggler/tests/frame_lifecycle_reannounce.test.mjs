@@ -81,6 +81,7 @@ function page() {
   handler._session = { emitEvent: (name, payload) => sent.push([name, JSON.parse(JSON.stringify(payload))]) };
   handler._reportedFrameIds = new Set();
   handler._liveFrameIds = new Set();
+  handler._workers = new Map();
   handler._parentOfFrame = new Map();
   handler._frameEventsBeforeFrame = new Map();
   handler._contextFrame = new Map();

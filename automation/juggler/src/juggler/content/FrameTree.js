@@ -31,6 +31,9 @@ export class FrameTree {
       this._browsingContextGroup.__jugglerFrameTrees = new Set();
     this._browsingContextGroup.__jugglerFrameTrees.add(this);
     this._isolatedWorlds = new Map();
+    // The settings the client gave the docShells of this part of the page (Helper.applyDocShellSettings):
+    // kept to be written to every docShell that comes after.
+    this._docShellSettings = {};
 
     this._webSocketEventService = Cc[
       "@mozilla.org/websocketevent/service;1"
@@ -40,7 +43,6 @@ export class FrameTree {
     this._workers = new Map();
     this._frameIdToFrame = new Map();
     this._pageReady = false;
-    this._javaScriptDisabled = false;
     for (const browsingContext of helper.collectAllBrowsingContexts(rootBrowsingContext)) {
       // The local leaf of a -> b -> a is a fragment root of its own: it is not in the tree of the top.
       if (this._belongsHere(browsingContext))
@@ -94,10 +96,8 @@ export class FrameTree {
       helper.addObserver((subject, topic, eventInfo) => {
         const [type, jugglerEventId] = eventInfo.split(' ');
         const id = +(jugglerEventId ?? '0');
-        // The renderer's ack, restored with [B217]: ids only grow, so "has
-        // event N been handled" is "is the last acked id at least N".
-        if (id > this._lastHitEventId)
-          this._lastHitEventId = id;
+        // The renderer's ack, restored with [B217]. The parent reads it, from every root of the page
+        // (PageHandler._onPageInputEvent), and waits on the largest id acked.
         this.emit(FrameTree.Events.InputEvent, { type, jugglerEventId: id });
       }, 'juggler-mouse-event-hit-renderer'),
       helper.addProgressListener(webProgress, this, flags),
@@ -107,32 +107,10 @@ export class FrameTree {
     // Where the last pointer event of each type actually landed, per
     // document. Read back by `PageAgent._landingOn`. [B217]
     this._pointerLanding = new Map();
-    this._lastHitEventId = 0;
   }
 
   pointerLanding(type) {
     return this._pointerLanding.get(type) || null;
-  }
-
-  /**
-   * Resolves once the renderer has acked the juggler mouse event `id` (or a
-   * later one). This is the ordering the landing question needs: the input
-   * and the question do not share a queue - a `mousemove` is coalesced and
-   * dispatched at the next refresh tick - so "sent before" is not "handled
-   * before". Measured: the question answered from an empty record while the
-   * page had already seen the `mouseover` of the very move it asked about.
-   */
-  whenEventHit(id) {
-    if (this._lastHitEventId >= id)
-      return Promise.resolve();
-    return new Promise(resolve => {
-      const off = helper.on(this, FrameTree.Events.InputEvent, () => {
-        if (this._lastHitEventId >= id) {
-          off();
-          resolve();
-        }
-      });
-    });
   }
 
   /**
@@ -206,8 +184,12 @@ export class FrameTree {
       world._scriptsToEvaluateOnNewDocument.push(script);
       // FIXME: 'should inherit http credentials from browser context' fails without this
       if (worldName && !existing) {
-        for (const frame of this.frames())
-          frame._createIsolatedContext(worldName);
+        // A frame with no window (one that is not here, or whose document is not yet) has nothing to run a
+        // world in: it gets it in _onGlobalObjectCleared, which creates the contexts of every world declared.
+        for (const frame of this.frames()) {
+          if (frame.domWindow())
+            frame._createIsolatedContext(worldName);
+        }
       }
     }
   }
@@ -242,6 +224,10 @@ export class FrameTree {
     const frame = this.frameForDocShell(window.docShell);
     if (!frame)
       return;
+    // The first point where the docShell of an iframe of this process is there for sure: its browsing
+    // context is attached before nsFrameLoader creates it. A document in a docShell that existed, and one
+    // that came from another process, are here too. Before the announcement below, which may end this call.
+    helper.applyDocShellSettings(window.docShell, this._docShellSettings);
     // A local iframe whose docShell was not born at its attach is announced with its first window
     // (and its contexts are made by the announcement: they are not made twice).
     if (this._announceIfLocal(frame))
@@ -249,10 +235,12 @@ export class FrameTree {
     frame._onGlobalObjectCleared();
   }
 
-  setJavaScriptDisabled(javaScriptDisabled) {
-    this._javaScriptDisabled = javaScriptDisabled;
+  // The docShell settings (bypassCSP, interceptFileChooser) of every docShell of this tree that is here
+  // now, and of every one that comes after.
+  setDocShellSettings(settings) {
+    Object.assign(this._docShellSettings, settings);
     for (const frame of this.frames())
-      frame._updateJavaScriptDisabled();
+      helper.applyDocShellSettings(frame.docShell(), settings);
   }
 
   _onWorkerCreated(workerDebugger) {
@@ -323,8 +311,11 @@ export class FrameTree {
     worldName = worldName || '';
     const world = this._ensureWorld(worldName);
     world._bindings.set(name, script);
-    for (const frame of this.frames())
-      frame._addBinding(worldName, name, script);
+    // Same as setInitScripts: a frame with no window gets the binding with its window.
+    for (const frame of this.frames()) {
+      if (frame.domWindow())
+        frame._addBinding(worldName, name, script);
+    }
   }
 
   /**
@@ -973,13 +964,6 @@ class Frame {
       this._url = url;
       this._frameTree.emit(FrameTree.Events.NavigationCommitted, this);
     }
-
-    this._updateJavaScriptDisabled();
-  }
-
-  _updateJavaScriptDisabled() {
-    if (this._browsingContext.currentWindowContext)
-      this._browsingContext.currentWindowContext.allowJavascript = !this._frameTree._javaScriptDisabled;
   }
 
   mainExecutionContext() {

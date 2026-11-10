@@ -41,7 +41,9 @@ export class JugglerFrameChild extends JSWindowActorChild {
       // restore used to be guessed from a location change whose document was
       // already complete, and what the page said before the parent rebound was
       // lost (B303 E2, E3).
-      if (!aEvent.persisted || this.browsingContext.parent || aEvent.target !== this.document)
+      // Each fragment root goes into the cache and comes back on its own: the top, and a frame whose parent is in
+      // another process. A frame served by the agents of its root (its parent is in this process) is not a root.
+      if (!aEvent.persisted || !helper.isFragmentRoot(this.browsingContext) || aEvent.target !== this.document)
         return;
       if (aEvent.type === 'pagehide')
         agents.channel.detachFromPeer();
