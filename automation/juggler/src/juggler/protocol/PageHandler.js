@@ -408,7 +408,7 @@ export class PageHandler {
         .filter(entry => entry[1] !== undefined && entry[1] !== null && entry[1] !== '')
         .map(entry => entry[0]);
     if (imposed.length)
-      throw new Error('Page.setEmulatedMedia: ' + imposti.join(', ') + ' non si impostano da qui; li dichiara invisible_core nel profilo');
+      throw new Error('Page.setEmulatedMedia: ' + imposed.join(', ') + ' cannot be set from here; invisible_core declares them in the profile');
     this._pageTarget.setColorScheme(colorScheme || null);
     this._pageTarget.setEmulatedMedia(type);
   }
@@ -462,21 +462,34 @@ export class PageHandler {
 
     const win = browsingContext.topChromeWindow;
     const canvas = win.document.createElementNS('http://www.w3.org/1999/xhtml', 'canvas');
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    let ctx = canvas.getContext('2d');
-    ctx.drawImage(snapshot, 0, 0);
-    snapshot.close();
+    // The canvas lives in the chrome document of the page's window, in the parent
+    // process, and keeps its backing store until the garbage collector reaches it.
+    // It is emptied here on every way out, and the snapshot is closed on every way
+    // out too, also when drawImage or the encoder throws.
+    try {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      let ctx = canvas.getContext('2d');
+      try {
+        ctx.drawImage(snapshot, 0, 0);
+      } finally {
+        snapshot.close();
+      }
 
-    if (mimeType === 'image/jpeg') {
-      if (quality < 0 || quality > 100)
-        throw new Error('Quality must be an integer value between 0 and 100; received ' + quality);
-      quality /= 100;
-    } else {
-      quality = undefined;
+      if (mimeType === 'image/jpeg') {
+        if (quality < 0 || quality > 100)
+          throw new Error('Quality must be an integer value between 0 and 100; received ' + quality);
+        quality /= 100;
+      } else {
+        quality = undefined;
+      }
+      const dataURL = canvas.toDataURL(mimeType, quality);
+      return { data: dataURL.substring(dataURL.indexOf(',') + 1) };
+    } finally {
+      snapshot.close();
+      canvas.width = 0;
+      canvas.height = 0;
     }
-    const dataURL = canvas.toDataURL(mimeType, quality);
-    return { data: dataURL.substring(dataURL.indexOf(',') + 1) };
   }
 
   async ['Page.getContentQuads'](options) {

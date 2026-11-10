@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
+const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
 const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
@@ -32,6 +33,12 @@ function pinnedViewportSize(windowInFullscreen, pageViewportSize, contextViewpor
   return pageViewportSize || contextViewportSize;
 }
 const IDENTITY_NAME = 'JUGGLER ';
+
+// How long a context that is being removed waits for its content processes to exit once its pages are closed,
+// how long it waits again after killing the ones that did not, and how often it looks.
+const PROCESS_EXIT_WAIT_MS = 3000;
+const PROCESS_KILL_WAIT_MS = 2000;
+const PROCESS_POLL_MS = 20;
 const HUNDRED_YEARS = 60 * 60 * 24 * 365 * 100;
 
 // The name of an nsICookieValidation result, e.g. eRejectedNoneRequiresSecure.
@@ -1173,6 +1180,24 @@ class BrowserContext {
       page.updateColorSchemeOverride();
   }
 
+  // The content processes of this context that are still alive: their remote type carries the container,
+  // `web=^userContextId=<id>` (the id is followed by `&` or the end, so 6 is not 60).
+  _processesOfContext() {
+    const mine = new RegExp('\\^userContextId=' + this.userContextId + '(?:&|$)');
+    return ChromeUtils.getAllDOMProcesses().filter(process => process.remoteType && mine.test(process.remoteType));
+  }
+
+  async _waitForProcessesToExit(timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (this._processesOfContext().length && Date.now() < deadline)
+      await new Promise(f => setTimeout(f, PROCESS_POLL_MS));
+    return this._processesOfContext();
+  }
+
+  // A context ends with its pages; then its content processes are waited for, a short while, and the ones that
+  // are still there are killed. A process that does not stop on its own stays for good: a service worker whose
+  // script is `for (;;) {}` never answers the shutdown, no shutdown starts for its process, and nothing else ends
+  // it (measured with MOZ_LOG: no MaybeBeginShutDown for the child), so each such context left a process alive.
   async destroy() {
     if (this.userContextId !== 0) {
       ContextualIdentityService.remove(this.userContextId);
@@ -1187,6 +1212,18 @@ class BrowserContext {
             }
           });
         });
+      }
+      const leftovers = await this._waitForProcessesToExit(PROCESS_EXIT_WAIT_MS);
+      if (leftovers.length) {
+        const tools = Cc['@mozilla.org/processtools-service;1'].getService(Ci.nsIProcessToolsService);
+        for (const process of leftovers) {
+          try {
+            tools.kill(process.osPid);
+          } catch (e) {
+            Components.utils.reportError(e);
+          }
+        }
+        await this._waitForProcessesToExit(PROCESS_KILL_WAIT_MS);
       }
     }
     this._registry._browserContextIdToBrowserContext.delete(this.browserContextId);

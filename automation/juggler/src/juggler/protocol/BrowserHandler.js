@@ -246,27 +246,27 @@ export class BrowserHandler {
   // scelta gia' fatta in 28.4 per i parametri di Page.setEmulatedMedia: un
   // override ignorato in silenzio farebbe credere al chiamante di aver
   // cambiato una media feature mentre la pagina ne risponde un'altra.
-  _rifiutaSeNonNeutro(nome, valore, neutro) {
-    if (valore === null || valore === undefined || valore === neutro)
+  _refuseUnlessNeutral(name, value, neutral) {
+    if (value === null || value === undefined || value === neutral)
       return;
     throw new Error(
-        `Browser.${nome}: '${valore}' non si imposta dal protocollo. ` +
-        `L'apparato di override delle media feature non esiste piu' in questa ` +
-        `build; il solo valore accettato e' '${neutro}', che e' quello che il ` +
-        `browser riporta davvero. Per cambiarlo si dichiara la preferenza in ` +
-        `invisible_core, non si manda questo comando.`);
+        `Browser.${name}: '${value}' cannot be set from the protocol. ` +
+        `The media-feature override machinery no longer exists in this ` +
+        `build; the only accepted value is '${neutral}', which is what the ` +
+        `browser really reports. To change it, declare the preference in ` +
+        `invisible_core instead of sending this command.`);
   }
 
   async ['Browser.setReducedMotion']({reducedMotion}) {
-    this._rifiutaSeNonNeutro('setReducedMotion', reducedMotion, 'no-preference');
+    this._refuseUnlessNeutral('setReducedMotion', reducedMotion, 'no-preference');
   }
 
   async ['Browser.setForcedColors']({forcedColors}) {
-    this._rifiutaSeNonNeutro('setForcedColors', forcedColors, 'none');
+    this._refuseUnlessNeutral('setForcedColors', forcedColors, 'none');
   }
 
   async ['Browser.setContrast']({contrast}) {
-    this._rifiutaSeNonNeutro('setContrast', contrast, 'no-preference');
+    this._refuseUnlessNeutral('setContrast', contrast, 'no-preference');
   }
   async ['Browser.setUserAgentOverride']({browserContextId, userAgent}) {
     await this._targetRegistry.browserContextForId(browserContextId).setDefaultUserAgent(userAgent);

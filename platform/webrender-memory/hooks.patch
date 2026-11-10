@@ -1,0 +1,314 @@
+diff --git a/gfx/wr/webrender/src/render_backend.rs b/gfx/wr/webrender/src/render_backend.rs
+index a056988c9f85bba60153ee5ce3846bd4941300a1..cabd085f9614bb4ccc851c26f1dc4b7bb142e08d 100644
+--- a/gfx/wr/webrender/src/render_backend.rs
++++ b/gfx/wr/webrender/src/render_backend.rs
+@@ -29,7 +29,7 @@ use crate::glyph_cache::GlyphCache;
+ use crate::picture_textures::PictureTextures;
+ use crate::render_api::{MemoryReport, TransactionMsg, ResourceUpdate, ApiMsg, FrameMsg, ClearCache, DebugCommand, ResourceCacheInit, WindowRegistration};
+ use crate::texture_cache::TextureCache;
+-use glyph_rasterizer::GlyphRasterizer;
++use glyph_rasterizer::{GlyphRasterizer, SharedFontResources};
+ use crate::clip::{ClipIntern, PolygonIntern, ClipStoreScratchBuffer};
+ use crate::filterdata::FilterDataIntern;
+ #[cfg(any(feature = "capture", feature = "replay"))]
+@@ -993,6 +993,12 @@ pub struct RenderBackend {
+     /// from several pipelines - and so several documents and windows - live
+     /// in one store and can be batched together.
+     dl_stores: DlStores,
++    /// The font resources shared by every window of this backend's pool (the instance the pool's scene
++    /// builder has too). A window's resource cache clears a namespace's fonts out of them; this handle is
++    /// for a namespace whose window was unregistered first: `ApiMsg::UnregisterWindow` goes on the direct
++    /// channel and `ClearNamespace` through the low-priority scene builder, and the window took its
++    /// resource cache with it, so nobody else would ever take those fonts out.
++    fonts: SharedFontResources,
+     /// Ops for `dl_stores` from transactions that built no scene, per
+     /// document, waiting for that document's next scene swap. The store may
+     /// only advance together with a swap: the scene being drawn in the
+@@ -1060,6 +1066,7 @@ impl RenderBackend {
+         scene_tx: Sender<SceneBuilderRequest>,
+         size_of_ops: Option<MallocSizeOfOps>,
+         namespace_alloc_by_client: bool,
++        fonts: SharedFontResources,
+     ) -> RenderBackend {
+         RenderBackend {
+             api_rx,
+@@ -1069,6 +1076,7 @@ impl RenderBackend {
+             document_to_window: FastHashMap::default(),
+             last_touched_window: None,
+             dl_stores: DlStores::default(),
++            fonts,
+             held_dl_updates: FastHashMap::default(),
+             size_of_ops,
+             namespace_alloc_by_client,
+@@ -1857,6 +1865,22 @@ impl RenderBackend {
+         RenderBackendStatus::Continue
+     }
+ 
++    /// A namespace's `RenderApi` was dropped: its resources and documents go.
++    ///
++    /// The resource cache of the window clears the images and glyphs (its own) and the fonts (shared by
++    /// the pool); when the window is no longer registered the shared fonts are cleared here, or they would
++    /// stay in the pool for as long as it lives: a web font of a closed page is up to a few MB, kept once
++    /// per distinct font.
++    fn clear_namespace(&mut self, backend_id: RenderBackendId, id: IdNamespace) {
++        if let Some(win) = self.windows.get_mut(&backend_id) {
++            win.resource_cache.clear_namespace(id);
++        } else {
++            self.fonts.clear_namespace(id);
++        }
++        self.documents.retain(|doc_id, _doc| doc_id.namespace_id != id);
++        self.document_to_window.retain(|doc_id, _| doc_id.namespace_id != id);
++    }
++
+     fn process_scene_builder_result(
+         &mut self,
+         msg: SceneBuilderResult,
+@@ -1952,11 +1976,7 @@ impl RenderBackend {
+                 }
+             }
+             SceneBuilderResult::ClearNamespace(backend_id, id) => {
+-                if let Some(win) = self.windows.get_mut(&backend_id) {
+-                    win.resource_cache.clear_namespace(id);
+-                }
+-                self.documents.retain(|doc_id, _doc| doc_id.namespace_id != id);
+-                self.document_to_window.retain(|doc_id, _| doc_id.namespace_id != id);
++                self.clear_namespace(backend_id, id);
+             }
+             SceneBuilderResult::DeleteDocument(document_id) => {
+                 self.documents.remove(&document_id);
+@@ -2773,3 +2793,52 @@ impl RenderBackend {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod clear_namespace_tests {
++    use super::*;
++    use api::channel::unbounded_channel;
++    use api::{FontKey, FontTemplate};
++    use std::sync::Arc;
++
++    fn backend_with_a_font_of(namespace: u32) -> (RenderBackend, SharedFontResources) {
++        let mut fonts = SharedFontResources::new(IdNamespace(0));
++        let key = FontKey::new(IdNamespace(namespace), 1);
++        let template = FontTemplate::Raw(Arc::new(vec![1, 2, 3, 4]), 0);
++        let shared = fonts.font_keys.add_key(&key, &template).expect("a first font gets a shared key");
++        fonts.templates.add_font(shared, template);
++        let (_api_tx, api_rx) = unbounded_channel::<ApiMsg>();
++        let (scene_tx, _scene_rx) = unbounded_channel::<SceneBuilderRequest>();
++        let backend = RenderBackend::new(api_rx, scene_tx, None, false, fonts.clone());
++        (backend, fonts)
++    }
++
++    /// The message the scene builder sends the backend when a `RenderApi` was dropped, for a backend
++    /// that has no window registered under that id: `UnregisterWindow` came first.
++    #[test]
++    fn the_fonts_of_a_namespace_leave_the_shared_resources_when_its_window_is_gone() {
++        let (mut backend, fonts) = backend_with_a_font_of(7);
++        assert_eq!(fonts.templates.len(), 1);
++
++        let mut frames = 0;
++        backend.process_scene_builder_result(
++            SceneBuilderResult::ClearNamespace(RenderBackendId(1), IdNamespace(7)),
++            &mut frames,
++        );
++
++        assert_eq!(fonts.templates.len(), 0, "the font of a namespace whose window left stays in the pool for good");
++    }
++
++    #[test]
++    fn the_fonts_of_another_namespace_stay() {
++        let (mut backend, fonts) = backend_with_a_font_of(7);
++
++        let mut frames = 0;
++        backend.process_scene_builder_result(
++            SceneBuilderResult::ClearNamespace(RenderBackendId(1), IdNamespace(8)),
++            &mut frames,
++        );
++
++        assert_eq!(fonts.templates.len(), 1);
++    }
++}
+diff --git a/gfx/wr/webrender/src/render_backend_pool.rs b/gfx/wr/webrender/src/render_backend_pool.rs
+index 249e1dde9dd6a3b260c06ba339122f099e7501b1..97f8ec70c9960ef1fcb62d1224211338f26877d7 100644
+--- a/gfx/wr/webrender/src/render_backend_pool.rs
++++ b/gfx/wr/webrender/src/render_backend_pool.rs
+@@ -144,6 +144,7 @@ impl RenderBackendPool {
+ 
+         // Scene builder thread.
+         let sb_fonts = fonts.clone();
++        let rb_fonts = fonts.clone();
+         let sb_config = frame_builder_config.clone();
+         let sb_size_of_ops =
+             size_of_op.map(|o| MallocSizeOfOps::new(o, enclosing_size_of_op));
+@@ -203,6 +204,7 @@ impl RenderBackendPool {
+                 rb_scene_tx,
+                 rb_size_of_ops,
+                 namespace_alloc_by_client,
++                rb_fonts,
+             );
+             backend.run();
+             drop(backend);
+diff --git a/gfx/wr/webrender/src/resource_cache.rs b/gfx/wr/webrender/src/resource_cache.rs
+index bdbda9b3a9109e657d5eac1dccffffba8bc8763d..e05e432c84b82383bb1cc34837a917c735ad3b7d 100644
+--- a/gfx/wr/webrender/src/resource_cache.rs
++++ b/gfx/wr/webrender/src/resource_cache.rs
+@@ -1920,32 +1920,29 @@ impl ResourceCache {
+     pub fn clear_namespace(&mut self, namespace: IdNamespace) {
+         self.clear_images(|k| k.0 == namespace);
+ 
+-        // First clear out any non-shared resources associated with the namespace.
+-        self.resources.fonts.instances.clear_namespace(namespace);
+-        let deleted_keys = self.resources.fonts.templates.clear_namespace(namespace);
+-        self.glyph_rasterizer.delete_fonts(&deleted_keys);
++        // The shared font resources are cleared by SharedFontResources::clear_namespace, which a
++        // namespace whose window left first is cleared through as well (RenderBackend::clear_namespace);
++        // what is left here is what only this window has.
++        let cleared = self.resources.fonts.clear_namespace(namespace);
++        self.glyph_rasterizer.delete_fonts(&cleared.local_font_keys);
+         self.cached_glyphs.clear_namespace(namespace);
+         if let Some(handler) = &mut self.blob_image_handler {
+             handler.clear_namespace(namespace);
+         }
+ 
+         // Check for any shared instance keys that were remapped from the namespace.
+-        let shared_instance_keys = self.resources.fonts.instance_keys.clear_namespace(namespace);
+-        if !shared_instance_keys.is_empty() {
+-            self.resources.fonts.instances.delete_font_instances(&shared_instance_keys);
+-            self.cached_glyphs.delete_font_instances(&shared_instance_keys, &mut self.glyph_rasterizer);
++        if !cleared.shared_instance_keys.is_empty() {
++            self.cached_glyphs.delete_font_instances(&cleared.shared_instance_keys, &mut self.glyph_rasterizer);
+             // Blob font instances are not shared across namespaces, so there is no
+             // need to call the handler for them individually.
+         }
+ 
+         // Finally check for any shared font keys that were remapped from the namespace.
+-        let shared_keys = self.resources.fonts.font_keys.clear_namespace(namespace);
+-        if !shared_keys.is_empty() {
+-            self.glyph_rasterizer.delete_fonts(&shared_keys);
+-            self.resources.fonts.templates.delete_fonts(&shared_keys);
+-            self.cached_glyphs.delete_fonts(&shared_keys);
++        if !cleared.shared_font_keys.is_empty() {
++            self.glyph_rasterizer.delete_fonts(&cleared.shared_font_keys);
++            self.cached_glyphs.delete_fonts(&cleared.shared_font_keys);
+             if let Some(handler) = &mut self.blob_image_handler {
+-                for &key in &shared_keys {
++                for &key in &cleared.shared_font_keys {
+                     handler.delete_font(key);
+                 }
+             }
+diff --git a/gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs b/gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs
+index cfbeb5b42f6fa94d63e876a1f58bf1631a0edc94..df197ff1bcad5e2de7e9c8f7a4553c0716224261 100644
+--- a/gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs
++++ b/gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs
+@@ -840,6 +840,18 @@ pub struct SharedFontResources {
+     pub instance_keys: FontInstanceKeyMap,
+ }
+ 
++/// What `SharedFontResources::clear_namespace` took out, for the owner of a window's resource cache to
++/// remove from the glyph rasterizer and the glyph cache, which are not shared.
++#[derive(Default)]
++pub struct ClearedFonts {
++    /// The font keys of the namespace's own templates (not shared with another namespace).
++    pub local_font_keys: Vec<FontKey>,
++    /// The shared font keys that no namespace refers to any more.
++    pub shared_font_keys: Vec<FontKey>,
++    /// The shared font instance keys that no namespace refers to any more.
++    pub shared_instance_keys: Vec<FontInstanceKey>,
++}
++
+ impl SharedFontResources {
+     pub fn new(namespace: IdNamespace) -> Self {
+         SharedFontResources {
+@@ -849,6 +861,29 @@ impl SharedFontResources {
+             instance_keys: FontInstanceKeyMap::new(namespace),
+         }
+     }
++
++    /// Takes everything a namespace put in the shared font resources out of them: its own templates and
++    /// instances, its mappings to shared keys, and the shared templates and instances that were left
++    /// with no mapping.
++    ///
++    /// This is the part of clearing a namespace that does not need a window: a namespace's fonts live here,
++    /// in the resources every window of a pool shares, and a namespace whose window was unregistered before
++    /// its `ClearNamespace` arrived has no resource cache to clear them through.
++    pub fn clear_namespace(&mut self, namespace: IdNamespace) -> ClearedFonts {
++        // First clear out any non-shared resources associated with the namespace.
++        self.instances.clear_namespace(namespace);
++        let local_font_keys = self.templates.clear_namespace(namespace);
++
++        // Then any shared instance keys that were remapped from the namespace.
++        let shared_instance_keys = self.instance_keys.clear_namespace(namespace);
++        self.instances.delete_font_instances(&shared_instance_keys);
++
++        // Finally any shared font keys that were remapped from the namespace.
++        let shared_font_keys = self.font_keys.clear_namespace(namespace);
++        self.templates.delete_fonts(&shared_font_keys);
++
++        ClearedFonts { local_font_keys, shared_font_keys, shared_instance_keys }
++    }
+ }
+ 
+ impl BlobImageResources for SharedFontResources {
+@@ -2244,3 +2279,61 @@ mod test_glyph_rasterizer {
+         assert_eq!(SubpixelOffset::quantize(-4.33), SubpixelOffset::ThreeQuarters);
+     }
+ }
++
++#[cfg(test)]
++mod test_shared_fonts_clear_namespace {
++    use super::*;
++    use std::sync::Arc;
++
++    /// What a window's resource cache does when a font is added: map the key to a shared key
++    /// (one per distinct bytes), and store the template once.
++    fn add(fonts: &mut SharedFontResources, namespace: u32, id: u32, bytes: &[u8]) {
++        let key = FontKey::new(IdNamespace(namespace), id);
++        let template = FontTemplate::Raw(Arc::new(bytes.to_vec()), 0);
++        if let Some(shared) = fonts.font_keys.add_key(&key, &template) {
++            fonts.templates.add_font(shared, template);
++        }
++    }
++
++    #[test]
++    fn a_namespace_takes_its_fonts_out_of_the_shared_resources() {
++        let mut fonts = SharedFontResources::new(IdNamespace(0));
++        add(&mut fonts, 7, 1, b"font one");
++        add(&mut fonts, 7, 2, b"font two");
++        assert_eq!(fonts.templates.len(), 2);
++
++        let cleared = fonts.clear_namespace(IdNamespace(7));
++
++        assert_eq!(fonts.templates.len(), 0, "the templates of the namespace stay in the shared resources");
++        assert!(fonts.font_keys.keys().is_empty());
++        assert_eq!(cleared.shared_font_keys.len(), 2);
++    }
++
++    #[test]
++    fn a_font_two_namespaces_have_stays_until_the_last_one_is_cleared() {
++        let mut fonts = SharedFontResources::new(IdNamespace(0));
++        add(&mut fonts, 7, 1, b"the same bytes");
++        add(&mut fonts, 8, 1, b"the same bytes");
++        assert_eq!(fonts.templates.len(), 1, "the bytes are stored once");
++
++        let first = fonts.clear_namespace(IdNamespace(7));
++        assert_eq!(fonts.templates.len(), 1);
++        assert!(first.shared_font_keys.is_empty());
++
++        let last = fonts.clear_namespace(IdNamespace(8));
++        assert_eq!(fonts.templates.len(), 0);
++        assert_eq!(last.shared_font_keys.len(), 1);
++    }
++
++    #[test]
++    fn another_namespace_is_not_touched() {
++        let mut fonts = SharedFontResources::new(IdNamespace(0));
++        add(&mut fonts, 7, 1, b"font of seven");
++        add(&mut fonts, 8, 1, b"font of eight");
++
++        fonts.clear_namespace(IdNamespace(7));
++
++        assert_eq!(fonts.templates.len(), 1);
++        assert_eq!(fonts.font_keys.keys().len(), 1);
++    }
++}

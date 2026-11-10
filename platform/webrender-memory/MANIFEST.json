@@ -1,0 +1,93 @@
+{
+ "modified": [
+  "gfx/wr/webrender/src/render_backend.rs",
+  "gfx/wr/webrender/src/render_backend_pool.rs",
+  "gfx/wr/webrender/src/resource_cache.rs",
+  "gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs"
+ ],
+ "added": {},
+ "inventory": [
+  {
+   "file": "gfx/wr/webrender/src/render_backend.rs",
+   "category": "other",
+   "feature": "wr-shared-fonts-cleared-with-namespace",
+   "prefs": [],
+   "added": 75,
+   "removed": 6,
+   "hunks": 7,
+   "inline_logic_lines": 60,
+   "hookable": "movable",
+   "anchor": "RenderBackend (the shared font resources are kept in the backend; clear_namespace clears them whether or not the window is still registered)",
+   "evidence": [
+    "+    fn clear_namespace(&mut self, backend_id: RenderBackendId, id: IdNamespace) {",
+    "+            self.fonts.clear_namespace(id);"
+   ],
+   "notes": "A namespace whose window left first used to skip the cleanup of the font resources the windows share (UnregisterWindow reaches the backend on the direct channel, ClearNamespace on the low-priority queue): the font templates, font instances and key mappings of a closed window stayed in the shared font resources of the pool (the glyph cache lives in the window's own ResourceCache and goes with it). The backend now clears the shared font resources itself. Fixes Mozilla's own code; follows Mozilla when they change it.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/wr/webrender/src/render_backend_pool.rs",
+   "category": "other",
+   "feature": "wr-shared-fonts-cleared-with-namespace",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "RenderBackendPool::new (the font resources cloned for the scene builder are cloned once more for the render backend)",
+   "evidence": [
+    "+        let rb_fonts = fonts.clone();",
+    "+                rb_fonts,"
+   ],
+   "notes": "Hands the shared font resources to the render backend, which clears them for a namespace whose window left.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/wr/webrender/src/resource_cache.rs",
+   "category": "other",
+   "feature": "wr-shared-fonts-cleared-with-namespace",
+   "prefs": [],
+   "added": 11,
+   "removed": 14,
+   "hunks": 4,
+   "inline_logic_lines": 11,
+   "hookable": "movable",
+   "anchor": "ResourceCache::clear_namespace (the font resources are cleared through SharedFontResources::clear_namespace)",
+   "evidence": [
+    "+        let cleared = self.resources.fonts.clear_namespace(namespace);"
+   ],
+   "notes": "The font part of clear_namespace is one call that returns what was cleared, so the backend and the cache clear the same way. Replaces 14 lines of Mozilla's that did the same steps one by one.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  },
+  {
+   "file": "gfx/wr/wr_glyph_rasterizer/src/rasterizer.rs",
+   "category": "other",
+   "feature": "wr-shared-fonts-cleared-with-namespace",
+   "prefs": [],
+   "added": 93,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 60,
+   "hookable": "movable",
+   "anchor": "SharedFontResources::clear_namespace and the type it returns (new), with a unit test",
+   "evidence": [
+    "+    pub fn clear_namespace(&mut self, namespace: IdNamespace) -> ClearedFonts {"
+   ],
+   "notes": "SharedFontResources::clear_namespace returns the local font keys, the shared instance keys and the shared font keys it removed; a unit test fails when a closed window's shared fonts stay in the pool.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+   }
+  }
+ ]
+}

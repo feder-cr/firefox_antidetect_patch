@@ -78,5 +78,7 @@
  "widget/nsBaseDragService.cpp": 1,
  "widget/nsGUIEventIPC.h": 1,
  "widget/windows/TaskbarPreview.cpp": 1,
- "xpcom/reflect/xptinfo/xptinfo.h": 1
+ "xpcom/reflect/xptinfo/xptinfo.h": 1,
+ "gfx/wr/webrender/src/render_backend.rs": 6,
+ "gfx/wr/webrender/src/resource_cache.rs": 14
 }
