@@ -62,7 +62,7 @@ NS_IMPL_ISUPPORTS(CapturingCallback, nsIProtocolProxyCallback)
 }  // namespace
 
 // The helper alone: guards, whitespace, which member a pref name reaches.
-TEST(StealthSocksCredentials, PrefsChanged)
+TEST(TestStealthSocksCredentials, PrefsChanged)
 {
   ProxyPrefsReset reset;
   nsCOMPtr<nsIPrefBranch> branch = do_GetService(NS_PREFSERVICE_CONTRACTID);
@@ -105,7 +105,7 @@ TEST(StealthSocksCredentials, PrefsChanged)
 
 // End to end through the public service: the pref observer feeds the members
 // and the resolved proxy info carries them.
-TEST(StealthSocksCredentials, ReachResolvedProxyInfo)
+TEST(TestStealthSocksCredentials, ReachResolvedProxyInfo)
 {
   ProxyPrefsReset reset;
   nsCOMPtr<nsIProtocolProxyService> ps =

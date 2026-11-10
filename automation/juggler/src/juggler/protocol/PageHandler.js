@@ -432,19 +432,8 @@ export class PageHandler {
     if (canvasWidth * canvasHeight > MAX_CANVAS_AREA)
       throw new Error('Cannot take screenshot with more than ' + MAX_CANVAS_AREA + ' pixels');
 
-    // drawSnapshot throws NS_ERROR_LOSS_OF_SIGNIFICANT_DATA while a navigation
-    // replaces the document, and answers on the next try. That wait is bounded:
-    // DRAW_SNAPSHOT_ATTEMPTS tries 50 ms apart (15 s, under the client's 30 s
-    // timeout). Not shorter: a navigation that has not committed yet keeps the
-    // snapshot failing until it does, and a process switch under load can take
-    // several seconds. A
-    // failure that is not a navigation (a recording that cannot be replayed)
-    // never goes away; retried for ever, it left the client waiting until its
-    // timeout with no word of what failed. After the last try the error goes
-    // back to the client with its own message.
-    const DRAW_SNAPSHOT_ATTEMPTS = 300;
     let snapshot;
-    for (let attempt = 1; !snapshot; attempt++) {
+    while (!snapshot) {
       try {
         //TODO(fission): browsingContext will change in case of cross-group navigation.
         snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
@@ -453,8 +442,9 @@ export class PageHandler {
           "rgb(255,255,255)"
         );
       } catch (e) {
-        if (attempt >= DRAW_SNAPSHOT_ATTEMPTS)
-          throw new Error('Page.screenshot: drawSnapshot failed after ' + attempt + ' attempts: ' + (e && e.message || e));
+        // The currentWindowGlobal.drawSnapshot might throw
+        // NS_ERROR_LOSS_OF_SIGNIFICANT_DATA if called during navigation.
+        // wait a little and re-try.
         await new Promise(x => setTimeout(x, 50));
       }
     }

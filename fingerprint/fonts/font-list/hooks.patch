@@ -1,78 +1,3 @@
-diff --git a/gfx/2d/ScaledFontFontconfig.cpp b/gfx/2d/ScaledFontFontconfig.cpp
-index 28540aae69895466fb067bd3b5f02a41d8f4a5f6..81b106ea69fe0f0b53476b9d2a12f6cb24ea5247 100644
---- a/gfx/2d/ScaledFontFontconfig.cpp
-+++ b/gfx/2d/ScaledFontFontconfig.cpp
-@@ -3,11 +3,14 @@
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
- #include "ScaledFontFontconfig.h"
-+#include "StealthFontDescriptorPath.h"  // STEALTH-HOOK(fingerprint/fonts/font-list)
-+#include "StealthMultistrikeBold.h"  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
- 
- #include <fontconfig/fcfreetype.h>
- 
- #include "HelpersSkia.h"
- #include "Logging.h"
-+#include "StealthSkiaIdwr.h"  // STEALTH-HOOK(fingerprint/fonts/idwr)
- #include "UnscaledFontFreeType.h"
- #include "mozilla/StaticPrefs_gfx.h"
- #include "mozilla/webrender/WebRenderTypes.h"
-@@ -33,6 +36,7 @@ ScaledFontFontconfig::ScaledFontFontconfig(
-       mInstanceData(aInstanceData) {}
- 
- bool ScaledFontFontconfig::UseSubpixelPosition() const {
-+  if (StealthIdwrAAModeDeclared()) return true;  // STEALTH-HOOK(fingerprint/fonts/idwr)
-   return !MOZ_UNLIKELY(
-              StaticPrefs::
-                  gfx_text_subpixel_position_force_disabled_AtStartup()) &&
-@@ -46,11 +50,13 @@ bool ScaledFontFontconfig::UseSubpixelPosition() const {
- }
- 
- SkTypeface* ScaledFontFontconfig::CreateSkTypeface() {
-+  if (StealthIdwrAAModeDeclared()) return StealthIdwrSkTypeface(this, mInstanceData.mFlags & InstanceData::EMBOLDEN);  // STEALTH-HOOK(fingerprint/fonts/idwr) null: refused, never FreeType
-   return SkCreateTypefaceFromCairoFTFont(mFace->GetFace(), mFace.get(),
-                                          mInstanceData.mLcdFilter);
- }
- 
- void ScaledFontFontconfig::SetupSkFontDrawOptions(SkFont& aFont) {
-+  if (StealthIdwrSetupSkFont(this, aFont)) return;  // STEALTH-HOOK(fingerprint/fonts/idwr)
-   aFont.setSubpixel(UseSubpixelPosition());
- 
-   if (mInstanceData.mFlags & InstanceData::AUTOHINT) {
-@@ -82,6 +88,7 @@ cairo_font_face_t* ScaledFontFontconfig::CreateCairoFontFace(
- }
- 
- AntialiasMode ScaledFontFontconfig::GetDefaultAAMode() {
-+  if (StealthIdwrAAModeDeclared()) return StealthIdwrFontconfigAAMode(this);  // STEALTH-HOOK(fingerprint/fonts/idwr)
-   return mInstanceData.mAntialias;
- }
- 
-@@ -134,6 +141,7 @@ ScaledFontFontconfig::InstanceData::InstanceData(FcPattern* aPattern)
-       embolden) {
-     mFlags |= EMBOLDEN;
-   }
-+  if (StealthPatternMultistrikeBold(aPattern)) mFlags |= STEALTH_MULTISTRIKE_BOLD;  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold) Gecko strikes it, no EMBOLDEN
- 
-   // For printer fonts, Cairo hint metrics and hinting will be disabled.
-   // For other fonts, allow hint metrics and hinting.
-@@ -406,6 +414,7 @@ bool ScaledFontFontconfig::GetWRFontInstanceOptions(
-   if (mInstanceData.mFlags & InstanceData::EMBOLDEN) {
-     options.flags |= wr::FontInstanceFlags::SYNTHETIC_BOLD;
-   }
-+  if (mInstanceData.mFlags & InstanceData::STEALTH_MULTISTRIKE_BOLD) options.flags |= wr::FontInstanceFlags::SYNTHETIC_BOLD;  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold) WebRender has no multi-strike on FreeType
-   if (mInstanceData.mFlags & InstanceData::EMBEDDED_BITMAP) {
-     options.flags |= wr::FontInstanceFlags::EMBEDDED_BITMAPS;
-   }
-@@ -535,6 +544,9 @@ already_AddRefed<UnscaledFont> UnscaledFontFontconfig::CreateFromFontDescriptor(
-     gfxWarning() << "Fontconfig font descriptor is truncated.";
-     return nullptr;
-   }
-+  if (StealthHandlesFontDescriptors()) {  // STEALTH-HOOK(fingerprint/fonts/font-list)
-+    return StealthUnscaledFontFromDescriptor(aData, aDataLength, aIndex);
-+  }
-   nsCString path((const char*)aData, aDataLength);
- 
-   // Use the given pathname/index in a fontconfig lookup to confirm this is a
 diff --git a/gfx/thebes/CoreTextFontList.cpp b/gfx/thebes/CoreTextFontList.cpp
 index b6696c70c4b9065dd04683020010cb8f61e36791..d7fb0423acd95fce1b8536bf367e81c286e6494f 100644
 --- a/gfx/thebes/CoreTextFontList.cpp
@@ -331,20 +256,18 @@ index a804e7154b7182fe73a37a94b186b50275971f5e..6d7667be34b4c8362f4de426a230c608
    nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(localDir));
    if (NS_FAILED(rv)) {
 diff --git a/gfx/thebes/gfxFcPlatformFontList.cpp b/gfx/thebes/gfxFcPlatformFontList.cpp
-index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68dff13cee 100644
+index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..4eb60bb0ef4a97e2a0fb3b186f88f493c5055c4e 100644
 --- a/gfx/thebes/gfxFcPlatformFontList.cpp
 +++ b/gfx/thebes/gfxFcPlatformFontList.cpp
-@@ -5,6 +5,9 @@
+@@ -5,6 +5,7 @@
  #include "gfxFcPlatformFontList.h"
  
  #include "SharedFontList-impl.h"
-+#include "StealthFcEmptyConfig.h"  // STEALTH-HOOK(fingerprint/fonts/font-list)
 +#include "StealthFcFontList.h"
-+#include "StealthSyntheticBold.h"  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
  #include "gfxFT2Utils.h"
  #include "gfxFont.h"
  #include "gfxPlatform.h"
-@@ -509,7 +512,8 @@ gfxFontconfigFontEntry::AutoHBFace gfxFontconfigFontEntry::GetHBFace() {
+@@ -509,7 +510,8 @@ gfxFontconfigFontEntry::AutoHBFace gfxFontconfigFontEntry::GetHBFace() {
        NS_WARNING(nsPrintfCString("fallback to gfxFontEntry::GetHBFace for %s",
                                   Name().get())
                       .get());
@@ -354,7 +277,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
        useTableCache = true;
      }
      AutoWriteLock lock(mLock);
-@@ -626,7 +630,8 @@ nsresult gfxFontconfigFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
+@@ -626,7 +628,8 @@ nsresult gfxFontconfigFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
    if (NS_SUCCEEDED(rv)) {
      gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
      fontlist::FontList* sharedFontList = pfl->SharedFontList();
@@ -364,7 +287,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
        mShmemFace->SetCharacterMap(sharedFontList, charmap, mShmemFamily);
        if (TrySetShmemCharacterMap()) {
          setCharMap = false;
-@@ -659,7 +664,9 @@ nsresult gfxFontconfigFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
+@@ -659,7 +662,9 @@ nsresult gfxFontconfigFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
  
  bool gfxFontconfigFontEntry::HasFontTableInternal(uint32_t aTableTag) {
    if (auto* ufd = GetUserFontData()) {
@@ -375,7 +298,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    }
    return gfxFT2FontEntryBase::FaceHasTable(GetFTFace(), aTableTag);
  }
-@@ -667,7 +674,9 @@ bool gfxFontconfigFontEntry::HasFontTableInternal(uint32_t aTableTag) {
+@@ -667,7 +672,9 @@ bool gfxFontconfigFontEntry::HasFontTableInternal(uint32_t aTableTag) {
  hb_blob_t* gfxFontconfigFontEntry::GetFontTableInternal(uint32_t aTableTag) {
    // for data fonts, read directly from the font data
    if (auto* ufd = GetUserFontData()) {
@@ -386,7 +309,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    }
  
    // Use the cache only if it has already been created.
-@@ -675,7 +684,8 @@ hb_blob_t* gfxFontconfigFontEntry::GetFontTableInternal(uint32_t aTableTag) {
+@@ -675,7 +682,8 @@ hb_blob_t* gfxFontconfigFontEntry::GetFontTableInternal(uint32_t aTableTag) {
      return gfxFontEntry::GetFontTableInternal(aTableTag);
    }
  
@@ -396,15 +319,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    return table != hb_blob_get_empty() ? table : nullptr;
  }
  
-@@ -1052,6 +1062,7 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
-   if (aFontStyle->NeedsSyntheticBold(this)) {
-     FcPatternAddBool(renderPattern, FC_EMBOLDEN, FcTrue);
-   }
-+  StealthDeclareSyntheticBold(renderPattern, this, aFontStyle);  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
- 
-   // will synthetic oblique be applied using a transform?
-   if (IsUpright() && !aFontStyle->style.IsNormal() &&
-@@ -1061,6 +1072,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
+@@ -1061,6 +1069,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
      FcPatternAddBool(renderPattern, FC_EMBEDDED_BITMAP, FcFalse);
    }
  
@@ -413,7 +328,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    int loadFlags;
    unsigned int synthFlags;
    PrepareFontOptions(renderPattern, &loadFlags, &synthFlags);
-@@ -1078,6 +1091,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
+@@ -1078,6 +1088,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
      }
      file = ToCharPtr(fcFile);
    }
@@ -422,7 +337,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
  
    RefPtr<UnscaledFontFontconfig> unscaledFont;
    {
-@@ -1094,6 +1109,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
+@@ -1094,6 +1106,8 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
                                           : new UnscaledFontFontconfig(
                                                 std::move(file), index, ftFace);
      mUnscaledFontCache.Add(unscaledFont);
@@ -431,23 +346,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    }
  
    gfxFont* newFont = new gfxFontconfigFont(
-@@ -1504,6 +1521,7 @@ gfxFontconfigFont::gfxFontconfigFont(
-                      aLoadFlags, aEmbolden),
-       mPattern(aPattern) {
-   mAdjustedSize = aAdjustedSize;
-+  if (mozilla::gfx::StealthPatternMultistrikeBold(aPattern)) mApplySyntheticBold = true;  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
-   InitMetrics();
- }
- 
-@@ -1540,6 +1558,7 @@ gfxFcPlatformFontList::gfxFcPlatformFontList()
-       mFcSubstituteCache(64),
-       mLastConfig(nullptr),
-       mAlwaysUseFontconfigGenerics(true) {
-+  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)
-   CheckFamilyList(kBaseFonts_Ubuntu_22_04);
-   CheckFamilyList(kLangFonts_Ubuntu_22_04);
-   CheckFamilyList(kBaseFonts_Ubuntu_20_04);
-@@ -1711,6 +1730,10 @@ void gfxFcPlatformFontList::AddPatternToFontList(
+@@ -1711,6 +1725,10 @@ void gfxFcPlatformFontList::AddPatternToFontList(
      }
    }
  
@@ -458,7 +357,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    // Add pointers to other localized family names. Most fonts
    // only have a single name, so the first call to GetString
    // will usually not match
-@@ -1829,6 +1852,10 @@ nsresult gfxFcPlatformFontList::InitFontListForPlatform() {
+@@ -1829,6 +1847,10 @@ nsresult gfxFcPlatformFontList::InitFontListForPlatform() {
    }
  #endif
  
@@ -469,7 +368,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    // iterate over available fonts
    FcFontSet* systemFonts = FcConfigGetFonts(nullptr, FcSetSystem);
    AddFontSetFamilies(systemFonts, policy.get(), /* aAppFonts = */ false);
-@@ -1934,6 +1961,10 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
+@@ -1934,6 +1956,10 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
    UpdateSystemFontOptions();
  #endif
  
@@ -480,7 +379,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
  #ifdef MOZ_BUNDLED_FONTS
    if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
      auto timerId = glean::fontlist::bundledfonts_activate.Start();
-@@ -2289,6 +2320,10 @@ gfxFcPlatformFontList::GetFilteredPlatformFontLists() {
+@@ -2289,6 +2315,10 @@ gfxFcPlatformFontList::GetFilteredPlatformFontLists() {
  
  already_AddRefed<gfxFontEntry> gfxFcPlatformFontList::CreateFontEntry(
      fontlist::Face* aFace, const fontlist::Family* aFamily) {
@@ -491,7 +390,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    nsAutoCString desc(aFace->mDescriptor.AsString(SharedFontList()));
    FcPattern* pattern = FcNameParse((const FcChar8*)desc.get());
    RefPtr fe = MakeRefPtr<gfxFontconfigFontEntry>(desc, pattern);
-@@ -2459,6 +2494,11 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
+@@ -2459,6 +2489,11 @@ bool gfxFcPlatformFontList::FindAndAddFamiliesLocked(
    nsAutoCString familyName(aFamily);
    ToLowerCase(familyName);
  
@@ -503,7 +402,7 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
    if (!(aFlags & FindFamiliesFlags::eQuotedFamilyName)) {
      // deprecated generic names are explicitly converted to standard generics
      bool isDeprecatedGeneric = false;
-@@ -2754,7 +2794,8 @@ void gfxFcPlatformFontList::AddGenericFonts(
+@@ -2754,7 +2789,8 @@ void gfxFcPlatformFontList::AddGenericFonts(
    }
  
    // when pref fonts exist, use standard pref font lookup
@@ -513,16 +412,6 @@ index 3fbad92c0dbcb8f65fb58e052fe798a1dbe58aad..899447998e01ca3b96aa42141be73d68
      gfxPlatformFontList::AddGenericFonts(aFontVisibilityProvider, aGenericType,
                                           aLanguage, aFamilyList);
      if (!isSystemUi) {
-@@ -3190,6 +3231,9 @@ static void SetSubpixelOrderFromCairo(const cairo_font_options_t* aOptions) {
- 
- bool gfxFcPlatformFontList::UpdateSystemFontOptions() {
-   MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
-+  if (mStealthBundleOnly) {  // STEALTH-HOOK(fingerprint/fonts/font-list)
-+    return StealthFixedFontOptions(mSystemFontOptions, mFreetypeLcdSetting);
-+  }
- 
-   if (gfxPlatform::IsHeadless()) {
-     return false;
 diff --git a/gfx/thebes/gfxPlatformFontList.cpp b/gfx/thebes/gfxPlatformFontList.cpp
 index cabecffc5c4f9a21f5d069738f82d866c2bcbeb2..be2bcbc1e9562ed17c35bfc953064cb59688679a 100644
 --- a/gfx/thebes/gfxPlatformFontList.cpp
@@ -690,48 +579,3 @@ index 4719c99e05d8b71dc8ccc95f57f3918b8f4fef17..34fa07fcd5a2e13e9906a9ed42eefe7c
  
    // This is an owning reference; we are responsible to delete the FontList at
    // appropriate times.
-diff --git a/widget/gtk/nsLookAndFeel.cpp b/widget/gtk/nsLookAndFeel.cpp
-index a2b5aa458018964a800f2d0d55abeb78f213db67..431103748dc5c2ed5db45afd278131ca98bd46f0 100644
---- a/widget/gtk/nsLookAndFeel.cpp
-+++ b/widget/gtk/nsLookAndFeel.cpp
-@@ -20,6 +20,8 @@
- #include "GtkWidgets.h"
- #include "ScreenHelperGTK.h"
- #include "ScrollbarDrawing.h"
-+#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
-+#include "StealthFcEmptyConfig.h"  // STEALTH-HOOK(fingerprint/fonts/font-list)
- #include "WidgetUtils.h"
- #include "gfxFontConstants.h"
- #include "gfxPlatformGtk.h"
-@@ -397,6 +399,7 @@ nsLookAndFeel::nsLookAndFeel() {
-     }
-   }
- 
-+  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)
-   FcInit();
- }
- 
-@@ -636,6 +639,7 @@ void nsLookAndFeel::NativeInit() { EnsureInit(); }
- 
- nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
-                                        nscolor& aColor) {
-+  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   EnsureInit();
- 
-   const auto& theme =
-@@ -1262,6 +1266,7 @@ nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
- 
- static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
-                               gfxFontStyle* aFontStyle) {
-+  if (StealthSystemFontsDeclared()) return;  // STEALTH-HOOK(fingerprint/fonts/bundle) the fonts are the core's declaration, see NativeGetFont
-   aFontStyle->style = FontSlantStyle::NORMAL;
- 
-   // As in
-@@ -1302,6 +1307,7 @@ static void GetSystemFontInfo(GtkStyleContext* aStyle, nsString* aFontName,
- 
- bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
-                                   gfxFontStyle& aFontStyle) {
-+  if (StealthSystemFontsDeclared()) return StealthNativeSystemFont(aID, aFontName, aFontStyle);  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   return mSystemTheme.GetFont(aID, aFontName, aFontStyle, mTextScaleFactor);
- }
- 

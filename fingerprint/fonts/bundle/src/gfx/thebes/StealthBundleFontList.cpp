@@ -25,7 +25,6 @@
 #include "gfxFontConstants.h"
 #include "gfxFontUtils.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/gfx/StealthRefuse.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_zoom.h"
@@ -208,6 +207,12 @@ bool StealthBundleFontList::Load() {
                                                FontVisibility::Base));
       continue;
     }
+    // NOTE: the L| coverage ladder used to be parsed here. It moved to
+    // invisible_core and arrives as zoom.stealth.canvas.alpha_ladder, because
+    // it is not a property of any font FILE - it is what the rasteriser does to
+    // an edge. Nothing read mCoverageLadder after that move, so the member, the
+    // accessor and this branch were dead, and the record in the manifest was a
+    // second copy of a value the core already declares. Removed 2026-08-08.
     // P|T|Y|Z - the four fixed common-fallback lists (v4). Each is one line,
     // in gfxWindowsPlatform's order; see GetCommonFallback for how they compose.
     {
@@ -1223,16 +1228,10 @@ void StealthLoadMissingCharacterMaps(
 }
 
 void StealthSystemUIFamilies(nsTArray<nsCString>& aFamilies) {
-  // Retail Windows resolves `font-family: system-ui` to the menu font
-  // (lfMenuFont), so it follows the family the core declares at ui.font.menu,
-  // on every host - never the host's real menu font (Cantarell on Linux, San
-  // Francisco on macOS). There is no compiled name: undeclared, nothing is
-  // added, and StealthDeclarationGate has already refused the launch.
-  nsAutoString menu;
-  if (NS_SUCCEEDED(mozilla::Preferences::GetString("ui.font.menu", menu)) &&
-      !menu.IsEmpty()) {
-    aFamilies.AppendElement(NS_ConvertUTF16toUTF8(menu));
-  }
+  // Our persona is always Windows, so `font-family: system-ui` must resolve to
+  // "Segoe UI" on every host - never the host's real menu font (Cantarell on
+  // Linux, San Francisco on macOS). Hardcoded, no external config.
+  aFamilies.AppendElement("Segoe UI"_ns);
 }
 
 // The DECLARED generic table, from zoom.stealth.fonts.generics, as

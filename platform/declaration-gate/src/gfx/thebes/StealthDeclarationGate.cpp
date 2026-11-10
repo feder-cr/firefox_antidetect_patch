@@ -16,13 +16,6 @@
 #include "mozilla/net/StealthBranding.h"
 #include "nsIFile.h"
 #include "nsString.h"
-#include "StealthSystemFonts.h"
-
-// gfx/skia/skia/src/opts/StealthSkiaMathTables.inc: whether the AMD table of the canvas
-// arithmetic is in the build.
-namespace StealthSkiaMath {
-extern const bool kAmdTablePresent;
-}  // namespace StealthSkiaMath
 
 namespace mozilla {
 namespace gfx {
@@ -154,14 +147,9 @@ void StealthAssertDeclarationsComplete() {
          auto lock = StaticPrefs::zoom_stealth_webgpu_limits();
          return lock->IsEmpty();
        }},
-      // The CPU vendor of the canvas arithmetic, added 2026-11-09. Missing, Skia's
-      // reciprocal estimates (RCPPS, RSQRTPS) would be the host CPU's, and the canvas
-      // bytes of blend modes and bicubic images would follow its vendor. Only the
-      // vendors whose table is in the build are declarations (StealthSkiaMath.cpp).
-      {"zoom.stealth.cpu.vendor", []() -> bool {
-         auto lock = StaticPrefs::zoom_stealth_cpu_vendor();
-         return !(lock->EqualsLiteral("intel") ||
-                  (lock->EqualsLiteral("amd") && StealthSkiaMath::kAmdTablePresent));
+      {"zoom.stealth.text.coverage_ladder", []() -> bool {
+         auto lock = StaticPrefs::zoom_stealth_text_coverage_ladder();
+         return lock->IsEmpty();
        }},
       // The speech-synthesis voice list, added 2026-08-09 with the six ints
       // below. When it is empty SpeechSynthesis::GetVoices falls through to
@@ -319,23 +307,6 @@ void StealthAssertDeclarationsComplete() {
   for (const char* name : kRasterInts) {
     if (Preferences::GetInt(name, -1) < 0) {
       RefuseUndeclared(name);
-    }
-  }
-
-  // The CSS system fonts (ui.font.* and their sizes), added 2026-11-08: the
-  // GTK widget no longer asks Pango, so a missing one has no host to fall to.
-  {
-    nsAutoCString undeclaredFont;
-    if (widget::StealthFirstUndeclaredSystemFont(undeclaredFont)) {
-      RefuseUndeclared(undeclaredFont.get());
-    }
-  }
-
-  // The system colours no stand-in covers (the palette of invisible_core).
-  {
-    nsAutoCString undeclaredColor;
-    if (widget::StealthFirstUndeclaredSystemColor(undeclaredColor)) {
-      RefuseUndeclared(undeclaredColor.get());
     }
   }
 

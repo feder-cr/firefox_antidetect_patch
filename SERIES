@@ -35,15 +35,12 @@ fingerprint/audio/context-values
 fingerprint/audio/noise
 fingerprint/audio/sample-rate
 fingerprint/canvas/as-drawn
-fingerprint/canvas/color-profile
 fingerprint/canvas/noise-projection
-fingerprint/canvas/skia-math
 fingerprint/canvas/text-metrics
 fingerprint/fonts/bundle
 fingerprint/fonts/font-list
 fingerprint/fonts/idwr
 fingerprint/fonts/metrics
-fingerprint/fonts/synthetic-bold
 fingerprint/hardware/concurrency
 fingerprint/hardware/profile
 fingerprint/hardware/storage-quota
@@ -60,7 +57,6 @@ fingerprint/locale-time/session-declaration
 fingerprint/locale-time/timezone
 fingerprint/locale-time/workers
 fingerprint/media/decode-declaration
-fingerprint/media/decode-samples
 fingerprint/media/enumeration
 fingerprint/media/speech-voices
 fingerprint/screen-window/css-media
@@ -69,7 +65,6 @@ fingerprint/screen-window/geometry
 fingerprint/screen-window/occlusion
 fingerprint/screen-window/popup-position
 fingerprint/screen-window/screen
-fingerprint/webgl/angle-nv-math
 fingerprint/webgl/multisample
 fingerprint/webgl/own-gl
 fingerprint/webgl/parameters

@@ -1,49 +1,19 @@
 {
  "modified": [
-  "gfx/2d/ScaledFontFontconfig.cpp",
   "gfx/thebes/CoreTextFontList.cpp",
   "gfx/thebes/gfxDWriteFontList.cpp",
   "gfx/thebes/gfxFcPlatformFontList.cpp",
   "gfx/thebes/gfxPlatformFontList.cpp",
-  "gfx/thebes/gfxPlatformFontList.h",
-  "widget/gtk/nsLookAndFeel.cpp"
+  "gfx/thebes/gfxPlatformFontList.h"
  ],
  "added": {
-  "gfx/2d/StealthFontDescriptorPath.cpp": "100644",
-  "gfx/2d/StealthFontDescriptorPath.h": "100644",
   "gfx/tests/gtest/TestStealthBundledCollection.cpp": "100644",
-  "gfx/tests/gtest/TestStealthFcEmptyConfig.cpp": "100644",
   "gfx/tests/gtest/TestStealthFcFontList.cpp": "100644",
-  "gfx/tests/gtest/TestStealthFontDescriptorPath.cpp": "100644",
-  "gfx/thebes/StealthFcEmptyConfig.cpp": "100644",
-  "gfx/thebes/StealthFcEmptyConfig.h": "100644",
-  "gfx/thebes/StealthFcEmptyConfig.mozbuild": "100644",
   "gfx/thebes/StealthFcFontList.cpp": "100644",
   "gfx/thebes/StealthFcFontList.h": "100644",
   "gfx/thebes/StealthFcFontList.mozbuild": "100644"
  },
  "inventory": [
-  {
-   "file": "gfx/2d/ScaledFontFontconfig.cpp",
-   "category": "spoof",
-   "feature": "font-list-bundle-only",
-   "prefs": [],
-   "added": 4,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "the include block (StealthFontDescriptorPath.h) and UnscaledFontFontconfig::CreateFromFontDescriptor, before the fontconfig lookup of the recorded path",
-   "evidence": [
-    "+  if (StealthHandlesFontDescriptors()) {  // STEALTH-HOOK(fingerprint/fonts/font-list)",
-    "+    return StealthUnscaledFontFromDescriptor(aData, aDataLength, aIndex);"
-   ],
-   "notes": "On Linux a recorded font descriptor (path and index) is checked against the bundle, not against the host's fontconfig: the hook hands the descriptor to gfx/2d/StealthFontDescriptorPath.cpp, which accepts only a bundled file and refuses an untrusted index. Mozilla's own lookup below is left untouched and runs only when the bundle does not handle descriptors.",
-   "verifier": {
-    "changed": [],
-    "why": "Written with the hook; four added lines, nothing removed."
-   }
-  },
   {
    "file": "gfx/thebes/CoreTextFontList.cpp",
    "category": "spoof",
@@ -167,26 +137,6 @@
      "notes"
     ],
     "why": "The diff adds one stray blank line outside comments, not two."
-   }
-  },
-  {
-   "file": "widget/gtk/nsLookAndFeel.cpp",
-   "category": "spoof",
-   "feature": "font-list-bundle-only",
-   "prefs": [],
-   "added": 2,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "the include block (StealthFcEmptyConfig.h) and the end of nsLookAndFeel::nsLookAndFeel, the line before FcInit()",
-   "evidence": [
-    "+  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)"
-   ],
-   "notes": "Fontconfig runs on an empty configuration (FcConfigCreate, rescan interval 0, FcConfigSetCurrent; gfx/thebes/StealthFcEmptyConfig.cpp) installed before the FcInit() Mozilla calls here, so the host's /etc/fonts, ~/.config/fontconfig and font directories are never loaded. The same idempotent call sits at the start of the gfxFcPlatformFontList constructor, whichever runs first.",
-   "verifier": {
-    "changed": [],
-    "why": "Written with the hook; two added lines, nothing removed."
    }
   }
  ]

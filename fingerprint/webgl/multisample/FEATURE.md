@@ -21,8 +21,8 @@ draws one and reads the resolved pixel on the Windows CI host, which has no GPU.
 ## Hooks in Mozilla files
 
 - `gfx/gl/GLContext.cpp` (after #include "GLContext.h", after InitFeatures() in GLContext::InitImpl, and after the closing brace of its driver-workaround block, already-hook): The multisample feature as the driver reports it is kept before the workarounds and put back after them when the core declares samples (webgl.msaa-samples > 0, StealthDeclaredMultisample): the declaration decides, not the host renderer.
-- `gfx/gl/gtest/moz.build` (after the UNIFIED_SOURCES list (TestColorspaces.cpp), already-hook): Builds TestStealthGLMultisample.cpp. It also carries the lines of fingerprint/webgl/angle-nv-math (TestStealthAngleAlu.cpp and ANGLE's include directory), tagged with that folder.
-- `gfx/gl/moz.build` (after the SOURCES list (GLScreenBuffer.cpp), already-hook): Builds StealthGLMultisample.cpp. It also carries the line of fingerprint/webgl/angle-nv-math (StealthAngleAlu.cpp), tagged with that folder.
+- `gfx/gl/gtest/moz.build` (after the UNIFIED_SOURCES list (TestColorspaces.cpp), already-hook): Builds TestStealthGLMultisample.cpp.
+- `gfx/gl/moz.build` (after the SOURCES list (GLScreenBuffer.cpp), already-hook): Builds StealthGLMultisample.cpp.
 
 ## Our own files
 

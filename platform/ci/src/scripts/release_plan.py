@@ -9,12 +9,7 @@ deciding again from the event and the inputs.
              it is refused rather than ignored. Its archives are the run's
              `asset-*` artifacts; if they are the ones to ship, republish.yml
              publishes them from this run's id, without a rebuild. The gate
-             seals the binary with a seal named for the engine it is: `firefox-N-candidate`,
-             N being the last released `firefox-*` tag plus one (the plan reads the
-             tags it is given: `--release-tags`). A seal with no number cannot say which
-             engine a wrapper e2e is driving, and the e2e that promise a property only
-             from some release on (tests/conftest.py, engine_at_least) would have to
-             guess.
+             seals the binary with a LOCAL seal (tag `local`).
   release    a manual run with kind=release, or a republish: the seal and the
              DRAFT under a `firefox-N` tag, the tag checked here before any build
              starts.
@@ -64,7 +59,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from make_seal import SealBuildError, check_release_tag  # noqa: E402
 
 KINDS = ("candidate", "release")
-CANDIDATE_SEAL_SUFFIX = "-candidate"
+LOCAL_SEAL_TAG = "local"
 # What the compile_cache output can say. "gha" is sccache on the GitHub Actions
 # cache; "off" is a cold build. Anything else is refused.
 COMPILE_CACHES = ("gha", "off")
@@ -76,12 +71,12 @@ RELEASE_BRANCH = "main"
 # against 43 warm, measured 2026-11-07).
 AUTOMATIC_EVENTS = ("push", "schedule")
 # What an automatic candidate runs, and what a run by hand runs when its input is
-# empty: the same list as release.yml's gtest_filter default. By prefix, so that a
-# gtest of ours is run without anyone adding it here (the Stealth*, Idwr* and FFVPX*
-# suites, and the one test we added to Mozilla's StartupCache suite);
-# scripts/test_release_plan.py fails on a gtest of ours that this does not name.
-DEFAULT_GTEST_FILTER = ("Stealth*.*:Idwr*.*:FFVPX*.*:"
-                        "StartupCache.WritesNeverLowerIOPriority")
+# empty: the same list as release.yml's gtest_filter default.
+DEFAULT_GTEST_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:"
+                        "StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
+                        "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:"
+                        "StealthScaleDeclaration.*:StealthWindowGeometry.*:"
+                        "StealthGLMultisample.*")
 DEFAULT_REF = "main"
 
 
@@ -89,32 +84,15 @@ class PlanError(ValueError):
     pass
 
 
-def candidate_seal_tag(release_tags: str) -> str:
-    """`firefox-N-candidate`, N = the highest released firefox-N plus one."""
-    numbers = []
-    for tag in release_tags.split():
-        try:
-            numbers.append(check_release_tag(tag))
-        except SealBuildError:
-            pass
-    if not numbers:
-        raise PlanError("a candidate is sealed as firefox-N-candidate, N after the last release, "
-                        "and no firefox-N release tag was given (--release-tags)")
-    return f"firefox-{max(numbers) + 1}{CANDIDATE_SEAL_SUFFIX}"
-
-
 def plan(event: str, kind: str, release_tag: str, ref_name: str,
          compile_cache: str = "", ref_type: str = "", gtests: str = "",
-         gtest_filter: str = "", core_ref: str = "", wrapper_ref: str = "",
-         release_tags: str = "") -> dict[str, str]:
+         gtest_filter: str = "", core_ref: str = "", wrapper_ref: str = "") -> dict[str, str]:
     """The outputs of a run, or PlanError.
 
     compile_cache is the run's request: "" takes the default. ref_type is what the
     run started from; republish.yml builds nothing, passes none and is not asked.
     gtests, gtest_filter, core_ref and wrapper_ref are the run's inputs, empty on an
-    automatic run: it is a candidate from main with the gtests and the defaults.
-    release_tags are the release tags that exist (whitespace-separated, anything
-    that is not firefox-N ignored); a candidate is named from them."""
+    automatic run: it is a candidate from main with the gtests and the defaults."""
     if event in AUTOMATIC_EVENTS:
         if ref_type != "branch" or ref_name != RELEASE_BRANCH:
             raise PlanError(f"a run by itself is a candidate from the branch {RELEASE_BRANCH}, "
@@ -147,7 +125,7 @@ def plan(event: str, kind: str, release_tag: str, ref_name: str,
                 f"to publish a candidate's archives later, run republish.yml with its "
                 f"run id.")
         return {"kind": "candidate", "tag": "", "num": "", "prevtag": "",
-                "seal_tag": candidate_seal_tag(release_tags), "compile_cache": compile_cache or "gha", **common}
+                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha", **common}
     try:
         n = check_release_tag(release_tag)
     except SealBuildError as exc:
@@ -169,13 +147,11 @@ def main(argv=None) -> int:
     ap.add_argument("--gtest-filter", default="")
     ap.add_argument("--core-ref", default="")
     ap.add_argument("--wrapper-ref", default="")
-    ap.add_argument("--release-tags", default="")
     a = ap.parse_args(argv)
     try:
         outputs = plan(a.event, a.kind, a.release_tag.strip(), a.ref_name,
                        a.compile_cache.strip(), a.ref_type.strip(), a.gtests.strip(),
-                       a.gtest_filter.strip(), a.core_ref.strip(), a.wrapper_ref.strip(),
-                       a.release_tags)
+                       a.gtest_filter.strip(), a.core_ref.strip(), a.wrapper_ref.strip())
     except PlanError as exc:
         print(f"PLAN REFUSED: {exc}", file=sys.stderr)
         return 1

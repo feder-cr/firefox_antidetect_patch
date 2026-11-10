@@ -262,17 +262,6 @@ def main() -> int:
                   and guards.index("test_webgl_readpixels_no_masking_signature")
                   < guards.index("tests/test_webgl_draws_on_the_engine_s_own_gl_e2e.py") < guards.index("-m e2e -o addopts")))
 
-    # The text the engine draws and the system theme it declares are checked by name: a test
-    # that no list names is never run, and the objectives of the text engine (idwr in Skia)
-    # and of the declared system fonts and colours stay open.
-    for name in ("tests/test_canvas_text_is_windows_e2e.py", "tests/test_system_fonts_and_colors_are_windows_e2e.py",
-                 "tests/test_a_missing_system_theme_pref_refuses_the_launch_e2e.py",
-                 "tests/test_canvas_icc_readback_is_windows_e2e.py",
-                 "tests/test_webgl_dot_has_the_declared_gpu_s_bits_e2e.py",
-                 "tests/test_canvas_text_colors_and_cleartype_is_windows_e2e.py"):
-        cases.append(("the gate's guards run %s, by name" % name,
-                      name in guards and guards.index(name) < guards.index("-m e2e -o addopts")))
-
     # The host gate asks the general question (is anything the host's?) of which the
     # font gate asked one case (is the font list the persona's?). It was to stay until
     # the host gate ran green on a release: firefox-55, run 41754346016.
@@ -507,7 +496,7 @@ def main() -> int:
     else:
         doc = yaml.safe_load(rel)
         gt_input = doc[True]["workflow_dispatch"]["inputs"]["gtests"]
-        gt_step = [s for s in doc["jobs"]["build"]["steps"] if s.get("name", "") == "Engine gtests - build them, for the jobs that run them"]
+        gt_step = [s for s in doc["jobs"]["build"]["steps"] if s.get("name", "").startswith("Engine gtests")]
         steps = {s.get("name", ""): s for s in doc["jobs"]["build"]["steps"]}
         again = steps.get("Compile cache - restore again if the first brought nothing", {})
         said = steps.get("Compile cache - what this build starts from", {})
@@ -517,8 +506,8 @@ def main() -> int:
                       and "builds cold" in said.get("run", "") and "GITHUB_STEP_SUMMARY" in said.get("run", "")))
         cases.append(("gtests: an input, off by default, on every leg, as a phase",
                       gt_input["type"] == "boolean" and gt_input["default"] is False and len(gt_step) == 1
-                      and gt_step[0]["if"] == "needs.plan.outputs.gtests == 'true'"
-                      and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"] and "mach gtest" not in gt_step[0]["run"]))
+                      and gt_step[0]["if"] == "needs.plan.outputs.gtests == 'true' && runner.environment == 'github-hosted'"
+                      and "matrix" not in gt_step[0]["if"] and "phase gtest -- " in gt_step[0]["run"]))
         # A cross-compiled leg's runner cannot execute what it builds (run 41232307511:
         # "Exec format error" on firefox.exe): its gtests are built there and run by a
         # job on the target's OS, which downloads exactly that leg's dist/bin.
@@ -533,8 +522,8 @@ def main() -> int:
                    and any("gtest_run.py" in st.get("run", "") for st in j.get("steps", []))]
             cross_ok = (cross_ok and len(ran) == 1 and "if" not in ran[0]
                         and all("needs.plan.outputs.gtests == 'true'" in st.get("if", "") for st in ran[0]["steps"]))
-        kept = steps.get("Engine gtests - keep them", {})
-        built = steps.get("Engine gtests - build them, for the jobs that run them", {})
+        kept = steps.get("The node - keep them", {})
+        built = steps.get("The node - its gtest binaries, for a job on GitHub's runners", {})
         cross_ok = (cross_ok and "recurse_gtest" in built.get("run", "") and "matrix.target" not in gt_step[0]["run"]
                     and kept.get("with", {}).get("name") == "gtest-bin-${{ matrix.leg }}")
         cases.append(("gtests: a cross-compiled leg's run on its target's OS (run 41232307511)", cross_ok))

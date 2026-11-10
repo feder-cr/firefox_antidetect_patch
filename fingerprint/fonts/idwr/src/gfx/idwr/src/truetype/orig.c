@@ -32,9 +32,7 @@ typedef struct {
 #include "orig_ports.h"
 
 #define MAX_NATIVE 256
-#if !defined(IDWR_STATIC) || defined(IDWR_TESTING)
 static uint32_t g_native_hits[MAX_NATIVE];
-#endif
 
 static void *find_port(uint32_t rva) {
     size_t lo = 0, hi = IDWR_PORT_COUNT;
@@ -63,13 +61,11 @@ void *idwr_orig(uint32_t rva) {
 }
 
 /* how many times idwr_orig returned the native helper for `rva` */
-#if !defined(IDWR_STATIC) || defined(IDWR_TESTING)
 TT_EXPORT uint32_t idwr_orig_native_hits(uint32_t rva) {
     for (int i = 0; idwr_native_table[i].fn && i < MAX_NATIVE; i++)
         if (idwr_native_table[i].rva == rva) return g_native_hits[i];
     return 0;
 }
-#endif
 
 /* 1 when idwr_orig resolves `rva` without aborting (port, native helper or tt_fn_map) */
 TT_EXPORT int idwr_orig_resolves(uint32_t rva) {

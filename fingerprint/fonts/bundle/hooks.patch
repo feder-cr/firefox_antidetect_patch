@@ -22,26 +22,10 @@ index 04bd23515eb4505cee3d9752db6388c4961ec315..401b25b57af4c88827e111bf3042084d
  #endif
  @RESPATH@/hyphenation/*
 diff --git a/gfx/2d/ScaledFontDWrite.cpp b/gfx/2d/ScaledFontDWrite.cpp
-index 9c934ea5e7593b4595c79d27fafdb6f404699798..268084f381dc103cf96d38a6dc461ea97c47b4a8 100644
+index 9c934ea5e7593b4595c79d27fafdb6f404699798..764fbd0dbbcc60863388858018167fc138bda942 100644
 --- a/gfx/2d/ScaledFontDWrite.cpp
 +++ b/gfx/2d/ScaledFontDWrite.cpp
-@@ -10,6 +10,7 @@
- #include "Logging.h"
- #include "PathSkia.h"
- #include "StackArray.h"
-+#include "StealthSkiaIdwr.h"  // STEALTH-HOOK(fingerprint/fonts/idwr)
- #include "UnscaledFontDWrite.h"
- #include "cairo-dwrite.h"
- #include "dwrite_3.h"
-@@ -89,6 +90,7 @@ ScaledFontDWrite::ScaledFontDWrite(IDWriteFontFace* aFontFace,
- }
- 
- SkTypeface* ScaledFontDWrite::CreateSkTypeface() {
-+  if (StealthIdwrAAModeDeclared()) return StealthIdwrSkTypeface(this);  // STEALTH-HOOK(fingerprint/fonts/idwr) null: refused, never DirectWrite
-   RefPtr<IDWriteFactory> factory = Factory::GetDWriteFactory();
-   if (!factory) {
-     return nullptr;
-@@ -272,6 +274,14 @@ bool UnscaledFontDWrite::GetFontDescriptor(FontDescriptorOutput aCb,
+@@ -272,6 +272,14 @@ bool UnscaledFontDWrite::GetFontDescriptor(FontDescriptorOutput aCb,
                                             void* aBaton) {
    MOZ_ASSERT(NS_IsMainThread());
  
@@ -283,45 +267,18 @@ index ea64ad7a4cb46338a14d8df4312a603840174b5f..e0e8c9fea85ad493bf63fa00d59232c6
    // create a new name table and build a new font with that name table
    // appended on the end, returns true on success
 diff --git a/gfx/thebes/gfxPlatformGtk.cpp b/gfx/thebes/gfxPlatformGtk.cpp
-index de866d03d3a2be630a2bdab1e83963bf3740779c..8ccff119a33faee0dd2dbd8bbd84873011622b42 100644
+index de866d03d3a2be630a2bdab1e83963bf3740779c..343339268c3b90a9af904f305767acc1658e1c29 100644
 --- a/gfx/thebes/gfxPlatformGtk.cpp
 +++ b/gfx/thebes/gfxPlatformGtk.cpp
-@@ -11,6 +11,10 @@
+@@ -11,6 +11,7 @@
  #include <gtk/gtk.h>
  
  #include "GLContextProvider.h"
-+#include "../gl/StealthOwnGL.h"  // STEALTH-HOOK(fingerprint/webgl/own-gl)
 +#include "StealthBundleFontList.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
-+#include "StealthColorProfile.h"  // STEALTH-HOOK(fingerprint/canvas/color-profile)
-+#include "StealthIdwrTextVars.h"  // STEALTH-HOOK(fingerprint/fonts/idwr)
  #include "VsyncSource.h"
  #include "base/message_loop.h"
  #include "base/task.h"
-@@ -110,12 +114,15 @@ gfxPlatformGtk::gfxPlatformGtk() {
-     if (IsWaylandDisplay() || gfxConfig::IsEnabled(Feature::X11_EGL)) {
-       gfxVars::SetUseEGL(true);
-     }
-+    gl::StealthOwnGLForceEGL();  // STEALTH-HOOK(fingerprint/webgl/own-gl)
-     InitDmabufConfig();
-     if (gfxConfig::IsEnabled(Feature::DMABUF)) {
-       gfxVars::SetUseDMABuf(true);
-     }
-   }
- 
-+  mozilla::gfx::StealthIdwrUpdateTextVars();  // STEALTH-HOOK(fingerprint/fonts/idwr)
-+
-   InitBackendPrefs(GetBackendPrefs());
- 
-   gPlatformFTLibrary = Factory::NewFTLibrary();
-@@ -185,6 +192,7 @@ void gfxPlatformGtk::InitX11EGLConfig() {
- void gfxPlatformGtk::InitDmabufConfig() {
-   FeatureState& feature = gfxConfig::GetFeature(Feature::DMABUF);
-   feature.EnableByDefault();
-+  gl::StealthOwnGLNoHostDMABuf(feature, FeatureStatus::Unavailable);  // STEALTH-HOOK(fingerprint/webgl/own-gl)
- 
-   nsCString failureId;
-   int32_t status;
-@@ -428,6 +436,8 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
+@@ -428,6 +429,8 @@ static const char kFontNotoSansSymbols2[] = "Noto Sans Symbols2";
  void gfxPlatformGtk::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
                                              FontPresentation aPresentation,
                                              nsTArray<const char*>& aFontList) {
@@ -330,30 +287,6 @@ index de866d03d3a2be630a2bdab1e83963bf3740779c..8ccff119a33faee0dd2dbd8bbd848730
    if (PrefersColor(aPresentation)) {
      aFontList.AppendElement(kFontTwemojiMozilla);
    }
-@@ -517,6 +527,7 @@ static nsTArray<uint8_t> GetDisplayICCProfile(Display* dpy, Window& root) {
- }
- 
- nsTArray<uint8_t> gfxPlatformGtk::GetPlatformCMSOutputProfileData() {
-+  if (auto declared = mozilla::gfx::StealthDeclaredColorProfileData()) return declared.extract();  // STEALTH-HOOK(fingerprint/canvas/color-profile)
-   nsTArray<uint8_t> prefProfileData = GetPrefCMSOutputProfileData();
-   if (!prefProfileData.IsEmpty()) {
-     return prefProfileData;
-@@ -628,6 +639,7 @@ nsTArray<uint8_t> gfxPlatformGtk::GetPlatformCMSOutputProfileData() {
- #else  // defined(MOZ_X11)
- 
- nsTArray<uint8_t> gfxPlatformGtk::GetPlatformCMSOutputProfileData() {
-+  if (auto declared = mozilla::gfx::StealthDeclaredColorProfileData()) return declared.extract();  // STEALTH-HOOK(fingerprint/canvas/color-profile)
-   return nsTArray<uint8_t>();
- }
- 
-@@ -955,6 +967,7 @@ gfxPlatformGtk::CreateGlobalHardwareVsyncSource() {
-   nsString adapterDriverVendor;
-   gfxInfo->GetAdapterDriverVendor(adapterDriverVendor);
-   bool isMesa = adapterDriverVendor.Find(u"mesa") != -1;
-+  gl::StealthOwnGLNoHostGLXVsync(isMesa);  // STEALTH-HOOK(fingerprint/webgl/own-gl)
- 
-   // Only use GLX vsync when the OpenGL compositor / WebRender is being used.
-   // The extra cost of initializing a GLX context while blocking the main thread
 diff --git a/gfx/thebes/gfxTextRun.cpp b/gfx/thebes/gfxTextRun.cpp
 index 121abbea9808dd46cbbcd67f5783f645a0db4fbb..cb41535c08833514d48c21aa712d986eb86d99a8 100644
 --- a/gfx/thebes/gfxTextRun.cpp
@@ -371,97 +304,17 @@ index 121abbea9808dd46cbbcd67f5783f645a0db4fbb..cb41535c08833514d48c21aa712d986e
      return nullptr;
    }
 diff --git a/gfx/thebes/moz.build b/gfx/thebes/moz.build
-index ab172d9588a03526bb904289ee451ab652dbfdaa..6847bcc7511f62b1e0a185d3e2d86835118dbd9a 100644
+index ab172d9588a03526bb904289ee451ab652dbfdaa..f07fd5d96ae22e8d27a2acf8880881d7f5daf957 100644
 --- a/gfx/thebes/moz.build
 +++ b/gfx/thebes/moz.build
-@@ -243,6 +243,14 @@ USE_LIBS += [
+@@ -243,6 +243,10 @@ USE_LIBS += [
  ]
  
  include("/ipc/chromium/chromium-config.mozbuild")
 +include("StealthDeclarationGate.mozbuild")  # STEALTH-HOOK(platform/declaration-gate)
 +include("StealthBundleFontList.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/bundle)
 +include("StealthFcFontList.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/font-list)
-+include("StealthFcEmptyConfig.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/font-list)
 +include("StealthDesignMetrics.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/metrics)
-+include("StealthIdwrTextVars.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/idwr)
-+include("StealthColorProfile.mozbuild")  # STEALTH-HOOK(fingerprint/canvas/color-profile)
-+include("StealthSyntheticBold.mozbuild")  # STEALTH-HOOK(fingerprint/fonts/synthetic-bold)
  
  FINAL_LIBRARY = "xul"
  
-diff --git a/toolkit/xre/nsXREDirProvider.cpp b/toolkit/xre/nsXREDirProvider.cpp
-index 2f4f5aab15d14289fdbb62eb4c73abd27fab6302..2aae59c0ec9726772ae5d70ee8cc50241631d8f5 100644
---- a/toolkit/xre/nsXREDirProvider.cpp
-+++ b/toolkit/xre/nsXREDirProvider.cpp
-@@ -4,6 +4,7 @@
- 
- #include "nsAppRunner.h"
- #include "nsXREDirProvider.h"
-+#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
- #ifndef ANDROID
- #  include "commonupdatedir.h"
- #endif
-@@ -599,6 +600,7 @@ nsXREDirProvider::GetDirectory(nsIFile** aResult) {
- void nsXREDirProvider::InitializeUserPrefs() {
-   if (!mPrefsInitialized) {
-     mozilla::Preferences::InitializeUserPrefs();
-+    mozilla::widget::StealthSystemThemeAfterUserPrefs();  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   }
- }
- 
-diff --git a/widget/headless/HeadlessLookAndFeelGTK.cpp b/widget/headless/HeadlessLookAndFeelGTK.cpp
-index d6e94f053c22d9ed5df36b1c20cd408c2605bdc5..85ef62d131774b22a96be1a73d7f87c595b9cec7 100644
---- a/widget/headless/HeadlessLookAndFeelGTK.cpp
-+++ b/widget/headless/HeadlessLookAndFeelGTK.cpp
-@@ -3,6 +3,7 @@
-  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
- #include "HeadlessLookAndFeel.h"
-+#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
- #include "nsStyleConsts.h"
- 
- namespace mozilla::widget {
-@@ -15,6 +16,7 @@ HeadlessLookAndFeel::~HeadlessLookAndFeel() = default;
- 
- nsresult HeadlessLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
-                                              nscolor& aResult) {
-+  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   aResult = GetStandinForNativeColor(aID, aScheme);
-   return NS_OK;
- }
-@@ -193,6 +195,7 @@ nsresult HeadlessLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
- 
- bool HeadlessLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
-                                         gfxFontStyle& aFontStyle) {
-+  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   // Default to san-serif for everything.
-   aFontStyle.style = FontSlantStyle::NORMAL;
-   aFontStyle.weight = FontWeight::NORMAL;
-diff --git a/widget/nsXPLookAndFeel.cpp b/widget/nsXPLookAndFeel.cpp
-index 25411602badd91fc2bc4519bd181fd804645c536..0c4b9875bb59d3fb81a621c0bd50f5e3d97de56b 100644
---- a/widget/nsXPLookAndFeel.cpp
-+++ b/widget/nsXPLookAndFeel.cpp
-@@ -8,6 +8,7 @@
- 
- #include "HeadlessLookAndFeel.h"
- #include "RemoteLookAndFeel.h"
-+#include "StealthSystemFonts.h"  // STEALTH-HOOK(fingerprint/fonts/bundle)
- #include "SurfaceCacheUtils.h"
- #include "Theme.h"
- #include "gfxFont.h"
-@@ -376,6 +377,7 @@ nsXPLookAndFeel* nsXPLookAndFeel::GetInstance() {
- }
- 
- void nsXPLookAndFeel::FillStores(nsXPLookAndFeel* aInst) {
-+  widget::StealthSystemThemeFillStores();  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-   for (IntID id : MakeEnumeratedRange(IntID(0), IntID::End)) {
-     int32_t value = 0;
-@@ -1008,6 +1010,7 @@ nsresult nsXPLookAndFeel::GetColorValue(ColorID aID, ColorScheme aScheme,
- Maybe<nscolor> nsXPLookAndFeel::GetUncachedColor(ColorID aID,
-                                                  ColorScheme aScheme,
-                                                  UseStandins aUseStandins) {
-+  if (auto dark = widget::StealthDarkSystemColor(aID, aScheme)) return dark;  // STEALTH-HOOK(fingerprint/fonts/bundle)
-   if (aUseStandins == UseStandins::Yes) {
-     return Some(GetStandinForNativeColor(aID, aScheme));
-   }

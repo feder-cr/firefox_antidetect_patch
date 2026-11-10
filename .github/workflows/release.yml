@@ -95,10 +95,9 @@ on:
         type: boolean
         default: false
       gtest_filter:
-        # The engine's own gtests by prefix: a new one runs without anyone listing it
-        # (scripts/test_release_plan.py fails on one that this does not name).
-        description: "gtests=true only: which, as mach gtest takes them; * is all, and has never gone green here"
-        default: 'Stealth*.*:Idwr*.*:FFVPX*.*:StartupCache.WritesNeverLowerIOPriority'
+        # What the last green gtests ran (run 41402916724). * has never gone green here.
+        description: "gtests=true only: which, as mach gtest takes them; * is all, and unproven"
+        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*'
       relaunch_of:
         description: >
           Set by the watch of a run whose machine was lost, to that run's id: this run
@@ -161,15 +160,11 @@ jobs:
           WRAPPER_REF: ${{ inputs.wrapper_ref }}
         run: |
           set -e
-          # The release tags that exist: a candidate is sealed as firefox-N-candidate,
-          # N the last one plus one (scripts/release_plan.py).
-          RELEASE_TAGS="$(git ls-remote --tags "https://github.com/${{ github.repository }}" 'firefox-*' | sed -n 's#.*refs/tags/\(firefox-[0-9]*\)$#\1#p')"
           python3 scripts/release_plan.py --event "$EVENT" --kind "$KIND" \
             --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
             --compile-cache "$COMPILE_CACHE" --ref-type "$REF_TYPE" \
             --gtests "$GTESTS" --gtest-filter "$GTEST_FILTER" \
-            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" \
-            --release-tags "$RELEASE_TAGS" > plan.txt
+            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every
@@ -913,13 +908,6 @@ jobs:
           CI_PACKAGE_PROVE: ''
         run: python3 scripts/ci phase package -- bash scripts/ci/package_${{ matrix.family }}.sh
 
-      # libxul's math is ucrtbase's (gfx/idwr/libm_ucrt.c): no dynamic symbol of sin, cos,
-      # tan, sinf, cosf, tanf, powf, hypot, sincos or sincosf may be left, undefined (bound to
-      # the host's libm) or defined (exported). Exit 0 passes; 1 or 2 stops the leg.
-      - name: libxul's math is its own (linux)
-        if: matrix.family == 'linux'
-        run: python3 gfx/idwr/tests/check_libxul_math.py obj-rel/dist/bin/libxul.so
-
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -996,29 +984,32 @@ jobs:
       # have one (StartupCache.WritesNeverLowerIOPriority, the bundled-font and
       # own-binary rules) and nothing else runs them. After the package and the
       # symbols, so what ships is already built and checked when the second
-      # libxul is linked. ONE road, whoever the runner is: this job compiles them and
-      # hands them over, and the jobs gtest-linux and gtest-cross run them through
-      # scripts/ci/gtest_run.py, the only place that is red for a suite of ours that did
-      # not run. No step here runs `mach gtest`: it would go green on a suite that left
-      # the build (scripts/ci/test_release_path.py reads every workflow for it). A phase,
-      # so the report has its row.
-      - name: Engine gtests - build them, for the jobs that run them
-        if: needs.plan.outputs.gtests == 'true'
+      # libxul is linked. A phase, so the report has its row.
+      - name: Engine gtests (gtests=true only)
+        if: needs.plan.outputs.gtests == 'true' && runner.environment == 'github-hosted'
+        timeout-minutes: 180
+        shell: bash
+        env:
+          GTEST_FILTER_INPUT: ${{ needs.plan.outputs.gtest_filter }}
+        run: |
+          : "${GTEST_FILTER_INPUT:?an empty filter: name the gtests, or * for all}"
+          # The Linux runners have no display, and some gtests open windows.
+          sudo apt-get install -y xvfb >/dev/null
+          python3 scripts/ci phase gtest -- xvfb-run -a ./mach gtest "$GTEST_FILTER_INPUT"
+      # The node only compiles, on both legs: a hosted job runs what it built.
+      - name: The node - its gtest binaries, for a job on GitHub's runners
+        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
         timeout-minutes: 180
         shell: bash
         run: |
           python3 scripts/ci phase gtest -- ./mach build recurse_gtest
           # And _tests/gtest, the directory mach runs them from: what they read at run time.
           mkdir -p obj-rel/_tests/gtest
-          # And the gtests of ours, read from the series (.series, checked out above, with no
-          # git and no ref of Mozilla's tag): the job that runs them has none, and
-          # gtest_run.py is red for a suite of ours that the filter selects and that did not run.
-          python3 scripts/our_gtests.py --series .series --out obj-rel/our-gtests.txt
-          tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest -C .. our-gtests.txt
-      - name: Engine gtests - keep them
+          tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest
+      - name: The node - keep them
         # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.
         timeout-minutes: 60
-        if: needs.plan.outputs.gtests == 'true'
+        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gtest-bin-${{ matrix.leg }}

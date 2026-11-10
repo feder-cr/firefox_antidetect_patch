@@ -44,26 +44,6 @@
   }
  },
  {
-  "file": "Cargo.lock",
-  "category": "backport",
-  "feature": "webgpu-external-texture-vulkan",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "hard",
-  "anchor": "the naga-types package's dependencies",
-  "evidence": [
-   "+ \"bytemuck\","
-  ],
-  "notes": "naga-types depends on bytemuck from upstream wgpu 66e992c3a (ExternalTextureTransferFunction moved there); the lock says what the vendored Cargo.toml says.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the backport, 2026-11-01."
-  }
- },
- {
   "file": "README.md",
   "category": "other",
   "feature": "readme-fork-disclosure",
@@ -208,31 +188,6 @@
     "notes"
    ],
    "why": "Recounted logic lines (14); resolved the open question about nsWindowsWMain.cpp."
-  }
- },
- {
-  "file": "browser/branding/unofficial/pref/firefox-branding.js",
-  "category": "stillborn",
-  "feature": "updater-refuses",
-  "prefs": [
-   "app.update.interval",
-   "app.update.promptWaitTime",
-   "app.update.url.manual",
-   "app.update.url.details",
-   "app.update.checkInstallTime.days",
-   "app.update.badgeWaitTime"
-  ],
-  "added": 0,
-  "removed": 0,
-  "hunks": 0,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "app.update.interval, promptWaitTime, url.manual, url.details, checkInstallTime.days, badgeWaitTime lines",
-  "evidence": [],
-  "notes": "The unofficial branding we build with carries Nightly-like update timings; each line holds the official branding's release value, so the update check runs on the retail's cadence (no extra check at startup for a build older than 2 days).",
-  "verifier": {
-   "changed": [],
-   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
   }
  },
  {
@@ -1060,69 +1015,6 @@
   }
  },
  {
-  "file": "dom/canvas/WebGLContextExtensions.cpp",
-  "category": "spoof",
-  "feature": "webgl-parameters",
-  "prefs": [
-   "zoom.stealth.webgl.extensions",
-   "zoom.stealth.webgl2.extensions"
-  ],
-  "added": 3,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "WebGLContext::IsExtensionSupported, case WEBGL_provoking_vertex (ahead of Mozilla's per-platform policy)",
-  "evidence": [
-   "+      if (StealthWebGLExtensionVerdict(IsWebGL2(), ext) == Some(true)) return true;"
-  ],
-  "notes": "The host serves an extension the persona declares wherever its GL has it, ahead of Mozilla's policy (ANGLE or macOS only). The page is told the persona's list on the client side; a declared extension the host refused tripped the assert in ProvokingVertex and took the main process down on Linux (2026-11-07).",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-07."
-  }
- },
- {
-  "file": "dom/canvas/WebGLContextFramebufferOperations.cpp",
-  "category": "spoof",
-  "feature": "webgl-parameters",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "WebGLContext::ColorMask (indexed, OES_draw_buffers_indexed)",
-  "evidence": [
-   "+    if (!IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed)) return;"
-  ],
-  "notes": "An entry point whose extension the host never enabled returns before Mozilla's MOZ_RELEASE_ASSERT, which stays. The persona's list declares extensions the host may refuse by platform policy; until firefox-56 one call from the page aborted the host process (Linux: the main process). Read with symbols 2026-11-07.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-07."
-  }
- },
- {
-  "file": "dom/canvas/WebGLContextGL.cpp",
-  "category": "spoof",
-  "feature": "webgl-parameters",
-  "prefs": [],
-  "added": 10,
-  "removed": 0,
-  "hunks": 5,
-  "inline_logic_lines": 5,
-  "hookable": "already-hook",
-  "anchor": "WebGLContext::BlendEquationSeparate / BlendFuncSeparate (indexed), PolygonOffsetClampEXT, ProvokingVertex, ClipControlEXT",
-  "evidence": [
-   "+  if (!IsExtensionEnabled(WebGLExtensionID::WEBGL_provoking_vertex)) return;"
-  ],
-  "notes": "An entry point whose extension the host never enabled returns before Mozilla's MOZ_RELEASE_ASSERT, which stays. The persona's list declares extensions the host may refuse by platform policy; until firefox-56 one call from the page aborted the host process (Linux: the main process). Read with symbols 2026-11-07.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-07."
-  }
- },
- {
   "file": "dom/canvas/WebGLContextValidate.cpp",
   "category": "spoof",
   "feature": "webgl-parameters",
@@ -1318,26 +1210,6 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff and source; no correction needed."
-  }
- },
- {
-  "file": "dom/events/test/gtest/moz.build",
-  "category": "spoof",
-  "feature": "window-geometry",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the UNIFIED_SOURCES list (TestShortcutKeyDefinitions.cpp)",
-  "evidence": [
-   "+UNIFIED_SOURCES += [\"TestStealthWindowGeometry.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
-  ],
-  "notes": "Builds TestStealthWindowGeometry.cpp, the declared content origin in and out of fullscreen.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
@@ -1550,16 +1422,14 @@
   "category": "build",
   "feature": "audio-fingerprint-noise",
   "prefs": [],
-  "added": 3,
+  "added": 1,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "UNIFIED_SOURCES (TestStealthAudioNoise.cpp, TestStealthMediaDeclaration.cpp, TestStealthWebCodecsSoftwareDecode.cpp, alphabetical)",
-  "evidence": [
-   "+UNIFIED_SOURCES += [\"TestStealthWebCodecsSoftwareDecode.cpp\"]  # STEALTH-HOOK(fingerprint/media/decode-samples)"
-  ],
-  "notes": "Three lines registering our own gtest files in the build, one per feature (audio noise, media decode declaration, WebCodecs software-only decode); one record per file, so the file stays here.",
+  "anchor": "UNIFIED_SOURCES (TestStealthAudioNoise.cpp, alphabetical)",
+  "evidence": [],
+  "notes": "One line registering our own file in the build.",
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move of fingerprint/audio/noise."
@@ -1632,70 +1502,6 @@
     "notes"
    ],
    "why": "EME-override claim checked: the hook returns at PDMFactory.cpp:487-497 before mEMEPDM->Supports at :500, so confirmed; intent still unverified."
-  }
- },
- {
-  "file": "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.cpp",
-  "category": "port-fix",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 31,
-  "removed": 1,
-  "hunks": 4,
-  "inline_logic_lines": 0,
-  "hookable": "hard",
-  "anchor": "FFmpegVideoDecoder<LIBAV_VER>::DoDecode / the software CreateImage() call",
-  "evidence": [
-   "+      mPendingFrameTimes.AppendElement(",
-   "+      int64_t pts = GetFramePts(mFrame);"
-  ],
-  "notes": "ff_h264_decoder has no FF_CODEC_CAP_SETS_FRAME_PROPS, so ffmpeg's generic layer (media/ffvpx/libavcodec/decode.c) stamps every frame it returns with the pts/pkt_dts/best_effort_timestamp of the MOST RECENTLY SENT packet, not the packet that produced that image; confirmed with a real build (MOZ_LOG) and confirmed identical on retail Firefox 159.0 Linux with the distro's own libavcodec.so.59, so this is a Mozilla-wrapper-level gap, not specific to our ffvpx. Pushes the real (time, duration) of every sample before avcodec_send_packet, pops the smallest pending time (not the oldest sent one: B-frame pts is not monotonic in send order) for the frame CreateImage() actually receives, instead of trusting GetFramePts(mFrame)/Duration(mFrame). Software CreateImage() path only.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "dom/media/platforms/ffmpeg/FFmpegVideoDecoder.h",
-  "category": "port-fix",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 25,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "hard",
-  "anchor": "FFmpegVideoDecoder<LIBAV_VER>::DoDecode / the software CreateImage() call",
-  "evidence": [
-   "+  struct PendingFrameTime {",
-   "+  nsTArray<PendingFrameTime> mPendingFrameTimes;"
-  ],
-  "notes": "Declares mPendingFrameTimes (the pending (time, duration) queue the .cpp pushes/pops) and documents why none of ffmpeg's own pts/dts/opaque/best_effort_timestamp fields can be trusted for this decoder, with the evidence (real build + retail Linux comparison) cited in the comment.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "dom/media/platforms/wmf/WMFDecoderModule.cpp",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 5,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "WMFDecoderModule::Supports, right after CanCreateMFTDecoder(type) succeeds",
-  "evidence": [
-   "+#include \"StealthWmfCodecGate.h\"  // STEALTH-HOOK(fingerprint/media/decode-samples)",
-   "+    if (StealthWmfRefusesCodec(type)) {",
-   "+      return media::DecodeSupportSet{};"
-  ],
-  "notes": "A single hook point, one line, decides for both the video and audio branches: StealthWmfRefusesCodec (StealthWmfCodecGate.h, a file of ours) says whether the stealth engine is on and, if so, whether aType is audio (always refused, so AAC) or H.264/HEVC (refused; VP8/VP9/AV1 untouched). The host's own Media Foundation (msauddecmft.dll, the H.264/HEVC MFTs) varies by Windows build and GPU driver, and PDMFactory tries WMF before ffvpx in CreateDefaultPDMs/CreateContentPDMs, so without this hook these codecs would decode through whatever Media Foundation the real machine has installed instead of the ffvpx port. Feeds plain <video> (readable via drawImage) and WebCodecs alike; WebCodecs' own HEVC rejection on Windows (WebCodecsUtils::IsSupportedVideoCodec) is untouched.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
   }
  },
  {
@@ -1820,72 +1626,6 @@
   }
  },
  {
-  "file": "dom/media/webcodecs/DecoderTemplate.cpp",
-  "category": "port-fix",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 12,
-  "removed": 2,
-  "hunks": 3,
-  "inline_logic_lines": 0,
-  "hookable": "hard",
-  "anchor": "DecoderTemplate<DecoderType>::ProcessConfigureMessage, the preferSW computation",
-  "evidence": [
-   "+bool ShouldPreferSoftwareDecoder(HardwareAcceleration aPref) {",
-   "+  if (mozilla::gfx::StealthEngineActive()) {",
-   "+    return true;",
-   "+  }"
-  ],
-  "notes": "ProcessConfigureMessage's preferSW now comes from ShouldPreferSoftwareDecoder (declared in DecoderTemplate.h) instead of reading mActiveConfig->mHardwareAcceleration inline: with the engine declared it always returns true, so WebCodecs decode never takes the D3D11/DXVA hardware path, whatever the page's VideoDecoderConfig.hardwareAcceleration asks for. REA (invisible_WebCodecs/notes/nv12-rgb-conversion.md) found that path's NV12->RGB conversion for copyTo() runs on the GPU (ID3D11VideoContext::VideoProcessorBlt, driver-dependent) -- a host dependency. With the engine off, behaves exactly as before (follows the page's own preference).",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "dom/media/webcodecs/DecoderTemplate.h",
-  "category": "port-fix",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 12,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "hard",
-  "anchor": "DecoderTemplate<DecoderType>::ProcessConfigureMessage, the preferSW computation",
-  "evidence": [
-   "+bool ShouldPreferSoftwareDecoder(HardwareAcceleration aPref);"
-  ],
-  "notes": "Declares ShouldPreferSoftwareDecoder and documents why (the host-dependent hardware NV12->RGB conversion found by REA), with a forward declaration of enum class HardwareAcceleration so the header doesn't need the full WebCodecs IDL binding.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "dom/media/webrtc/jsapi/DefaultCodecPreferences.cpp",
-  "category": "spoof",
-  "feature": "media-decode-declaration",
-  "prefs": [
-   "zoom.stealth.media.decode_support",
-   "zoom.stealth.media.encode_support"
-  ],
-  "added": 3,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "the heads of SoftwareH264EnabledStatic and SendingH264PacketizationModeZeroSupportedStatic",
-  "evidence": [
-   "+  if (auto d = StealthDeclaredSoftwareH264()) return *d;  // STEALTH-HOOK(fingerprint/media/decode-declaration)"
-  ],
-  "notes": "When both declared tables name video/avc, the H.264 WebRTC gate answers from the declaration (sw flag): the OpenH264 plugin and the GPU blocklist no longer decide. Otherwise Mozilla's logic runs.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
-  }
- },
- {
   "file": "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp",
   "category": "spoof",
   "feature": "webrtc-ice-candidates",
@@ -1927,29 +1667,6 @@
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "dom/media/webrtc/libwebrtcglue/WebrtcVideoCodecFactory.cpp",
-  "category": "spoof",
-  "feature": "media-decode-declaration",
-  "prefs": [
-   "zoom.stealth.media.decode_support",
-   "zoom.stealth.media.encode_support"
-  ],
-  "added": 3,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "the head of WebrtcVideoEncoderFactory::SupportsCodec",
-  "evidence": [
-   "+  if (auto declared = StealthDeclaredWebrtcEncodeSupport(aConfig)) return declared;"
-  ],
-  "notes": "A declared codec answers the encode support set from zoom.stealth.media.encode_support instead of the plugin or the host's encoders; an undeclared one runs Mozilla's code.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
@@ -2396,28 +2113,6 @@
   }
  },
  {
-  "file": "dom/webgpu/Adapter.cpp",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "zoom.stealth.webgpu.adapter",
-   "zoom.stealth.webgpu.features",
-   "zoom.stealth.webgpu.limits"
-  ],
-  "added": 11,
-  "removed": 0,
-  "hunks": 5,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "includes; AdapterInfo::IsFallbackAdapter; a forward declaration of ToJsKey; Adapter::Adapter after the feature loop; Adapter::RequestDevice before wgpu_client_request_device",
-  "evidence": [
-   "+  if (const auto declared = StealthWebGPUDeclaredIsFallback(mParent.get())) {",
-   "+  StealthWebGPUDeclareAdapter(this, aParent, aInfo->id, mFeatures,",
-   "+    StealthWebGPUClampToReal(ffiDesc, *mInfoInner, ToJsKey);"
-  ],
-  "notes": "Calls only: the declared features, limits and fallback answer, and the clamp of what is sent to wgpu, all in dom/webgpu/StealthWebGPUDeclaration.cpp. ToJsKey is Adapter.cpp's own static; it is forward-declared so the declaration is keyed by the names the page reads."
- },
- {
   "file": "dom/webgpu/CanvasContext.cpp",
   "category": "spoof",
   "feature": "canvas-noise-projection",
@@ -2438,70 +2133,6 @@
    ],
    "why": "Resolved the include question: the file already uses CanvasUtils:: at line 340 in Mozilla code, so the header is already reachable."
   }
- },
- {
-  "file": "dom/webgpu/Instance.cpp",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "zoom.stealth.webgpu.adapter",
-   "zoom.stealth.webgpu.features",
-   "zoom.stealth.webgpu.limits"
-  ],
-  "added": 7,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "includes; Instance::RequestAdapter before and after wgpu_client_request_adapter",
-  "evidence": [
-   "+  if (StealthWebGPUNoAdapter()) {",
-   "+  StealthWebGPUNoteRequest(this, adapter_id, aOptions.mForceFallbackAdapter);"
-  ],
-  "notes": "A declared GPU without Direct3D 12 resolves requestAdapter with null; otherwise the request notes forceFallbackAdapter for the adapter's isFallbackAdapter."
- },
- {
-  "file": "dom/webgpu/ipc/WebGPUParent.cpp",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "zoom.stealth.fpp.hw_seed"
-  ],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "top of wgpu_parent_get_compositor_device_luid",
-  "evidence": [
-   "+  *aOutLuid = {};  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
-  ],
-  "notes": "The LUID out parameter is zeroed before Mozilla's code fills it: a missing compositor device reads as no match, not uninitialised memory.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
-  }
- },
- {
-  "file": "dom/webgpu/moz.build",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "zoom.stealth.webgpu.adapter",
-   "zoom.stealth.webgpu.features",
-   "zoom.stealth.webgpu.limits"
-  ],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after UNIFIED_SOURCES of h_and_cpp",
-  "evidence": [
-   "+EXPORTS.mozilla.webgpu += [\"StealthWebGPUDeclaration.h\"]",
-   "+SOURCES += [\"StealthWebGPUDeclaration.cpp\"]"
-  ],
-  "notes": "Registers our file on lines of its own, outside Mozilla's list; non-unified because it has file-static helpers with short names."
  },
  {
   "file": "dom/webidl/Element.webidl",
@@ -2692,6 +2323,28 @@
   }
  },
  {
+  "file": "gfx/thebes/FontData.h",
+  "category": "other",
+  "feature": "font-bundle-borrow",
+  "prefs": [],
+  "added": 10,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "class FontData (Borrowed constructor, destructor, member mBorrowed)",
+  "evidence": [
+   "+  FontData(const uint8_t* aData, uint32_t aLength, Borrowed)",
+   "+    if (!mBorrowed) {  // STEALTH-HOOK(fingerprint/fonts/bundle)",
+   "+  bool const mBorrowed = false;  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+  ],
+  "notes": "Category is other rather than spoof: it lends the bundled font bytes (owned by StealthBundleFontList) to each face instead of copying the file per face, and no page-observable value changes. A borrowed FontData does not free its bytes; they must outlive every face, which holds only because the bundle cache is immortal (StealthBundleFontList leaks the list on purpose). Moved here from FTUserFontData in gfx/2d/2D.h and its CloneFace in gfx/2d/Factory.cpp on 2026-10-29: Firefox 159 removes FTUserFontData, while FontData.h is unchanged from 157 to 159.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the move; the bundle path now goes through Mozilla's FTUserFontData(FontData*) and its unchanged CloneFace."
+  }
+ },
+ {
   "file": "gfx/2d/DrawTargetRecording.cpp",
   "category": "spoof",
   "feature": "canvas-noise-projection",
@@ -2801,47 +2454,6 @@
   }
  },
  {
-  "file": "gfx/2d/ScaledFontFontconfig.cpp",
-  "category": "spoof",
-  "feature": "font-list-bundle-only",
-  "prefs": [],
-  "added": 4,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "the include block (StealthFontDescriptorPath.h) and UnscaledFontFontconfig::CreateFromFontDescriptor, before the fontconfig lookup of the recorded path",
-  "evidence": [
-   "+  if (StealthHandlesFontDescriptors()) {  // STEALTH-HOOK(fingerprint/fonts/font-list)",
-   "+    return StealthUnscaledFontFromDescriptor(aData, aDataLength, aIndex);"
-  ],
-  "notes": "On Linux a recorded font descriptor (path and index) is checked against the bundle, not against the host's fontconfig: the hook hands the descriptor to gfx/2d/StealthFontDescriptorPath.cpp, which accepts only a bundled file and refuses an untrusted index. Mozilla's own lookup below is left untouched and runs only when the bundle does not handle descriptors.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook; four added lines, nothing removed."
-  }
- },
- {
-  "file": "gfx/2d/ScaledFontFontconfig.h",
-  "category": "spoof",
-  "feature": "fonts-synthetic-bold",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "the InstanceData flags enum",
-  "evidence": [
-   "+    STEALTH_MULTISTRIKE_BOLD = 1 << 6,  // STEALTH-HOOK(fingerprint/fonts/synthetic-bold)"
-  ],
-  "notes": "A flag of the font instance that says Gecko does the bold with several strikes, as Windows does for a webfont, so that neither FreeType nor idwr embolden the same face.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
-  }
- },
- {
   "file": "gfx/2d/UnscaledFontDWrite.h",
   "category": "other",
   "feature": "font-bundle-file-path",
@@ -2887,194 +2499,6 @@
   }
  },
  {
-  "file": "gfx/gl/GLContext.cpp",
-  "category": "spoof",
-  "feature": "webgl-multisample",
-  "prefs": [
-   "webgl.msaa-samples"
-  ],
-  "added": 3,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after #include \"GLContext.h\", after InitFeatures() in GLContext::InitImpl, and after the closing brace of its driver-workaround block",
-  "evidence": [
-   "+  if (StealthDeclaredMultisample(stealthMultisample)) mAvailableFeatures[size_t(GLFeature::framebuffer_multisample)] = true;  // STEALTH-HOOK(fingerprint/webgl/multisample)"
-  ],
-  "notes": "The multisample feature as the driver reports it is kept before the workarounds and put back after them when the core declares samples (webgl.msaa-samples > 0, StealthDeclaredMultisample): the declaration decides, not the host renderer.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
-  }
- },
- {
-  "file": "gfx/gl/GLContextProviderLinux.cpp",
-  "category": "spoof",
-  "feature": "webgl-own-gl",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after #include \"GLContextProvider.h\", and at the top of GLContextProviderLinux::CreateHeadless",
-  "evidence": [
-   "+  if (StealthOwnGLRequired()) return sGLContextProviderEGL.CreateHeadless(desc, out_failureId);  // STEALTH-HOOK(fingerprint/webgl/own-gl): never GLX"
-  ],
-  "notes": "With the engine on, a headless context on Linux (WebGL's) is always EGL, so always the engine's own llvmpipe, never the host's GLX.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-08."
-  }
- },
- {
-  "file": "gfx/gl/GLLibraryEGL.cpp",
-  "category": "spoof",
-  "feature": "webgl-own-gl",
-  "prefs": [],
-  "added": 3,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after #include \"GLLibraryEGL.h\", after the non-Windows library comment in GLLibraryEGL::Init, and after #ifdef MOZ_WIDGET_GTK in CreateDisplayLocked",
-  "evidence": [
-   "+  if (!StealthLoadOwnGLOrRefuse(&mEGLLibrary, &mGLLibrary, out_failureId)) return false;  // STEALTH-HOOK(fingerprint/webgl/own-gl): ours or none",
-   "+    if (StealthOwnGLRequired()) return GetAndInitSurfacelessDisplay(*this, aProofOfLock);  // STEALTH-HOOK(fingerprint/webgl/own-gl): surfaceless only"
-  ],
-  "notes": "On Linux with the engine on, EGL is the engine's own llvmpipe (llvmpipe/ next to the executable, StealthLoadOwnGLOrRefuse) or nothing, never the host's libEGL, and the display is EGL's surfaceless platform only, never the host's X11, Wayland or render nodes.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-08."
-  }
- },
- {
-  "file": "gfx/gl/GLLibraryEGL.h",
-  "category": "spoof",
-  "feature": "webgl-angle-nv-math",
-  "prefs": [
-   "zoom.stealth.webgl.alu_class"
-  ],
-  "added": 3,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after struct ID3D11Device;, and at the top of fGetDisplay and fGetPlatformDisplay",
-  "evidence": [
-   "+    attrib_list = StealthAngleAluPlatformAttribs(platform, attrib_list);  // STEALTH-HOOK(fingerprint/webgl/angle-nv-math): add the declared ALU class's feature"
-  ],
-  "notes": "Every EGL_PLATFORM_ANGLE_ANGLE display Gecko asks ANGLE for carries the ANGLE feature of the declared arithmetic class (zoom.stealth.webgl.alu_class), through the display's feature overrides; the logic is in gfx/gl/StealthAngleAlu.cpp.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-09."
-  }
- },
- {
-  "file": "gfx/gl/gtest/moz.build",
-  "category": "spoof",
-  "feature": "webgl-multisample",
-  "prefs": [
-   "webgl.msaa-samples"
-  ],
-  "added": 3,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the UNIFIED_SOURCES list (TestColorspaces.cpp)",
-  "evidence": [
-   "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)",
-   "+UNIFIED_SOURCES += [\"TestStealthAngleAlu.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)",
-   "+LOCAL_INCLUDES += [\"/third_party/angle/include\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)"
-  ],
-  "notes": "Builds TestStealthGLMultisample.cpp and, for fingerprint/webgl/angle-nv-math, TestStealthAngleAlu.cpp with ANGLE's include directory (the test calls the translator).",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
-  }
- },
- {
-  "file": "gfx/gl/moz.build",
-  "category": "spoof",
-  "feature": "webgl-multisample",
-  "prefs": [
-   "webgl.msaa-samples"
-  ],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the SOURCES list (GLScreenBuffer.cpp)",
-  "evidence": [
-   "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)",
-   "+UNIFIED_SOURCES += [\"StealthAngleAlu.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/angle-nv-math)"
-  ],
-  "notes": "Builds StealthGLMultisample.cpp and, for fingerprint/webgl/angle-nv-math, StealthAngleAlu.cpp.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
-  }
- },
- {
-  "file": "gfx/moz.build",
-  "category": "build",
-  "feature": "idwr-text-engine",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "before TEST_DIRS",
-  "evidence": [
-   "+DIRS += [\"idwr\"]  # STEALTH-HOOK(fingerprint/fonts/idwr)"
-  ],
-  "notes": "Builds gfx/idwr (invisible_DWriteCore's DirectWrite rasterizer) into libxul, on a line of its own outside Mozilla's DIRS list."
- },
- {
-  "file": "gfx/skia/generate_mozbuild.py",
-  "category": "build",
-  "feature": "idwr-text-engine",
-  "prefs": [],
-  "added": 4,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "footer, after FINAL_LIBRARY",
-  "evidence": [
-   "+SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)"
-  ],
-  "notes": "Puts the three sources of our idwr port of Skia's DirectWrite text into the footer moz.build is generated from, so regenerating Skia keeps them.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
-  }
- },
- {
-  "file": "gfx/skia/moz.build",
-  "category": "build",
-  "feature": "idwr-text-engine",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after FINAL_LIBRARY",
-  "evidence": [
-   "+SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)"
-  ],
-  "notes": "The generated counterpart of the footer line of generate_mozbuild.py: the three sources of our idwr port of Skia's DirectWrite text.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
-  }
- },
- {
   "file": "gfx/skia/skia/src/core/SkScalerContext.cpp",
   "category": "spoof",
   "feature": "glyph-coverage-quantise",
@@ -3096,26 +2520,6 @@
     "notes"
    ],
    "why": "The claim that this is the only Mozilla header in Skia is false (SkMemory_mozalloc.cpp, SkASAN.h, SkMacros.h, SkTypeface_win_dw.h include mozilla headers); it holds only for this file."
-  }
- },
- {
-  "file": "gfx/skia/skia/src/opts/SkRasterPipeline_opts.h",
-  "category": "spoof",
-  "feature": "canvas-skia-math",
-  "prefs": [],
-  "added": 5,
-  "removed": 0,
-  "hunks": 5,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the system includes; around the SSE2 mad/nmad/rcp_precise and the rcp_fast/rsqrt dispatch",
-  "evidence": [
-   "+#include \"StealthSkiaRcpHook.h\"  // STEALTH-HOOK(fingerprint/canvas/skia-math)"
-  ],
-  "notes": "Five added lines (one include of the wrappers of the reciprocal intrinsics, two Begin/End pairs that rename the stock functions by macro): with the engine on the highp raster pipeline uses an exact FMA and the RCPPS/RSQRTPS model of the declared CPU vendor, with it off the stock functions; no line of Skia is rewritten.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
   }
  },
  {
@@ -3160,28 +2564,6 @@
   "verifier": {
    "changed": [],
    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
-  }
- },
- {
-  "file": "gfx/thebes/FontData.h",
-  "category": "other",
-  "feature": "font-bundle-borrow",
-  "prefs": [],
-  "added": 10,
-  "removed": 1,
-  "hunks": 3,
-  "inline_logic_lines": 2,
-  "hookable": "already-hook",
-  "anchor": "class FontData (Borrowed constructor, destructor, member mBorrowed)",
-  "evidence": [
-   "+  FontData(const uint8_t* aData, uint32_t aLength, Borrowed)",
-   "+    if (!mBorrowed) {  // STEALTH-HOOK(fingerprint/fonts/bundle)",
-   "+  bool const mBorrowed = false;  // STEALTH-HOOK(fingerprint/fonts/bundle)"
-  ],
-  "notes": "Category is other rather than spoof: it lends the bundled font bytes (owned by StealthBundleFontList) to each face instead of copying the file per face, and no page-observable value changes. A borrowed FontData does not free its bytes; they must outlive every face, which holds only because the bundle cache is immortal (StealthBundleFontList leaks the list on purpose). Moved here from FTUserFontData in gfx/2d/2D.h and its CloneFace in gfx/2d/Factory.cpp on 2026-10-29: Firefox 159 removes FTUserFontData, while FontData.h is unchanged from 157 to 159.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the move; the bundle path now goes through Mozilla's FTUserFontData(FontData*) and its unchanged CloneFace."
   }
  },
  {
@@ -3500,26 +2882,6 @@
   }
  },
  {
-  "file": "gfx/thebes/gfxPlatform.cpp",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "dom.webgpu.external-texture.enabled",
-   "zoom.stealth.fpp.hw_seed"
-  ],
-  "added": 3,
-  "removed": 1,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after #include \"gfxPlatform.h\"; gfxPlatform::InitWebGPUConfig, before the WEBGPU_EXTERNAL_TEXTURE force-disable",
-  "evidence": [
-   "+  mozilla::webgpu::StealthWebGPUPlatformInit();  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Linux's Vulkan driver is ours; external textures are on as on Windows",
-   "+#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0"
-  ],
-  "notes": "StealthWebGPUPlatformInit maps the bundled lavapipe (<exe dir>/lavapipe/libvulkan_lvp.so) under the Vulkan loader's name before wgpu opens it, and turns WebGPU off when it cannot (fail closed, never a host driver). The force-disable of WebGPU external textures off Windows and macOS is compiled out: the engine presents Windows on every OS, where the feature is on, and the import runs on the shared-memory buffer path."
- },
- {
   "file": "gfx/thebes/gfxPlatformFontList.cpp",
   "category": "spoof",
   "feature": "font-list-bundle-only",
@@ -3613,26 +2975,6 @@
   }
  },
  {
-  "file": "gfx/thebes/gfxWindowsPlatform.cpp",
-  "category": "spoof",
-  "feature": "canvas-color-profile",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "the include block and the first line of gfxWindowsPlatform::GetPlatformCMSOutputProfileData_Impl, before the pref and GetICMProfileW",
-  "evidence": [
-   "+  if (auto declared = mozilla::gfx::StealthDeclaredColorProfileData()) return declared.extract();  // STEALTH-HOOK(fingerprint/canvas/color-profile)"
-  ],
-  "notes": "With the engine on, the output colour profile is the one the engine declares (Windows' default display profile, built in code), and the monitor's profile (GetICMProfileW) is never read.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
-  }
- },
- {
   "file": "gfx/thebes/moz.build",
   "category": "build",
   "feature": "font-bundle-files",
@@ -3650,49 +2992,6 @@
   "verifier": {
    "changed": [],
    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
-  }
- },
- {
-  "file": "gfx/wgpu_bindings/src/lib.rs",
-  "category": "spoof",
-  "feature": "webgpu-external-texture-vulkan",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "the module list after RawString",
-  "evidence": [
-   "+pub mod stealth_external_texture; // STEALTH-HOOK(fingerprint/webgpu/external-texture-vulkan)"
-  ],
-  "notes": "Declares our module with the function the gtest StealthWebGPUExternalTexture calls; the module is ours.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the backport, 2026-11-01."
-  }
- },
- {
-  "file": "gfx/wgpu_bindings/src/server.rs",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "zoom.stealth.fpp.hw_seed"
-  ],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the instance_flags statement of wgpu_server_new (with_env), and after the Windows compositor-LUID block of Message::RequestAdapter; each line declares, in its own block, the path module it calls",
-  "evidence": [
-   "+    #[path = \"stealth_webgpu_env.rs\"] mod stealth_webgpu_env; stealth_webgpu_env::without_host_env(&mut instance_flags); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)",
-   "+            #[path = \"stealth_webgpu_adapter.rs\"] mod stealth_webgpu_adapter; stealth_webgpu_adapter::settle(global, &desc, adapter_id, &mut result); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
-  ],
-  "notes": "With the engine on, the instance flags are the ones built with no WGPU_* variable set (stealth_webgpu_env::without_host_env), and a compositor search that found no D3D12 adapter takes the software one (WARP) instead of answering null (stealth_webgpu_adapter::settle).",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
@@ -4178,327 +3477,6 @@
   }
  },
  {
-  "file": "media/ffvpx/README_MOZILLA",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 45,
-  "removed": 2,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+Currently, we only use the vp8, vp9, av1 (via libdav1d), h264, hevc, aac, mp3,",
-   "+The AAC-LC float decoder gives the samples of Media Foundation (Windows 11,"
-  ],
-  "notes": "Documents the new h264/hevc/aac decoders and parsers (sourced from FFmpeg 9.0.1's own configure selection), the AAC plain-C-only patch, and the AAC-LC = Media Foundation port (aacdec_mf.h, mf_dct/mf_imlt/mf_tables) with what each touched file does. Documentation only.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/config_components_audio_video.h",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 6,
-  "removed": 6,
-  "hunks": 4,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "-#define CONFIG_H264_DECODER 0",
-   "+#define CONFIG_H264_DECODER 1",
-   "-#define CONFIG_HEVC_DECODER 0",
-   "+#define CONFIG_HEVC_DECODER 1",
-   "-#define CONFIG_AAC_DECODER 0",
-   "+#define CONFIG_AAC_DECODER 1"
-  ],
-  "notes": "Turns on CONFIG_H264_DECODER/_PARSER, CONFIG_HEVC_DECODER/_PARSER, CONFIG_AAC_DECODER/_PARSER (generated config, same macros FFmpeg's own configure would set for --enable-decoder=h264,hevc,aac --enable-parser=h264,hevc,aac). config_override.h re-gates H.264/HEVC to x86-only right below; AAC stays on for every CPU.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/config_override.h",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 72,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+#define MOZ_FFVPX_AAC_C_ONLY 1",
-   "+#  define CONFIG_H264_DECODER MOZ_FFVPX_H26X",
-   "+#  define BROKEN_RELOCATIONS 1"
-  ],
-  "notes": "Gates H.264/HEVC (decoder, parser, SEI, CABAC, chroma/qpel/DSP, bswapdsp, me_cmp, error_resilience, startcode) to x86/x86_64 only via MOZ_FFVPX_H26X, so other CPUs build without them. Sets BROKEN_RELOCATIONS/PIC for the CABAC inline asm in libmozavcodec's PIC build, and HAVE_LOG2F=0 because the fdlibm override has no log2f. MOZ_FFVPX_AAC_C_ONLY is consumed in libavcodec/moz.build (forces plain C, no x86 DSP, for AAC).",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavcodec/codec_list.c",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 9,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+#if CONFIG_H264_DECODER",
-   "+    &ff_h264_decoder,",
-   "+#if CONFIG_AAC_DECODER"
-  ],
-  "notes": "Registers ff_h264_decoder, ff_hevc_decoder and ff_aac_decoder in ffvpx's codec table, each gated on the CONFIG_* macro set above, so PDMFactory/FFmpegDecoderModule can find them through avcodec_find_decoder without a system libavcodec.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavcodec/moz.build",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 80,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+        'aac/mf_dct.c',",
-   "+    SOURCES += ['/gfx/idwr/src/idwr/idwr_math.c']",
-   "+        DIRS += ['hevc']"
-  ],
-  "notes": "Builds the AAC sources in plain C (MOZ_FFVPX_AAC_C_ONLY), with -ffp-contract=off on aacdec_float.c/mf_dct.c/mf_imlt.c so the sign of zero and rounding match Media Foundation bit for bit. Compiles idwr_math.c (invisible_DWriteCore's own ucrtbase-exact pow/powf) directly into mozavcodec, a separate shared library from libxul, so it cannot USE_LIBS the private idwr copy there. Builds the H.264/HEVC sources (and the hevc/ subdirectory) only on x86/x86_64, wired with their x86 DSP.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavcodec/parser_list.c",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 9,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+#if CONFIG_H264_PARSER",
-   "+    &ff_h264_parser,",
-   "+#if CONFIG_AAC_PARSER"
-  ],
-  "notes": "Registers ff_h264_parser, ff_hevc_parser and ff_aac_parser, each gated on its CONFIG_* macro, alongside codec_list.c's decoder registration.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavcodec/x86/moz.build",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 33,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+    'h264_idct.asm',",
-   "+    'hevc/dsp_init.c',"
-  ],
-  "notes": "Builds the x86 asm/DSP-init sources for H.264 and HEVC (deblock, idct, qpel, chroma, SAO, dequant, me_cmp, bswapdsp); none for AAC, which stays plain C on every CPU per config_override.h.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil/avutil.symbols",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 23,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+av_md5_init",
-   "+av_tdrdi_alloc",
-   "+av_ambient_viewing_environment_alloc"
-  ],
-  "notes": "Exports the libavutil symbols the newly-added md5.c, tdrdi.c, ambient_viewing_environment.c, stereo3d.c and channel_layout/container_fifo helpers need, which the H.264/HEVC SEI code and the AAC channel layout calls link against.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil/float_dsp.c",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 3,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+    if (bit_exact & AV_FLOAT_DSP_FFVPX_C_ONLY)",
-   "+        return fdsp;"
-  ],
-  "notes": "avpriv_float_dsp_alloc returns only the C function pointers when the new AV_FLOAT_DSP_FFVPX_C_ONLY bit is set in its bit_exact argument, before any arch-specific ff_float_dsp_init_* overwrites them with SIMD versions.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil/float_dsp.h",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+#define AV_FLOAT_DSP_FFVPX_C_ONLY 0x40000000"
-  ],
-  "notes": "Declares the AV_FLOAT_DSP_FFVPX_C_ONLY bit (an unused high bit of the existing `strict` argument, not a new parameter) that float_dsp.c checks.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil/moz.build",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 4,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+        'md5.c',",
-   "+        'tdrdi.c',"
-  ],
-  "notes": "Builds the new md5.c, tdrdi.c, ambient_viewing_environment.c and stereo3d.c sources the H.264/HEVC SEI code and AAC channel layout need.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil/tx.c",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 2,
-  "removed": 2,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "-    const int cpu_flags = av_get_cpu_flags();",
-   "+    const int cpu_flags = (flags & AV_TX_FFVPX_C_ONLY) ? 0 : av_get_cpu_flags();"
-  ],
-  "notes": "ff_tx_init_subtx treats the host CPU as having no feature flags when the new AV_TX_FFVPX_C_ONLY transform flag is set, so av_tx_init can only pick C codelets: the AAC MDCT/IMDCT and float DSP then give the same bytes on every CPU, never the host's SIMD path.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil/tx.h",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 6,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+#define AV_TX_FFVPX_C_ONLY (1ULL << 57)"
-  ],
-  "notes": "Declares AV_TX_FFVPX_C_ONLY, an unused high bit of the existing AVTXFlags space (not an upstream FFmpeg flag), that tx.c checks.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/libavutil_visibility.h",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 38,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+#include \"libavutil/md5.h\"",
-   "+#include \"libavutil/tdrdi.h\""
-  ],
-  "notes": "Adds the new libavutil headers (md5, tdrdi, ambient_viewing_environment, stereo3d, channel_layout, container_fifo, film_grain_params, and a few more FFmpeg 9.0.1 already had) to the GCC-visibility-pop block that makes their symbols default-visible, same pattern as the existing headers in this file.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
-  "file": "media/ffvpx/moz.build",
-  "category": "build",
-  "feature": "ffvpx-decoders-no-host-libavcodec",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "(build configuration, not a hook point)",
-  "evidence": [
-   "+TEST_DIRS += ['gtest']"
-  ],
-  "notes": "Adds the new gtest/ directory (TestFFVPXAac.cpp) to the build.",
-  "verifier": {
-   "changed": [],
-   "why": "Written directly from this branch's own diff against the Mozilla tag; no prior draft to correct."
-  }
- },
- {
   "file": "modules/libpref/Preferences.cpp",
   "category": "other",
   "feature": "stealth-prefs-content-sync",
@@ -4619,28 +3597,6 @@
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
   }
- },
- {
-  "file": "modules/libpref/init/StaticPrefList.yaml",
-  "category": "spoof",
-  "feature": "webgpu-adapter-declaration",
-  "prefs": [
-   "dom.webgpu.external-texture.enabled",
-   "javascript.options.use_fdlibm_for_sin_cos_tan",
-   "media.ffmpeg.enabled"
-  ],
-  "added": 3,
-  "removed": 3,
-  "hunks": 3,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "dom.webgpu.external-texture.enabled, javascript.options.use_fdlibm_for_sin_cos_tan and media.ffmpeg.enabled, the non-Windows value of each",
-  "evidence": [
-   "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS",
-   "+  value: false  # STEALTH-HOOK(fingerprint/fonts/idwr): Windows' value; libxul's sin/cos/tan are ucrtbase's (gfx/idwr/libm_ucrt.c)",
-   "+    value: false  # STEALTH-HOOK(media/ffvpx-decoders): ffvpx decodes H.264, HEVC and AAC, never the system libavcodec"
-  ],
-  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else. Same for the second line, owned by fingerprint/fonts/idwr (one record per file, so the file stays here): with javascript.options.use_fdlibm_for_sin_cos_tan false on every OS, Math.sin/cos/tan call the libm names libxul now defines itself (gfx/idwr/libm_ucrt.c, ucrtbase's results) instead of fdlibm. Same for the third line, owned by media/ffvpx-decoders (one record per file, so the file stays here): media.ffmpeg.enabled false means FFmpegDecoderModule never falls back to a system libavcodec for H.264, HEVC or AAC, so what a page can decode depends only on ffvpx."
  },
  {
   "file": "modules/libpref/init/all.js",
@@ -5495,116 +4451,6 @@
   "notes": "Fix of a 157 priority inversion (commit 044fdc985f): StartupCache writes no longer take nsAutoLowPriorityIO, whose THREAD_MODE_BACKGROUND_BEGIN starved the writer while it held mTableLock and so the main thread in GetBuffer() (7-27 s stalls with eleven browsers). 151 had no lowered priority here."
  },
  {
-  "file": "third_party/angle/include/GLSLANG/ShaderLang.h",
-  "category": "spoof",
-  "feature": "webgl-angle-nv-math",
-  "prefs": [
-   "zoom.stealth.webgl.alu_class"
-  ],
-  "added": 4,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after expandFragmentOutputsToVec4 in ShCompileOptions",
-  "evidence": [
-   "+    uint64_t stealthAluNvidia : 1;"
-  ],
-  "notes": "The ShCompileOptions bit that asks the HLSL output for the NVIDIA fma chain. Part of ANGLE patch 0021; it enters the shader cache key by itself.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-09."
-  }
- },
- {
-  "file": "third_party/angle/include/platform/autogen/FeaturesD3D_autogen.h",
-  "category": "spoof",
-  "feature": "webgl-angle-nv-math",
-  "prefs": [
-   "zoom.stealth.webgl.alu_class"
-  ],
-  "added": 6,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the last FeatureInfo of FeaturesD3D",
-  "evidence": [
-   "+        \"stealthAluNvidia\","
-  ],
-  "notes": "The D3D feature the declared NVIDIA classes turn on. Part of ANGLE patch 0021.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-09."
-  }
- },
- {
-  "file": "third_party/angle/src/compiler/translator/hlsl/OutputHLSL.cpp",
-  "category": "spoof",
-  "feature": "webgl-angle-nv-math",
-  "prefs": [
-   "zoom.stealth.webgl.alu_class"
-  ],
-  "added": 19,
-  "removed": 0,
-  "hunks": 4,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the ResourcesHLSL.h include, in the OutputHLSL constructor, in OutputHLSL::header, and at the top of case EOpDot in visitAggregate",
-  "evidence": [
-   "+                    mUsesNvMath = true;"
-  ],
-  "notes": "With ShCompileOptions::stealthAluNvidia on, float dot() of two, three or four components is emitted as nv_dot2/3/4 and the shader header defines the helpers (text in StealthNvMath.h), only in a shader that uses one. With it off not one character of the HLSL changes; Mozilla's dot() line is left as it is. Part of ANGLE patch 0021.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-09."
-  }
- },
- {
-  "file": "third_party/angle/src/compiler/translator/hlsl/OutputHLSL.h",
-  "category": "spoof",
-  "feature": "webgl-angle-nv-math",
-  "prefs": [
-   "zoom.stealth.webgl.alu_class"
-  ],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after mRequiresIEEEStrictCompiling",
-  "evidence": [
-   "+    bool mUsesNvMath;"
-  ],
-  "notes": "The flag that a shader uses one of the NVIDIA helpers. Part of ANGLE patch 0021.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-09."
-  }
- },
- {
-  "file": "third_party/angle/src/libANGLE/renderer/d3d/ShaderD3D.cpp",
-  "category": "spoof",
-  "feature": "webgl-angle-nv-math",
-  "prefs": [
-   "zoom.stealth.webgl.alu_class"
-  ],
-  "added": 4,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after allowTranslateUniformBlockToStructuredBuffer in ShaderD3D::compile",
-  "evidence": [
-   "+        options->stealthAluNvidia = true;"
-  ],
-  "notes": "Fills the ShCompileOptions bit from the D3D feature. Part of ANGLE patch 0021.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-09."
-  }
- },
- {
   "file": "third_party/libwebrtc/modules/desktop_capture/cropping_window_capturer_win.cc",
   "category": "other",
   "feature": "hidden-desktop-window-capture",
@@ -5687,6 +4533,837 @@
   "verifier": {
    "changed": [],
    "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
+  "category": "stillborn",
+  "feature": "pingsender-session-route",
+  "prefs": [],
+  "added": 72,
+  "removed": 14,
+  "hunks": 4,
+  "inline_logic_lines": 27,
+  "hookable": "movable",
+  "anchor": "sendStandalonePing (module-level, hunk 2); TelemetrySendImpl.runPingSender (hunks 3 and 4); new module-level function sessionRoute() at end of file",
+  "evidence": [
+   "-    if (lazy.NimbusFeatures.pingsender.getVariable(\"backgroundTaskEnabled\")) {",
+   "+    let params = [\"--backgroundtask\", \"pingsender\"];",
+   "+    Services.env.set(PINGSENDER_ROUTE_ENV, JSON.stringify(sessionRoute()));"
+  ],
+  "notes": "Category is stillborn because it reroutes Firefox's own telemetry pings (rule: reroute or silence of phone-home traffic). The standalone pingsender executable path and the Nimbus gate are removed, so the firefox --backgroundtask path is always used. Pings now carry the session proxy from Juggler's TargetRegistry and the profile prefs.js path, passed through an environment variable set around runAsync. Move sessionRoute and the env handling into our own file, keeping a one-line hook in runPingSender. The removed NimbusFeatures import is also a change to Mozilla's lazy import list. Verified: SessionRoute.js exports newProxyInfoFor (line 70), proxyForHost (93), proxyAuthCallbacks (110); TargetRegistry.js:392 defines proxyRecordFor. The added code in this file reads no pref by name; network.proxy.* and zoom.stealth.dns.* are only named in a comment and take effect through the prefs.js the child reads.",
+  "verifier": {
+   "changed": [
+    "category",
+    "notes"
+   ],
+   "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
+  }
+ },
+ {
+  "file": "toolkit/components/telemetry/moz.build",
+  "category": "build",
+  "feature": "pingsender-session-route",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs",
+  "category": "stillborn",
+  "feature": "pingsender-session-route",
+  "prefs": [],
+  "added": 70,
+  "removed": 7,
+  "hunks": 3,
+  "inline_logic_lines": 36,
+  "hookable": "movable",
+  "anchor": "runBackgroundTask (export async function, hunk 1); sendPing (module-level async function, hunks 2 and 3); new takeSessionRoute() at file level",
+  "evidence": [
+   "+  const proxy = takeSessionRoute();",
+   "+  Services.prefs.readUserPrefsFromFile(prefsFile);",
+   "+    .registerChannelFilter(",
+   "-  await sendStandalonePing(endpoint, json, {"
+  ],
+  "notes": "takeSessionRoute reads the env variable, reads the session prefs.js into this empty profile, and registers a proxy channel filter at priority 0. It refuses to send when the env variable is missing (no fallback), which is the intended fail-closed behaviour. It depends on resource://gre/modules/juggler/SessionRoute.js, which is not in this list. The largest logic block in this group: move takeSessionRoute and the filter into our own file. Clears the env variable after reading it, so child processes do not inherit the proxy password. Verified: SessionRoute.js exports newProxyInfoFor (line 70), proxyForHost (93), proxyAuthCallbacks (110); TargetRegistry.js:392 defines proxyRecordFor. The added code in this file reads no pref by name; network.proxy.* and zoom.stealth.dns.* are only named in a comment and take effect through the prefs.js the child reads.",
+  "verifier": {
+   "changed": [
+    "category",
+    "notes"
+   ],
+   "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
+  }
+ },
+ {
+  "file": "toolkit/components/url-classifier/SafeBrowsing.sys.mjs",
+  "category": "other",
+  "feature": "api-keys-declared",
+  "prefs": [
+   "zoom.stealth.apikey"
+  ],
+  "added": 14,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "SafeBrowsing.init() (line 354)",
+  "evidence": [
+   "+    Services.prefs.addObserver(\"zoom.stealth.apikey\", this);"
+  ],
+  "notes": "The observed name is a branch, not one key. observe() calls readPrefs() (checked in the Mozilla base at line 495), which re-reads the key, so a late declaration enables the provider. The added comment block is about 12 lines in Italian and should be trimmed or moved out of the Mozilla file.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "toolkit/components/urlformatter/URLFormatter.sys.mjs",
+  "category": "other",
+  "feature": "api-keys-declared",
+  "prefs": [
+   "zoom.stealth.apikey.mozilla",
+   "zoom.stealth.apikey.google_location_service",
+   "zoom.stealth.apikey.google_safebrowsing"
+  ],
+  "added": 78,
+  "removed": 13,
+  "hunks": 3,
+  "inline_logic_lines": 22,
+  "hookable": "movable",
+  "anchor": "module scope helpers (hunk 1); nsURLFormatterService.prototype getter table (hunk 2, line 121); nsURLFormatterService.prototype.trimSensitiveURLs (hunk 3, line 180)",
+  "evidence": [
+   "+function stealthDeclaredApiKey(pref) {",
+   "-    MOZILLA_API_KEY: () => AppConstants.MOZ_MOZILLA_API_KEY,",
+   "+    MOZILLA_API_KEY: () => stealthDeclaredApiKey(PREF_APIKEY_MOZILLA),"
+  ],
+  "notes": "Keys move from build-time AppConstants to prefs declared by invisible_core, read through one reader. An undeclared key gives an empty string plus a console error, so the request is not sent. The three pref names are literal constants on purpose (a grep gate). trimSensitiveURLs now reads the same prefs for log redaction. The helper functions (hunk 1) belong in our own file. Pref names contain a vendor name (google_*): check against the no-vendor-names rule.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "toolkit/components/urlformatter/moz.build",
+  "category": "build",
+  "feature": "api-keys-declared",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/components/urlformatter/tests/unit/xpcshell.toml",
+  "category": "build",
+  "feature": "api-keys-declared",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/components/windowwatcher/moz.build",
+  "category": "build",
+  "feature": "juggler-popup-explicit-size",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/components/windowwatcher/nsWindowWatcher.cpp",
+  "category": "spoof",
+  "feature": "popup-default-position",
+  "prefs": [],
+  "added": 46,
+  "removed": 3,
+  "hunks": 4,
+  "inline_logic_lines": 19,
+  "hookable": "movable",
+  "anchor": "nsWindowWatcher::CalculateChromeFlagsForContent (hunk 2); static SizeOpenedWindow (hunks 3 and 4); include at top (hunk 1)",
+  "evidence": [
+   "+  const Maybe<mozilla::gfx::StealthWindowFrame> stealthFrame =",
+   "+  if (HaveSpecifiedSize(aFeatures)) {",
+   "-  bool positionSpecified = aSizeSpec.PositionSpecified();",
+   "+  bool positionSpecified = aSizeSpec.PositionSpecified() || stealthFrame;"
+  ],
+  "notes": "File mixes two features: this spoof part (popup default position, which a page reads as screenX/screenY, and the chrome flags) and the Juggler flag JUGGLER_WINDOW_EXPLICIT_SIZE (feature juggler-popup-explicit-size, see nsIWebBrowserChrome.idl). Split them in the series. Verified: StealthDeclarationGate.h is gfx/thebes/StealthDeclarationGate.h (struct StealthWindowFrame line 124, StealthDeclaredWindowFrame line 135). Chrome callers keep stock behaviour. The B258 reference is the author's.",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Verified StealthDeclarationGate.h exists."
+  }
+ },
+ {
+  "file": "toolkit/modules/AppConstants.sys.mjs",
+  "category": "other",
+  "feature": "api-keys-declared",
+  "prefs": [],
+  "added": 26,
+  "removed": 5,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "AppConstants object literal (module scope), keys near line 179",
+  "evidence": [
+   "-  MOZ_MOZILLA_API_KEY: \"@MOZ_MOZILLA_API_KEY@\",",
+   "+  // ⛔ STEALTHFOX: QUI STAVANO LE TRE CHIAVI API, E SONO STATE TOLTE."
+  ],
+  "notes": "Removes three build-time constants and the #if around the location-service key. About 20 comment lines are added to a Mozilla file: move the explanation out and keep only the removals. A grep of toolkit/modules, url-classifier, urlformatter and telemetry found no remaining reader (comments only); git grep of the whole tracked tree (excluding third_party) finds no reader or definer of the three keys except python/mozbuild/mozbuild/test/configure/test_checks_configure.py:944,996,1011,1026 (configure test of the keyfile helper, unrelated to this file).",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Whole-tree grep completed."
+  }
+ },
+ {
+  "file": "toolkit/modules/moz.build",
+  "category": "build",
+  "feature": "api-keys-declared",
+  "prefs": [],
+  "added": 7,
+  "removed": 6,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "module level, the OS_TARGET block (hunk 1, line 277) and the for var tuple of DEFINES (hunk 2, line 296)",
+  "evidence": [
+   "-    DEFINES[\"MOZ_GOOGLE_LOCATION_SERVICE_API_KEY\"] = (",
+   "-    \"MOZ_MOZILLA_API_KEY\","
+  ],
+  "notes": "Removes the DEFINES that fed the three keys. Must move together with the AppConstants.sys.mjs removal, otherwise the preprocessor fails. Only comments were added in the middle of the tuple.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "toolkit/toolkit.mozbuild",
+  "category": "build",
+  "feature": "juggler-build",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "if CONFIG[\"ENABLE_WEBDRIVER\"]: DIRS list (hunk header line 152)",
+  "evidence": [
+   "+        \"/juggler\","
+  ],
+  "notes": "Registers the Juggler directory when ENABLE_WEBDRIVER is set. The /juggler directory is our own code and is not in this list; Verified: C:/ff/source/juggler exists (moz.build, TargetRegistry.js, SessionRoute.js, components/).",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Verified juggler directory exists."
+  }
+ },
+ {
+  "file": "toolkit/xre/dllservices/UntrustedModulesData.cpp",
+  "category": "other",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 44,
+  "removed": 5,
+  "hunks": 3,
+  "inline_logic_lines": 25,
+  "hookable": "movable",
+  "anchor": "ModuleRecord::GetVersionAndVendorInfo; ModuleRecord::IsInDirectoryOf (new); IsOwnUnsignedBinary (new)",
+  "evidence": [],
+  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+ },
+ {
+  "file": "toolkit/xre/dllservices/UntrustedModulesData.h",
+  "category": "other",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 13,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "ModuleRecord::IsInDirectoryOf (new)",
+  "evidence": [],
+  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+ },
+ {
+  "file": "toolkit/xre/dllservices/moz.build",
+  "category": "build",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "toolkit/xre/dllservices/tests/gtest/moz.build",
+  "category": "other",
+  "feature": "untrusted-modules-own-binaries",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "UNIFIED_SOURCES",
+  "evidence": [],
+  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
+ },
+ {
+  "file": "toolkit/xre/nsWindowsWMain.cpp",
+  "category": "juggler",
+  "feature": "juggler-pipe-stdio",
+  "prefs": [],
+  "added": 20,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 12,
+  "hookable": "movable",
+  "anchor": "int wmain(int argc, WCHAR** argv) (line 114); includes at line 14",
+  "evidence": [
+   "+  bool hasJugglerPipe =",
+   "+    SetEnvironmentVariableA(\"PW_PIPE_READ\", stdio3str);"
+  ],
+  "notes": "Copies inherited stdio handles 3 and 4 into the PW_PIPE_READ and PW_PIPE_WRITE env variables, so the juggler pipe code (nsRemoteDebuggingPipe.cpp, not in this list) can read them after the launcher handoff. The comment says this is an FF146 patch ported to FF150, but the feature is juggler's. Move the block into a function in our own file and keep one call here. The comment names a product (Playwright): check against the no-vendor-names rule.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "uriloader/exthandler/moz.build",
+  "category": "build",
+  "feature": "juggler-download-interceptor",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "hook added by the 2026-10-29 move to our files",
+  "evidence": [],
+  "notes": "Hook registering or calling our own code.",
+  "verifier": {
+   "changed": [],
+   "why": "Added with the 2026-10-29 hook move."
+  }
+ },
+ {
+  "file": "uriloader/exthandler/nsExternalHelperAppService.cpp",
+  "category": "juggler",
+  "feature": "juggler-download-interceptor",
+  "prefs": [],
+  "added": 12,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 4,
+  "hookable": "already-hook",
+  "anchor": "new method nsExternalHelperAppService::SetDownloadInterceptor, inserted after GetPreferredDownloadsDirectory (line 387)",
+  "evidence": [
+   "+NS_IMETHODIMP nsExternalHelperAppService::SetDownloadInterceptor(",
+   "+  mInterceptor = interceptor;"
+  ],
+  "notes": "Dead storage: mInterceptor is assigned here and never read in this file or the header; the comment says the intercept dispatch in CreateSaverForTempFile is not implemented. The setter does nothing else. The comment names a product (Playwright) in code: check against the no-vendor-names rule. Verified: git grep of the whole tree finds mInterceptor only at nsExternalHelperAppService.cpp:403 (write) and nsExternalHelperAppService.h:309 (declaration); no C++ calls interceptDownloadRequest or onDownloadComplete. The JS setter call at juggler/TargetRegistry.js:310 is live.",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Whole-tree grep confirms mInterceptor is never read."
+  }
+ },
+ {
+  "file": "uriloader/exthandler/nsExternalHelperAppService.h",
+  "category": "juggler",
+  "feature": "juggler-download-interceptor",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "class nsExternalHelperAppService, new member after the last declared member (hunk header line 302)",
+  "evidence": [
+   "+  nsCOMPtr<nsIDownloadInterceptor> mInterceptor;"
+  ],
+  "notes": "Member is never read (see the .cpp entry). Remove together with the setter if the feature is not finished. Verified by whole-tree git grep (only uriloader/exthandler/nsExternalHelperAppService.cpp:403 writes it).",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Confirmed the member is never read anywhere in the tree."
+  }
+ },
+ {
+  "file": "uriloader/exthandler/nsIExternalHelperAppService.idl",
+  "category": "juggler",
+  "feature": "juggler-download-interceptor",
+  "prefs": [],
+  "added": 22,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 7,
+  "hookable": "movable",
+  "anchor": "file level: new interface nsIDownloadInterceptor (hunk 1, before the nsIExternalHelperAppService comment); interface nsIExternalHelperAppService, new method setDownloadInterceptor (hunk 2)",
+  "evidence": [
+   "+interface nsIDownloadInterceptor : nsISupports",
+   "+[scriptable, uuid(9a20e9b0-75d0-11ea-bc55-0242ac130003)]",
+   "+  void setDownloadInterceptor(in nsIDownloadInterceptor interceptor);"
+  ],
+  "notes": "The interface body can move to our own .idl registered by our own moz.build, leaving one method line in Mozilla's file. The uuid is hard-coded and was copied from an earlier patch series; uniqueness was not checked. The comment says it was restored from an FF146 series. Nothing in this list calls onDownloadComplete or the interceptor. Verified: the IDL onDownloadComplete(aHandler, aErrorName) has 2 args while juggler/TargetRegistry.js:83 implements onDownloadComplete(externalAppHandler, canceled, errorName) with 3; harmless today because no C++ calls either method (whole-tree git grep), but it would break the day the dispatch is implemented.",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Found an interface/consumer signature mismatch and confirmed nothing calls the interface methods."
+  }
+ },
+ {
+  "file": "widget/MouseEvents.h",
+  "category": "juggler",
+  "feature": "juggler-mouse-event-id",
+  "prefs": [],
+  "added": 10,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "class WidgetMouseEventBase: member declaration (hunk 1) and its Assign copy (hunk 2)",
+  "evidence": [
+   "+  uint32_t mJugglerEventId = 0;",
+   "+    mJugglerEventId = aEvent.mJugglerEventId;"
+  ],
+  "notes": "New field in a core event struct that crosses IPC; nsGUIEventIPC.h serializes it (see that entry). The comment refers to a lost ack bug (B217). Both sides are built together, so no version skew handling is needed.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "widget/gtk/nsWindow.cpp",
+  "category": "spoof",
+  "feature": "occlusion-tracking",
+  "prefs": [
+   "zoom.stealth.widget.occlusion_tracking.enabled"
+  ],
+  "added": 8,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "nsWindow::OnVisibilityNotifyEvent (the occlusion hunk; another adds the StaticPrefs include) and the head of nsWindow::MakeFullScreen (one line of fingerprint/screen-window/geometry: fullscreen without a window manager, nsWindow::StealthMakeFullScreenWithoutWM in widget/gtk/StealthFullscreenGtk.cpp)",
+  "evidence": [
+   "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&  // STEALTH-HOOK(fingerprint/screen-window/occlusion): B149, see FEATURE.md",
+   "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()",
+   "+  if (GdkIsX11Display() && !IsFullscreenSupported(mShell) && StealthMakeFullScreenWithoutWM(aFullScreen)) return NS_OK;  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result. Also carries the fullscreen call of fingerprint/screen-window/geometry (one line): on X with no window manager the widget decides fullscreen itself (the declared screen) instead of refusing; the occlusion marker moved to the end of its line to keep the budget at 4.",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Verified pref declaration."
+  }
+ },
+ {
+  "file": "widget/nsBaseDragService.cpp",
+  "category": "other",
+  "feature": "canvas-snapshot-readback",
+  "prefs": [],
+  "added": 2,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "nsBaseDragSession::DrawDragForImage (hunk header line 1139)",
+  "evidence": [
+   "-    *aSurface = aCanvas->GetSurfaceSnapshot();",
+   "+    *aSurface = aCanvas->GetSurfaceSnapshotAsDrawn();"
+  ],
+  "notes": "Not spoof: GetSurfaceSnapshot applies CanvasUtils::StealthProjectSnapshot noise for WebGL/WebGPU contexts (dom/canvas/OffscreenCanvasDisplayHelper.cpp:459-478) and GetSurfaceSnapshotAsDrawn (line 481) skips it, so the drag image / taskbar preview show the real pixels; a page cannot read either. Companion of the canvas-noise feature, no page-visible effect.",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Read GetSurfaceSnapshotAsDrawn: it returns the image without the stealth canvas noise that GetSurfaceSnapshot applies, so the change keeps host UI unnoised and is not page-observable; category stays other."
+  }
+ },
+ {
+  "file": "widget/nsGUIEventIPC.h",
+  "category": "juggler",
+  "feature": "juggler-mouse-event-id",
+  "prefs": [],
+  "added": 3,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 3,
+  "hookable": "already-hook",
+  "anchor": "struct ParamTraits<mozilla::WidgetMouseEventBase>: the field is written after mInputSource (hunk 1) and read in ReadForDerivedClass (hunk 2)",
+  "evidence": [
+   "+    WriteParam(aWriter, aParam.mJugglerEventId);",
+   "+           ReadParam(aReader, &aResult->mInputSource) &&"
+  ],
+  "notes": "IPC serialization of mJugglerEventId, read in the same order it is written. Wire format change, so the reader and writer must stay in step; both sides are built together.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff and tree; no correction needed."
+  }
+ },
+ {
+  "file": "widget/windows/TaskbarPreview.cpp",
+  "category": "other",
+  "feature": "canvas-snapshot-readback",
+  "prefs": [],
+  "added": 2,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "TaskbarPreviewCallback::Done (hunk header line 332)",
+  "evidence": [
+   "-  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshot();",
+   "+  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshotAsDrawn();"
+  ],
+  "notes": "Not spoof: GetSurfaceSnapshot applies CanvasUtils::StealthProjectSnapshot noise for WebGL/WebGPU contexts (dom/canvas/OffscreenCanvasDisplayHelper.cpp:459-478) and GetSurfaceSnapshotAsDrawn (line 481) skips it, so the drag image / taskbar preview show the real pixels; a page cannot read either. Companion of the canvas-noise feature, no page-visible effect.",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Read GetSurfaceSnapshotAsDrawn: it returns the image without the stealth canvas noise that GetSurfaceSnapshot applies, so the change keeps host UI unnoised and is not page-observable; category stays other."
+  }
+ },
+ {
+  "file": "xpcom/reflect/xptinfo/xptinfo.h",
+  "category": "juggler",
+  "feature": "juggler-param-buffer",
+  "prefs": [],
+  "added": 2,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "PARAM_BUFFER_COUNT macro",
+  "evidence": [
+   "-#  define PARAM_BUFFER_COUNT 14",
+   "+#  define PARAM_BUFFER_COUNT 15"
+  ],
+  "notes": "Not a Firefox version fix: the diff comment says the count moves to 15 for jugglerSendMouseEvent, which takes 15 arguments. It is tied to that Juggler method's signature; if the method's arity changes, this value must follow. Check of the 15-argument claim: nsIDOMWindowUtils.idl:465-478 declares 14 in-parameters plus an unsigned long return value, i.e. 15 XPT params including the retval; the diff comment \"15 args\" is right only in that sense (confirmed, with this wording).",
+  "verifier": {
+   "changed": [
+    "notes"
+   ],
+   "why": "Clarified that the 15 counts 14 in-params plus the retval."
+  }
+ },
+ {
+  "file": "xpfe/appshell/AppWindow.cpp",
+  "category": "spoof",
+  "feature": "focus-ignore-os-deactivation",
+  "prefs": [
+   "zoom.stealth.focus.ignore_os_deactivation"
+  ],
+  "added": 30,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 6,
+  "hookable": "already-hook",
+  "anchor": "AppWindow::WindowActivated (hunk 2, line 2746); AppWindow::WindowDeactivated (hunk 3, line 2757); hunk 1 is an include",
+  "evidence": [
+   "+        if (StaticPrefs::zoom_stealth_focus_ignore_os_deactivation()) {",
+   "+            fm->WindowLowered(active, nsFocusManager::GenerateFocusActionId());",
+   "+    return;"
+  ],
+  "notes": "The window keeps focus when the OS takes it away, so document.hasFocus() stays true (page-observable, hence spoof). WindowDeactivated now returns early under the pref, so Mozilla's deactivation body is skipped. The lowering block in WindowActivated (4 logic lines) could move to our own file. Pref accessor needs the pref declared in StaticPrefList (not in this list). Verified: zoom.stealth.focus.ignore_os_deactivation is declared at modules/libpref/init/StaticPrefList.yaml:21567.",
+  "verifier": {
+   "changed": [
+    "evidence",
+    "notes"
+   ],
+   "why": "Evidence line 2 did not match the diff verbatim (indentation); replaced with the exact line."
+  }
+ },
+ {
+  "file": "toolkit/mozapps/update/UpdateService.sys.mjs",
+  "category": "stillborn",
+  "feature": "updater-refuses",
+  "prefs": [],
+  "added": 0,
+  "removed": 0,
+  "hunks": 0,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "module imports; CheckerService #updateCheck after #parseUpdates; UpdateService #downloadUpdate head",
+  "evidence": [],
+  "notes": "Three hooks: the import of our StealthUpdate.sys.mjs, noneOffered() right after Mozilla parses the server's answer (every consumer then takes the no-update path), refusesDownload() at the one door of every download (backstop).",
+  "verifier": {
+   "changed": [],
+   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+  }
+ },
+ {
+  "file": "toolkit/mozapps/update/BackgroundUpdate.sys.mjs",
+  "category": "stillborn",
+  "feature": "updater-refuses",
+  "prefs": [],
+  "added": 0,
+  "removed": 0,
+  "hunks": 0,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "module imports; BackgroundUpdate._registerBackgroundUpdateTask head",
+  "evidence": [],
+  "notes": "The import and refusesHostTask(): Mozilla's checks and the prefs it records run as written, only the Windows scheduled task is not created.",
+  "verifier": {
+   "changed": [],
+   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+  }
+ },
+ {
+  "file": "toolkit/mozapps/update/moz.build",
+  "category": "build",
+  "feature": "updater-refuses",
+  "prefs": [],
+  "added": 0,
+  "removed": 0,
+  "hunks": 0,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after EXTRA_JS_MODULES list",
+  "evidence": [],
+  "notes": "Hook registering our StealthUpdate.sys.mjs.",
+  "verifier": {
+   "changed": [],
+   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+  }
+ },
+ {
+  "file": "browser/branding/unofficial/pref/firefox-branding.js",
+  "category": "stillborn",
+  "feature": "updater-refuses",
+  "prefs": [
+   "app.update.interval",
+   "app.update.promptWaitTime",
+   "app.update.url.manual",
+   "app.update.url.details",
+   "app.update.checkInstallTime.days",
+   "app.update.badgeWaitTime"
+  ],
+  "added": 0,
+  "removed": 0,
+  "hunks": 0,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "app.update.interval, promptWaitTime, url.manual, url.details, checkInstallTime.days, badgeWaitTime lines",
+  "evidence": [],
+  "notes": "The unofficial branding we build with carries Nightly-like update timings; each line holds the official branding's release value, so the update check runs on the retail's cadence (no extra check at startup for a build older than 2 days).",
+  "verifier": {
+   "changed": [],
+   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
+  }
+ },
+ {
+  "file": "dom/webgpu/Adapter.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.webgpu.adapter",
+   "zoom.stealth.webgpu.features",
+   "zoom.stealth.webgpu.limits"
+  ],
+  "added": 11,
+  "removed": 0,
+  "hunks": 5,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "includes; AdapterInfo::IsFallbackAdapter; a forward declaration of ToJsKey; Adapter::Adapter after the feature loop; Adapter::RequestDevice before wgpu_client_request_device",
+  "evidence": [
+   "+  if (const auto declared = StealthWebGPUDeclaredIsFallback(mParent.get())) {",
+   "+  StealthWebGPUDeclareAdapter(this, aParent, aInfo->id, mFeatures,",
+   "+    StealthWebGPUClampToReal(ffiDesc, *mInfoInner, ToJsKey);"
+  ],
+  "notes": "Calls only: the declared features, limits and fallback answer, and the clamp of what is sent to wgpu, all in dom/webgpu/StealthWebGPUDeclaration.cpp. ToJsKey is Adapter.cpp's own static; it is forward-declared so the declaration is keyed by the names the page reads."
+ },
+ {
+  "file": "dom/webgpu/Instance.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.webgpu.adapter",
+   "zoom.stealth.webgpu.features",
+   "zoom.stealth.webgpu.limits"
+  ],
+  "added": 7,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "includes; Instance::RequestAdapter before and after wgpu_client_request_adapter",
+  "evidence": [
+   "+  if (StealthWebGPUNoAdapter()) {",
+   "+  StealthWebGPUNoteRequest(this, adapter_id, aOptions.mForceFallbackAdapter);"
+  ],
+  "notes": "A declared GPU without Direct3D 12 resolves requestAdapter with null; otherwise the request notes forceFallbackAdapter for the adapter's isFallbackAdapter."
+ },
+ {
+  "file": "dom/webgpu/moz.build",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.webgpu.adapter",
+   "zoom.stealth.webgpu.features",
+   "zoom.stealth.webgpu.limits"
+  ],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after UNIFIED_SOURCES of h_and_cpp",
+  "evidence": [
+   "+EXPORTS.mozilla.webgpu += [\"StealthWebGPUDeclaration.h\"]",
+   "+SOURCES += [\"StealthWebGPUDeclaration.cpp\"]"
+  ],
+  "notes": "Registers our file on lines of its own, outside Mozilla's list; non-unified because it has file-static helpers with short names."
+ },
+ {
+  "file": "gfx/moz.build",
+  "category": "build",
+  "feature": "idwr-text-engine",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "before TEST_DIRS",
+  "evidence": [
+   "+DIRS += [\"idwr\"]  # STEALTH-HOOK(fingerprint/fonts/idwr)"
+  ],
+  "notes": "Builds gfx/idwr (invisible_DWriteCore's DirectWrite rasterizer) into libxul, on a line of its own outside Mozilla's DIRS list."
+ },
+ {
+  "file": "gfx/thebes/gfxPlatform.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "dom.webgpu.external-texture.enabled",
+   "zoom.stealth.fpp.hw_seed"
+  ],
+  "added": 3,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after #include \"gfxPlatform.h\"; gfxPlatform::InitWebGPUConfig, before the WEBGPU_EXTERNAL_TEXTURE force-disable",
+  "evidence": [
+   "+  mozilla::webgpu::StealthWebGPUPlatformInit();  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Linux's Vulkan driver is ours; external textures are on as on Windows",
+   "+#if !defined(XP_WIN) && !defined(XP_MACOSX) && 0"
+  ],
+  "notes": "StealthWebGPUPlatformInit maps the bundled lavapipe (<exe dir>/lavapipe/libvulkan_lvp.so) under the Vulkan loader's name before wgpu opens it, and turns WebGPU off when it cannot (fail closed, never a host driver). The force-disable of WebGPU external textures off Windows and macOS is compiled out: the engine presents Windows on every OS, where the feature is on, and the import runs on the shared-memory buffer path."
+ },
+ {
+  "file": "modules/libpref/init/StaticPrefList.yaml",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "dom.webgpu.external-texture.enabled"
+  ],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
+  "evidence": [
+   "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
+  ],
+  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
+ },
+ {
+  "file": "Cargo.lock",
+  "category": "backport",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "hard",
+  "anchor": "the naga-types package's dependencies",
+  "evidence": [
+   "+ \"bytemuck\","
+  ],
+  "notes": "naga-types depends on bytemuck from upstream wgpu 66e992c3a (ExternalTextureTransferFunction moved there); the lock says what the vendored Cargo.toml says.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
+  }
+ },
+ {
+  "file": "gfx/wgpu_bindings/src/lib.rs",
+  "category": "spoof",
+  "feature": "webgpu-external-texture-vulkan",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "the module list after RawString",
+  "evidence": [
+   "+pub mod stealth_external_texture; // STEALTH-HOOK(fingerprint/webgpu/external-texture-vulkan)"
+  ],
+  "notes": "Declares our module with the function the gtest StealthWebGPUExternalTexture calls; the module is ours.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the backport, 2026-11-01."
   }
  },
  {
@@ -6230,729 +5907,135 @@
   }
  },
  {
-  "file": "toolkit/components/telemetry/app/TelemetrySend.sys.mjs",
-  "category": "stillborn",
-  "feature": "pingsender-session-route",
-  "prefs": [],
-  "added": 72,
-  "removed": 14,
-  "hunks": 4,
-  "inline_logic_lines": 27,
-  "hookable": "movable",
-  "anchor": "sendStandalonePing (module-level, hunk 2); TelemetrySendImpl.runPingSender (hunks 3 and 4); new module-level function sessionRoute() at end of file",
-  "evidence": [
-   "-    if (lazy.NimbusFeatures.pingsender.getVariable(\"backgroundTaskEnabled\")) {",
-   "+    let params = [\"--backgroundtask\", \"pingsender\"];",
-   "+    Services.env.set(PINGSENDER_ROUTE_ENV, JSON.stringify(sessionRoute()));"
-  ],
-  "notes": "Category is stillborn because it reroutes Firefox's own telemetry pings (rule: reroute or silence of phone-home traffic). The standalone pingsender executable path and the Nimbus gate are removed, so the firefox --backgroundtask path is always used. Pings now carry the session proxy from Juggler's TargetRegistry and the profile prefs.js path, passed through an environment variable set around runAsync. Move sessionRoute and the env handling into our own file, keeping a one-line hook in runPingSender. The removed NimbusFeatures import is also a change to Mozilla's lazy import list. Verified: SessionRoute.js exports newProxyInfoFor (line 70), proxyForHost (93), proxyAuthCallbacks (110); TargetRegistry.js:392 defines proxyRecordFor. The added code in this file reads no pref by name; network.proxy.* and zoom.stealth.dns.* are only named in a comment and take effect through the prefs.js the child reads.",
-  "verifier": {
-   "changed": [
-    "category",
-    "notes"
-   ],
-   "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
-  }
- },
- {
-  "file": "toolkit/components/telemetry/moz.build",
-  "category": "build",
-  "feature": "pingsender-session-route",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "toolkit/components/telemetry/pings/BackgroundTask_pingsender.sys.mjs",
-  "category": "stillborn",
-  "feature": "pingsender-session-route",
-  "prefs": [],
-  "added": 70,
-  "removed": 7,
-  "hunks": 3,
-  "inline_logic_lines": 36,
-  "hookable": "movable",
-  "anchor": "runBackgroundTask (export async function, hunk 1); sendPing (module-level async function, hunks 2 and 3); new takeSessionRoute() at file level",
-  "evidence": [
-   "+  const proxy = takeSessionRoute();",
-   "+  Services.prefs.readUserPrefsFromFile(prefsFile);",
-   "+    .registerChannelFilter(",
-   "-  await sendStandalonePing(endpoint, json, {"
-  ],
-  "notes": "takeSessionRoute reads the env variable, reads the session prefs.js into this empty profile, and registers a proxy channel filter at priority 0. It refuses to send when the env variable is missing (no fallback), which is the intended fail-closed behaviour. It depends on resource://gre/modules/juggler/SessionRoute.js, which is not in this list. The largest logic block in this group: move takeSessionRoute and the filter into our own file. Clears the env variable after reading it, so child processes do not inherit the proxy password. Verified: SessionRoute.js exports newProxyInfoFor (line 70), proxyForHost (93), proxyAuthCallbacks (110); TargetRegistry.js:392 defines proxyRecordFor. The added code in this file reads no pref by name; network.proxy.* and zoom.stealth.dns.* are only named in a comment and take effect through the prefs.js the child reads.",
-  "verifier": {
-   "changed": [
-    "category",
-    "notes"
-   ],
-   "why": "Reroutes Firefox's own telemetry ping sender (pingsender) onto the session proxy and removes the standalone pingsender path; per the rule, rerouting phone-home traffic counts as stillborn."
-  }
- },
- {
-  "file": "toolkit/components/url-classifier/SafeBrowsing.sys.mjs",
-  "category": "other",
-  "feature": "api-keys-declared",
+  "file": "dom/media/webrtc/jsapi/DefaultCodecPreferences.cpp",
+  "category": "spoof",
+  "feature": "media-decode-declaration",
   "prefs": [
-   "zoom.stealth.apikey"
+   "zoom.stealth.media.decode_support",
+   "zoom.stealth.media.encode_support"
   ],
-  "added": 14,
+  "added": 3,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 3,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "SafeBrowsing.init() (line 354)",
+  "anchor": "the heads of SoftwareH264EnabledStatic and SendingH264PacketizationModeZeroSupportedStatic",
   "evidence": [
-   "+    Services.prefs.addObserver(\"zoom.stealth.apikey\", this);"
+   "+  if (auto d = StealthDeclaredSoftwareH264()) return *d;  // STEALTH-HOOK(fingerprint/media/decode-declaration)"
   ],
-  "notes": "The observed name is a branch, not one key. observe() calls readPrefs() (checked in the Mozilla base at line 495), which re-reads the key, so a late declaration enables the provider. The added comment block is about 12 lines in Italian and should be trimmed or moved out of the Mozilla file.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and tree; no correction needed."
-  }
- },
- {
-  "file": "toolkit/components/urlformatter/URLFormatter.sys.mjs",
-  "category": "other",
-  "feature": "api-keys-declared",
-  "prefs": [
-   "zoom.stealth.apikey.mozilla",
-   "zoom.stealth.apikey.google_location_service",
-   "zoom.stealth.apikey.google_safebrowsing"
-  ],
-  "added": 78,
-  "removed": 13,
-  "hunks": 3,
-  "inline_logic_lines": 22,
-  "hookable": "movable",
-  "anchor": "module scope helpers (hunk 1); nsURLFormatterService.prototype getter table (hunk 2, line 121); nsURLFormatterService.prototype.trimSensitiveURLs (hunk 3, line 180)",
-  "evidence": [
-   "+function stealthDeclaredApiKey(pref) {",
-   "-    MOZILLA_API_KEY: () => AppConstants.MOZ_MOZILLA_API_KEY,",
-   "+    MOZILLA_API_KEY: () => stealthDeclaredApiKey(PREF_APIKEY_MOZILLA),"
-  ],
-  "notes": "Keys move from build-time AppConstants to prefs declared by invisible_core, read through one reader. An undeclared key gives an empty string plus a console error, so the request is not sent. The three pref names are literal constants on purpose (a grep gate). trimSensitiveURLs now reads the same prefs for log redaction. The helper functions (hunk 1) belong in our own file. Pref names contain a vendor name (google_*): check against the no-vendor-names rule.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and tree; no correction needed."
-  }
- },
- {
-  "file": "toolkit/components/urlformatter/moz.build",
-  "category": "build",
-  "feature": "api-keys-declared",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "toolkit/components/urlformatter/tests/unit/xpcshell.toml",
-  "category": "build",
-  "feature": "api-keys-declared",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "toolkit/components/windowwatcher/moz.build",
-  "category": "build",
-  "feature": "juggler-popup-explicit-size",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "toolkit/components/windowwatcher/nsWindowWatcher.cpp",
-  "category": "spoof",
-  "feature": "popup-default-position",
-  "prefs": [],
-  "added": 46,
-  "removed": 3,
-  "hunks": 4,
-  "inline_logic_lines": 19,
-  "hookable": "movable",
-  "anchor": "nsWindowWatcher::CalculateChromeFlagsForContent (hunk 2); static SizeOpenedWindow (hunks 3 and 4); include at top (hunk 1)",
-  "evidence": [
-   "+  const Maybe<mozilla::gfx::StealthWindowFrame> stealthFrame =",
-   "+  if (HaveSpecifiedSize(aFeatures)) {",
-   "-  bool positionSpecified = aSizeSpec.PositionSpecified();",
-   "+  bool positionSpecified = aSizeSpec.PositionSpecified() || stealthFrame;"
-  ],
-  "notes": "File mixes two features: this spoof part (popup default position, which a page reads as screenX/screenY, and the chrome flags) and the Juggler flag JUGGLER_WINDOW_EXPLICIT_SIZE (feature juggler-popup-explicit-size, see nsIWebBrowserChrome.idl). Split them in the series. Verified: StealthDeclarationGate.h is gfx/thebes/StealthDeclarationGate.h (struct StealthWindowFrame line 124, StealthDeclaredWindowFrame line 135). Chrome callers keep stock behaviour. The B258 reference is the author's.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Verified StealthDeclarationGate.h exists."
-  }
- },
- {
-  "file": "toolkit/modules/AppConstants.sys.mjs",
-  "category": "other",
-  "feature": "api-keys-declared",
-  "prefs": [],
-  "added": 26,
-  "removed": 5,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "AppConstants object literal (module scope), keys near line 179",
-  "evidence": [
-   "-  MOZ_MOZILLA_API_KEY: \"@MOZ_MOZILLA_API_KEY@\",",
-   "+  // ⛔ STEALTHFOX: QUI STAVANO LE TRE CHIAVI API, E SONO STATE TOLTE."
-  ],
-  "notes": "Removes three build-time constants and the #if around the location-service key. About 20 comment lines are added to a Mozilla file: move the explanation out and keep only the removals. A grep of toolkit/modules, url-classifier, urlformatter and telemetry found no remaining reader (comments only); git grep of the whole tracked tree (excluding third_party) finds no reader or definer of the three keys except python/mozbuild/mozbuild/test/configure/test_checks_configure.py:944,996,1011,1026 (configure test of the keyfile helper, unrelated to this file).",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Whole-tree grep completed."
-  }
- },
- {
-  "file": "toolkit/modules/moz.build",
-  "category": "build",
-  "feature": "api-keys-declared",
-  "prefs": [],
-  "added": 7,
-  "removed": 6,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "module level, the OS_TARGET block (hunk 1, line 277) and the for var tuple of DEFINES (hunk 2, line 296)",
-  "evidence": [
-   "-    DEFINES[\"MOZ_GOOGLE_LOCATION_SERVICE_API_KEY\"] = (",
-   "-    \"MOZ_MOZILLA_API_KEY\","
-  ],
-  "notes": "Removes the DEFINES that fed the three keys. Must move together with the AppConstants.sys.mjs removal, otherwise the preprocessor fails. Only comments were added in the middle of the tuple.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and tree; no correction needed."
-  }
- },
- {
-  "file": "toolkit/mozapps/update/BackgroundUpdate.sys.mjs",
-  "category": "stillborn",
-  "feature": "updater-refuses",
-  "prefs": [],
-  "added": 0,
-  "removed": 0,
-  "hunks": 0,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "module imports; BackgroundUpdate._registerBackgroundUpdateTask head",
-  "evidence": [],
-  "notes": "The import and refusesHostTask(): Mozilla's checks and the prefs it records run as written, only the Windows scheduled task is not created.",
-  "verifier": {
-   "changed": [],
-   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
-  }
- },
- {
-  "file": "toolkit/mozapps/update/UpdateService.sys.mjs",
-  "category": "stillborn",
-  "feature": "updater-refuses",
-  "prefs": [],
-  "added": 0,
-  "removed": 0,
-  "hunks": 0,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "module imports; CheckerService #updateCheck after #parseUpdates; UpdateService #downloadUpdate head",
-  "evidence": [],
-  "notes": "Three hooks: the import of our StealthUpdate.sys.mjs, noneOffered() right after Mozilla parses the server's answer (every consumer then takes the no-update path), refusesDownload() at the one door of every download (backstop).",
-  "verifier": {
-   "changed": [],
-   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
-  }
- },
- {
-  "file": "toolkit/mozapps/update/moz.build",
-  "category": "build",
-  "feature": "updater-refuses",
-  "prefs": [],
-  "added": 0,
-  "removed": 0,
-  "hunks": 0,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after EXTRA_JS_MODULES list",
-  "evidence": [],
-  "notes": "Hook registering our StealthUpdate.sys.mjs.",
-  "verifier": {
-   "changed": [],
-   "why": "Added 2026-10-30: the updater is the retail's, our file refuses what follows the check."
-  }
- },
- {
-  "file": "toolkit/toolkit.mozbuild",
-  "category": "build",
-  "feature": "juggler-build",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "if CONFIG[\"ENABLE_WEBDRIVER\"]: DIRS list (hunk header line 152)",
-  "evidence": [
-   "+        \"/juggler\","
-  ],
-  "notes": "Registers the Juggler directory when ENABLE_WEBDRIVER is set. The /juggler directory is our own code and is not in this list; Verified: C:/ff/source/juggler exists (moz.build, TargetRegistry.js, SessionRoute.js, components/).",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Verified juggler directory exists."
-  }
- },
- {
-  "file": "toolkit/xre/dllservices/UntrustedModulesData.cpp",
-  "category": "other",
-  "feature": "untrusted-modules-own-binaries",
-  "prefs": [],
-  "added": 44,
-  "removed": 5,
-  "hunks": 3,
-  "inline_logic_lines": 25,
-  "hookable": "movable",
-  "anchor": "ModuleRecord::GetVersionAndVendorInfo; ModuleRecord::IsInDirectoryOf (new); IsOwnUnsignedBinary (new)",
-  "evidence": [],
-  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
- },
- {
-  "file": "toolkit/xre/dllservices/UntrustedModulesData.h",
-  "category": "other",
-  "feature": "untrusted-modules-own-binaries",
-  "prefs": [],
-  "added": 13,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "ModuleRecord::IsInDirectoryOf (new)",
-  "evidence": [],
-  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
- },
- {
-  "file": "toolkit/xre/dllservices/moz.build",
-  "category": "build",
-  "feature": "untrusted-modules-own-binaries",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "toolkit/xre/dllservices/tests/gtest/moz.build",
-  "category": "other",
-  "feature": "untrusted-modules-own-binaries",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "UNIFIED_SOURCES",
-  "evidence": [],
-  "notes": "Performance fix (commit 26e54ca1b1): the Untrusted Modules processor skips the Authenticode lookup for this build's own unsigned binaries (beside firefox.exe and with its version), which always fell through to the catalog search: 1.26 s of CPU per launch. Classification unchanged (FirefoxDirectory + version). IsOwnUnsignedBinary is inline logic that can move to an own file."
- },
- {
-  "file": "toolkit/xre/nsWindowsWMain.cpp",
-  "category": "juggler",
-  "feature": "juggler-pipe-stdio",
-  "prefs": [],
-  "added": 20,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 12,
-  "hookable": "movable",
-  "anchor": "int wmain(int argc, WCHAR** argv) (line 114); includes at line 14",
-  "evidence": [
-   "+  bool hasJugglerPipe =",
-   "+    SetEnvironmentVariableA(\"PW_PIPE_READ\", stdio3str);"
-  ],
-  "notes": "Copies inherited stdio handles 3 and 4 into the PW_PIPE_READ and PW_PIPE_WRITE env variables, so the juggler pipe code (nsRemoteDebuggingPipe.cpp, not in this list) can read them after the launcher handoff. The comment says this is an FF146 patch ported to FF150, but the feature is juggler's. Move the block into a function in our own file and keep one call here. The comment names a product (Playwright): check against the no-vendor-names rule.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and tree; no correction needed."
-  }
- },
- {
-  "file": "toolkit/xre/nsXREDirProvider.cpp",
-  "category": "spoof",
-  "feature": "font-bundle-files",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "the include block and nsXREDirProvider::InitializeUserPrefs, after Preferences::InitializeUserPrefs",
-  "evidence": [
-   "+    mozilla::widget::StealthSystemThemeAfterUserPrefs();  // STEALTH-HOOK(fingerprint/fonts/bundle)"
-  ],
-  "notes": "Checks, once the user prefs are in, that the system fonts and colours the engine declares are all there (widget/StealthSystemFonts.cpp); nothing is read from the host.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
-  }
- },
- {
-  "file": "uriloader/exthandler/moz.build",
-  "category": "build",
-  "feature": "juggler-download-interceptor",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
-  "file": "uriloader/exthandler/nsExternalHelperAppService.cpp",
-  "category": "juggler",
-  "feature": "juggler-download-interceptor",
-  "prefs": [],
-  "added": 12,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 4,
-  "hookable": "already-hook",
-  "anchor": "new method nsExternalHelperAppService::SetDownloadInterceptor, inserted after GetPreferredDownloadsDirectory (line 387)",
-  "evidence": [
-   "+NS_IMETHODIMP nsExternalHelperAppService::SetDownloadInterceptor(",
-   "+  mInterceptor = interceptor;"
-  ],
-  "notes": "Dead storage: mInterceptor is assigned here and never read in this file or the header; the comment says the intercept dispatch in CreateSaverForTempFile is not implemented. The setter does nothing else. The comment names a product (Playwright) in code: check against the no-vendor-names rule. Verified: git grep of the whole tree finds mInterceptor only at nsExternalHelperAppService.cpp:403 (write) and nsExternalHelperAppService.h:309 (declaration); no C++ calls interceptDownloadRequest or onDownloadComplete. The JS setter call at juggler/TargetRegistry.js:310 is live.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Whole-tree grep confirms mInterceptor is never read."
-  }
- },
- {
-  "file": "uriloader/exthandler/nsExternalHelperAppService.h",
-  "category": "juggler",
-  "feature": "juggler-download-interceptor",
-  "prefs": [],
-  "added": 5,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "class nsExternalHelperAppService, new member after the last declared member (hunk header line 302)",
-  "evidence": [
-   "+  nsCOMPtr<nsIDownloadInterceptor> mInterceptor;"
-  ],
-  "notes": "Member is never read (see the .cpp entry). Remove together with the setter if the feature is not finished. Verified by whole-tree git grep (only uriloader/exthandler/nsExternalHelperAppService.cpp:403 writes it).",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Confirmed the member is never read anywhere in the tree."
-  }
- },
- {
-  "file": "uriloader/exthandler/nsIExternalHelperAppService.idl",
-  "category": "juggler",
-  "feature": "juggler-download-interceptor",
-  "prefs": [],
-  "added": 22,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 7,
-  "hookable": "movable",
-  "anchor": "file level: new interface nsIDownloadInterceptor (hunk 1, before the nsIExternalHelperAppService comment); interface nsIExternalHelperAppService, new method setDownloadInterceptor (hunk 2)",
-  "evidence": [
-   "+interface nsIDownloadInterceptor : nsISupports",
-   "+[scriptable, uuid(9a20e9b0-75d0-11ea-bc55-0242ac130003)]",
-   "+  void setDownloadInterceptor(in nsIDownloadInterceptor interceptor);"
-  ],
-  "notes": "The interface body can move to our own .idl registered by our own moz.build, leaving one method line in Mozilla's file. The uuid is hard-coded and was copied from an earlier patch series; uniqueness was not checked. The comment says it was restored from an FF146 series. Nothing in this list calls onDownloadComplete or the interceptor. Verified: the IDL onDownloadComplete(aHandler, aErrorName) has 2 args while juggler/TargetRegistry.js:83 implements onDownloadComplete(externalAppHandler, canceled, errorName) with 3; harmless today because no C++ calls either method (whole-tree git grep), but it would break the day the dispatch is implemented.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Found an interface/consumer signature mismatch and confirmed nothing calls the interface methods."
-  }
- },
- {
-  "file": "widget/GfxInfoBase.cpp",
-  "category": "spoof",
-  "feature": "gfx-feature-status-declared",
-  "prefs": [
-   "zoom.stealth.gfx.feature_status"
-  ],
-  "added": 4,
-  "removed": 0,
-  "hunks": 4,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after #include \"GfxInfoBase.h\"; GetFeatureStatus right after the retired-feature check; the top of GetFeatureSuggestedDriverVersion; the top of EvaluateDownloadedBlocklist",
-  "evidence": [
-   "+  if (mozilla::gfx::StealthGfxDeclaredStatus(this, aFeature, aFailureId, aStatus)) return NS_OK;  // STEALTH-HOOK(platform/declaration-gate)"
-  ],
-  "notes": "Every graphics feature decision answers from the declared retail statuses (StealthGfxFeatureStatus.cpp), ahead of gfx.blacklist.* prefs, the child cache and the host matcher; the downloaded blocklist is not evaluated and the suggested driver version is empty while declared.",
+  "notes": "When both declared tables name video/avc, the H.264 WebRTC gate answers from the declaration (sw flag): the OpenH264 plugin and the GPU blocklist no longer decide. Otherwise Mozilla's logic runs.",
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
   }
  },
  {
-  "file": "widget/MouseEvents.h",
-  "category": "juggler",
-  "feature": "juggler-mouse-event-id",
-  "prefs": [],
-  "added": 10,
+  "file": "dom/media/webrtc/libwebrtcglue/WebrtcVideoCodecFactory.cpp",
+  "category": "spoof",
+  "feature": "media-decode-declaration",
+  "prefs": [
+   "zoom.stealth.media.decode_support",
+   "zoom.stealth.media.encode_support"
+  ],
+  "added": 3,
   "removed": 0,
   "hunks": 2,
-  "inline_logic_lines": 2,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "class WidgetMouseEventBase: member declaration (hunk 1) and its Assign copy (hunk 2)",
+  "anchor": "the head of WebrtcVideoEncoderFactory::SupportsCodec",
   "evidence": [
-   "+  uint32_t mJugglerEventId = 0;",
-   "+    mJugglerEventId = aEvent.mJugglerEventId;"
+   "+  if (auto declared = StealthDeclaredWebrtcEncodeSupport(aConfig)) return declared;"
   ],
-  "notes": "New field in a core event struct that crosses IPC; nsGUIEventIPC.h serializes it (see that entry). The comment refers to a lost ack bug (B217). Both sides are built together, so no version skew handling is needed.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff and tree; no correction needed."
-  }
- },
- {
-  "file": "widget/gtk/moz.build",
-  "category": "spoof",
-  "feature": "window-geometry",
-  "prefs": [
-   "zoom.stealth.screen.width",
-   "zoom.stealth.screen.height"
-  ],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the SOURCES list (MediaKeysEventSourceFactory.cpp, nsNativeThemeGTK.cpp, nsWindow.cpp)",
-  "evidence": [
-   "+SOURCES += [\"StealthFullscreenGtk.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
-  ],
-  "notes": "Builds StealthFullscreenGtk.cpp, not unified (X11 headers, like nsWindow.cpp).",
+  "notes": "A declared codec answers the encode support set from zoom.stealth.media.encode_support instead of the plugin or the host's encoders; an undeclared one runs Mozilla's code.",
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
   }
  },
  {
-  "file": "widget/gtk/nsLookAndFeel.cpp",
+  "file": "gfx/gl/GLContext.cpp",
   "category": "spoof",
-  "feature": "font-list-bundle-only",
-  "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "the include block (StealthFcEmptyConfig.h) and the end of nsLookAndFeel::nsLookAndFeel, the line before FcInit()",
-  "evidence": [
-   "+  StealthFcEmptyConfig();  // STEALTH-HOOK(fingerprint/fonts/font-list)"
-  ],
-  "notes": "Fontconfig runs on an empty configuration (FcConfigCreate, rescan interval 0, FcConfigSetCurrent; gfx/thebes/StealthFcEmptyConfig.cpp) installed before the FcInit() Mozilla calls here, so the host's /etc/fonts, ~/.config/fontconfig and font directories are never loaded. The same idempotent call sits at the start of the gfxFcPlatformFontList constructor, whichever runs first.",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook; two added lines, nothing removed."
-  }
- },
- {
-  "file": "widget/gtk/nsWindow.cpp",
-  "category": "spoof",
-  "feature": "occlusion-tracking",
+  "feature": "webgl-multisample",
   "prefs": [
-   "zoom.stealth.widget.occlusion_tracking.enabled"
+   "webgl.msaa-samples"
   ],
-  "added": 8,
-  "removed": 1,
-  "hunks": 2,
-  "inline_logic_lines": 2,
-  "hookable": "already-hook",
-  "anchor": "nsWindow::OnVisibilityNotifyEvent (the occlusion hunk; another adds the StaticPrefs include) and the head of nsWindow::MakeFullScreen (one line of fingerprint/screen-window/geometry: fullscreen without a window manager, nsWindow::StealthMakeFullScreenWithoutWM in widget/gtk/StealthFullscreenGtk.cpp)",
-  "evidence": [
-   "+  auto state = aState == GDK_VISIBILITY_FULLY_OBSCURED &&  // STEALTH-HOOK(fingerprint/screen-window/occlusion): B149, see FEATURE.md",
-   "+                       StaticPrefs::zoom_stealth_widget_occlusion_tracking_enabled()",
-   "+  if (GdkIsX11Display() && !IsFullscreenSupported(mShell) && StealthMakeFullScreenWithoutWM(aFullScreen)) return NS_OK;  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
-  ],
-  "notes": "GTK/Linux only. A fully covered window stays visible, so the page does not see hidden. Verified: pref declared at modules/libpref/init/StaticPrefList.yaml:21556. The comment names a bug id (B149) and a measured Xvfb result. Also carries the fullscreen call of fingerprint/screen-window/geometry (one line): on X with no window manager the widget decides fullscreen itself (the declared screen) instead of refusing; the occlusion marker moved to the end of its line to keep the budget at 4.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Verified pref declaration."
-  }
- },
- {
-  "file": "widget/gtk/nsWindow.h",
-  "category": "spoof",
-  "feature": "window-geometry",
-  "prefs": [
-   "zoom.stealth.screen.width",
-   "zoom.stealth.screen.height"
-  ],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the MakeFullScreen declaration",
-  "evidence": [
-   "+  bool StealthMakeFullScreenWithoutWM(bool aFullScreen);  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
-  ],
-  "notes": "Declares nsWindow::StealthMakeFullScreenWithoutWM (defined in widget/gtk/StealthFullscreenGtk.cpp, a member so it can set the size mode and the client area as OnWindowStateEvent does).",
-  "verifier": {
-   "changed": [],
-   "why": "Written with the hook, 2026-11-01."
-  }
- },
- {
-  "file": "widget/headless/HeadlessLookAndFeelGTK.cpp",
-  "category": "spoof",
-  "feature": "font-bundle-files",
-  "prefs": [],
   "added": 3,
   "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "the include block, HeadlessLookAndFeel::NativeGetColor and NativeGetFont, first line",
+  "anchor": "after #include \"GLContext.h\", after InitFeatures() in GLContext::InitImpl, and after the closing brace of its driver-workaround block",
   "evidence": [
-   "+  StealthVerifySystemTheme();  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+   "+  if (StealthDeclaredMultisample(stealthMultisample)) mAvailableFeatures[size_t(GLFeature::framebuffer_multisample)] = true;  // STEALTH-HOOK(fingerprint/webgl/multisample)"
   ],
-  "notes": "Refuses, with the engine on, a system font or colour that the declaration lacks, before the headless defaults answer.",
-  "verifier": {
-   "changed": [],
-   "why": "Checked against the diff; no correction needed."
-  }
- },
- {
-  "file": "widget/moz.build",
-  "category": "spoof",
-  "feature": "window-geometry",
-  "prefs": [
-   "zoom.stealth.screen.width",
-   "zoom.stealth.screen.height"
-  ],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "after the SOURCES list (nsBaseDragService.cpp, nsIWidget.cpp, ScreenManager.cpp)",
-  "evidence": [
-   "+UNIFIED_SOURCES += [\"StealthFullscreen.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
-  ],
-  "notes": "Builds StealthFullscreen.cpp.",
+  "notes": "The multisample feature as the driver reports it is kept before the workarounds and put back after them when the core declares samples (webgl.msaa-samples > 0, StealthDeclaredMultisample): the declaration decides, not the host renderer.",
   "verifier": {
    "changed": [],
    "why": "Written with the hook, 2026-11-01."
   }
  },
  {
-  "file": "widget/nsBaseDragService.cpp",
-  "category": "other",
-  "feature": "canvas-snapshot-readback",
-  "prefs": [],
-  "added": 2,
-  "removed": 1,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "nsBaseDragSession::DrawDragForImage (hunk header line 1139)",
-  "evidence": [
-   "-    *aSurface = aCanvas->GetSurfaceSnapshot();",
-   "+    *aSurface = aCanvas->GetSurfaceSnapshotAsDrawn();"
+  "file": "gfx/gl/moz.build",
+  "category": "spoof",
+  "feature": "webgl-multisample",
+  "prefs": [
+   "webgl.msaa-samples"
   ],
-  "notes": "Not spoof: GetSurfaceSnapshot applies CanvasUtils::StealthProjectSnapshot noise for WebGL/WebGPU contexts (dom/canvas/OffscreenCanvasDisplayHelper.cpp:459-478) and GetSurfaceSnapshotAsDrawn (line 481) skips it, so the drag image / taskbar preview show the real pixels; a page cannot read either. Companion of the canvas-noise feature, no page-visible effect.",
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the SOURCES list (GLScreenBuffer.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
+  ],
+  "notes": "Builds StealthGLMultisample.cpp.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Read GetSurfaceSnapshotAsDrawn: it returns the image without the stealth canvas noise that GetSurfaceSnapshot applies, so the change keeps host UI unnoised and is not page-observable; category stays other."
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
-  "file": "widget/nsGUIEventIPC.h",
-  "category": "juggler",
-  "feature": "juggler-mouse-event-id",
-  "prefs": [],
-  "added": 3,
-  "removed": 1,
-  "hunks": 2,
-  "inline_logic_lines": 3,
-  "hookable": "already-hook",
-  "anchor": "struct ParamTraits<mozilla::WidgetMouseEventBase>: the field is written after mInputSource (hunk 1) and read in ReadForDerivedClass (hunk 2)",
-  "evidence": [
-   "+    WriteParam(aWriter, aParam.mJugglerEventId);",
-   "+           ReadParam(aReader, &aResult->mInputSource) &&"
+  "file": "gfx/gl/gtest/moz.build",
+  "category": "spoof",
+  "feature": "webgl-multisample",
+  "prefs": [
+   "webgl.msaa-samples"
   ],
-  "notes": "IPC serialization of mJugglerEventId, read in the same order it is written. Wire format change, so the reader and writer must stay in step; both sides are built together.",
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the UNIFIED_SOURCES list (TestColorspaces.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"TestStealthGLMultisample.cpp\"]  # STEALTH-HOOK(fingerprint/webgl/multisample)"
+  ],
+  "notes": "Builds TestStealthGLMultisample.cpp.",
   "verifier": {
    "changed": [],
-   "why": "Checked against the diff and tree; no correction needed."
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "dom/events/test/gtest/moz.build",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the UNIFIED_SOURCES list (TestShortcutKeyDefinitions.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"TestStealthWindowGeometry.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds TestStealthWindowGeometry.cpp, the declared content origin in and out of fullscreen.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
@@ -6979,24 +6062,72 @@
   }
  },
  {
-  "file": "widget/nsXPLookAndFeel.cpp",
+  "file": "widget/moz.build",
   "category": "spoof",
-  "feature": "font-bundle-files",
-  "prefs": [],
-  "added": 5,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 3,
-  "hookable": "movable",
-  "anchor": "the include block, nsXPLookAndFeel::FillStores (first line) and GetUncachedColor (before the toolkit colour)",
-  "evidence": [
-   "+  widget::StealthSystemThemeFillStores();  // STEALTH-HOOK(fingerprint/fonts/bundle)",
-   "+  if (auto dark = widget::StealthDarkSystemColor(aID, aScheme)) {  // STEALTH-HOOK(fingerprint/fonts/bundle)"
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
   ],
-  "notes": "Fills the system theme stores from the declared palette, and answers a dark system colour from it (HighlightText follows the foreground, as on retail).",
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the SOURCES list (nsBaseDragService.cpp, nsIWidget.cpp, ScreenManager.cpp)",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthFullscreen.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds StealthFullscreen.cpp.",
   "verifier": {
    "changed": [],
-   "why": "Checked against the diff; no correction needed."
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/gtk/nsWindow.h",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the MakeFullScreen declaration",
+  "evidence": [
+   "+  bool StealthMakeFullScreenWithoutWM(bool aFullScreen);  // STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Declares nsWindow::StealthMakeFullScreenWithoutWM (defined in widget/gtk/StealthFullscreenGtk.cpp, a member so it can set the size mode and the client area as OnWindowStateEvent does).",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "widget/gtk/moz.build",
+  "category": "spoof",
+  "feature": "window-geometry",
+  "prefs": [
+   "zoom.stealth.screen.width",
+   "zoom.stealth.screen.height"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the SOURCES list (MediaKeysEventSourceFactory.cpp, nsNativeThemeGTK.cpp, nsWindow.cpp)",
+  "evidence": [
+   "+SOURCES += [\"StealthFullscreenGtk.cpp\"]  # STEALTH-HOOK(fingerprint/screen-window/geometry)"
+  ],
+  "notes": "Builds StealthFullscreenGtk.cpp, not unified (X11 headers, like nsWindow.cpp).",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
@@ -7023,26 +6154,70 @@
   }
  },
  {
-  "file": "widget/windows/TaskbarPreview.cpp",
-  "category": "other",
-  "feature": "canvas-snapshot-readback",
-  "prefs": [],
-  "added": 2,
-  "removed": 1,
-  "hunks": 1,
-  "inline_logic_lines": 1,
-  "hookable": "already-hook",
-  "anchor": "TaskbarPreviewCallback::Done (hunk header line 332)",
-  "evidence": [
-   "-  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshot();",
-   "+  RefPtr<gfx::SourceSurface> source = canvas->GetSurfaceSnapshotAsDrawn();"
+  "file": "widget/GfxInfoBase.cpp",
+  "category": "spoof",
+  "feature": "gfx-feature-status-declared",
+  "prefs": [
+   "zoom.stealth.gfx.feature_status"
   ],
-  "notes": "Not spoof: GetSurfaceSnapshot applies CanvasUtils::StealthProjectSnapshot noise for WebGL/WebGPU contexts (dom/canvas/OffscreenCanvasDisplayHelper.cpp:459-478) and GetSurfaceSnapshotAsDrawn (line 481) skips it, so the drag image / taskbar preview show the real pixels; a page cannot read either. Companion of the canvas-noise feature, no page-visible effect.",
+  "added": 4,
+  "removed": 0,
+  "hunks": 4,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after #include \"GfxInfoBase.h\"; GetFeatureStatus right after the retired-feature check; the top of GetFeatureSuggestedDriverVersion; the top of EvaluateDownloadedBlocklist",
+  "evidence": [
+   "+  if (mozilla::gfx::StealthGfxDeclaredStatus(this, aFeature, aFailureId, aStatus)) return NS_OK;  // STEALTH-HOOK(platform/declaration-gate)"
+  ],
+  "notes": "Every graphics feature decision answers from the declared retail statuses (StealthGfxFeatureStatus.cpp), ahead of gfx.blacklist.* prefs, the child cache and the host matcher; the downloaded blocklist is not evaluated and the suggested driver version is empty while declared.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Read GetSurfaceSnapshotAsDrawn: it returns the image without the stealth canvas noise that GetSurfaceSnapshot applies, so the change keeps host UI unnoised and is not page-observable; category stays other."
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "gfx/wgpu_bindings/src/server.rs",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.fpp.hw_seed"
+  ],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the instance_flags statement of wgpu_server_new (with_env), and after the Windows compositor-LUID block of Message::RequestAdapter; each line declares, in its own block, the path module it calls",
+  "evidence": [
+   "+    #[path = \"stealth_webgpu_env.rs\"] mod stealth_webgpu_env; stealth_webgpu_env::without_host_env(&mut instance_flags); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)",
+   "+            #[path = \"stealth_webgpu_adapter.rs\"] mod stealth_webgpu_adapter; stealth_webgpu_adapter::settle(global, &desc, adapter_id, &mut result); // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
+  ],
+  "notes": "With the engine on, the instance flags are the ones built with no WGPU_* variable set (stealth_webgpu_env::without_host_env), and a compositor search that found no D3D12 adapter takes the software one (WARP) instead of answering null (stealth_webgpu_adapter::settle).",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
+  }
+ },
+ {
+  "file": "dom/webgpu/ipc/WebGPUParent.cpp",
+  "category": "spoof",
+  "feature": "webgpu-adapter-declaration",
+  "prefs": [
+   "zoom.stealth.fpp.hw_seed"
+  ],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "top of wgpu_parent_get_compositor_device_luid",
+  "evidence": [
+   "+  *aOutLuid = {};  // STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)"
+  ],
+  "notes": "The LUID out parameter is zeroed before Mozilla's code fills it: a missing compositor device reads as no match, not uninitialised memory.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-01."
   }
  },
  {
@@ -7092,53 +6267,107 @@
   }
  },
  {
-  "file": "xpcom/reflect/xptinfo/xptinfo.h",
-  "category": "juggler",
-  "feature": "juggler-param-buffer",
-  "prefs": [],
-  "added": 2,
-  "removed": 1,
-  "hunks": 1,
+  "file": "dom/canvas/WebGLContextExtensions.cpp",
+  "category": "spoof",
+  "feature": "webgl-parameters",
+  "prefs": [
+   "zoom.stealth.webgl.extensions",
+   "zoom.stealth.webgl2.extensions"
+  ],
+  "added": 3,
+  "removed": 0,
+  "hunks": 2,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "PARAM_BUFFER_COUNT macro",
+  "anchor": "WebGLContext::IsExtensionSupported, case WEBGL_provoking_vertex (ahead of Mozilla's per-platform policy)",
   "evidence": [
-   "-#  define PARAM_BUFFER_COUNT 14",
-   "+#  define PARAM_BUFFER_COUNT 15"
+   "+      if (StealthWebGLExtensionVerdict(IsWebGL2(), ext) == Some(true)) return true;"
   ],
-  "notes": "Not a Firefox version fix: the diff comment says the count moves to 15 for jugglerSendMouseEvent, which takes 15 arguments. It is tied to that Juggler method's signature; if the method's arity changes, this value must follow. Check of the 15-argument claim: nsIDOMWindowUtils.idl:465-478 declares 14 in-parameters plus an unsigned long return value, i.e. 15 XPT params including the retval; the diff comment \"15 args\" is right only in that sense (confirmed, with this wording).",
+  "notes": "The host serves an extension the persona declares wherever its GL has it, ahead of Mozilla's policy (ANGLE or macOS only). The page is told the persona's list on the client side; a declared extension the host refused tripped the assert in ProvokingVertex and took the main process down on Linux (2026-11-07).",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Clarified that the 15 counts 14 in-params plus the retval."
+   "changed": [],
+   "why": "Written with the hook, 2026-11-07."
   }
  },
  {
-  "file": "xpfe/appshell/AppWindow.cpp",
+  "file": "dom/canvas/WebGLContextGL.cpp",
   "category": "spoof",
-  "feature": "focus-ignore-os-deactivation",
-  "prefs": [
-   "zoom.stealth.focus.ignore_os_deactivation"
+  "feature": "webgl-parameters",
+  "prefs": [],
+  "added": 10,
+  "removed": 0,
+  "hunks": 5,
+  "inline_logic_lines": 5,
+  "hookable": "already-hook",
+  "anchor": "WebGLContext::BlendEquationSeparate / BlendFuncSeparate (indexed), PolygonOffsetClampEXT, ProvokingVertex, ClipControlEXT",
+  "evidence": [
+   "+  if (!IsExtensionEnabled(WebGLExtensionID::WEBGL_provoking_vertex)) return;"
   ],
-  "added": 30,
+  "notes": "An entry point whose extension the host never enabled returns before Mozilla's MOZ_RELEASE_ASSERT, which stays. The persona's list declares extensions the host may refuse by platform policy; until firefox-56 one call from the page aborted the host process (Linux: the main process). Read with symbols 2026-11-07.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-07."
+  }
+ },
+ {
+  "file": "dom/canvas/WebGLContextFramebufferOperations.cpp",
+  "category": "spoof",
+  "feature": "webgl-parameters",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "WebGLContext::ColorMask (indexed, OES_draw_buffers_indexed)",
+  "evidence": [
+   "+    if (!IsExtensionEnabled(WebGLExtensionID::OES_draw_buffers_indexed)) return;"
+  ],
+  "notes": "An entry point whose extension the host never enabled returns before Mozilla's MOZ_RELEASE_ASSERT, which stays. The persona's list declares extensions the host may refuse by platform policy; until firefox-56 one call from the page aborted the host process (Linux: the main process). Read with symbols 2026-11-07.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-07."
+  }
+ },
+ {
+  "file": "gfx/gl/GLLibraryEGL.cpp",
+  "category": "spoof",
+  "feature": "webgl-own-gl",
+  "prefs": [],
+  "added": 3,
   "removed": 0,
   "hunks": 3,
-  "inline_logic_lines": 6,
+  "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "AppWindow::WindowActivated (hunk 2, line 2746); AppWindow::WindowDeactivated (hunk 3, line 2757); hunk 1 is an include",
+  "anchor": "after #include \"GLLibraryEGL.h\", after the non-Windows library comment in GLLibraryEGL::Init, and after #ifdef MOZ_WIDGET_GTK in CreateDisplayLocked",
   "evidence": [
-   "+        if (StaticPrefs::zoom_stealth_focus_ignore_os_deactivation()) {",
-   "+            fm->WindowLowered(active, nsFocusManager::GenerateFocusActionId());",
-   "+    return;"
+   "+  if (!StealthLoadOwnGLOrRefuse(&mEGLLibrary, &mGLLibrary, out_failureId)) return false;  // STEALTH-HOOK(fingerprint/webgl/own-gl): ours or none",
+   "+    if (StealthOwnGLRequired()) return GetAndInitSurfacelessDisplay(*this, aProofOfLock);  // STEALTH-HOOK(fingerprint/webgl/own-gl): surfaceless only"
   ],
-  "notes": "The window keeps focus when the OS takes it away, so document.hasFocus() stays true (page-observable, hence spoof). WindowDeactivated now returns early under the pref, so Mozilla's deactivation body is skipped. The lowering block in WindowActivated (4 logic lines) could move to our own file. Pref accessor needs the pref declared in StaticPrefList (not in this list). Verified: zoom.stealth.focus.ignore_os_deactivation is declared at modules/libpref/init/StaticPrefList.yaml:21567.",
+  "notes": "On Linux with the engine on, EGL is the engine's own llvmpipe (llvmpipe/ next to the executable, StealthLoadOwnGLOrRefuse) or nothing, never the host's libEGL, and the display is EGL's surfaceless platform only, never the host's X11, Wayland or render nodes.",
   "verifier": {
-   "changed": [
-    "evidence",
-    "notes"
-   ],
-   "why": "Evidence line 2 did not match the diff verbatim (indentation); replaced with the exact line."
+   "changed": [],
+   "why": "Written with the hook, 2026-11-08."
+  }
+ },
+ {
+  "file": "gfx/gl/GLContextProviderLinux.cpp",
+  "category": "spoof",
+  "feature": "webgl-own-gl",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after #include \"GLContextProvider.h\", and at the top of GLContextProviderLinux::CreateHeadless",
+  "evidence": [
+   "+  if (StealthOwnGLRequired()) return sGLContextProviderEGL.CreateHeadless(desc, out_failureId);  // STEALTH-HOOK(fingerprint/webgl/own-gl): never GLX"
+  ],
+  "notes": "With the engine on, a headless context on Linux (WebGL's) is always EGL, so always the engine's own llvmpipe, never the host's GLX.",
+  "verifier": {
+   "changed": [],
+   "why": "Written with the hook, 2026-11-08."
   }
  }
 ]

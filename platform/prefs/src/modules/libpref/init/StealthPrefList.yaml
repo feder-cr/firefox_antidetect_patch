@@ -308,19 +308,6 @@
   value: ""
   mirror: always
 
-# The arithmetic class of the GPU the persona declares, for the HLSL ANGLE emits
-# for WebGL (Windows). 0 = the HLSL of the host's own adapter, byte for byte as
-# without this pref. 1 = NVIDIA Maxwell and Pascal, 2 = NVIDIA Volta and later:
-# float dot() of two, three or four components is emitted as the fma chain of
-# the NVIDIA hardware (IEEE-only `precise` helpers, the same text and the same
-# bits on every adapter), the same for both classes. Read where the ANGLE
-# display is created (gfx/gl/StealthAngleAlu.h) and passed to ANGLE as the
-# feature `stealthAluNvidia`. Declared by invisible_core.
-- name: zoom.stealth.webgl.alu_class
-  type: RelaxedAtomicInt32
-  value: 0
-  mirror: always
-
 # Lo STILE DI HINTING con cui FreeType carica un glifo, e se l'antialias e'
 # acceso. Sono i due soli parametri, dei sei che `PrepareFontOptions` chiedeva
 # al pattern fontconfig, che spostano i pixel: misurato il 2026-08-16, un
@@ -452,6 +439,26 @@
   value: ""
   mirror: always
 
+# Glyph-edge coverage ladder: the distinct alpha levels a Windows rasteriser
+# produces on an antialiased glyph edge, ascending, comma separated. Measured
+# 2026-08-07 over 48 family/size/weight combinations: Windows yields 9-19
+# levels per render and FreeType 193-256, and a detector does not need to
+# compare a hash to separate those - it can COUNT. Empty disables the snap.
+# Delivered by invisible_core rather than the font manifest: it is not a
+# property of any font FILE, it is what the rasteriser does to an edge.
+#
+# Applied to the A8 GLYPH MASK, in SkScalerContext::getImage, where both the
+# DirectWrite and the FreeType scaler land and the mask is greyscale coverage by
+# construction. It was applied to the composited RGBA buffer at canvas readback
+# until 2026-08-08, where it had to guess which pixels were text by testing that
+# the three colour channels agreed - and coloured text has r != g != b, so on
+# a commercial fingerprinting service's own canvas (#006699) it was a total no-op. The name still
+# says "canvas" in the docs of that era; the pref is spelled for what it does.
+- name: zoom.stealth.text.coverage_ladder
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 # The Windows text quality, declared instead of asked of the host
 # (SystemParametersInfo SPI_GETFONTSMOOTHING / SPI_GETFONTSMOOTHINGTYPE):
 # 0 = no smoothing (DEFAULT_QUALITY), 4 = standard antialiasing
@@ -465,20 +472,9 @@
   value: -1
   mirror: always
 
-# The CPU vendor whose RCPPS/RSQRTPS Skia's canvas starts its reciprocals from, "intel" or
-# "amd": the estimate those instructions give differs by vendor, and the engine computes the
-# declared vendor's (a model, gfx/skia/skia/src/opts/StealthSkiaMath.h) instead of asking
-# the host's CPU, so that the same seed gives the same canvas bytes on every machine.
-# Empty is NOT DECLARED, and the declaration gate refuses it (and a vendor whose table is
-# not in the build).
-- name: zoom.stealth.cpu.vendor
-  type: DataMutexString
-  value: ""
-  mirror: always
-
 # The whole font manifest, carried by invisible_core and preferred over the
 # copy in NS_GRE_DIR/fonts/. Families, per-face vertical metrics, the alias
-# table and the per-script fallback lists - one pref
+# table, the coverage ladder and the per-script fallback lists - one pref
 # rather than one per table, because the binary already parses this text.
 # Empty means "use the file", which is what keeps a browser launched without
 # that package rendering with fonts instead of none.

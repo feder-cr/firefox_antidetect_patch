@@ -12,7 +12,6 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/StealthRefuse.h"
-#include "nsCharSeparatedTokenizer.h"
 #include "nsIGfxInfo.h"
 #include "nsXULAppAPI.h"
 
@@ -193,18 +192,22 @@ bool StealthParseGfxFeatureStatus(const nsACString& aDeclaration,
 }
 
 bool StealthAnswerGfxFeature(const StealthGfxFeatureTable& aTable,
-                             int32_t aFeature, nsACString& aFailureId,
-                             int32_t* aStatus) {
+                             int32_t aFeature, bool aGLProbeSucceeded,
+                             nsACString& aFailureId, int32_t* aStatus) {
   if (!IsLive(aFeature) || size_t(aFeature) >= aTable.Length() ||
       aTable[aFeature].isNothing()) {
     return false;
   }
   int32_t asked = aFeature;
 #ifdef MOZ_WIDGET_GTK
-  // WebGL on GTK draws on the GL the engine ships (llvmpipe behind EGL), never
-  // on the host's, so whether the host has a GL (glxtest) says nothing about
-  // it: on a host with no Mesa WebGL2 must exist all the same.
   if (aFeature == nsIGfxInfo::FEATURE_WEBGL_OPENGL) {
+    if (!aGLProbeSucceeded) {
+      // The host has no GL at all: a host fact Mozilla's own answer states,
+      // WebGL stays unavailable.
+      *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+      aFailureId.AssignLiteral("FEATURE_FAILURE_GLXTEST_FAILED");
+      return true;
+    }
     asked = nsIGfxInfo::FEATURE_WEBGL;
   }
 #endif
@@ -214,7 +217,7 @@ bool StealthAnswerGfxFeature(const StealthGfxFeatureTable& aTable,
   return true;
 }
 
-bool StealthGfxDeclaredStatus(nsIGfxInfo* /* aGfxInfo */, int32_t aFeature,
+bool StealthGfxDeclaredStatus(nsIGfxInfo* aGfxInfo, int32_t aFeature,
                               nsACString& aFailureId, int32_t* aStatus) {
   if (!StealthEngineActive() || !IsLive(aFeature)) {
     return false;
@@ -233,6 +236,14 @@ bool StealthGfxDeclaredStatus(nsIGfxInfo* /* aGfxInfo */, int32_t aFeature,
     }
     return false;
   }
+  bool probe = true;
+#ifdef MOZ_WIDGET_GTK
+  if (aFeature == nsIGfxInfo::FEATURE_WEBGL_OPENGL && aGfxInfo) {
+    nsAutoString testType;
+    probe = NS_SUCCEEDED(aGfxInfo->GetTestType(testType)) &&
+            !testType.IsEmpty();
+  }
+#endif
   StaticMutexAutoLock lock(sMutex);
   if (!sTable) {
     nsAutoCString declaration;
@@ -254,7 +265,8 @@ bool StealthGfxDeclaredStatus(nsIGfxInfo* /* aGfxInfo */, int32_t aFeature,
     }
     sTable = table.release();
   }
-  return StealthAnswerGfxFeature(*sTable, aFeature, aFailureId, aStatus);
+  return StealthAnswerGfxFeature(*sTable, aFeature, probe, aFailureId,
+                                 aStatus);
 }
 
 bool StealthGfxDeclarationActive() { return StealthEngineActive(); }

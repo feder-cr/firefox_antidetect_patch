@@ -2,7 +2,7 @@
 
 Category: build
 Prefs: none read directly
-Test: juggler/tests/screenshot_retry_is_bounded.test.mjs
+Test: TODO
 
 ## What it does
 

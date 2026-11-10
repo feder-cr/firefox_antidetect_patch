@@ -1,16 +1,9 @@
 {
  "modified": [
-  "gfx/moz.build",
-  "gfx/skia/generate_mozbuild.py",
-  "gfx/skia/moz.build"
+  "gfx/moz.build"
  ],
  "added": {
-  "gfx/2d/StealthSkiaIdwr.cpp": "100644",
-  "gfx/2d/StealthSkiaIdwr.h": "100644",
-  "gfx/2d/StealthSkiaIdwrFontconfig.cpp": "100644",
-  "gfx/2d/StealthSkiaIdwrWin.cpp": "100644",
   "gfx/idwr/IdwrHost.cpp": "100644",
-  "gfx/idwr/libm_ucrt.c": "100644",
   "gfx/idwr/moz.build": "100644",
   "gfx/idwr/moz.yaml": "100644",
   "gfx/idwr/sources.mozbuild": "100644",
@@ -91,28 +84,8 @@
   "gfx/idwr/src/truetype/scan_setup.c": "100644",
   "gfx/idwr/src/truetype/scan_spline.c": "100644",
   "gfx/idwr/src/truetype/tt_state.h": "100644",
-  "gfx/idwr/tests/check_libxul_math.py": "100644",
-  "gfx/idwr/tests/gtest/LibmUcrtCases.h": "100644",
   "gfx/idwr/tests/gtest/TestIdwr.cpp": "100644",
-  "gfx/idwr/tests/gtest/TestIdwrLibm.cpp": "100644",
-  "gfx/idwr/tests/gtest/moz.build": "100644",
-  "gfx/skia/skia/include/ports/SkTypeface_idwr.h": "100644",
-  "gfx/skia/skia/src/ports/SkIdwrPathSink.cpp": "100644",
-  "gfx/skia/skia/src/ports/SkIdwrPathSink.h": "100644",
-  "gfx/skia/skia/src/ports/SkScalerContext_idwr.cpp": "100644",
-  "gfx/skia/skia/src/ports/SkScalerContext_idwr.h": "100644",
-  "gfx/skia/skia/src/ports/SkTypeface_idwr.cpp": "100644",
-  "gfx/skia/skia/src/ports/SkTypeface_idwr.h": "100644",
-  "gfx/tests/gtest/StealthSkiaIdwrGolden.inc": "100644",
-  "gfx/tests/gtest/StealthTestFonts.h": "100644",
-  "gfx/tests/gtest/TestStealthIdwrTextVars.cpp": "100644",
-  "gfx/tests/gtest/TestStealthSkiaIdwr.cpp": "100644",
-  "gfx/tests/gtest/TestStealthSkiaIdwrThreads.cpp": "100644",
-  "gfx/tests/gtest/TestStealthSkiaStrokeLevels.cpp": "100644",
-  "gfx/tests/gtest/gen_skia_text_golden.py": "100644",
-  "gfx/thebes/StealthIdwrTextVars.cpp": "100644",
-  "gfx/thebes/StealthIdwrTextVars.h": "100644",
-  "gfx/thebes/StealthIdwrTextVars.mozbuild": "100644"
+  "gfx/idwr/tests/gtest/moz.build": "100644"
  },
  "inventory": [
   {
@@ -130,46 +103,6 @@
     "+DIRS += [\"idwr\"]  # STEALTH-HOOK(fingerprint/fonts/idwr)"
    ],
    "notes": "Builds gfx/idwr (invisible_DWriteCore's DirectWrite rasterizer) into libxul, on a line of its own outside Mozilla's DIRS list."
-  },
-  {
-   "file": "gfx/skia/generate_mozbuild.py",
-   "category": "build",
-   "feature": "idwr-text-engine",
-   "prefs": [],
-   "added": 4,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "footer, after FINAL_LIBRARY",
-   "evidence": [
-    "+SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)"
-   ],
-   "notes": "Puts the three sources of our idwr port of Skia's DirectWrite text into the footer moz.build is generated from, so regenerating Skia keeps them.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff; no correction needed."
-   }
-  },
-  {
-   "file": "gfx/skia/moz.build",
-   "category": "build",
-   "feature": "idwr-text-engine",
-   "prefs": [],
-   "added": 1,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "after FINAL_LIBRARY",
-   "evidence": [
-    "+SOURCES += ['skia/src/ports/SkIdwrPathSink.cpp', 'skia/src/ports/SkScalerContext_idwr.cpp', 'skia/src/ports/SkTypeface_idwr.cpp']  # STEALTH-HOOK(fingerprint/fonts/idwr)"
-   ],
-   "notes": "The generated counterpart of the footer line of generate_mozbuild.py: the three sources of our idwr port of Skia's DirectWrite text.",
-   "verifier": {
-    "changed": [],
-    "why": "Checked against the diff; no correction needed."
-   }
   }
  ]
 }

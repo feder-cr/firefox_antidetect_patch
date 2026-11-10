@@ -326,17 +326,10 @@ typedef struct run_glyph {
     uint8_t *on;
 } run_glyph;
 
-#if !defined(IDWR_STATIC) || defined(IDWR_TESTING)
-/* idwr_outline_scaler_perturb: negative controls of the checks. Test builds only: the engine
- * has neither the variable nor the export, the scalers open with perturb 0. */
-static int g_perturb;
+static int g_perturb; /* idwr_outline_scaler_perturb: negative controls of the checks */
 
 /* not in idwr.h: TT_OUTLINE_PERTURB_* bits for the scalers opened afterwards */
 TT_EXPORT void idwr_outline_scaler_perturb(int bits) { g_perturb = bits; }
-#define OUTLINE_PERTURB g_perturb
-#else
-#define OUTLINE_PERTURB 0
-#endif
 
 IDWR_API idwr_outline_scaler *idwr_outline_scaler_open(const idwr_font *font, const float *coords, uint16_t axes,
                                                     uint32_t simulations) {
@@ -367,13 +360,13 @@ IDWR_API idwr_outline_scaler *idwr_outline_scaler_open(const idwr_font *font, co
 #endif
     /* MakeRasterizerFlagsForOutlineRendering, not sideways (sideways oblique: tt_sideways) */
     uint32_t flags = (simulations & IDWR_SIM_BOLD ? 2u : 0u) | (simulations & IDWR_SIM_OBLIQUE ? 4u : 0u);
-    s->tt = tt_outline_open(font, coords, axes, flags, OUTLINE_PERTURB, &s->last_error);
+    s->tt = tt_outline_open(font, coords, axes, flags, g_perturb, &s->last_error);
     if (!s->tt) { free(s); return NULL; }
     s->font = font;
     s->axes = axes;
     if (axes) memcpy(s->coords, coords, sizeof(float) * axes);
     s->simulations = simulations;
-    s->perturb = OUTLINE_PERTURB;
+    s->perturb = g_perturb;
     return s;
 }
 
