@@ -2,6 +2,6 @@
  "mozilla_repository": "https://github.com/mozilla-firefox/firefox",
  "mozilla_tag": "FIREFOX_159_0_RELEASE",
  "source_branch": "port/159-phase4",
- "exported_from": "2ad9182a6ad4d11668347f82e2e3b2f5c6df2c7d",
- "exported_tree": "588e28cf8bbe83dfe799398f2872996d823aed74"
+ "exported_from": "222925a8c6ddbafd64486c8d0dc59c4c90e4f2f9",
+ "exported_tree": "f2ab402664aef89765996374ef8368ca6d4cdc75"
 }
