@@ -62,6 +62,7 @@
   "juggler/tests/response_tells_its_security_and_service_worker.test.mjs": "100644",
   "juggler/tests/runtime_debugger_module_url.test.mjs": "100644",
   "juggler/tests/runtime_ids_are_unique_per_session.test.mjs": "100644",
+  "juggler/tests/screenshot_releases_its_canvas.test.mjs": "100644",
   "juggler/tests/scroll_into_view_if_needed_works.test.mjs": "100644",
   "juggler/tests/shared_cookies_leave_with_their_owner.test.mjs": "100644",
   "juggler/tests/simple_channel.test.mjs": "100644",

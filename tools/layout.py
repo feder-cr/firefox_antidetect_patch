@@ -30,6 +30,7 @@ FEATURES = {
     "hidden-desktop-window-capture": "platform/hidden-desktop",
     "script-cache-adopt-written": "platform/script-cache",
     "startup-cache-foreground-writes": "platform/startup-cache",
+    "wr-shared-fonts-cleared-with-namespace": "platform/webrender-memory",
     "untrusted-modules-own-binaries": "platform/untrusted-modules",
     "gfx-feature-status-declared": "platform/declaration-gate",
     "stealth-prefs-content-sync": "platform/prefs",

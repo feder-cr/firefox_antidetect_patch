@@ -10,6 +10,7 @@ platform/repo
 platform/script-cache
 platform/startup-cache
 platform/untrusted-modules
+platform/webrender-memory
 stillborn/api-keys
 stillborn/telemetry
 stillborn/updater
