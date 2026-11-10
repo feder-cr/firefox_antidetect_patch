@@ -65,7 +65,10 @@ function held(pageNetwork, requestId, channel) {
   request._pageNetwork = pageNetwork;
   request._frameId = 'frame-1';
   request._interceptedChannel = channel;
-  request._networkObserver = { _channelToRequest: new Map([[request.httpChannel, request]]) };
+  request._networkObserver = {
+    _channelToRequest: new Map([[request.httpChannel, request]]),
+    _forgetExpectedRedirects() {},
+  };
   pageNetwork._interceptedRequests.set(requestId, request);
   return request;
 }

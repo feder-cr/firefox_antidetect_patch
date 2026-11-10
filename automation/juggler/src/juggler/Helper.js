@@ -72,10 +72,20 @@ export class Helper {
     return () => progress.removeProgressListener(listener);
   }
 
+  // Every tear-down runs, even when one throws (a half-destroyed web progress, a document that is gone): the
+  // first error is thrown after the last tear-down ran, so a failure never leaves registered what comes after it.
   removeListeners(listeners) {
-    for (const tearDown of listeners)
-      tearDown.call(null);
+    let failure = null;
+    for (const tearDown of listeners) {
+      try {
+        tearDown.call(null);
+      } catch (e) {
+        failure = failure || { error: e };
+      }
+    }
     listeners.splice(0, listeners.length);
+    if (failure)
+      throw failure.error;
   }
 
   generateId() {

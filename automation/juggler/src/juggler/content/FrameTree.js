@@ -368,20 +368,34 @@ export class FrameTree {
     return this._mainFrame;
   }
 
+  // Every step runs, whatever an earlier one throws: a tree that stays half-disposed keeps its observers, its
+  // progress listener and the window of every document it served.
   dispose() {
-    this._browsingContextGroup.__jugglerFrameTrees.delete(this);
-    this._wdm.removeListener(this._wdmListener);
-    this._runtime.dispose();
-    try {
-      helper.removeListeners(this._eventListeners);
-    } catch (e) {
-      if (e) dump(`[FrameTree] removeListeners(_eventListeners) failed (half-destroyed webProgress): ${e.message}\n`);
-    }
-    try {
-      helper.removeListeners(this._inputEventListeners);
-    } catch (e) {
-      if (e) dump(`[FrameTree] removeListeners(_inputEventListeners) failed: ${e.message}\n`);
-    }
+    const each = (items, what) => {
+      for (const item of [...items]) {
+        try {
+          what(item);
+        } catch (e) {
+          if (e) dump(`[FrameTree] dispose: ${e.message}\n`);
+        }
+      }
+    };
+    const steps = [
+      () => this._browsingContextGroup.__jugglerFrameTrees.delete(this),
+      () => this._wdm.removeListener(this._wdmListener),
+      () => each(this._frameIdToFrame.values(), frame => frame.dispose()),
+      () => each(this._workers.values(), worker => worker.dispose()),
+      () => {
+        this._frameIdToFrame.clear();
+        this._workers.clear();
+        this._pointerLanding.clear();
+      },
+      () => this._runtime.dispose(),
+      // In some cases removing listeners from a half-destroyed web progress fails.
+      () => helper.removeListeners(this._eventListeners),
+      () => helper.removeListeners(this._inputEventListeners),
+    ];
+    each(steps, step => step());
   }
 
   onWindowEvent(event) {
@@ -829,12 +843,29 @@ class Frame {
     throw new Error('Cannot find object with id = ' + objectId);
   }
 
+  // The WebSocket service holds the listener (and with it this frame) for the inner window it was added for.
+  _removeWebSocketListener() {
+    const webSocketService = this._frameTree._webSocketEventService;
+    if (this._webSocketListenerInnerWindowId && webSocketService.hasListenerFor(this._webSocketListenerInnerWindowId))
+      webSocketService.removeListener(this._webSocketListenerInnerWindowId, this._webSocketListener);
+    this._webSocketListenerInnerWindowId = 0;
+  }
+
   dispose() {
-    for (const context of this._worldNameToContext.values())
-      this._runtime.destroyExecutionContext(context);
-    this._worldNameToContext.clear();
-    // la sandbox di serializzazione appartiene al documento, come i contesti
-    this._serializationSandbox = null;
+    try {
+      this._removeWebSocketListener();
+    } catch (e) {
+      if (e) dump(`[Frame] removing the WebSocket listener failed: ${e.message}\n`);
+    }
+    try {
+      for (const context of this._worldNameToContext.values())
+        this._runtime.destroyExecutionContext(context);
+    } finally {
+      this._worldNameToContext.clear();
+      // la sandbox di serializzazione appartiene al documento, come i contesti
+      this._serializationSandbox = null;
+      this._textInputProcessor = null;
+    }
   }
 
   _addBinding(worldName, name, script) {
@@ -847,8 +878,7 @@ class Frame {
 
   _onGlobalObjectCleared() {
     const webSocketService = this._frameTree._webSocketEventService;
-    if (this._webSocketListenerInnerWindowId && webSocketService.hasListenerFor(this._webSocketListenerInnerWindowId))
-      webSocketService.removeListener(this._webSocketListenerInnerWindowId, this._webSocketListener);
+    this._removeWebSocketListener();
 
     // Stealthfox issue #18: during rapid iframe create/detach bursts (e.g. a
     // telemetry SDK's session-start sequence), this handler can fire for a

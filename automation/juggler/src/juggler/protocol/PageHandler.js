@@ -217,7 +217,7 @@ export class PageHandler {
         pageFrameDetached: emitProtocolEvent('Page.frameDetached'),
         pageLinkClicked: emitProtocolEvent('Page.linkClicked'),
         pageNavigationAborted: emitProtocolEvent('Page.navigationAborted'),
-        pageNavigationCommitted: emitProtocolEvent('Page.navigationCommitted'),
+        pageNavigationCommitted: this._onNavigationCommitted.bind(this),
         pageNavigationStarted: emitProtocolEvent('Page.navigationStarted'),
         pageReady: this._onPageReady.bind(this),
         pageInputEvent: (event) => this._pageEventSink.emit(event.type, event),
@@ -298,6 +298,17 @@ export class PageHandler {
       events.push({eventName: protocolEventName, eventDetails});
     } else {
       this._session.emitEvent(protocolEventName, eventDetails);
+    }
+  }
+
+  _onNavigationCommitted(params) {
+    try {
+      this._session.emitEvent('Page.navigationCommitted', params);
+    } finally {
+      // The main frame's id is the browser's: `mainframe-<browserId>`. A subframe's navigation leaves the
+      // documents of the page where they are. A session that is gone refuses the event, not the eviction.
+      if (typeof params.frameId === 'string' && params.frameId.startsWith('mainframe-'))
+        this._pageNetwork?.onMainFrameNavigationCommitted(params.navigationId);
     }
   }
 
