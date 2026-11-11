@@ -25,9 +25,10 @@ const code = rel => strip(fs.readFileSync(path.join(JUGGLER, rel), 'utf8'));
 
 function observer() {
   const registry = code('TargetRegistry.js');
-  const end = registry.indexOf("'oop-frameloader-crashed'");
-  const start = registry.lastIndexOf('observe: (subject, topic, data) => {', end);
-  assert.ok(start > 0 && end > start, 'the crash observer is where this test looks for it');
+  const start = registry.indexOf('_onFrameLoaderCrashed(frameLoader, data) {');
+  const end = registry.indexOf('\n  }\n', start);
+  assert.ok(start > 0 && end > start, 'the crash handler is where this test looks for it');
+  assert.match(registry, /observe: \(subject, topic, data\) => this\._onFrameLoaderCrashed\(subject, data\),\s*\}, 'oop-frameloader-crashed'\)/);
   return registry.slice(start, end);
 }
 
@@ -38,12 +39,12 @@ test('a crashed iframe takes a branch of its own, before the tab branch', () => 
   assert.ok(iframe > 0, 'the observer looks at the crashed context\'s parent');
   assert.ok(tab > iframe, 'the iframe branch comes first');
   // the context comes from the data the engine passes, and only when there is one
-  assert.match(body, /data \? BrowsingContext\.get\(data\) : null/);
+  assert.match(body, /if \(data\) \{\s*const crashed = BrowsingContext\.get\(data\);/);
 });
 
 test('the iframe branch neither emits Crashed, nor disposes the target, nor closes the tab', () => {
   const body = observer();
-  const branch = body.slice(body.indexOf('if (crashed && crashed.parent)'), body.indexOf('target.emit(PageTarget.Events.Crashed'));
+  const branch = body.slice(body.indexOf('if (crashed.parent)'), body.indexOf('target.emit(PageTarget.Events.Crashed'));
   assert.match(branch, /target\.frameCrashed\(crashed\);\s*return;/);
   assert.doesNotMatch(branch, /Events\.Crashed|dispose\(|closeCrashedTab/);
 });
@@ -85,6 +86,56 @@ test('the engine passes the crashed context\'s id as the notification data, and 
   const helper = header.slice(header.indexOf('StealthCrashedContextData('));
   // nothing when the caller does not say which context crashed; the id as the data otherwise
   assert.match(helper, /if \(!aBrowsingContext\) \{\s*return nullptr;\s*\}/);
-  assert.match(helper, /aBuffer\.AppendInt\(aBrowsingContext->Id\(\)\)/);
-  assert.match(helper, /return aBuffer\.get\(\);/);
+  assert.match(helper, /return StealthCrashedContextData\(aBrowsingContext->Id\(\), aBuffer\);/);
+  assert.match(header, /aBuffer\.AppendInt\(aId\);\s*return aBuffer\.get\(\);/);
+});
+
+// The behaviour, from the real file: the real handler run in a vm with the platform around it stubbed.
+import vm from 'node:vm';
+
+function registryClass(browsingContexts) {
+  const source = fs.readFileSync(path.join(JUGGLER, 'TargetRegistry.js'), 'utf8').replace(/^export /gm, '');
+  const scope = {
+    Components: { results: {}, interfaces: {}, utils: {} },
+    Ci: {}, Cc: {},
+    Services: { obs: { addObserver() {}, removeObserver() {} }, ppmm: { sharedData: { has: () => false, delete() {}, flush() {} } } },
+    BrowsingContext: { get: id => browsingContexts.get(String(id)) || null },
+    ChromeUtils: { generateQI: () => () => {}, importESModule: () => new Proxy({}, { get: () => class {} }) },
+    dump: () => {},
+  };
+  vm.createContext(scope);
+  vm.runInContext(source + '\n;globalThis.__registry = { TargetRegistry, PageTarget };', scope);
+  return scope.__registry;
+}
+
+function crash(browsingContexts, data) {
+  const { TargetRegistry, PageTarget } = registryClass(browsingContexts);
+  const calls = [];
+  const browser = {};
+  const target = {
+    emit: event => calls.push(['emit', event === PageTarget.Events.Crashed ? 'Crashed' : 'other']),
+    dispose: () => calls.push(['dispose']),
+    closeCrashedTab: () => calls.push(['closeCrashedTab']),
+    frameCrashed: bc => calls.push(['frameCrashed', bc.id]),
+  };
+  const registry = { _browserToTarget: new Map([[browser, target]]) };
+  TargetRegistry.prototype._onFrameLoaderCrashed.call(registry, { ownerElement: browser }, data);
+  return calls;
+}
+
+test('the crash of an iframe that is still there is the frame, not the tab', () => {
+  assert.deepEqual(crash(new Map([['11', { id: 11, parent: { id: 1 } }]]), '11'), [['frameCrashed', 11]]);
+});
+
+test('a crash that names no context, or the tab itself, closes the tab', () => {
+  const closed = [['emit', 'Crashed'], ['dispose'], ['closeCrashedTab']];
+  assert.deepEqual(crash(new Map(), ''), closed);
+  assert.deepEqual(crash(new Map(), null), closed);
+  assert.deepEqual(crash(new Map([['1', { id: 1, parent: null }]]), '1'), closed);
+});
+
+// An iframe removed, or a page that navigates, in the same turn as the crash of the iframe's process: the notification
+// names a context that is gone by the time it is read. That is not the tab crashing, and it used to close it.
+test('a crash that names a context that is already gone leaves the tab alone', () => {
+  assert.deepEqual(crash(new Map(), '15032385537'), []);
 });

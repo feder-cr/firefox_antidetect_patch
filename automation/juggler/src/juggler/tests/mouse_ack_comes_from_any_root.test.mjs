@@ -41,7 +41,7 @@ function handler({mainRootId = 1} = {}) {
   const sunk = [];
   const mux = new ContentMux({pageTarget: {}, name: 'x', createChannel: () => ({})});
   mux.mainRootId = () => mainRootId;
-  const methods = ['_onPageInputEvent', '_whenInputHit', '_landingVerdict'].map(methodText).join(',\n');
+  const methods = ['_onPageInputEvent', '_ackEndsWait', '_ownerIsPast', '_whenInputHit', '_landingVerdict'].map(methodText).join(',\n');
   const object = new Function('return {\n' + methods + '\n};')();
   Object.assign(object, {
     _lastHitEventId: 0,
@@ -146,7 +146,7 @@ test('a drag signal is the main root\'s: an iframe in another process does not s
 test('the command waits on the aggregate, bounded as before, and asks no root to wait', () => {
   const strip = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   const text = strip(methodText('async _awaitInputHandled'));
-  assert.match(text, /this\._awaitBounded\(this\._whenInputHit\(eventId\), 'mouse event ' \+ eventId\)/);
+  assert.match(text, /this\._awaitBounded\(this\._whenInputHit\(eventId, owner\), 'mouse event ' \+ eventId\)/);
   assert.doesNotMatch(text, /awaitInputHandled'/);
   assert.match(text, /this\._landingVerdict\(eventId, type, landingToken\)/);
   const bounded = strip(methodText('async _awaitBounded'));
@@ -156,4 +156,67 @@ test('the command waits on the aggregate, bounded as before, and asks no root to
   const agent = fs.readFileSync(path.join(JUGGLER, 'content/PageAgent.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   assert.match(agent, /if \(inputEvent\.jugglerEventId\)\s*inputEvent\.verdicts = this\._landingVerdictsFor\(\)/);
   assert.match(agent, /this\._armedLandings\.size > 8/);
+});
+
+// The acks of two roots come in no fixed order. A click on an iframe of another site (root A: mousedown 48, mouseup 49) is
+// followed by a move on the main page (root B: 50) before the click command has been answered, because the command waits
+// for the ack outside the chain of inputs. When B's ack of 50 comes first, "an ack of an id at least 49" was true, and the
+// click was answered before A had handled it; A's ack of 49 then found its id gone from the record of the page's own and its
+// verdict was thrown away, so the click that landed was told not to have landed.
+test('the ack of a higher id from another root does not end the wait for a landing, nor does it cost the verdict', async () => {
+  const {h, mux} = handler();
+  const token = arm(mux, 9, 1);                                // root A (9) owns the landing of the click
+  const owner = mux.armedEntry(token);
+  let done = false;
+  const waiting = h._whenInputHit(49, owner).then(() => { done = true; });
+  h._onPageInputEvent({type: 'mousemove', jugglerEventId: 50}, {rootId: 1});          // root B, first
+  await Promise.resolve();
+  assert.equal(done, false, "B's ack of 50 says nothing of whether A has handled 49");
+  h._onPageInputEvent({type: 'mouseup', jugglerEventId: 49, verdicts: {1: {mouseup: verdict('mouseup', true)}}}, {rootId: 9});
+  await waiting;
+  assert.equal(done, true);
+  const landing = h._landingVerdict(49, 'mouseup', token);
+  assert.equal(landing.landed, true, "A's verdict survived B's higher ack");
+});
+
+test('the event acked by another root than the one the landing was armed in ends the wait at once, with no verdict', async () => {
+  const {h, mux} = handler();
+  const token = arm(mux, 9, 1);
+  const waiting = h._whenInputHit(49, mux.armedEntry(token));
+  h._onPageInputEvent({type: 'mouseup', jugglerEventId: 49}, {rootId: 1});            // it went to root B
+  await waiting;
+  const landing = h._landingVerdict(49, 'mouseup', token);
+  assert.equal(landing.landed, false);
+});
+
+test('a wait for the landing of the main root follows the main root when its id changes', async () => {
+  const {h, mux} = handler({mainRootId: 1});
+  const token = arm(mux, 1, 1);
+  let done = false;
+  const waiting = h._whenInputHit(60, mux.armedEntry(token)).then(() => { done = true; });
+  mux.mainRootId = () => 7;                                    // the top was replaced while the wait was on
+  h._onPageInputEvent({type: 'mouseup', jugglerEventId: 61}, {rootId: 2});
+  await Promise.resolve();
+  assert.equal(done, false, 'another root');
+  h._onPageInputEvent({type: 'mouseup', jugglerEventId: 62}, {rootId: 7});
+  await waiting;
+  assert.equal(done, true);
+});
+
+test('a wait for no root (no landing was armed) is ended by any later id, as before', async () => {
+  const {h} = handler();
+  const waiting = h._whenInputHit(30, undefined);
+  h._onPageInputEvent({type: 'mousemove', jugglerEventId: 31}, {rootId: 4});
+  await waiting;
+});
+
+test('an event the owner root is past needs no wait: it acked a later id, or the event itself, before the wait began', async () => {
+  const {h} = handler();
+  h._onPageInputEvent({type: 'mouseup', jugglerEventId: 70}, {rootId: 9});
+  await h._whenInputHit(70, {rootId: 9});                      // acked before the wait began
+  await h._whenInputHit(69, {rootId: 9});                      // a root answers in order: past 70 is past 69
+  let done = false;
+  h._whenInputHit(69, {rootId: 4}).then(() => { done = true; });   // another root has not answered anything
+  await Promise.resolve();
+  assert.equal(done, false);
 });

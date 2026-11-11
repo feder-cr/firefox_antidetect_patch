@@ -102,5 +102,5 @@ test('the wheel is sent through the APZ route with the delivery callback, and aw
 test('the mouse ack wait is the same bounded wait', () => {
   const code = strip(source);
   const ack = code.slice(code.indexOf('async _awaitInputHandled('));
-  assert.match(ack.slice(0, 300), /this\._awaitBounded\(this\._whenInputHit\(eventId\), 'mouse event ' \+ eventId\)/);
+  assert.match(ack.slice(0, 300), /this\._awaitBounded\(this\._whenInputHit\(eventId, owner\), 'mouse event ' \+ eventId\)/);
 });

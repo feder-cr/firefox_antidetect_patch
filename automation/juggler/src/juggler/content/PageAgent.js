@@ -220,8 +220,16 @@ export class PageAgent {
   // Every execution context there is, after the client drops the ones it held.
   _reportExecutionContexts() {
     this._browserPage.emit('runtimeExecutionContextsCleared', {});
-    for (const context of this._runtime.executionContexts())
+    for (const context of this._runtime.executionContexts()) {
+      // An iframe starts in the process of its embedder and may leave it for a process of its own: the contexts
+      // it made here stay in the runtime, of a window that is not the frame's any more. The process that holds the
+      // frame now says its contexts; said from here as well they would replace the real ones (the mux takes the
+      // last root to announce a frame's context for the frame's), and the client would evaluate in a stale window.
+      const frameId = context.auxData().frameId;
+      if (frameId !== undefined && !this._frameTree.frame(frameId))
+        continue;
       this._onExecutionContextCreated(context);
+    }
   }
 
   /**
@@ -258,6 +266,8 @@ export class PageAgent {
     if (this._inCache)
       return;
     this._inCache = true;
+    // Before the window is frozen: the debuggers that go away from now on are the ones that come back.
+    this._frameTree.enterCache();
     for (const workerId of this._workerData.keys())
       this._browserPage.emit('pageWorkerDestroyed', { workerId });
   }
@@ -269,6 +279,7 @@ export class PageAgent {
     if (!this._inCache)
       return;
     this._inCache = false;
+    this._frameTree.leaveCache();
     this._reportWorkers();
   }
 

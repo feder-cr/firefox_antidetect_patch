@@ -51,7 +51,7 @@ function pageAgentOn(channel, { workers = [], isPageMain = true } = {}) {
   const live = new Map(workers.map(id => [id, { id: () => id, url: () => 'w.js', frame: () => main, channel: () => workerChannel }]));
   const handlers = {};
   const tree = { runtime: () => runtime, mainFrame: () => main, frames: () => [], isPageReady: () => false,
-    workers: () => [...live.values()], _isPageMain: () => isPageMain,
+    workers: () => [...live.values()], _isPageMain: () => isPageMain, enterCache() {}, leaveCache() {},
     on(name, listener) { handlers[name] = listener; }, off() {} };
   const agent = new PageAgent(channel, tree);
   return { agent, tree, main, live, handlers };
@@ -149,6 +149,8 @@ function handlerOnly() {
   const { PageHandler } = load('protocol/PageHandler.js', scope, ['PageHandler']);
   const events = [];
   const h = Object.create(PageHandler.prototype);
+  h._workersNotToldYet = new Map();
+  h._restoreBeingSaid = false;
   h._session = { emitEvent: (name, payload) => events.push([name, plain(payload)]) };
   h._reportedFrameIds = new Set(); h._liveFrameIds = new Set(); h._parentOfFrame = new Map(); h._droppedFrameIds = new Set();
   h._frameEventsBeforeFrame = new Map(); h._contextFrame = new Map(); h._contextsOfFrame = new Map();

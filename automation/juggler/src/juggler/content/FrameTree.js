@@ -41,6 +41,14 @@ export class FrameTree {
 
     this._runtime = new Runtime(false /* isWorker */);
     this._workers = new Map();
+    // The workers of a document in the back-forward cache. Firefox unregisters the debugger of a worker when its
+    // window is frozen (WorkerPrivate::Freeze) and registers a NEW debugger object for the very same worker when the
+    // window is thawed (WorkerPrivate::Thaw), before the pageshow. The worker is the same one, so its id is: the ids
+    // of the workers that were unregistered while the document is in the cache wait here, by the worker's own id
+    // (nsIWorkerDebugger.id, a UUID of the WorkerPrivate that lives as long as the worker), for the debugger
+    // that comes back.
+    this._cached = false;
+    this._parkedWorkerIds = new Map();     // nsIWorkerDebugger.id -> our worker id
     this._frameIdToFrame = new Map();
     this._pageReady = false;
     for (const browsingContext of helper.collectAllBrowsingContexts(rootBrowsingContext)) {
@@ -250,7 +258,9 @@ export class FrameTree {
     const frame = this._frameForWorker(workerDebugger);
     if (!frame)
       return;
-    const worker = new Worker(frame, workerDebugger);
+    const parked = this._parkedWorkerIds.get(_debuggerId(workerDebugger));
+    this._parkedWorkerIds.delete(_debuggerId(workerDebugger));
+    const worker = new Worker(frame, workerDebugger, parked);
     this._workers.set(workerDebugger, worker);
     this.emit(FrameTree.Events.WorkerCreated, worker);
   }
@@ -261,7 +271,22 @@ export class FrameTree {
       return;
     worker.dispose();
     this._workers.delete(workerDebugger);
+    const debuggerId = _debuggerId(workerDebugger);
+    if (this._cached && debuggerId)
+      this._parkedWorkerIds.set(debuggerId, worker.id());
     this.emit(FrameTree.Events.WorkerDestroyed, worker);
+  }
+
+  // The document of this tree goes into the back-forward cache (PageAgent.enterCache, at its pagehide, before its
+  // window is frozen) and comes back (PageAgent.leaveCache). What was parked in an earlier stay and did not come
+  // back belongs to a worker that is gone.
+  enterCache() {
+    this._cached = true;
+    this._parkedWorkerIds.clear();
+  }
+
+  leaveCache() {
+    this._cached = false;
   }
 
   allFramesInBrowsingContextGroup(group) {
@@ -401,6 +426,7 @@ export class FrameTree {
       }
     };
     const steps = [
+      () => this._parkedWorkerIds.clear(),
       () => this._browsingContextGroup.__jugglerFrameTrees.delete(this),
       () => this._wdm.removeListener(this._wdmListener),
       () => each(this._frameIdToFrame.values(), frame => frame.dispose()),
@@ -1025,10 +1051,20 @@ class Frame {
 
 }
 
+// The id of a worker that Firefox keeps through a freeze and a thaw, or '' (a debugger already closed).
+function _debuggerId(workerDebugger) {
+  try {
+    return workerDebugger.id || '';
+  } catch (e) {
+    return '';
+  }
+}
+
 class Worker {
-  constructor(frame, workerDebugger) {
+  // `workerId`: the id this worker had before its debugger was registered again (see FrameTree._parkedWorkerIds).
+  constructor(frame, workerDebugger, workerId) {
     this._frame = frame;
-    this._workerId = helper.generateId();
+    this._workerId = workerId || helper.generateId();
     this._workerDebugger = workerDebugger;
 
     workerDebugger.initialize('resource://gre/modules/juggler/content/WorkerMain.js');

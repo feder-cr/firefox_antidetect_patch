@@ -76,7 +76,8 @@ DEFAULT_GTEST_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:"
                         "StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
                         "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:"
                         "StealthScaleDeclaration.*:StealthWindowGeometry.*:"
-                        "StealthGLMultisample.*")
+                        "StealthGLMultisample.*:StealthFrameCrash.*:"
+                        "StealthJugglerEventId.*")
 DEFAULT_REF = "main"
 
 

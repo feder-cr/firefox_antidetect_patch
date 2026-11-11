@@ -79,6 +79,8 @@ function page() {
   const lifecycle = new FrameLifecycle({ browsingContext: top });
   const sent = [];
   const handler = Object.create(PageHandler.prototype);
+  handler._workersNotToldYet = new Map();
+  handler._restoreBeingSaid = false;
   handler._session = { emitEvent: (name, payload) => sent.push([name, JSON.parse(JSON.stringify(payload))]) };
   handler._reportedFrameIds = new Set();
   handler._droppedFrameIds = new Set();

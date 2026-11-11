@@ -216,32 +216,7 @@ export class TargetRegistry {
     this._defaultContext = new BrowserContext(this, undefined, undefined);
 
     Services.obs.addObserver({
-      observe: (subject, topic, data) => {
-        const browser = subject.ownerElement;
-        if (!browser) {
-          return;
-        }
-        const target = this._browserToTarget.get(browser);
-        if (!target) {
-          return;
-        }
-        // ⛔ AN IFRAME'S PROCESS CRASHING IS NOT THE TAB CRASHING. The owner
-        // element of an out-of-process iframe's BrowserParent is the <browser>
-        // of the TAB (BrowserBridgeParent::Init, SetOwnerElement), so this
-        // observer is called with the tab's frameloader for either crash, and
-        // before the engine passed the crashed BrowsingContext's id as `data`
-        // (nsFrameLoader::MaybeNotifyCrashed) the branch below closed the whole
-        // page for a crash of one iframe. `data` is that id, empty when the
-        // notification does not say (a frameloader that failed to build).
-        const crashed = data ? BrowsingContext.get(data) : null;
-        if (crashed && crashed.parent) {
-          target.frameCrashed(crashed);
-          return;
-        }
-        target.emit(PageTarget.Events.Crashed);
-        target.dispose();
-        target.closeCrashedTab();
-      }
+      observe: (subject, topic, data) => this._onFrameLoaderCrashed(subject, data),
     }, 'oop-frameloader-crashed');
 
     // A root whose browsing context is discarded has no process to wait for: without this its endpoint
@@ -585,6 +560,38 @@ export class TargetRegistry {
     const key = rootKey(browserId, rootId);
     if (this._rootActors.get(key) === actor)
       this._rootActors.delete(key);
+  }
+
+  // ⛔ AN IFRAME'S PROCESS CRASHING IS NOT THE TAB CRASHING. The owner element of an out-of-process iframe's
+  // BrowserParent is the <browser> of the TAB (BrowserBridgeParent::Init, SetOwnerElement), so the notification comes
+  // with the tab's frameloader for either crash, and before the engine passed the crashed BrowsingContext's id as `data`
+  // (nsFrameLoader::MaybeNotifyCrashed) the tab branch closed the whole page for a crash of one iframe. `data` is that
+  // id, empty when the notification does not say (a frameloader that failed to build: a tab).
+  //
+  // A context that is named but already gone (the iframe was removed, or the page navigated, in the same turn as the
+  // crash) is neither: there is nothing of it to tell, and the tab is not what crashed.
+  _onFrameLoaderCrashed(frameLoader, data) {
+    const browser = frameLoader.ownerElement;
+    if (!browser) {
+      return;
+    }
+    const target = this._browserToTarget.get(browser);
+    if (!target) {
+      return;
+    }
+    if (data) {
+      const crashed = BrowsingContext.get(data);
+      if (!crashed) {
+        return;
+      }
+      if (crashed.parent) {
+        target.frameCrashed(crashed);
+        return;
+      }
+    }
+    target.emit(PageTarget.Events.Crashed);
+    target.dispose();
+    target.closeCrashedTab();
   }
 
   targetForId(targetId) {

@@ -209,6 +209,8 @@ const { PageHandler } = load('protocol/PageHandler.js', {
 
 function describingHandler(answer) {
   const handler = Object.create(PageHandler.prototype);
+  handler._workersNotToldYet = new Map();
+  handler._restoreBeingSaid = false;
   const sent = [];
   handler._contentPage = { send: async (method, params) => (sent.push([method, params]), { ...answer }) };
   handler._session = { emitEvent() {} };

@@ -23,7 +23,8 @@ const code = rel => fs.readFileSync(path.join(JUGGLER, rel), 'utf8')
 
 test('the crash observer closes the tab after disposing its target', () => {
   const registry = code('TargetRegistry.js');
-  const observer = registry.slice(0, registry.indexOf("'oop-frameloader-crashed'"));
+  const start = registry.indexOf('_onFrameLoaderCrashed(frameLoader, data) {');
+  const observer = registry.slice(start, registry.indexOf('\n  }\n', start));
   const tail = observer.slice(observer.lastIndexOf('target.emit(PageTarget.Events.Crashed'));
   // dispose() first: it takes the target out of _browserToTarget, so the
   // TabClose that removeTab fires finds nothing to dispose a second time.

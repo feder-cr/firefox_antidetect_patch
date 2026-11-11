@@ -37,7 +37,7 @@ const handlerSource = read('protocol/PageHandler.js');
 const agentSource = read('content/PageAgent.js');
 
 function ackHandler(ownIds = []) {
-  const methods = ['_onPageInputEvent', '_whenInputHit', '_landingVerdict', '_sendMouseEvent']
+  const methods = ['_onPageInputEvent', '_ackEndsWait', '_ownerIsPast', '_whenInputHit', '_landingVerdict', '_sendMouseEvent']
       .map(name => methodText(handlerSource, name)).join(',\n');
   const object = new Function('return {\n' + methods + '\n};')();
   const mux = new ContentMux({pageTarget: {}, name: 'x', createChannel: () => ({})});
@@ -71,7 +71,8 @@ test('an event replaced by coalescing is acked by the id of the one that replace
   h._onPageInputEvent({type: 'mousemove', jugglerEventId: 22}, {rootId: 1});
   await waiting;
   assert.equal(h._lastHitEventId, 22);
-  assert.equal(h._ownEventIds.size, 0, 'the ids at or below the acked one are let go');
+  // The acked id is let go. The ids the engine folded into it are not acked by anyone: they stay until the record's bound.
+  assert.deepEqual([...h._ownEventIds].sort(), [20, 21]);
 });
 
 test('every mouse event of the page is recorded as its own, and the record is bounded', () => {

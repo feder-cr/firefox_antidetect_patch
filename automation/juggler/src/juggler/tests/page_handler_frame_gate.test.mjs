@@ -41,6 +41,8 @@ const { PageHandler } = load('protocol/PageHandler.js', scope(), ['PageHandler']
 function pageHandler() {
   const events = [];
   const handler = Object.create(PageHandler.prototype);
+  handler._workersNotToldYet = new Map();
+  handler._restoreBeingSaid = false;
   handler._session = { emitEvent: (name, payload) => events.push([name, JSON.parse(JSON.stringify(payload))]) };
   handler._reportedFrameIds = new Set();
   handler._droppedFrameIds = new Set();

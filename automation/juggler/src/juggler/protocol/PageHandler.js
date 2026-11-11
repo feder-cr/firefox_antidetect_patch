@@ -240,6 +240,12 @@ export class PageHandler {
     this._frameEventsBeforeFrame = new Map();     // frameId -> [{protocolEventName, payload}]
     this._contextFrame = new Map();               // executionContextId -> frameId
     this._contextsOfFrame = new Map();            // frameId -> Set<executionContextId>
+    // The workers the client is not told of yet, because it does not know their frame (the frames below a document
+    // that commits are dropped by the client until the parent announces them again) or because a document restored
+    // from the back-forward cache is still being said. A worker is told after its frame and after the contexts of
+    // the restored document are cleared.
+    this._workersNotToldYet = new Map();          // workerId -> {frameId, url}
+    this._restoreBeingSaid = false;
 
     // `Page.ready` protocol event is emitted whenever page has completed initialization, e.g.
     // finished all the transient navigations to the `about:blank`.
@@ -349,6 +355,7 @@ export class PageHandler {
     for (const worker of this._workers.values())
       worker.dispose();
     this._workers.clear();
+    this._workersNotToldYet.clear();
     this._contentPage.dispose();
     this._hitWaiters.clear();
     this._landingVerdicts.clear();
@@ -380,7 +387,31 @@ export class PageHandler {
       return;
     const worker = new WorkerHandler(this._session, this._contentChannel, workerId, frameId);
     this._workers.set(workerId, worker);
+    if (this._clientIsToHearOfFrameFirst(frameId)) {
+      this._workersNotToldYet.set(workerId, {frameId, url});
+      return;
+    }
     this._emitFrameKeyed('Page.workerCreated', {workerId, frameId, url}, frameId);
+  }
+
+  // The client heard of this frame and has dropped it since (a commit above it), or a restore is being said and the
+  // frame comes before the worker in what is said: the worker waits.
+  _clientIsToHearOfFrameFirst(frameId) {
+    if (frameId === undefined)
+      return false;
+    if (this._restoreBeingSaid)
+      return true;
+    return this._reportedFrameIds.has(frameId) && !this._liveFrameIds.has(frameId);
+  }
+
+  // The workers that waited, whose frame the client knows now, in the order they came.
+  _tellWorkersNotToldYet() {
+    for (const [workerId, {frameId, url}] of [...this._workersNotToldYet]) {
+      if (frameId !== undefined && !this._liveFrameIds.has(frameId))
+        continue;
+      this._workersNotToldYet.delete(workerId);
+      this._session.emitEvent('Page.workerCreated', {workerId, frameId, url});
+    }
   }
 
   _onWorkerDestroyed({workerId}) {
@@ -389,6 +420,9 @@ export class PageHandler {
       return;
     this._workers.delete(workerId);
     worker.dispose();
+    // The client was never told of it: nothing to end for it.
+    if (this._workersNotToldYet.delete(workerId))
+      return;
     this._session.emitEvent('Page.workerDestroyed', {workerId});
   }
 
@@ -483,6 +517,9 @@ export class PageHandler {
     for (const [frameId, queue] of this._frameEventsBeforeFrame)
       this._frameEventsBeforeFrame.set(frameId, queue.filter(event => !event.protocolEventName.startsWith('Runtime.executionContext')));
     this._session.emitEvent('Runtime.executionContextsCleared', payload);
+    // The restore of a document says its frames, then its contexts are cleared, then what lives in them is told.
+    this._restoreBeingSaid = false;
+    this._tellWorkersNotToldYet();
   }
 
   // What the registry of navigations says, as the protocol's events, gated like the other events of a frame.
@@ -579,9 +616,10 @@ export class PageHandler {
       // reports the ones it holds (PageAgent._onDocumentRestored); the ones in other processes are known to the
       // parent only, which says them again. A new document has the frames that attached while it was being
       // loaded, which were held back (_onFrameSeenByTheParent); its old frames are not said again.
-      if (typeof params.navigationId === 'string' && params.navigationId.startsWith('nav-bfcache-'))
+      if (typeof params.navigationId === 'string' && params.navigationId.startsWith('nav-bfcache-')) {
+        this._restoreBeingSaid = true;
         this._reannounceAfterRestore(params.frameId);
-      else
+      } else
         this._announceHeldBackFramesBelow(params.frameId);
     }
   }
@@ -691,6 +729,8 @@ export class PageHandler {
     this._frameEventsBeforeFrame.delete(frameId);
     for (const {protocolEventName, payload} of events)
       this._session.emitEvent(protocolEventName, payload);
+    if (!this._restoreBeingSaid)
+      this._tellWorkersNotToldYet();
   }
 
   _onFrameDetached(frameId) {
@@ -1297,17 +1337,20 @@ export class PageHandler {
     if (event.jugglerEventId && this._ownEventIds.has(event.jugglerEventId)) {
       if (event.jugglerEventId > this._lastHitEventId)
         this._lastHitEventId = event.jugglerEventId;
-      for (const own of this._ownEventIds) {
-        if (own <= this._lastHitEventId)
-          this._ownEventIds.delete(own);
-      }
+      // The id is the page's own until the root that handled it has answered: the ack of a higher id from another
+      // root says nothing of it, and its own ack (with the verdict of its landing) still has to be recognised.
+      this._ownEventIds.delete(event.jugglerEventId);
+      // What each root has answered: a root answers in the order it got the events, so its ack of a later id says it
+      // is past the earlier ones (the event that has no ack of its own went to another root, or was folded into a later one).
+      this._lastHitByRoot = this._lastHitByRoot || new Map();
+      this._lastHitByRoot.set(rootId, Math.max(event.jugglerEventId, this._lastHitByRoot.get(rootId) || 0));
       for (const [rootToken, perType] of Object.entries(event.verdicts || {})) {
         this._landingVerdicts.set(rootId + ':' + rootToken, {id: event.jugglerEventId, perType});
         if (this._landingVerdicts.size > 16)   // an armed landing no event reads does not stay for good
           this._landingVerdicts.delete(this._landingVerdicts.keys().next().value);
       }
       for (const waiter of [...this._hitWaiters]) {
-        if (this._lastHitEventId >= waiter.id) {
+        if (this._ackEndsWait(waiter, event.jugglerEventId, rootId)) {
           this._hitWaiters.delete(waiter);
           waiter.resolve();
         }
@@ -1331,10 +1374,43 @@ export class PageHandler {
     return id;
   }
 
-  _whenInputHit(id) {
-    if (this._lastHitEventId >= id)
+  // Does the ack `ackedId` of the root `rootId` end the wait for the event `waiter.id`? The event itself acked, by any
+  // root (the root that got it may not be the one the landing was armed in: then there is no verdict, and the answer is
+  // that it did not land). A later id counts for the event only from the root the wait is for: the ack of a higher id
+  // from another root, which can come first, says nothing of whether this root has handled it. A wait that is for no
+  // root (no landing was armed) is ended by any later id.
+  _ackEndsWait(waiter, ackedId, rootId) {
+    if (ackedId === waiter.id)
+      return true;
+    if (ackedId < waiter.id)
+      return false;
+    if (waiter.rootId === undefined)
+      return true;
+    return rootId === waiter.rootId || (waiter.rootIsMain && rootId === this._contentChannel.mainRootId());
+  }
+
+  // Has the root `rootId` answered the event `id`, or one after it? Or has the event been acked by someone (a root
+  // that is not the owner: then there is no verdict)?
+  _ownerIsPast(rootId, id) {
+    if (this._lastHitEventId >= id && !this._ownEventIds.has(id))
+      return true;
+    const last = this._lastHitByRoot;
+    return !!last && (last.get(rootId) || 0) >= id;
+  }
+
+  // Until the event `id` has been handled. `owner`: the armed landing it is for ({rootId}), if there is one.
+  _whenInputHit(id, owner) {
+    if (owner === undefined ? this._lastHitEventId >= id : this._ownerIsPast(owner.rootId, id))
       return Promise.resolve();
-    return new Promise(resolve => this._hitWaiters.add({id, resolve}));
+    const waiter = {id, resolve: null};
+    if (owner !== undefined) {
+      waiter.rootId = owner.rootId;
+      waiter.rootIsMain = owner.rootId === this._contentChannel.mainRootId();
+    }
+    return new Promise(resolve => {
+      waiter.resolve = resolve;
+      this._hitWaiters.add(waiter);
+    });
   }
 
   /**
@@ -1358,7 +1434,9 @@ export class PageHandler {
 
   async _awaitInputHandled(eventId, type, landingToken) {
     try {
-      const outcome = await this._awaitBounded(this._whenInputHit(eventId), 'mouse event ' + eventId);
+      // The root that owns the landing is the one whose ack is waited for (not read: the verdict is taken after).
+      const owner = landingToken ? this._contentChannel.armedEntry(landingToken) : undefined;
+      const outcome = await this._awaitBounded(this._whenInputHit(eventId, owner), 'mouse event ' + eventId);
       return outcome === 'dialog' ? null : this._landingVerdict(eventId, type, landingToken);
     } finally {
       // A wait that ended on a dialog or on its bound read no verdict: the landing is not left in the mux.

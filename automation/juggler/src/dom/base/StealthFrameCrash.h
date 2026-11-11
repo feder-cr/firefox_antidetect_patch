@@ -22,13 +22,19 @@ namespace mozilla {
  *
  * `aBuffer` holds the digits for as long as the notification runs.
  */
+inline const char16_t* StealthCrashedContextData(uint64_t aId,
+                                                 nsAutoString& aBuffer) {
+  aBuffer.Truncate();
+  aBuffer.AppendInt(aId);
+  return aBuffer.get();
+}
+
 inline const char16_t* StealthCrashedContextData(
     dom::BrowsingContext* aBrowsingContext, nsAutoString& aBuffer) {
   if (!aBrowsingContext) {
     return nullptr;
   }
-  aBuffer.AppendInt(aBrowsingContext->Id());
-  return aBuffer.get();
+  return StealthCrashedContextData(aBrowsingContext->Id(), aBuffer);
 }
 
 }  // namespace mozilla

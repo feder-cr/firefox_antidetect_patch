@@ -41,7 +41,8 @@ ROOT = HERE.parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 # The filter of run 41402916724, from its log.
 GREEN_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
-                "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*")
+                "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:"
+                "StealthFrameCrash.*:StealthJugglerEventId.*")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.
 CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure", "browser/moz.configure", "build/moz.configure/*.configure")
@@ -139,6 +140,17 @@ def group_gtest(doc) -> list:
     out = []
     inputs = doc[True]["workflow_dispatch"]["inputs"]
     out.append(("gtests: the default filter is what the green candidate ran", inputs["gtest_filter"]["default"] == GREEN_FILTER))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import release_plan
+    out.append(("gtests: the plan's default filter (release_plan.py) is the workflow's",
+                release_plan.DEFAULT_GTEST_FILTER == inputs["gtest_filter"]["default"]))
+    # A gtest of ours that no filter names is a test nobody runs: the suites of the Juggler's hooks are written in
+    # dom/base/test/gtest and are in the default filter.
+    root = Path(__file__).resolve().parents[2]
+    sources = "\n".join(p.read_text(encoding="utf-8") for p in (root / "dom" / "base" / "test" / "gtest").glob("Test*.cpp"))
+    for suite in ("StealthFrameCrash", "StealthJugglerEventId"):
+        out.append(("gtests: the suite %s has tests and the default filter runs it" % suite,
+                    ("TEST(%s," % suite) in sources and (suite + ".*") in inputs["gtest_filter"]["default"].split(":")))
     values = []
     build_steps = {s.get("name", ""): s for s in jobs["build"]["steps"]}
     for job, steps in (("gtest-cross", jobs["gtest-cross"]["steps"]), ("gtest-linux", jobs["gtest-linux"]["steps"]),

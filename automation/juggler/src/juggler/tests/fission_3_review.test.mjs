@@ -76,6 +76,8 @@ function pageHandlerWithNames() {
   const { PageHandler } = load('protocol/PageHandler.js', scope, ['PageHandler']);
   const events = [];
   const h = Object.create(PageHandler.prototype);
+  h._workersNotToldYet = new Map();
+  h._restoreBeingSaid = false;
   h._session = { emitEvent: (name, payload) => events.push([name, plain(payload)]) };
   h._reportedFrameIds = new Set(['subframe-7', 'm']); h._liveFrameIds = new Set(); h._parentOfFrame = new Map();
   h._frameEventsBeforeFrame = new Map(); h._contextFrame = new Map(); h._contextsOfFrame = new Map();

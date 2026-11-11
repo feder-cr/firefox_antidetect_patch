@@ -87,8 +87,11 @@
   "juggler/tests/not_a_chrome_package.test.mjs": "100644",
   "juggler/tests/oop_frame_element.test.mjs": "100644",
   "juggler/tests/oop_frame_geometry.test.mjs": "100644",
+  "juggler/tests/oop_root_is_bound_again_at_the_restore.test.mjs": "100644",
+  "juggler/tests/page_agent_reports_only_the_contexts_of_its_frames.test.mjs": "100644",
   "juggler/tests/page_handler_frame_gate.test.mjs": "100644",
   "juggler/tests/page_handler_wires_the_frame_lifecycle.test.mjs": "100644",
+  "juggler/tests/page_handler_worker_waits_for_its_frame.test.mjs": "100644",
   "juggler/tests/page_target_location_filter.test.mjs": "100644",
   "juggler/tests/request_body_is_always_read.test.mjs": "100644",
   "juggler/tests/response_bodies_follow_the_navigation.test.mjs": "100644",
@@ -105,7 +108,8 @@
   "juggler/tests/wheel_waits_for_its_delivery.test.mjs": "100644",
   "juggler/tests/worker_debugger_manager_is_a_service.test.mjs": "100644",
   "juggler/tests/worker_ends_with_its_frame.test.mjs": "100644",
-  "juggler/tests/worker_follows_the_document_in_the_cache.test.mjs": "100644"
+  "juggler/tests/worker_follows_the_document_in_the_cache.test.mjs": "100644",
+  "juggler/tests/worker_keeps_its_id_through_the_cache.test.mjs": "100644"
  },
  "inventory": [
   {

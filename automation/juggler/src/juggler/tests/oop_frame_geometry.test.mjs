@@ -186,6 +186,8 @@ const { PageHandler } = load('protocol/PageHandler.js', {
 const rootOfFrame = { 'mainframe-9': 1, 'subframe-20': 20, 'subframe-21': 21 };
 function handler(answers) {
   const h = Object.create(PageHandler.prototype);
+  h._workersNotToldYet = new Map();
+  h._restoreBeingSaid = false;
   const sent = [];
   h._contentChannel = { mainRootId: () => 1, rootOf: id => rootOfFrame[id] };
   h._contentPage = {
@@ -297,6 +299,8 @@ const rootIdOfFrame = { 'mainframe-9': 1, 'subframe-20': 20, 'subframe-21': 21, 
 
 function scroller() {
   const h = Object.create(PageHandler.prototype);
+  h._workersNotToldYet = new Map();
+  h._restoreBeingSaid = false;
   const log = [];
   let scrolled = false;
   h._pageTarget = { frameIdToBrowsingContext: id => bcOfFrame[id] };

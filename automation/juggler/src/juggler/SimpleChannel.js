@@ -7,6 +7,8 @@
 // Avoid Components.*, ChromeUtils and global const variables.
 
 var SIMPLE_CHANNEL_MESSAGE_NAME = 'juggler:simplechannel';
+// What a document restored from the back-forward cache sends to its parent actor (JugglerFrameChild).
+var SIMPLE_CHANNEL_BECAME_CURRENT_MESSAGE_NAME = 'juggler:became-current';
 // How many channel ends this load of the file has made: one part of each end's
 // identity (see `_uid`).
 var SIMPLE_CHANNEL_INSTANCES = 0;
@@ -49,7 +51,16 @@ var SimpleChannel = class SimpleChannel {
     this.resetTransport();
     this._name = actor.actorName;
     const oldReceiveMessage = actor.receiveMessage;
-    actor.receiveMessage = message => this._onMessage(message.data);
+    actor.receiveMessage = message => {
+      // A restored document asking to be bound again (JugglerFrameChild, on its pageshow) is the actor's to answer
+      // (JugglerFrameParent.receiveMessage), whether this channel is bound to the actor or not. A root whose parent
+      // frame is in another process keeps its actor bound through its stay in the cache (no other document takes
+      // its place, as it does for the top), so the request came to this end, which took it for a channel message
+      // and the root was never bound again.
+      if (message.name === SIMPLE_CHANNEL_BECAME_CURRENT_MESSAGE_NAME)
+        return oldReceiveMessage.call(actor, message);
+      return this._onMessage(message.data);
+    };
     this.setTransport({
       sendMessage: obj => actor.sendAsyncMessage(SIMPLE_CHANNEL_MESSAGE_NAME, obj),
       dispose: () => actor.receiveMessage = oldReceiveMessage,
