@@ -6,7 +6,7 @@ const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Help
 const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
 const {ContentMux} = ChromeUtils.importESModule('resource://gre/modules/juggler/ContentMux.js');
-const {newProxyInfoFor, proxyForHost, publishSessionUdpProxy} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
+const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs");
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
@@ -423,27 +423,6 @@ export class TargetRegistry {
     newProxyInfoFor(proxy);
     this._browserProxy = proxy;
     this._updateProxiesWithSameAuthCacheAndDifferentCredentials();
-    this._publishSessionUdpProxy();
-  }
-
-  /**
-   * Tell the engine which proxy the session's UDP leaves by (SessionRoute.js,
-   * publishSessionUdpProxy). Called wherever a proxy appears, changes or goes
-   * away with its context. A failure does not fail the command that set the
-   * proxy: the proxy is set, and what is not handed over leaves UDP to the
-   * engine's filter of direct sends, which refuses it. Nothing here prints the
-   * proxy.
-   */
-  _publishSessionUdpProxy() {
-    try {
-      publishSessionUdpProxy(
-          Cc['@mozilla.org/juggler/stealthsessionudpproxy;1'].getService(Ci.nsIStealthSessionUdpProxy),
-          Services.prefs.getBoolPref('network.proxy.socks_remote_udp', false),
-          this._browserProxy,
-          [...this._browserContextIdToBrowserContext.values()].map(bc => bc._proxy));
-    } catch (e) {
-      Components.utils.reportError('the session UDP proxy could not be published: ' + e.name);
-    }
   }
 
   getProxyInfo(channel) {
@@ -1384,7 +1363,6 @@ class BrowserContext {
       Services.ppmm.sharedData.flush();
     }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
-    this._registry._publishSessionUdpProxy();
     await this.setServiceWorkersBlocked(false);
   }
 
@@ -1449,7 +1427,6 @@ class BrowserContext {
     Services.obs.notifyObservers(null, "net:clear-active-logins");
     this._proxy = proxy;
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
-    this._registry._publishSessionUdpProxy();
   }
 
   setIgnoreHTTPSErrors(ignoreHTTPSErrors) {

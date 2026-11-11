@@ -4,9 +4,6 @@
   "dom/media/webrtc/jsapi/moz.build",
   "dom/media/webrtc/transport/common.build",
   "dom/media/webrtc/transport/third_party/nICEr/nicer.gyp",
-  "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp",
-  "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp",
-  "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.h",
   "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp",
   "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp"
  ],
@@ -104,77 +101,6 @@
      "notes"
     ],
     "why": "Added proof that nicer.gyp is live (GYP_DIRS), so the include dir is needed."
-   }
-  },
-  {
-   "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp",
-   "category": "spoof",
-   "feature": "webrtc-ice-candidates",
-   "prefs": [],
-   "added": 45,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 18,
-   "hookable": "movable",
-   "anchor": "nr_ice_srvrflx_stun_finished_cb (case NR_STUN_CLIENT_STATE_DONE)",
-   "evidence": [
-    "+            if (altro != cand && altro->type == SERVER_REFLEXIVE &&",
-    "+              ABORT(R_NOT_FOUND);",
-    "+          if (nr_stealth_get_webrtc_public_ip(stealth_ip, sizeof(stealth_ip)) > 0) {"
-   ],
-   "notes": "Two blocks in the STUN-done case: suppress the real srflx when a synthetic one (stun_server == NULL) exists, and rewrite the mapped IP to the proxy IP keeping the port. Both could move behind one hook call. The public IP comes from env STEALTHFOX_WEBRTC_PUBLIC_IP via nr_stealth_bridge.cpp, not a pref. Also adds an include of ice_component.h that nothing in this file uses (only a comment at ice_candidate.cpp:56 mentions the injector; no call). ABORT(R_NOT_FOUND) at ice_candidate.cpp:976 jumps to abort: (1012-1015) which calls nr_ice_candidate_mark_done(cand, FAILED): same path as the existing FAILED case at 1004-1006; the STUN ctx is not destroyed here (as for a failed server). RISK CONFIRMED (code path): mark_done(FAILED) calls gather_handler->candidate_error (ice_candidate.cpp:293-302); NrIceCtx::candidate_error (nricectx.cpp:511-534) proceeds because the real srflx has a stun_server and signals the error; PeerConnectionImpl::OnCandidateError (PeerConnectionImpl.cpp:3646-3662) maps error_code 0 to 701 and calls mPCObserver->OnIceCandidateError, so the page can receive an icecandidateerror for the suppressed real srflx whenever the synthetic one exists. Not run, so the observed event is unverified.",
-   "verifier": {
-    "changed": [
-     "notes"
-    ],
-    "why": "Resolved the unverified ABORT cleanup question and found a page-visible side effect."
-   }
-  },
-  {
-   "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp",
-   "category": "spoof",
-   "feature": "webrtc-ice-candidates",
-   "prefs": [],
-   "added": 370,
-   "removed": 0,
-   "hunks": 3,
-   "inline_logic_lines": 153,
-   "hookable": "movable",
-   "anchor": "new static nr_ice_stealth_srflx_fire_ready and new nr_ice_component_inject_fallback_srflx (inserted after the includes), plus the call in nr_ice_component_initialize_udp",
-   "evidence": [
-    "+static void nr_ice_stealth_srflx_fire_ready(NR_SOCKET s, int how, void *cb_arg)",
-    "+    if (nr_stealth_get_webrtc_public_ip(public_ip_buf, sizeof(public_ip_buf)) == 0)",
-    "+        (void)nr_ice_component_inject_fallback_srflx(component, &addrs[i].addr);"
-   ],
-   "notes": "About 150 logic lines of new code (the rest of the 370 added lines are comments) in a Mozilla file. Both functions can move to our own file, leaving the call site and a declaration. Reads env STEALTHFOX_WEBRTC_PUBLIC_IP through the bridge, no pref. Dead variable CONFIRMED: real_srflx_ct is declared at ice_component.cpp:603 and incremented at :623, never read (the only other mentions are comments at :173 and :642). The rest of nr_ice_component_initialize_udp is not in the diff.",
-   "verifier": {
-    "changed": [
-     "inline_logic_lines",
-     "notes"
-    ],
-    "why": "Dead-variable claim confirmed by grep; minor logic recount."
-   }
-  },
-  {
-   "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.h",
-   "category": "spoof",
-   "feature": "webrtc-ice-candidates",
-   "prefs": [],
-   "added": 9,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "file-level declarations after nr_ice_component_dump_state",
-   "evidence": [
-    "+int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,"
-   ],
-   "notes": "Declaration only. The header comment says the function has two callers, including the STUN-failure branch in ice_candidate.cpp. CONFIRMED stale: the only caller in the tree is ice_component.cpp:649; ice_candidate.cpp only has an include and a comment (ice_candidate.cpp:56). Moves with the definition if that moves.",
-   "verifier": {
-    "changed": [
-     "notes"
-    ],
-    "why": "Stale-comment claim confirmed by grep."
    }
   },
   {

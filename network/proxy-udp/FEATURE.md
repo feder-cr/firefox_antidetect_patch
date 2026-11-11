@@ -1,37 +1,49 @@
 # network/proxy-udp
 
 Category: other, spoof
-Prefs: network.proxy.socks_remote_udp, zoom.stealth.webrtc.no_direct_udp, zoom.stealth.udp_proxy.armed
-Test: StealthSessionUdpProxy.* (netwerk/test/gtest/TestStealthSocksCredentials.cpp); juggler/tests/session_udp_proxy_reaches_the_engine.test.mjs
+Prefs: none
+Test: StealthSessionUdpProxy.* (netwerk/test/gtest/TestStealthSocksCredentials.cpp); the e2e of invisible_playwright (tests/test_*_e2e.py: srflx through the relay, proxy without UDP, TURN over TCP per context, two contexts, HTTP/3)
 
 ## What it does
 
 Behind a SOCKS5 proxy the UDP of WebRTC (STUN, TURN) and of HTTP/3 leaves through the proxy's UDP relay, or does not leave,
-and never goes out from the machine's own address. The proxy is the session's: the Juggler (SessionRoute) publishes the
-SOCKS5 proxy of the session to the engine through `nsIStealthSessionUdpProxy` (juggler/udp), which keeps it, user and
-password included, in one place in the parent and sends it to the socket process by an IPC message
-(`PSocketProcess::StealthSessionUdpProxy`, sent again whenever the socket process is launched). The credentials never
-travel by pref and are never in a content process or a log; the content processes only see the pref
-`zoom.stealth.udp_proxy.armed`.
+and never goes out from the machine's own address. A browser with no proxy is a plain Firefox: nothing here changes it.
 
-The session arms the UDP road only when the core proved the proxy's UDP coherent (UDP ASSOCIATE granted, a STUN answered
-through the relay, the UDP exit equal to the TCP exit) and wrote `network.proxy.socks_remote_udp`. Armed, the SOCKS UDP layer
-(netwerk/socket/nsSOCKSUDPIOLayer) is pushed on the UDP sockets of nsUDPSocket and on the ICE sockets of the socket process
-(NrSocket::create); a socket whose layer cannot be attached is not created. Not armed (or no proxy): a direct UDP send to a
-public address is refused (`zoom.stealth.webrtc.no_direct_udp`, always true behind a proxy), as before. A send passes only if
-its socket has the layer.
+The proxy is the one of the document, found by the same lookup Firefox uses for its TCP (ProxyConfigLookup, with the load
+info of the page, so the filters of the Juggler answer for the context of the page). `PcUdpProxy` (netwerk/socket/StealthPcUdpProxy)
+keeps the answer for one PeerConnection: no proxy (direct), SOCKS5, or a proxy that carries no UDP (blocked). A lookup that
+fails, or a document with no URI, is blocked: it never opens a road around the proxy.
+
+The UDP is decided where a socket is born. `NrSocket::create` (ICE sockets) and `nsUDPSocket::InitWithAddress` (HTTP/3,
+`setSocksProxy`) push the SOCKS UDP layer (netwerk/socket/nsSOCKSUDPIOLayer) when the proxy is SOCKS5. The layer returns at
+once: the association (resolve, connect, greeting, auth, UDP ASSOCIATE) is made afterwards on the socket thread, the first
+datagrams are held (16 at most) and sent when it is ready, so a candidate is not late. A proxy without UDP is a router that
+drops: what is sent goes nowhere and nothing is received. Datagrams to loopback go direct in every state. In a content
+process the UDP sockets of a PeerConnection are refused: they would go out direct.
+
+The SOCKS5 connections of Necko tell the layer's pool the proxy (nsSOCKSIOLayer), so an association is warm when the first
+socket asks for it. TURN over TCP and the HTTP tunnel build their lookup channel with the same function
+(`StealthNewChannelOfLoadInfo`, netwerk/ipc/StealthDocumentChannel).
+
+HTTP/3 through SOCKS5: the h3 Alt-Svc is kept, the host name is resolved (QUIC needs the address) and the socket carries the
+proxy; through a proxy that carries no UDP the handshake never completes and Firefox falls back to h2 by itself.
 
 ## Hooks in Mozilla files
 
-- `dom/media/webrtc/transport/nr_socket_prsock.cpp`: four one-line hooks into nr_stealth_proxy_udp.h (the include, the layer
-  on NrSocket::create, the filter in NrSocket::sendto and NrUdpSocketIpc::sendto).
-- `netwerk/base/nsUDPSocket.cpp`: include and one call that attaches the layer of the session's proxy.
-- `netwerk/base/nsIOService.cpp`: include and one call that sends the session's proxy again to a socket process that was
-  (re)launched.
-- `netwerk/ipc/PSocketProcess.ipdl`, `netwerk/ipc/SocketProcessChild.h`: the IPC message and its receiver.
-- `netwerk/base/moz.build`: the hook of the folder network/socks (credentials), one line.
+- `dom/media/webrtc/transport/nr_socket_prsock.{h,cpp}`: the NrSocket takes the proxy config of its PeerConnection; one hook
+  in `create` (nr_stealth_proxy_udp.h) and the refusal in a content process.
+- `dom/media/webrtc/transport/nr_socket_proxy_config.{h,cpp}`: `UdpProxy()`, the lookup started with the config.
+- `dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp`: the lookup channel and the tunnel channel come from
+  StealthNewChannelOfLoadInfo (Mozilla's own channel-building code is gone from here).
+- `netwerk/ipc/ProxyConfigLookup*.{h,cpp}`, `PSocketProcess.ipdl`, `SocketProcessParent.{h,cpp}`: the optional load info of the
+  document goes with the lookup.
+- `netwerk/base/nsIUDPSocket.idl`, `nsUDPSocket.{h,cpp}`, `nsProxyInfo.{h,cpp}`: `setSocksProxy` and the SOCKS5 test.
+- `netwerk/protocol/http/{AlternateServices,DnsAndConnectSocket,HttpBaseChannel,HttpConnectionUDP}.cpp`: the HTTP/3 gates.
+- `netwerk/socket/nsSOCKSIOLayer.cpp`: one call that warms the pool.
+- `moz.build` of netwerk/ipc, netwerk/socket (and netwerk/protocol/http, for another folder's file): our sources.
 
 ## Our own files
 
-- `netwerk/socket/nsSOCKSUDPIOLayer.{h,cpp}` (the layer, the session's proxy and its IPC), `juggler/udp/*` (the service the
-  Juggler calls).
+- `netwerk/socket/nsSOCKSUDPIOLayer.{h,cpp}` (the layer and the pool), `netwerk/socket/StealthPcUdpProxy.{h,cpp}` (the proxy of a
+  PeerConnection), `netwerk/ipc/StealthDocumentChannel.{h,cpp}` (the channel of a document's load info),
+  `dom/media/webrtc/transport/nr_stealth_proxy_udp.h` (the rule at the birth of a socket).

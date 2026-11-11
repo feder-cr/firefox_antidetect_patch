@@ -45,7 +45,6 @@ FEATURES = {
     "api-keys-declared": "stillborn/api-keys",
     # network
     "proxy-udp-egress": "network/proxy-udp",
-    "socks-udp-h3": "network/socks-udp-h3",
     "socks-credentials": "network/socks",
     "dns-no-local-resolution": "network/dns",
     # automation
@@ -208,7 +207,6 @@ OWN_FILES = [
     (r"^third_party/python/vsdownload/stealth_download_watchdog\.", "platform/build-tools"),
     (r"^security/sandbox/win/src/sandboxbroker/StealthSandboxBranding\.", "fingerprint/js-surface/branding"),
     (r"^netwerk/test/browser/browser_stealth_accept_language_list\.", "fingerprint/locale-time/accept-language"),
-    (r"^netwerk/protocol/http/StealthH3Proxy\.", "network/socks-udp-h3"),
     (r"^netwerk/test/gtest/TestStealthSocksCredentials\.", "network/socks"),
     (r"^netwerk/base/StealthSocksCredentials\.", "network/socks"),
     (r"^layout/style/StealthMediaFeatures\.", "fingerprint/screen-window/css-media"),
@@ -270,7 +268,9 @@ OWN_FILES = [
     (r"^dom/media/webrtc/transport/nr_stealth_bridge\.", "fingerprint/webrtc/ice-candidates"),
     (r"^third_party/libwebrtc/api/location\.h$", "fingerprint/webrtc/ice-candidates"),
     (r"^netwerk/protocol/res/StealthBranding\.", "fingerprint/js-surface/branding"),
-    (r"^netwerk/socket/nsSOCKSUDPIOLayer\.", "network/socks-udp-h3"),
+    (r"^netwerk/socket/nsSOCKSUDPIOLayer\.", "network/proxy-udp"),
+    (r"^netwerk/socket/StealthPcUdpProxy\.", "network/proxy-udp"),
+    (r"^netwerk/ipc/StealthDocumentChannel\.", "network/proxy-udp"),
     (r"^browser/config/", "platform/release"),
     (r"^\.mozconfig$", "platform/build-config"),
     (r"^STEALTH_BRANCH_README\.md$", "platform/repo"),

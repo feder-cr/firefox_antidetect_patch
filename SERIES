@@ -17,7 +17,6 @@ stillborn/updater
 network/dns
 network/proxy-udp
 network/socks
-network/socks-udp-h3
 automation/bypass-csp
 automation/docshell-attrs
 automation/downloads

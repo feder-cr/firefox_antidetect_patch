@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 #include "../../base/StealthSocksCredentials.h"
 #include "gtest/gtest.h"
@@ -22,7 +23,9 @@
 #include "nsIProtocolProxyCallback.h"
 #include "nsIProtocolProxyService.h"
 #include "nsIProxyInfo.h"
+#include "nsIUDPSocket.h"
 #include "nsNetUtil.h"
+#include "StealthPcUdpProxy.h"
 #include "nsSOCKSUDPIOLayer.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
@@ -37,6 +40,10 @@
 #  include <errno.h>
 #  include <fcntl.h>
 #endif
+
+// netwerk/socket/nsSOCKSIOLayer.h is not exported: the one function the SOCKS5 connection of a context calls.
+nsresult nsSOCKSIOLayerAddToSocket(int32_t family, const char* host, int32_t port, nsIProxyInfo* proxyInfo,
+                                   int32_t socksVersion, uint32_t flags, uint32_t tlsFlags, PRFileDesc* fd);
 
 namespace mozilla::net {
 
@@ -181,34 +188,29 @@ TEST(TestStealthSocksCredentials, ReachResolvedProxyInfo)
 }
 
 // ---------------------------------------------------------------------------
-// The SOCKS5 UDP layer (network/proxy-udp) takes the proxy of the SESSION and
-// the core's verdict network.proxy.socks_remote_udp, not network.proxy.*, which
-// a Juggler session never writes. A fake SOCKS5 server on the loopback stands
-// for the proxy. They live in this file because it is already listed in
-// netwerk/test/gtest/moz.build as ours: a second file would be a second line
-// in a Mozilla build file.
+// The SOCKS5 UDP layer takes the proxy of the PeerConnection the socket belongs to (PcUdpProxy: what Firefox answers for
+// the document). A fake SOCKS5 server on the loopback stands for the proxy. They live in this file because it is already
+// listed in netwerk/test/gtest/moz.build as ours: a second file would be a second line in a Mozilla build file.
 
 namespace {
 
-constexpr char kVerdict[] = "network.proxy.socks_remote_udp";
-constexpr char kArmed[] = "zoom.stealth.udp_proxy.armed";
-
-// The proxy of the session as the parent or the socket process hold it, and the
-// core's verdict. Put back whatever a test did.
+// The proxy of the PeerConnection of a test, and the layer put on a UDP socket for it.
 class UdpSession {
  public:
-  ~UdpSession() {
-    StealthSessionUdpProxySet(""_ns, 0, ""_ns, ""_ns);
-    Preferences::ClearUser(kVerdict);
-    Preferences::ClearUser(kArmed);
+  void Arm(const char* aHost, int32_t aPort, const char* aUser = "", const char* aPass = "") {
+    PcUdpProxy::Socks5Info info;
+    info.mHost = aHost;
+    info.mPort = aPort;
+    info.mUser = aUser;
+    info.mPass = aPass;
+    mProxy = PcUdpProxy::Known(PcUdpProxy::Kind::Socks5, info);
   }
-  void Arm(const char* aHost, int32_t aPort, const char* aUser = "",
-           const char* aPass = "") {
-    StealthSessionUdpProxySet(nsDependentCString(aHost), aPort,
-                              nsDependentCString(aUser),
-                              nsDependentCString(aPass));
-    Preferences::SetBool(kVerdict, true);
-  }
+  void NoProxy() { mProxy = PcUdpProxy::Known(PcUdpProxy::Kind::Direct); }
+  void ProxyWithoutUdp() { mProxy = PcUdpProxy::Known(PcUdpProxy::Kind::Blocked); }
+  nsresult Attach(PRFileDesc* aFd) { return nsSOCKSUDPIOLayerAddToSocket(aFd, mProxy); }
+
+ private:
+  RefPtr<PcUdpProxy> mProxy;
 };
 
 bool NativeSocketIsOpen(PROsfd aFd) {
@@ -423,6 +425,24 @@ class FakeSocks {
   std::atomic<bool> mConnected{false};
 };
 
+bool IsLoopbackForTest(const PRNetAddr& aAddr) { return (PR_ntohl(aAddr.inet.ip) >> 24) == 127; }
+
+// The address of this host that is not loopback: where a datagram that is NOT to the machine itself can be received.
+PRNetAddr HostAddress(uint16_t aPort) {
+  PRNetAddr probe;
+  PR_InitializeNetAddr(PR_IpAddrNull, 9, &probe);
+  probe.inet.ip = PR_htonl(0xC0000201);  // 192.0.2.1: nothing is sent
+  PRFileDesc* s = PR_NewUDPSocket();
+  PRNetAddr mine;
+  PR_InitializeNetAddr(PR_IpAddrAny, 0, &mine);
+  if (PR_Connect(s, &probe, PR_INTERVAL_NO_WAIT) == PR_SUCCESS) {
+    PR_GetSockName(s, &mine);
+  }
+  PR_Close(s);
+  mine.inet.port = PR_htons(aPort);
+  return mine;
+}
+
 uint32_t ElapsedMs(PRIntervalTime aStart) {
   return PR_IntervalToMilliseconds(PR_IntervalNow() - aStart);
 }
@@ -459,56 +479,50 @@ uint16_t DeadPort() {
 
 }  // namespace
 
-TEST(StealthSessionUdpProxy, ArmedNeedsTheVerdictAndTheProxyOfTheSession)
+// A PeerConnection with no proxy is a machine with none: the socket sends where it is told to.
+TEST(StealthSessionUdpProxy, APeerConnectionWithNoProxyLeavesTheSocketPlain)
 {
   UdpSession prefs;
-  nsAutoCString host, user, pass;
-  int32_t port = 0;
-
-  // The proxy alone is not the verdict.
-  StealthSessionUdpProxySet("127.0.0.1"_ns, 1080, ""_ns, ""_ns);
-  EXPECT_FALSE(StealthSocksUdpRouted());
-
-  // The verdict alone is not a proxy, and neither is network.proxy.*, nor the
-  // bool a content process reads: this process holds none.
-  StealthSessionUdpProxySet(""_ns, 0, ""_ns, ""_ns);
-  Preferences::SetBool(kVerdict, true);
-  Preferences::SetCString("network.proxy.socks", "10.0.0.1");
-  Preferences::SetInt("network.proxy.socks_port", 1080);
-  Preferences::SetBool(kArmed, true);
-  EXPECT_FALSE(StealthSocksUdpRouted());
-  Preferences::ClearUser("network.proxy.socks");
-  Preferences::ClearUser("network.proxy.socks_port");
-
-  // A bad endpoint clears what was held.
-  prefs.Arm("203.0.113.7", 1080, "alice", "s3cret");
-  ASSERT_TRUE(StealthSocksUdpRouted());
-  StealthSessionUdpProxySet("203.0.113.7"_ns, 0, ""_ns, ""_ns);
-  EXPECT_FALSE(StealthSocksUdpRouted());
-
-  prefs.Arm("203.0.113.7", 1080, "alice", "s3cret");
-  EXPECT_TRUE(StealthSocksUdpRouted());
-  ASSERT_TRUE(StealthSessionUdpProxy(host, port, user, pass));
-  EXPECT_TRUE(host.EqualsLiteral("203.0.113.7"));
-  EXPECT_EQ(port, 1080);
-  EXPECT_TRUE(user.EqualsLiteral("alice"));
-  EXPECT_TRUE(pass.EqualsLiteral("s3cret"));
-
-  Preferences::SetBool(kVerdict, false);
-  EXPECT_FALSE(StealthSocksUdpRouted());
-}
-
-TEST(StealthSessionUdpProxy, ASessionThatIsNotArmedLeavesTheSocketPlain)
-{
-  UdpSession prefs;
+  prefs.NoProxy();
+  PRFileDesc* receiver = PR_NewUDPSocket();
+  PRNetAddr where = Loopback(0);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(receiver, &where));
+  PR_GetSockName(receiver, &where);
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
-  EXPECT_FALSE(nsSOCKSUDPIOLayerIsOn(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &where, PR_INTERVAL_NO_WAIT));
+  char buf[64];
+  PRNetAddr from;
+  EXPECT_EQ(4, PR_RecvFrom(receiver, buf, sizeof(buf), 0, &from, PR_SecondsToInterval(2)));
   PR_Close(fd);
+  PR_Close(receiver);
 }
 
-TEST(StealthSessionUdpProxy, TheLayerConnectsToTheProxyOfTheSession)
+// A proxy that carries no UDP (HTTP, HTTPS, SOCKS4) is a router that drops it: the send succeeds, nothing leaves.
+TEST(StealthSessionUdpProxy, AProxyThatCarriesNoUdpIsARouterThatDropsIt)
+{
+  UdpSession prefs;
+  prefs.ProxyWithoutUdp();
+  PRFileDesc* receiver = PR_NewUDPSocket();
+  PRNetAddr any;
+  PR_InitializeNetAddr(PR_IpAddrAny, 0, &any);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(receiver, &any));
+  PR_GetSockName(receiver, &any);
+  PRNetAddr where = HostAddress(PR_ntohs(any.inet.port));  // not loopback: that one goes direct
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
+  EXPECT_TRUE(WaitFor([&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 2000));
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &where, PR_INTERVAL_NO_WAIT));
+  char buf[64];
+  PRNetAddr from;
+  EXPECT_EQ(-1, PR_RecvFrom(receiver, buf, sizeof(buf), 0, &from, PR_MillisecondsToInterval(400)));
+  PR_Close(fd);
+  PR_Close(receiver);
+}
+
+TEST(StealthSessionUdpProxy, TheLayerConnectsToTheProxyOfThePeerConnection)
 {
   UdpSession prefs;
   FakeSocks proxy;
@@ -516,7 +530,7 @@ TEST(StealthSessionUdpProxy, TheLayerConnectsToTheProxyOfTheSession)
 
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   EXPECT_TRUE(nsSOCKSUDPIOLayerIsOn(fd));
 
   // A datagram to the STUN server goes to the relay, wrapped for it.
@@ -545,7 +559,7 @@ TEST(StealthSessionUdpProxy, TheLayerDoesNotWaitForTheProxy)
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
   PRIntervalTime start = PR_IntervalNow();
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   uint32_t waited = ElapsedMs(start);
   EXPECT_LT(waited, 300u) << "the socket waited " << waited
                           << " ms for a proxy that answers in 400 ms";
@@ -569,7 +583,7 @@ TEST(StealthSessionUdpProxy, WhatIsHeldBeforeTheAssociationIsMadeIsBounded)
 
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   for (int i = 0; i < 40; ++i) {
     // UDP: what cannot be held is dropped, and the sender is not told.
@@ -590,7 +604,7 @@ TEST(StealthSessionUdpProxy, ClosingASocketWithTheLayerClosesTheSocketUnderIt)
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
   PROsfd native = PR_FileDesc2NativeHandle(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   ASSERT_TRUE(nsSOCKSUDPIOLayerIsOn(fd));
   ASSERT_TRUE(NativeSocketIsOpen(native));
   ASSERT_EQ(PR_SUCCESS, PR_Close(fd));
@@ -606,7 +620,7 @@ TEST(StealthSessionUdpProxy, ClosingASocketBeforeTheAssociationIsMadeLetsTheProx
 
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   // The proxy is being talked to (its first answer is 300 ms away) when the
   // socket is closed.
   ASSERT_TRUE(WaitFor([&] { return proxy.Connected(); }, 2000));
@@ -622,12 +636,12 @@ TEST(StealthSessionUdpProxy, AnArmedSessionWhoseProxyRefusesFailsTheSocket)
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
   // The socket is made at once, with its layer; it is the first send after the
-  // proxy said no that fails. It is never sent direct.
-  EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  // proxy said no is dropped, as behind a router that blocks UDP. It is never sent direct.
+  EXPECT_EQ(NS_OK, prefs.Attach(fd));
   EXPECT_TRUE(nsSOCKSUDPIOLayerIsOn(fd));
   PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
-      [&] { return PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT) < 0; },
+      [&] { return nsSOCKSUDPIOLayerHasFailed(fd); },
       3000))
       << "an armed session must not go on with a plain, direct socket";
   PR_Close(fd);
@@ -639,10 +653,10 @@ TEST(StealthSessionUdpProxy, TheFailureOfOneProxyDoesNotHoldBackAnother)
   prefs.Arm("127.0.0.1", DeadPort());
   PRFileDesc* first = PR_NewUDPSocket();
   ASSERT_TRUE(first);
-  EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(first));
+  EXPECT_EQ(NS_OK, prefs.Attach(first));
   PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
-      [&] { return PR_SendTo(first, "x", 1, 0, &stun, PR_INTERVAL_NO_WAIT) < 0; },
+      [&] { return nsSOCKSUDPIOLayerHasFailed(first); },
       3000));
   PR_Close(first);
 
@@ -652,7 +666,7 @@ TEST(StealthSessionUdpProxy, TheFailureOfOneProxyDoesNotHoldBackAnother)
   prefs.Arm("127.0.0.1", proxy.Port());
   PRFileDesc* second = PR_NewUDPSocket();
   ASSERT_TRUE(second);
-  EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(second));
+  EXPECT_EQ(NS_OK, prefs.Attach(second));
   EXPECT_EQ(4, PR_SendTo(second, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
   nsCString got = proxy.FirstDatagram();
   EXPECT_EQ(got.Length(), 10u + 4u);
@@ -668,7 +682,7 @@ TEST(StealthSessionUdpProxy, AProxyNamedByHostIsFoundByTheResolver)
   prefs.Arm("localhost", proxy.Port());
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
   nsCString got = proxy.FirstDatagram();
@@ -685,7 +699,7 @@ TEST(StealthSessionUdpProxy, TheProxyThatWantsAUserNameAndAPasswordGetsThem)
   prefs.Arm("127.0.0.1", proxy.Port(), kProxyUser, kProxyPass);
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
   EXPECT_EQ(proxy.FirstDatagram().Length(), 10u + 4u);
@@ -701,10 +715,10 @@ TEST(StealthSessionUdpProxy, AWrongPasswordFailsTheSocketAndSendsNothing)
   prefs.Arm("127.0.0.1", proxy.Port(), kProxyUser, "a-wrong-password");
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
-      [&] { return PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT) < 0; }, 3000));
+      [&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 3000));
   PR_Close(fd);
 }
 
@@ -718,7 +732,7 @@ TEST(StealthSessionUdpProxy, AnUnspecifiedRelayAddressIsTheAddressOfTheProxy)
   prefs.Arm("127.0.0.1", proxy.Port());
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
   EXPECT_EQ(proxy.FirstDatagram().Length(), 10u + 4u)
@@ -735,7 +749,7 @@ TEST(StealthSessionUdpProxy, AnswersInPiecesOfOneByteAreRead)
   prefs.Arm("127.0.0.1", proxy.Port());
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
   EXPECT_EQ(proxy.FirstDatagram().Length(), 10u + 4u);
@@ -758,10 +772,10 @@ TEST(StealthSessionUdpProxy, AProxyThatDoesNotAnswerFailsTheSocketAtTheTimeOfACo
   prefs.Arm("127.0.0.1", proxy.Port());
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
-      [&] { return PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT) < 0; }, 4000))
+      [&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 4000))
       << "a proxy that never answers kept the socket waiting";
   PR_Close(fd);
   Preferences::ClearUser("network.http.connection-timeout");
@@ -775,7 +789,7 @@ TEST(StealthSessionUdpProxy, ASocketReadsNothingBeforeTheAssociationAndFailsAfte
     prefs.Arm("127.0.0.1", proxy.Port());
     PRFileDesc* fd = PR_NewUDPSocket();
     ASSERT_TRUE(fd);
-    ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+    ASSERT_EQ(NS_OK, prefs.Attach(fd));
     char buf[64];
     PRNetAddr from;
     EXPECT_EQ(-1, PR_RecvFrom(fd, buf, sizeof(buf), 0, &from, PR_INTERVAL_NO_WAIT));
@@ -785,14 +799,14 @@ TEST(StealthSessionUdpProxy, ASocketReadsNothingBeforeTheAssociationAndFailsAfte
   prefs.Arm("127.0.0.1", DeadPort());
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   ASSERT_TRUE(WaitFor(
-      [&] { return PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT) < 0; }, 3000));
+      [&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 3000));
   char buf[64];
   PRNetAddr from;
   EXPECT_EQ(-1, PR_RecvFrom(fd, buf, sizeof(buf), 0, &from, PR_INTERVAL_NO_WAIT));
-  EXPECT_NE(PR_WOULD_BLOCK_ERROR, PR_GetError()) << "a failed association is not 'try again'";
+  EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PR_GetError()) << "a network that blocks UDP answers nothing";
   PR_Close(fd);
 }
 
@@ -804,7 +818,7 @@ TEST(StealthSessionUdpProxy, OnlyTheDatagramsOfTheRelayAreHandedToTheApplication
   prefs.Arm("127.0.0.1", proxy.Port());
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
   ASSERT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
   ASSERT_EQ(proxy.FirstDatagram().Length(), 14u);  // the relay knows the client now
@@ -826,34 +840,445 @@ TEST(StealthSessionUdpProxy, OnlyTheDatagramsOfTheRelayAreHandedToTheApplication
 
 // Nothing a socket with the layer sends is sent direct: not what is held, not what is sent after the proxy refused. A
 // receiver stands where the datagram was addressed to.
+// Nothing a socket with the layer sends is sent direct: not what is held, not what is sent after the proxy refused. A
+// receiver stands where the datagram was addressed to.
+
+// Nothing a socket with the layer sends is sent direct: not what is held, not what is sent after the proxy refused. A
+// receiver stands where the datagram was addressed to (an address of the host that is not loopback).
 TEST(StealthSessionUdpProxy, NothingIsEverSentDirect)
 {
   UdpSession prefs;
   PRFileDesc* receiver = PR_NewUDPSocket();
-  PRNetAddr where = Loopback(0);
-  ASSERT_EQ(PR_SUCCESS, PR_Bind(receiver, &where));
-  PR_GetSockName(receiver, &where);
+  PRNetAddr any = Loopback(0);
+  PR_InitializeNetAddr(PR_IpAddrAny, 0, &any);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(receiver, &any));
+  PR_GetSockName(receiver, &any);
+  PRNetAddr where = HostAddress(PR_ntohs(any.inet.port));
+  ASSERT_FALSE(IsLoopbackForTest(where)) << "this host has no address but loopback";
   char buf[64];
   PRNetAddr from;
   {
     FakeSocks proxy(300);  // the datagram is held, then goes to the relay
     prefs.Arm("127.0.0.1", proxy.Port());
     PRFileDesc* fd = PR_NewUDPSocket();
-    ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+    ASSERT_EQ(NS_OK, prefs.Attach(fd));
     EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &where, PR_INTERVAL_NO_WAIT));
     EXPECT_EQ(proxy.FirstDatagram().Length(), 14u);
     PR_Close(fd);
   }
   prefs.Arm("127.0.0.1", DeadPort());  // the proxy refuses
   PRFileDesc* fd = PR_NewUDPSocket();
-  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   (void)PR_SendTo(fd, "ping", 4, 0, &where, PR_INTERVAL_NO_WAIT);
-  PR_Sleep(PR_MillisecondsToInterval(300));
-  (void)PR_SendTo(fd, "ping", 4, 0, &where, PR_INTERVAL_NO_WAIT);
+  ASSERT_TRUE(WaitFor([&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 3000));
+  // After the failure a send succeeds and the datagram goes nowhere: no error, no answer.
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &where, PR_INTERVAL_NO_WAIT));
   PR_Close(fd);
   EXPECT_EQ(-1, PR_RecvFrom(receiver, buf, sizeof(buf), 0, &from, PR_MillisecondsToInterval(300)))
       << "a datagram arrived at its destination without the proxy";
   PR_Close(receiver);
 }
 
+// To the machine itself the datagram goes direct, whatever the proxy (Firefox does the same for localhost), and what comes
+// from the machine itself is handed over as it is; to anywhere else it goes by the relay.
+TEST(StealthSessionUdpProxy, TheMachineItselfIsReachedDirectAndTheRestByTheRelay)
+{
+  UdpSession prefs;
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+  PRFileDesc* receiver = PR_NewUDPSocket();
+  PRNetAddr where = Loopback(0);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(receiver, &where));
+  PR_GetSockName(receiver, &where);
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
+  PRNetAddr stun = StunServer();
+  ASSERT_EQ(4, PR_SendTo(fd, "pong", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  ASSERT_EQ(proxy.FirstDatagram().Length(), 14u);  // a public destination: by the relay
+  ASSERT_EQ(5, PR_SendTo(fd, "local", 5, 0, &where, PR_INTERVAL_NO_WAIT));
+  char buf[64];
+  PRNetAddr from;
+  EXPECT_EQ(5, PR_RecvFrom(receiver, buf, sizeof(buf), 0, &from, PR_SecondsToInterval(2)))
+      << "a datagram to the machine itself did not arrive direct";
+  EXPECT_EQ(0u, proxy.CountDatagrams(300)) << "a datagram to the machine itself went by the relay";
+  // and back: the machine answers direct, the layer hands it over unframed
+  PRNetAddr mine;
+  PR_GetSockName(fd, &mine);
+  ASSERT_EQ(2, PR_SendTo(receiver, "ok", 2, 0, &mine, PR_INTERVAL_NO_WAIT));
+  nsCString got;
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        PRNetAddr src;
+        int32_t n = PR_RecvFrom(fd, buf, sizeof(buf), 0, &src, PR_INTERVAL_NO_WAIT);
+        if (n > 0) got.Assign(buf, n);
+        return n > 0;
+      },
+      2000));
+  EXPECT_TRUE(got.EqualsLiteral("ok")) << "got '" << got.get() << "'";
+  PR_Close(fd);
+  PR_Close(receiver);
+}
+
+// ── The pool of associations (appended to TestStealthSocksCredentials.cpp) ──────────────────────────────────────────
+//
+// Necko opens a SOCKS5 connection for a context: that is where the proxy is learned, and the associations the ICE
+// sockets of the context will need are made then (two of them, as many as a gather's first sockets), so a socket takes
+// one that is made, or being made, instead of paying the handshake round trips itself. A socket's association is the
+// only one that is ever asked of the proxy by the layer: the pool is where they are made.
+
+namespace {
+
+// A SOCKS5 server for any number of clients: every control connection gets its own thread, every ASSOCIATE answers with
+// the same loopback UDP relay. It counts what the proxy saw.
+struct PoolProxyOptions {
+  uint32_t mDelayMs = 0;         // every answer on a control connection waits for it
+  bool mRefuse = false;          // UDP ASSOCIATE is answered "command not supported"
+  uint32_t mCloseFirst = 0;      // the control connections of the first N clients are closed by the proxy once associated
+};
+
+class PoolSocks {
+ public:
+  explicit PoolSocks(const PoolProxyOptions& aOptions = PoolProxyOptions()) : mOptions(aOptions) {
+    mListener = PR_NewTCPSocket();
+    mRelay = PR_NewUDPSocket();
+    PRNetAddr addr = Loopback(0);
+    PR_Bind(mListener, &addr);
+    PR_Listen(mListener, 16);
+    PR_GetSockName(mListener, &addr);
+    mPort = PR_ntohs(addr.inet.port);
+    PRNetAddr relay = Loopback(0);
+    PR_Bind(mRelay, &relay);
+    PR_GetSockName(mRelay, &relay);
+    mRelayPort = relay.inet.port;
+    mAcceptor = std::thread([this] { Accept(); });
+  }
+
+  ~PoolSocks() {
+    mStop = true;
+    mAcceptor.join();
+    for (std::thread& t : mClients) {
+      t.join();
+    }
+    PR_Close(mListener);
+    PR_Close(mRelay);
+  }
+
+  uint16_t Port() const { return mPort; }
+  uint32_t Connections() const { return mConnections; }
+  uint32_t Associates() const { return mAssociates; }  // UDP ASSOCIATE requests read
+  uint32_t Answered() const { return mAnswered; }      // the ones answered with a relay
+
+  // The first datagram the relay gets within aMs, or the empty string. Returns when it arrived.
+  nsCString NextDatagram(uint32_t aMs, PRIntervalTime* aAt = nullptr) {
+    char buf[256];
+    int32_t n = PR_RecvFrom(mRelay, buf, sizeof(buf), 0, &mClient, PR_MillisecondsToInterval(aMs));
+    if (aAt) *aAt = PR_IntervalNow();
+    return n > 0 ? nsCString(buf, n) : nsCString();
+  }
+
+ private:
+  bool ReadAll(PRFileDesc* aFd, uint8_t* aBuf, size_t aLen) {
+    size_t got = 0;
+    while (got < aLen) {
+      int32_t n = PR_Recv(aFd, aBuf + got, aLen - got, 0, PR_MillisecondsToInterval(100));
+      if (n == 0) return false;
+      if (n < 0) {
+        if (PR_GetError() == PR_IO_TIMEOUT_ERROR && !mStop) continue;
+        return false;
+      }
+      got += n;
+    }
+    return true;
+  }
+
+  void Answer(PRFileDesc* aClient, const uint8_t* aBytes, int32_t aLen) {
+    if (mOptions.mDelayMs) PR_Sleep(PR_MillisecondsToInterval(mOptions.mDelayMs));
+    PR_Send(aClient, aBytes, aLen, 0, PR_INTERVAL_NO_TIMEOUT);
+  }
+
+  void Accept() {
+    while (!mStop) {
+      PRNetAddr peer;
+      PRFileDesc* client = PR_Accept(mListener, &peer, PR_MillisecondsToInterval(50));
+      if (!client) continue;
+      uint32_t index = mConnections++;
+      mClients.emplace_back([this, client, index] { Serve(client, index); });
+    }
+  }
+
+  void Serve(PRFileDesc* aClient, uint32_t aIndex) {
+    uint8_t greeting[2];
+    uint8_t methods[255];
+    if (ReadAll(aClient, greeting, 2) && ReadAll(aClient, methods, greeting[1])) {
+      const uint8_t chosen[2] = {0x05, 0x00};
+      Answer(aClient, chosen, 2);
+      uint8_t associate[10];
+      if (ReadAll(aClient, associate, sizeof(associate))) {
+        ++mAssociates;
+        uint8_t reply[10] = {0x05, static_cast<uint8_t>(mOptions.mRefuse ? 0x07 : 0x00), 0x00, 0x01, 127, 0, 0, 1, 0, 0};
+        std::memcpy(reply + 8, &mRelayPort, 2);  // already in network order
+        Answer(aClient, reply, sizeof(reply));
+        if (!mOptions.mRefuse) {
+          ++mAnswered;
+          if (aIndex < mOptions.mCloseFirst) {
+            PR_Sleep(PR_MillisecondsToInterval(100));  // the relay is up for a moment, then the proxy ends it
+          } else {
+            uint8_t b;
+            while (!mStop) {
+              int32_t n = PR_Recv(aClient, &b, 1, 0, PR_MillisecondsToInterval(20));
+              if (n == 0) break;
+              if (n < 0 && PR_GetError() != PR_IO_TIMEOUT_ERROR && PR_GetError() != PR_WOULD_BLOCK_ERROR) break;
+            }
+          }
+        }
+      }
+    }
+    PR_Close(aClient);
+  }
+
+  PoolProxyOptions mOptions;
+  PRFileDesc* mListener = nullptr;
+  PRFileDesc* mRelay = nullptr;
+  uint16_t mPort = 0;
+  uint16_t mRelayPort = 0;
+  PRNetAddr mClient;
+  std::thread mAcceptor;
+  std::vector<std::thread> mClients;  // only the acceptor adds, the destructor joins after the acceptor is gone
+  std::atomic<bool> mStop{false};
+  std::atomic<uint32_t> mConnections{0};
+  std::atomic<uint32_t> mAssociates{0};
+  std::atomic<uint32_t> mAnswered{0};
+};
+
+void Warm(uint16_t aPort) {
+  nsSOCKSUDPIOLayerWarm("127.0.0.1"_ns, aPort, ""_ns, ""_ns);
+}
+
+RefPtr<PcUdpProxy> Socks5(uint16_t aPort) {
+  PcUdpProxy::Socks5Info info;
+  info.mHost.AssignLiteral("127.0.0.1");
+  info.mPort = aPort;
+  return PcUdpProxy::Known(PcUdpProxy::Kind::Socks5, info);
+}
+
+}  // namespace
+
+TEST(StealthSocksUdpPool, WarmingMakesTwoAssociationsBeforeAnySocketAsksForOne)
+{
+  PoolSocks proxy;
+  Warm(proxy.Port());
+  EXPECT_TRUE(WaitFor([&] { return proxy.Answered() == 2; }, 3000)) << "answered " << proxy.Answered();
+  PR_Sleep(PR_MillisecondsToInterval(300));
+  EXPECT_EQ(2u, proxy.Associates()) << "warming asks the proxy for exactly the two it keeps";
+  // Warming again (every SOCKS5 connection of the context does) asks for nothing while the two are there.
+  Warm(proxy.Port());
+  Warm(proxy.Port());
+  PR_Sleep(PR_MillisecondsToInterval(300));
+  EXPECT_EQ(2u, proxy.Associates());
+}
+
+TEST(StealthSocksUdpPool, ASocketTakesAnAssociationThatIsAlreadyMade)
+{
+  PoolProxyOptions slow;
+  slow.mDelayMs = 300;  // the greeting and the ASSOCIATE each wait 300 ms: 600 ms for an association made on demand
+  PoolSocks proxy(slow);
+  Warm(proxy.Port());
+  ASSERT_TRUE(WaitFor([&] { return proxy.Answered() == 2; }, 4000));
+
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  PRNetAddr stun = StunServer();
+  PRIntervalTime start = PR_IntervalNow();
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  PRIntervalTime at;
+  nsCString got = proxy.NextDatagram(3000, &at);
+  ASSERT_EQ(got.Length(), 14u);
+  EXPECT_LT(PR_IntervalToMilliseconds(at - start), 200u)
+      << "the datagram waited for an association that was already made";
+  PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, WhatIsTakenIsReplacedSoTheNextSocketFindsOneToo)
+{
+  PoolSocks proxy;
+  Warm(proxy.Port());
+  ASSERT_TRUE(WaitFor([&] { return proxy.Answered() == 2; }, 3000));
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+  EXPECT_TRUE(WaitFor([&] { return proxy.Answered() == 3; }, 3000)) << "the one taken was not made again";
+  PR_Sleep(PR_MillisecondsToInterval(300));
+  EXPECT_EQ(3u, proxy.Associates()) << "two are kept, not more";
+  PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, ASocketThatFindsNoneMakesItself)
+{
+  // Nothing warmed this proxy: the socket asks for its association, and only one is made.
+  PoolSocks proxy;
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+  PRNetAddr stun = StunServer();
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  EXPECT_EQ(proxy.NextDatagram(3000).Length(), 14u);
+  PR_Sleep(PR_MillisecondsToInterval(300));
+  EXPECT_EQ(1u, proxy.Associates());
+  PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, AssociationsOfOneProxyAreNotHandedToAnother)
+{
+  PoolSocks a;
+  PoolSocks b;
+  Warm(a.Port());
+  ASSERT_TRUE(WaitFor([&] { return a.Answered() == 2; }, 3000));
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(b.Port()).get()));
+  PRNetAddr stun = StunServer();
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  EXPECT_EQ(b.NextDatagram(3000).Length(), 14u) << "the datagram went through the other proxy's relay";
+  EXPECT_EQ(2u, a.Associates());
+  PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, AProxyThatRefusedIsNotAskedAgainByWarmingOnlyBySockets)
+{
+  PoolProxyOptions refuse;
+  refuse.mRefuse = true;
+  PoolSocks proxy(refuse);
+  Warm(proxy.Port());
+  ASSERT_TRUE(WaitFor([&] { return proxy.Associates() == 2; }, 3000));
+  PR_Sleep(PR_MillisecondsToInterval(300));
+  uint32_t asked = proxy.Associates();
+  Warm(proxy.Port());  // the next SOCKS5 connection of the context
+  Warm(proxy.Port());
+  PR_Sleep(PR_MillisecondsToInterval(300));
+  EXPECT_EQ(asked, proxy.Associates()) << "warming asks a proxy that said no again and again";
+
+  // A socket that needs one asks, finds the proxy still says no, and fails: nothing is sent, nothing direct.
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+  PRNetAddr stun = StunServer();
+  EXPECT_TRUE(WaitFor([&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 3000));
+  EXPECT_EQ(asked + 1, proxy.Associates()) << "a socket's own need is one ASSOCIATE, not a retry loop";
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, AnAssociationWhoseControlConnectionWasClosedIsNotHandedOut)
+{
+  PoolProxyOptions closing;
+  closing.mCloseFirst = 2;  // the proxy ends the two warmed ones while they wait (an idle timeout)
+  PoolSocks proxy(closing);
+  Warm(proxy.Port());
+  ASSERT_TRUE(WaitFor([&] { return proxy.Answered() == 2; }, 3000));
+  PR_Sleep(PR_MillisecondsToInterval(500));  // closed by now; the control connection is watched
+
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+  PRNetAddr stun = StunServer();
+  EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  EXPECT_EQ(proxy.NextDatagram(3000).Length(), 14u) << "the socket was given an association the proxy had ended";
+  EXPECT_FALSE(nsSOCKSUDPIOLayerHasFailed(fd));
+  EXPECT_GE(proxy.Associates(), 3u);
+  PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, SixSocketsAtOnceEachGetAnAssociation)
+{
+  PoolSocks proxy;
+  Warm(proxy.Port());
+  ASSERT_TRUE(WaitFor([&] { return proxy.Answered() == 2; }, 3000));
+  PRFileDesc* fds[6];
+  PRNetAddr stun = StunServer();
+  for (PRFileDesc*& fd : fds) {
+    fd = PR_NewUDPSocket();
+    ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+    EXPECT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  }
+  uint32_t arrived = 0;
+  while (arrived < 6 && proxy.NextDatagram(3000).Length() == 14u) ++arrived;
+  EXPECT_EQ(6u, arrived);
+  for (PRFileDesc* fd : fds) PR_Close(fd);
+}
+
+TEST(StealthSocksUdpPool, TheSocks5ConnectionOfAContextWarmsThePool)
+{
+  // Where Firefox learns the proxy: the SOCKS5 layer of a connection.
+  PoolSocks proxy;
+  nsCOMPtr<nsIProtocolProxyService> pps = do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID);
+  ASSERT_TRUE(pps);
+  nsCOMPtr<nsIProxyInfo> info;
+  ASSERT_EQ(NS_OK, pps->NewProxyInfo("socks"_ns, "127.0.0.1"_ns, proxy.Port(), ""_ns, ""_ns, 0, UINT32_MAX, nullptr,
+                                     getter_AddRefs(info)));
+  PRFileDesc* tcp = PR_OpenTCPSocket(PR_AF_INET);
+  ASSERT_TRUE(tcp);
+  ASSERT_EQ(NS_OK, nsSOCKSIOLayerAddToSocket(PR_AF_INET, "example.test", 443, info, 5, 0, 0, tcp));
+  EXPECT_TRUE(WaitFor([&] { return proxy.Answered() == 2; }, 3000))
+      << "the SOCKS5 connection of the context did not make the associations: answered " << proxy.Answered();
+  PR_Close(tcp);
+}
+
+// An HTTP/3 connection's UDP socket (nsIUDPSocket) goes by the SOCKS5 proxy of the connection: the nsIProxyInfo it was
+// made with, as the layer of the ICE sockets, with the same associations.
+static already_AddRefed<nsIProxyInfo> Socks5ProxyInfo(const char* aHost, int32_t aPort) {
+  nsCOMPtr<nsIProtocolProxyService> pps = do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID);
+  nsCOMPtr<nsIProxyInfo> info;
+  if (!pps || NS_FAILED(pps->NewProxyInfoWithAuth("socks"_ns, nsDependentCString(aHost), aPort, ""_ns, ""_ns, ""_ns,
+                                                 ""_ns, 0, UINT32_MAX, nullptr, getter_AddRefs(info)))) {
+    return nullptr;
+  }
+  return info.forget();
+}
+
+TEST(StealthSessionUdpProxy, AnHttp3SocketGoesByTheSocks5ProxyOfItsConnection)
+{
+  FakeSocks proxy;
+  nsCOMPtr<nsIProxyInfo> info = Socks5ProxyInfo("127.0.0.1", proxy.Port());
+  ASSERT_TRUE(info);
+  nsCOMPtr<nsIUDPSocket> socket = do_CreateInstance("@mozilla.org/network/udp-socket;1");
+  ASSERT_TRUE(socket);
+  ASSERT_EQ(NS_OK, socket->SetSocksProxy(info));
+  NetAddr local;
+  local.raw.family = AF_INET;
+  ASSERT_EQ(NS_OK, socket->InitWithAddress(&local, nullptr, false, 1));
+  PRNetAddr stun = StunServer();
+  NetAddr to(&stun);
+  uint32_t sent = 0;
+  const uint8_t ping[4] = {'p', 'i', 'n', 'g'};
+  ASSERT_EQ(NS_OK, socket->SendWithAddress(&to, ping, 4, &sent));
+  nsCString got = proxy.FirstDatagram();
+  ASSERT_EQ(got.Length(), 10u + 4u) << "the datagram of the socket did not go to the relay";
+  EXPECT_EQ(0, std::memcmp(got.get() + 10, "ping", 4));
+  socket->Close();
+}
+
+TEST(StealthSessionUdpProxy, AnHttp3SocketBehindAProxyThatRefusesSendsNothing)
+{
+  PRFileDesc* receiver = PR_NewUDPSocket();
+  PRNetAddr any;
+  PR_InitializeNetAddr(PR_IpAddrAny, 0, &any);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(receiver, &any));
+  PR_GetSockName(receiver, &any);
+  PRNetAddr where = HostAddress(PR_ntohs(any.inet.port));
+  nsCOMPtr<nsIProxyInfo> info = Socks5ProxyInfo("127.0.0.1", DeadPort());
+  ASSERT_TRUE(info);
+  nsCOMPtr<nsIUDPSocket> socket = do_CreateInstance("@mozilla.org/network/udp-socket;1");
+  ASSERT_EQ(NS_OK, socket->SetSocksProxy(info));
+  NetAddr local;
+  local.raw.family = AF_INET;
+  ASSERT_EQ(NS_OK, socket->InitWithAddress(&local, nullptr, false, 1));
+  NetAddr to(&where);
+  uint32_t sent = 0;
+  const uint8_t ping[4] = {'p', 'i', 'n', 'g'};
+  (void)socket->SendWithAddress(&to, ping, 4, &sent);
+  PR_Sleep(PR_MillisecondsToInterval(500));
+  (void)socket->SendWithAddress(&to, ping, 4, &sent);
+  char buf[64];
+  PRNetAddr from;
+  EXPECT_EQ(-1, PR_RecvFrom(receiver, buf, sizeof(buf), 0, &from, PR_MillisecondsToInterval(300)))
+      << "a datagram of an HTTP/3 socket arrived without the proxy";
+  socket->Close();
+  PR_Close(receiver);
+}
 }  // namespace mozilla::net

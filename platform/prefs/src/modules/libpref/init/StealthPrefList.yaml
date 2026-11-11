@@ -39,23 +39,6 @@
 # Prefs starting with "network."
 #---------------------------------------------------------------------------
 
-# THE decision about UDP behind the proxy, and the only one the core writes for
-# it: "the proxy carries our UDP". The core sets it after it proved that the
-# proxy relays UDP (SOCKS5 UDP ASSOCIATE), that a STUN through the relay
-# answers, and that the UDP exit is the TCP exit. Everything else follows from
-# it in the engine, with nothing declared next to it: the layer on the UDP
-# sockets, the filter of direct ICE sends, HTTP/3 over SOCKS.
-#
-# Static, so that every thread reads it: the socket transport thread decides on
-# each socket, and Preferences::Get* is main-thread only. It was a dynamic
-# pref read by name from three places, off the main thread. False keeps a build
-# launched without invisible_core as it was. The one reader is
-# netwerk/socket/nsSOCKSUDPIOLayer.cpp.
-- name: network.proxy.socks_remote_udp
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
 #---------------------------------------------------------------------------
 # Prefs starting with "zoom."
 #---------------------------------------------------------------------------
@@ -144,16 +127,6 @@
 # `false` di default: una build lanciata senza invisible_core si comporta
 # esattamente come prima.
 - name: zoom.stealth.dns.no_local_resolution
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
-# The declared navigator.maxTouchPoints. Was a literal 0 in Navigator.cpp: the
-# right value for the desktop personas we ship, but a constant buried in C++ is
-# not pinnable, not inspectable and not overridable from extra_prefs, and a
-# touchscreen persona would have needed a browser rebuild. -1 keeps the
-# compiled behaviour so a build launched without invisible_core is unchanged.
-- name: zoom.stealth.webrtc.no_direct_udp
   type: RelaxedAtomicBool
   value: false
   mirror: always
@@ -632,17 +605,3 @@
   value: ""
   mirror: always
 
-# UDP is routed through the session's SOCKS5 proxy: the Juggler publishes the
-# proxy (juggler/udp, StealthSessionUdpProxyPublish) and writes this, the only
-# thing of it that is not a secret, next to it. The proxy itself, credentials
-# included, is held by the parent and the socket process only, sent over IPC
-# (PSocketProcess::StealthSessionUdpProxy): not a pref, because libpref cannot
-# keep a static string pref out of content processes. A content process asks
-# this bool when it must decide whether a direct ICE send is a leak
-# (nr_stealth_proxy_udp.h); the parent and the socket process ask what they
-# hold. The only reader is netwerk/socket/nsSOCKSUDPIOLayer.cpp
-# (StealthSocksUdpRouted).
-- name: zoom.stealth.udp_proxy.armed
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
