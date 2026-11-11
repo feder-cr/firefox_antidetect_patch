@@ -6451,5 +6451,27 @@
    "changed": [],
    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
   }
+ },
+ {
+  "file": "dom/base/nsFrameLoader.cpp",
+  "category": "juggler",
+  "feature": "juggler-frame-crash-context",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "nsFrameLoader::MaybeNotifyCrashed (the data of the oop-frameloader-crashed notification)",
+  "evidence": [
+   "+#include \"StealthFrameCrash.h\"  // STEALTH-HOOK(automation/juggler)",
+   "+  nsAutoString crashedContext;  // STEALTH-HOOK(automation/juggler)",
+   "+      StealthCrashedContextData(aBrowsingContext, crashedContext));"
+  ],
+  "notes": "The notification oop-frameloader-crashed carries the id of the BrowsingContext that crashed as its data (StealthCrashedContextData, in our dom/base/StealthFrameCrash.h; null when the caller does not say). An out-of-process iframe's BrowserParent has the tab's owner element, so the frameloader of the notification is the tab's for the crash of an iframe too, and Juggler's observer (TargetRegistry.js) closed the tab for it; with the id it tells the two apart. Fixes Mozilla's own gap (Mozilla's observers read the subject only).",
+  "verifier": {
+   "changed": [],
+   "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+  }
  }
 ]

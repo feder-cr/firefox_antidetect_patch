@@ -31,6 +31,9 @@ export class FrameTree {
       this._browsingContextGroup.__jugglerFrameTrees = new Set();
     this._browsingContextGroup.__jugglerFrameTrees.add(this);
     this._isolatedWorlds = new Map();
+    // The settings the client gave the docShells of this part of the page (Helper.applyDocShellSettings):
+    // kept to be written to every docShell that comes after.
+    this._docShellSettings = {};
 
     this._webSocketEventService = Cc[
       "@mozilla.org/websocketevent/service;1"
@@ -38,11 +41,21 @@ export class FrameTree {
 
     this._runtime = new Runtime(false /* isWorker */);
     this._workers = new Map();
+    // The workers of a document in the back-forward cache. Firefox unregisters the debugger of a worker when its
+    // window is frozen (WorkerPrivate::Freeze) and registers a NEW debugger object for the very same worker when the
+    // window is thawed (WorkerPrivate::Thaw), before the pageshow. The worker is the same one, so its id is: the ids
+    // of the workers that were unregistered while the document is in the cache wait here, by the worker's own id
+    // (nsIWorkerDebugger.id, a UUID of the WorkerPrivate that lives as long as the worker), for the debugger
+    // that comes back.
+    this._cached = false;
+    this._parkedWorkerIds = new Map();     // nsIWorkerDebugger.id -> our worker id
     this._frameIdToFrame = new Map();
     this._pageReady = false;
-    this._javaScriptDisabled = false;
-    for (const browsingContext of helper.collectAllBrowsingContexts(rootBrowsingContext))
-      this._createFrame(browsingContext);
+    for (const browsingContext of helper.collectAllBrowsingContexts(rootBrowsingContext)) {
+      // The local leaf of a -> b -> a is a fragment root of its own: it is not in the tree of the top.
+      if (this._belongsHere(browsingContext))
+        this._createFrame(browsingContext);
+    }
     this._mainFrame = this.frameForBrowsingContext(rootBrowsingContext);
 
     const webProgress = rootBrowsingContext.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
@@ -91,10 +104,8 @@ export class FrameTree {
       helper.addObserver((subject, topic, eventInfo) => {
         const [type, jugglerEventId] = eventInfo.split(' ');
         const id = +(jugglerEventId ?? '0');
-        // The renderer's ack, restored with [B217]: ids only grow, so "has
-        // event N been handled" is "is the last acked id at least N".
-        if (id > this._lastHitEventId)
-          this._lastHitEventId = id;
+        // The renderer's ack, restored with [B217]. The parent reads it, from every root of the page
+        // (PageHandler._onPageInputEvent), and waits on the largest id acked.
         this.emit(FrameTree.Events.InputEvent, { type, jugglerEventId: id });
       }, 'juggler-mouse-event-hit-renderer'),
       helper.addProgressListener(webProgress, this, flags),
@@ -104,32 +115,10 @@ export class FrameTree {
     // Where the last pointer event of each type actually landed, per
     // document. Read back by `PageAgent._landingOn`. [B217]
     this._pointerLanding = new Map();
-    this._lastHitEventId = 0;
   }
 
   pointerLanding(type) {
     return this._pointerLanding.get(type) || null;
-  }
-
-  /**
-   * Resolves once the renderer has acked the juggler mouse event `id` (or a
-   * later one). This is the ordering the landing question needs: the input
-   * and the question do not share a queue - a `mousemove` is coalesced and
-   * dispatched at the next refresh tick - so "sent before" is not "handled
-   * before". Measured: the question answered from an empty record while the
-   * page had already seen the `mouseover` of the very move it asked about.
-   */
-  whenEventHit(id) {
-    if (this._lastHitEventId >= id)
-      return Promise.resolve();
-    return new Promise(resolve => {
-      const off = helper.on(this, FrameTree.Events.InputEvent, () => {
-        if (this._lastHitEventId >= id) {
-          off();
-          resolve();
-        }
-      });
-    });
   }
 
   /**
@@ -203,8 +192,12 @@ export class FrameTree {
       world._scriptsToEvaluateOnNewDocument.push(script);
       // FIXME: 'should inherit http credentials from browser context' fails without this
       if (worldName && !existing) {
-        for (const frame of this.frames())
-          frame._createIsolatedContext(worldName);
+        // A frame with no window (one that is not here, or whose document is not yet) has nothing to run a
+        // world in: it gets it in _onGlobalObjectCleared, which creates the contexts of every world declared.
+        for (const frame of this.frames()) {
+          if (frame.domWindow())
+            frame._createIsolatedContext(worldName);
+        }
       }
     }
   }
@@ -239,13 +232,23 @@ export class FrameTree {
     const frame = this.frameForDocShell(window.docShell);
     if (!frame)
       return;
+    // The first point where the docShell of an iframe of this process is there for sure: its browsing
+    // context is attached before nsFrameLoader creates it. A document in a docShell that existed, and one
+    // that came from another process, are here too. Before the announcement below, which may end this call.
+    helper.applyDocShellSettings(window.docShell, this._docShellSettings);
+    // A local iframe whose docShell was not born at its attach is announced with its first window
+    // (and its contexts are made by the announcement: they are not made twice).
+    if (this._announceIfLocal(frame))
+      return;
     frame._onGlobalObjectCleared();
   }
 
-  setJavaScriptDisabled(javaScriptDisabled) {
-    this._javaScriptDisabled = javaScriptDisabled;
+  // The docShell settings (bypassCSP, interceptFileChooser) of every docShell of this tree that is here
+  // now, and of every one that comes after.
+  setDocShellSettings(settings) {
+    Object.assign(this._docShellSettings, settings);
     for (const frame of this.frames())
-      frame._updateJavaScriptDisabled();
+      helper.applyDocShellSettings(frame.docShell(), settings);
   }
 
   _onWorkerCreated(workerDebugger) {
@@ -255,7 +258,9 @@ export class FrameTree {
     const frame = this._frameForWorker(workerDebugger);
     if (!frame)
       return;
-    const worker = new Worker(frame, workerDebugger);
+    const parked = this._parkedWorkerIds.get(_debuggerId(workerDebugger));
+    this._parkedWorkerIds.delete(_debuggerId(workerDebugger));
+    const worker = new Worker(frame, workerDebugger, parked);
     this._workers.set(workerDebugger, worker);
     this.emit(FrameTree.Events.WorkerCreated, worker);
   }
@@ -266,7 +271,22 @@ export class FrameTree {
       return;
     worker.dispose();
     this._workers.delete(workerDebugger);
+    const debuggerId = _debuggerId(workerDebugger);
+    if (this._cached && debuggerId)
+      this._parkedWorkerIds.set(debuggerId, worker.id());
     this.emit(FrameTree.Events.WorkerDestroyed, worker);
+  }
+
+  // The document of this tree goes into the back-forward cache (PageAgent.enterCache, at its pagehide, before its
+  // window is frozen) and comes back (PageAgent.leaveCache). What was parked in an earlier stay and did not come
+  // back belongs to a worker that is gone.
+  enterCache() {
+    this._cached = true;
+    this._parkedWorkerIds.clear();
+  }
+
+  leaveCache() {
+    this._cached = false;
   }
 
   allFramesInBrowsingContextGroup(group) {
@@ -316,8 +336,11 @@ export class FrameTree {
     worldName = worldName || '';
     const world = this._ensureWorld(worldName);
     world._bindings.set(name, script);
-    for (const frame of this.frames())
-      frame._addBinding(worldName, name, script);
+    // Same as setInitScripts: a frame with no window gets the binding with its window.
+    for (const frame of this.frames()) {
+      if (frame.domWindow())
+        frame._addBinding(worldName, name, script);
+    }
   }
 
   /**
@@ -348,8 +371,18 @@ export class FrameTree {
     return docShell ? this.frameForBrowsingContext(docShell.browsingContext) : null;
   }
 
+  // A frame of this tree is one with a docShell in this process: a Frame without one is either the stand-in of a
+  // frame in another process or a local iframe whose docShell is not born yet, and the client knows neither.
   frame(frameId) {
-    return this._frameIdToFrame.get(frameId) || null;
+    const frame = this._frameIdToFrame.get(frameId);
+    return frame && frame.docShell() ? frame : null;
+  }
+
+  // The browsing context of a frame id, local or not: every process holds the whole tree of browsing
+  // contexts, while only its local frames have a Frame here. Undefined when the id is not in the tree.
+  browsingContextOf(frameId) {
+    return helper.collectAllBrowsingContexts(this._rootBrowsingContext)
+                 .find(browsingContext => helper.browsingContextToFrameId(browsingContext) === frameId);
   }
 
   frames() {
@@ -358,6 +391,8 @@ export class FrameTree {
     return result;
 
     function collect(frame) {
+      if (!frame.docShell())
+        return;
       result.push(frame);
       for (const subframe of frame._children)
         collect(subframe);
@@ -366,6 +401,16 @@ export class FrameTree {
 
   mainFrame() {
     return this._mainFrame;
+  }
+
+  // The main frame of the PAGE: the one with no parent. In the tree of a fragment root `mainFrame()` is the root
+  // of this process's part, which has a parent in another process.
+  _isPageMain(frame) {
+    return !frame._browsingContext.parent;
+  }
+
+  _belongsHere(browsingContext) {
+    return helper.belongsToFragment(browsingContext, this._rootBrowsingContext);
   }
 
   // Every step runs, whatever an earlier one throws: a tree that stays half-disposed keeps its observers, its
@@ -381,6 +426,7 @@ export class FrameTree {
       }
     };
     const steps = [
+      () => this._parkedWorkerIds.clear(),
       () => this._browsingContextGroup.__jugglerFrameTrees.delete(this),
       () => this._wdm.removeListener(this._wdmListener),
       () => each(this._frameIdToFrame.values(), frame => frame.dispose()),
@@ -408,11 +454,21 @@ export class FrameTree {
       dump(`WARNING: ${event.type} for unknown frame ${helper.browsingContextToFrameId(docShell.browsingContext)}\n`);
       return;
     }
-    if (frame._pendingNavigationId) {
+    const navigationId = frame._pendingNavigationId;
+    if (navigationId) {
       docShell.QueryInterface(Ci.nsIWebNavigation);
       this._frameNavigationCommitted(frame, docShell.currentURI.spec);
     }
 
+    // Said to the parent for every document, with the navigation this process had in flight for it, if it had one
+    // (the navigation may have begun in another process, and then the parent knows its id).
+    this.emit(FrameTree.Events.DocumentInserted, frame, navigationId || undefined);
+
+    // The listeners that record where a pointer event landed are on the chrome event handler of the ROOT of this
+    // tree: the page's main frame, or the root of a fragment in another process (an <iframe> of another site).
+    // The pointer event of a click on such an iframe lands in the process that owns it, and its landing is told
+    // from there; with the listeners only on the page's main frame, that root recorded nothing and every click
+    // on it was told not to have reached the page.
     if (frame === this._mainFrame) {
       this._installMainFrameInputListeners(docShell);
     }
@@ -432,7 +488,7 @@ export class FrameTree {
     frame._lastCommittedNavigationId = navigationId;
     frame._url = url;
     this.emit(FrameTree.Events.NavigationCommitted, frame);
-    if (frame === this._mainFrame)
+    if (this._isPageMain(frame))
       this.forcePageReady();
   }
 
@@ -472,7 +528,11 @@ export class FrameTree {
       // commit. So the pending navigation is cleared at once, and the abort is
       // reported unless, by the end of this task, the document has gone the
       // swap's way.
-      if (frame === this._mainFrame && status === Cr.NS_BINDING_ABORTED) {
+      //
+      // A frame in a page of its own process is no different: an iframe that goes to another site is cut by the
+      // process it leaves in the same way (its docShell is being destroyed), and the document that commits in the new
+      // process must find its navigation still in flight.
+      if (status === Cr.NS_BINDING_ABORTED) {
         if (docShell.isBeingDestroyed())
           return;
         Services.tm.dispatchToMainThread(() => {
@@ -488,7 +548,7 @@ export class FrameTree {
         return;
       }
       this.emit(FrameTree.Events.NavigationAborted, frame, navigationId, errorText);
-      if (frame === this._mainFrame && status !== Cr.NS_BINDING_ABORTED)
+      if (this._isPageMain(frame) && status !== Cr.NS_BINDING_ABORTED)
         this.forcePageReady();
     }
   }
@@ -509,7 +569,7 @@ export class FrameTree {
     frame._pendingNavigationId = null;
     this.emit(FrameTree.Events.NavigationAborted, frame, navigationId,
               helper.getNetworkErrorStatusText(+status));
-    if (frame === this._mainFrame)
+    if (this._isPageMain(frame))
       this.forcePageReady();
   }
 
@@ -534,6 +594,10 @@ export class FrameTree {
   announceRestoredDocument() {
     const frame = this._mainFrame;
     if (!frame || !this._frameIdToFrame.has(frame.id()))
+      return;
+    // A fragment root that is not the page's main frame restores no "main document": the parent says what its
+    // frame did (FrameLifecycle).
+    if (!this._isPageMain(frame))
       return;
     const url = frame.domWindow()?.location?.href;
     if (!url)
@@ -567,7 +631,7 @@ export class FrameTree {
 
   _onBrowsingContextAttached(browsingContext) {
     // If this browsing context doesn't belong to our frame tree - do nothing.
-    if (browsingContext.top !== this._rootBrowsingContext)
+    if (!this._belongsHere(browsingContext))
       return;
     this._createFrame(browsingContext);
   }
@@ -582,7 +646,8 @@ export class FrameTree {
 
   _createFrame(browsingContext) {
     const parentFrame = this.frameForBrowsingContext(browsingContext.parent);
-    if (!parentFrame && this._mainFrame) {
+    // The root of a fragment has no frame for a parent, and that is right (its parent may be in another process).
+    if (!parentFrame && browsingContext !== this._rootBrowsingContext) {
       dump(`WARNING: found docShell with the same root, but no parent!\n`);
       return;
     }
@@ -590,12 +655,24 @@ export class FrameTree {
     this._frameIdToFrame.set(frame.id(), frame);
     if (browsingContext.docShell?.domWindow && browsingContext.docShell?.domWindow.location)
       frame._url = browsingContext.docShell.domWindow.location.href;
+    this._announceIfLocal(frame);
+    return frame;
+  }
+
+  // A browsing context without a docShell is the stand-in of a frame in another process, or a local iframe whose
+  // docShell is not born yet (nsFrameLoader makes the browsing context before the docShell): at the attach the two
+  // cannot be told apart. The Frame stays inert - not announced, out of frames() and frame() - and is announced
+  // the moment it has a docShell. True if this call announced it.
+  _announceIfLocal(frame) {
+    if (frame._announced || !frame.docShell())
+      return false;
+    frame._announced = true;
     this.emit(FrameTree.Events.FrameAttached, frame);
     // Create execution context **after** reporting frame.
     // This is our protocol contract.
     if (frame.domWindow())
       frame._onGlobalObjectCleared();
-    return frame;
+    return true;
   }
 
   _detachFrame(frame) {
@@ -612,7 +689,9 @@ export class FrameTree {
       frame._parentFrame._children.delete(frame);
     frame._parentFrame = null;
     frame.dispose();
-    this.emit(FrameTree.Events.FrameDetached, frame);
+    // A Frame that was never announced (a stand-in) is not detached to a client that never heard of it.
+    if (frame._announced)
+      this.emit(FrameTree.Events.FrameDetached, frame);
   }
 }
 
@@ -630,6 +709,7 @@ FrameTree.Events = {
   DocumentRestored: 'documentrestored',
   NavigationCommitted: 'navigationcommitted',
   NavigationAborted: 'navigationaborted',
+  DocumentInserted: 'documentinserted',
   SameDocumentNavigation: 'samedocumentnavigation',
   PageReady: 'pageready',
   InputEvent: 'inputevent',
@@ -654,6 +734,7 @@ class Frame {
     this._children = new Set();
     this._frameId = helper.browsingContextToFrameId(browsingContext);
     this._parentFrame = null;
+    this._announced = false;
     this._url = '';
     if (parentFrame) {
       this._parentFrame = parentFrame;
@@ -666,7 +747,6 @@ class Frame {
     this._textInputProcessor = null;
 
     this._worldNameToContext = new Map();
-    this._initialNavigationDone = false;
 
     this._webSocketListenerInnerWindowId = 0;
     // WebSocketListener calls frameReceived event before webSocketOpened.
@@ -924,13 +1004,6 @@ class Frame {
       this._url = url;
       this._frameTree.emit(FrameTree.Events.NavigationCommitted, this);
     }
-
-    this._updateJavaScriptDisabled();
-  }
-
-  _updateJavaScriptDisabled() {
-    if (this._browsingContext.currentWindowContext)
-      this._browsingContext.currentWindowContext.allowJavascript = !this._frameTree._javaScriptDisabled;
   }
 
   mainExecutionContext() {
@@ -983,10 +1056,20 @@ class Frame {
 
 }
 
+// The id of a worker that Firefox keeps through a freeze and a thaw, or '' (a debugger already closed).
+function _debuggerId(workerDebugger) {
+  try {
+    return workerDebugger.id || '';
+  } catch (e) {
+    return '';
+  }
+}
+
 class Worker {
-  constructor(frame, workerDebugger) {
+  // `workerId`: the id this worker had before its debugger was registered again (see FrameTree._parkedWorkerIds).
+  constructor(frame, workerDebugger, workerId) {
     this._frame = frame;
-    this._workerId = helper.generateId();
+    this._workerId = workerId || helper.generateId();
     this._workerDebugger = workerDebugger;
 
     workerDebugger.initialize('resource://gre/modules/juggler/content/WorkerMain.js');

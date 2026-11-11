@@ -51,6 +51,7 @@ FEATURES = {
     # automation
     "juggler-build": "automation/juggler",
     "juggler-prefs": "automation/juggler",
+    "juggler-frame-crash-context": "automation/juggler",
     "bypass-csp": "automation/bypass-csp",
     "closed-shadowroot-automation-access": "automation/shadow-root",
     "shadow-root-sandbox-access": "automation/shadow-root",
@@ -196,6 +197,7 @@ OWN_FILES = [
     (r"^layout/base/StealthSurfaceFlags\.", "fingerprint/canvas/as-drawn"),
     (r"^dom/base/StealthJugglerInput\.", "automation/input"),
     (r"^dom/base/StealthJugglerEventId\.", "automation/input"),
+    (r"^dom/base/StealthFrameCrash\.", "automation/juggler"),
     (r"^dom/base/StealthInputEventBirth\.", "fingerprint/input/event-birth"),
     (r"^netwerk/base/StealthSocksUdp\.", "network/proxy-udp"),
     (r"^uriloader/exthandler/StealthDownloadInterceptor\.", "automation/downloads"),

@@ -26,7 +26,7 @@ export class JugglerFrameParent extends JSWindowActorParent {
     const registry = TargetRegistry.instance();
     if (!registry?.targetForBrowserId(this._browserId))
       return;
-    registry.onActorCreated(this, this._browserId);
+    registry.onActorCreated(this, this._browserId, this._rootId);
   }
 
   async actorCreated() {
@@ -37,23 +37,26 @@ export class JugglerFrameParent extends JSWindowActorParent {
     if (!this.manager?.isCurrentGlobal)
       return;
 
-    // Only interested in main frames for now.
-    if (this.browsingContext.parent)
+    // Only the roots of fragments count: the top, and every frame whose parent is in another process
+    // (WindowGlobalParent.isProcessRoot). A frame in the process of its parent is served by the
+    // agents of its root.
+    if (!this.manager.isProcessRoot)
       return;
+    this._rootId = this.browsingContext.id;
 
     // ⛔ A target is found by browserId and by nothing else (see
-    // TargetRegistry._browserIdToActor). Matching it against a
+    // TargetRegistry._rootActors). Matching it against a
     // BrowsingContext id as well let a foreign browser - the preallocated
     // about:newtab one, 2026-08-23 - take a page's channel when the two
     // counters met, and the guard added against that dropped a new tab's own
     // actor whenever they met with a stale entry. One identity removes both.
     this._browserId = this.browsingContext.browserId;
-    TargetRegistry.instance()?.onActorCreated(this, this._browserId);
+    TargetRegistry.instance()?.onActorCreated(this, this._browserId, this._rootId);
   }
 
   didDestroy() {
     if (this._browserId === undefined)
       return;
-    TargetRegistry.instance()?.onActorDestroyed(this, this._browserId);
+    TargetRegistry.instance()?.onActorDestroyed(this, this._browserId, this._rootId);
   }
 }

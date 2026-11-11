@@ -8,6 +8,8 @@ const {Helper, EventWatcher} = ChromeUtils.importESModule('resource://gre/module
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
 const {NetworkObserver, PageNetwork} = ChromeUtils.importESModule('resource://gre/modules/juggler/NetworkObserver.js');
 const {PageTarget} = ChromeUtils.importESModule('resource://gre/modules/juggler/TargetRegistry.js');
+const {FrameLifecycle} = ChromeUtils.importESModule('resource://gre/modules/juggler/FrameLifecycle.js');
+const {FrameNavigations} = ChromeUtils.importESModule('resource://gre/modules/juggler/FrameNavigations.js');
 const {setTimeout, clearTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 
 const Cc = Components.classes;
@@ -15,6 +17,12 @@ const Ci = Components.interfaces;
 const Cu = Components.utils;
 const XUL_NS = 'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul';
 const helper = new Helper();
+
+// Events that wait for a frame the client does not know yet: past this many the next ones are dropped.
+const MAX_EVENTS_BEFORE_FRAME = 1000;
+// How long Page.screenshot tries again an error of drawSnapshot (a document in navigation throws one) before it
+// throws it. An estimate, to be read against the bench.
+const SNAPSHOT_RETRY_MS = 5000;
 
 /* STEALTHFOX_HUMANIZE_HOOK v1
  *
@@ -114,12 +122,41 @@ function hashConsoleMessage(params) {
   return params.location.lineNumber + ':' + params.location.columnNumber + ':' + params.location.url;
 }
 
+// A point of a child frame's viewport (width x height, in the child's CSS pixels) in the embedder's pixels:
+// `transform` is the content box of the <iframe> as the origin O and the axes Ex, Ey of the child's viewport.
+function mapPoint(transform, viewport, {x, y}) {
+  if (!viewport.width || !viewport.height)
+    throw new Error('Frame has no size');
+  const u = x / viewport.width;
+  const v = y / viewport.height;
+  return {
+    x: transform.O.x + u * transform.Ex.x + v * transform.Ey.x,
+    y: transform.O.y + u * transform.Ex.y + v * transform.Ey.y,
+  };
+}
+
+function mapQuad(transform, viewport, quad) {
+  return {
+    p1: mapPoint(transform, viewport, quad.p1),
+    p2: mapPoint(transform, viewport, quad.p2),
+    p3: mapPoint(transform, viewport, quad.p3),
+    p4: mapPoint(transform, viewport, quad.p4),
+  };
+}
+
+// Marks, in the queue of events that wait behind a commit, a commit that waits behind it.
+const COMMIT_BEHIND = Symbol('commit behind');
+
 class WorkerHandler {
-  constructor(session, contentChannel, workerId) {
+  // `contentChannel.connect(workerId)` reaches the root that holds the worker: the mux learns it from the
+  // `pageWorkerCreated` that announced the worker, and `register(workerId, ...)` is the fan-in from every root.
+  constructor(session, contentChannel, workerId, frameId) {
     this._session = session;
     this._contentWorker = contentChannel.connect(workerId);
     this._workerConsoleMessages = new Set();
     this._workerId = workerId;
+    // The frame the worker belongs to: its end ends the worker (PageHandler._onFrameDetached).
+    this._frameId = frameId;
 
     const emitWrappedProtocolEvent = eventName => {
       return params => {
@@ -172,6 +209,9 @@ export class PageHandler {
     const emitProtocolEvent = eventName => {
       return (...args) => this._session.emitEvent(eventName, ...args);
     }
+    const emitFrameKeyedEvent = eventName => {
+      return payload => this._emitFrameKeyed(eventName, payload, payload.frameId);
+    }
 
     this._isDragging = false;
     // The watcher that notices a drag being born lives as long as the GESTURE -
@@ -179,10 +219,33 @@ export class PageHandler {
     // `_adoptDragSessionIfStarted` for why that distinction is the whole bug.
     this._dragGestureWatcher = null;
     this._lastMousePosition = { x: 0, y: 0 };
-    this._documentScopedWaits = new Set();
+    this._documentScopedWaits = new Map();     // fail -> {rootId, isMain}: the root the wait is aimed at
 
+    // Frames the client has been told of. Never emptied, so an event that comes late for a frame that is
+    // gone is still delivered, as it always was.
     this._reportedFrameIds = new Set();
-    this._networkEventsForUnreportedFrameIds = new Map();
+    // Browsing contexts of this page that went before the client ever heard of them (`framedropped`): what still
+    // comes for them is not kept, or it would rebuild the queues and maps that were just emptied.
+    this._droppedFrameIds = new Set();
+    // The navigations of the page's frames: ids, started, committed, aborted, from the parent's own view of them.
+    this._frameNavigations = new FrameNavigations(this._onFrameNavigationEvent.bind(this));
+    // Announced and not detached yet: a frame is announced once, whoever tells (the parent's FrameLifecycle,
+    // or the content process, which still does).
+    this._liveFrameIds = new Set();
+    this._eventsAfterName = new Map();            // frameId -> [[protocolEventName, payload]]: a frame whose commit waits for its name
+    this._heldBackFrames = new Map();             // frameId -> {frameId, parentFrameId}, attached while their parent navigates
+    this._parentOfFrame = new Map();              // frameId -> parentFrameId, for the frames announced
+    // What belongs to a frame the client does not know yet, in the order it came: its network events and its
+    // execution contexts (created and destroyed together, so a destroyed never leaves before its created).
+    this._frameEventsBeforeFrame = new Map();     // frameId -> [{protocolEventName, payload}]
+    this._contextFrame = new Map();               // executionContextId -> frameId
+    this._contextsOfFrame = new Map();            // frameId -> Set<executionContextId>
+    // The workers the client is not told of yet, because it does not know their frame (the frames below a document
+    // that commits are dropped by the client until the parent announces them again) or because a document restored
+    // from the back-forward cache is still being said. A worker is told after its frame and after the contexts of
+    // the restored document are cleared.
+    this._workersNotToldYet = new Map();          // workerId -> {frameId, url}
+    this._restoreBeingSaid = false;
 
     // `Page.ready` protocol event is emitted whenever page has completed initialization, e.g.
     // finished all the transient navigations to the `about:blank`.
@@ -195,12 +258,40 @@ export class PageHandler {
     helper.decorateAsEventEmitter(this._pageEventSink);
 
     this._pendingEventWatchers = new Set();
+    // The renderer's acks of the mouse events, from every root of the page: ids only grow, so "has event N
+    // been handled" is "is the largest acked id at least N". And the verdicts the owner roots pushed with them.
+    this._lastHitEventId = 0;
+    // The ids of the mouse events THIS page sent and has not seen acked. The ack is notified in whichever content
+    // process handled the event, by an observer of the whole process, and a process holds the documents of more than
+    // one page: the acks of another page's events (ids come from one counter) are not this page's.
+    this._ownEventIds = new Set();
+    // The own events that have been acked, and the processes that acked each: the ack is notified in every root of the
+    // process that handled the event, so the roots that did not get it ack it too, and the owner's ack can come after.
+    this._ackedEvents = new Map();
+    this._hitWaiters = new Set();
+    this._landingVerdicts = new Map();   // rootId + ':' + rootToken -> {id, perType}
     this._eventListeners = [
       helper.on(this._pageTarget, PageTarget.Events.DialogOpened, this._onDialogOpened.bind(this)),
       helper.on(this._pageTarget, PageTarget.Events.ContentDetached,
                 this._onContentDetached.bind(this)),
+      contentChannel.register('frames', {
+        frameNavigationStarted: p => this._unlessDropped(p.frameId, () => this._frameNavigations.onContentNavigationStarted(p.frameId, p.navigationId)),
+        frameDocumentInserted: p => this._unlessDropped(p.frameId, () => this._frameNavigations.onDocumentInserted(p.frameId, p.url, p.name, p.navigationId)),
+        frameDocumentRestored: p => this._unlessDropped(p.frameId, () => this._frameNavigations.onDocumentRestored(p.frameId, p.url, p.name)),
+        frameKnown: p => this._unlessDropped(p.frameId, () => this._frameNavigations.onFrameKnown(p.frameId, p)),
+        frameNavigationAborted: p => this._unlessDropped(p.frameId, () => this._frameNavigations.onNavigationAborted(p.frameId, p.navigationId, p.errorText)),
+      }),
       helper.on(this._pageTarget, PageTarget.Events.Crashed, () => {
         this._session.emitEvent('Page.crashed', {});
+      }),
+      helper.on(this._pageTarget, PageTarget.Events.FrameCrashed, ({ frameId }) => {
+        // The process of an iframe crashed: the frame and the frames below it are gone, each as a frame the lifecycle
+        // detached (the deepest first: the workers and the contexts of each end, `Page.frameDetached` goes for those the
+        // client knows), so the handler keeps nothing of them and the same frame announced again (the iframe navigates
+        // anew, same id) is a new one.
+        const below = Array.from(this._frameLifecycle.framesBelow(frameId), frame => frame.frameId).reverse();
+        for (const id of [...below, frameId])
+          this._onFrameDetached(id);
       }),
       helper.on(this._pageTarget, PageTarget.Events.ScreencastFrame, params => {
         this._session.emitEvent('Page.screencastFrame', params);
@@ -211,18 +302,18 @@ export class PageHandler {
       helper.on(this._pageNetwork, PageNetwork.Events.RequestFailed, this._handleNetworkEvent.bind(this, 'Network.requestFailed')),
       contentChannel.register('page', {
         pageBindingCalled: emitProtocolEvent('Page.bindingCalled'),
-        pageEventFired: emitProtocolEvent('Page.eventFired'),
+        pageEventFired: emitFrameKeyedEvent('Page.eventFired'),
         pageFileChooserOpened: emitProtocolEvent('Page.fileChooserOpened'),
-        pageFrameAttached: this._onFrameAttached.bind(this),
-        pageFrameDetached: emitProtocolEvent('Page.frameDetached'),
+        pageFrameAttached: this._onFrameSeenByTheParent.bind(this),
+        pageFrameDetached: ({frameId}) => this._onFrameDetached(frameId),
         pageLinkClicked: emitProtocolEvent('Page.linkClicked'),
-        pageNavigationAborted: emitProtocolEvent('Page.navigationAborted'),
-        pageNavigationCommitted: this._onNavigationCommitted.bind(this),
-        pageNavigationStarted: emitProtocolEvent('Page.navigationStarted'),
         pageReady: this._onPageReady.bind(this),
-        pageInputEvent: (event) => this._pageEventSink.emit(event.type, event),
-        pageSameDocumentNavigation: emitProtocolEvent('Page.sameDocumentNavigation'),
-        pageUncaughtError: emitProtocolEvent('Page.uncaughtError'),
+        pageInputEvent: (event, {rootId}) => this._onPageInputEvent(event, {rootId}),
+        pageSameDocumentNavigation: p => {
+          this._frameNavigations.onSameDocumentNavigation(p.frameId, p.url);
+          this._emitFrameKeyed('Page.sameDocumentNavigation', p, p.frameId);
+        },
+        pageUncaughtError: emitFrameKeyedEvent('Page.uncaughtError'),
         pageWorkerCreated: this._onWorkerCreated.bind(this),
         pageWorkerDestroyed: this._onWorkerDestroyed.bind(this),
         runtimeConsole: params => {
@@ -235,9 +326,9 @@ export class PageHandler {
           }
           this._session.emitEvent('Runtime.console', params);
         },
-        runtimeExecutionContextCreated: emitProtocolEvent('Runtime.executionContextCreated'),
-        runtimeExecutionContextDestroyed: emitProtocolEvent('Runtime.executionContextDestroyed'),
-        runtimeExecutionContextsCleared: emitProtocolEvent('Runtime.executionContextsCleared'),
+        runtimeExecutionContextCreated: this._onExecutionContextCreated.bind(this),
+        runtimeExecutionContextDestroyed: this._onExecutionContextDestroyed.bind(this),
+        runtimeExecutionContextsCleared: this._onExecutionContextsCleared.bind(this),
 
         webSocketCreated: emitProtocolEvent('Page.webSocketCreated'),
         webSocketOpened: emitProtocolEvent('Page.webSocketOpened'),
@@ -246,10 +337,32 @@ export class PageHandler {
         webSocketFrameSent: emitProtocolEvent('Page.webSocketFrameSent'),
       }),
     ];
+
+    // The last thing the constructor does: the registrations above are in and the sets above exist, so the
+    // event of the main frame, the first of the session, finds everything it needs.
+    this._frameLifecycle = new FrameLifecycle(target.linkedBrowser());
+    // helper.on: the toolkit's EventEmitter calls a listener with the event's name first.
+    this._eventListeners.push(
+      helper.on(this._frameLifecycle, 'frameattached', this._onFrameSeenByTheParent.bind(this)),
+      helper.on(this._frameLifecycle, 'framedetached', ({frameId}) => this._onFrameDetached(frameId)),
+      helper.on(this._frameLifecycle, 'framedropped', ({frameId}) => this._dropBufferedFrameEvents(frameId)),
+    );
+    this._frameLifecycle.start();
   }
 
   async dispose() {
+    this._frameLifecycle.dispose();
+    this._frameEventsBeforeFrame.clear();
+    // Each worker has a fan-in registered on the page's mux and a connector: the session that goes leaves none of
+    // them, or every reconnection adds a dead one.
+    for (const worker of this._workers.values())
+      worker.dispose();
+    this._workers.clear();
+    this._workersNotToldYet.clear();
     this._contentPage.dispose();
+    this._hitWaiters.clear();
+    this._landingVerdicts.clear();
+    this._ackedEvents?.clear();
     for (const watcher of this._pendingEventWatchers)
       watcher.dispose();
     helper.removeListeners(this._eventListeners);
@@ -274,9 +387,35 @@ export class PageHandler {
   }
 
   _onWorkerCreated({workerId, frameId, url}) {
-    const worker = new WorkerHandler(this._session, this._contentChannel, workerId);
+    if (this._isDropped(frameId))
+      return;
+    const worker = new WorkerHandler(this._session, this._contentChannel, workerId, frameId);
     this._workers.set(workerId, worker);
-    this._session.emitEvent('Page.workerCreated', {workerId, frameId, url});
+    if (this._clientIsToHearOfFrameFirst(frameId)) {
+      this._workersNotToldYet.set(workerId, {frameId, url});
+      return;
+    }
+    this._emitFrameKeyed('Page.workerCreated', {workerId, frameId, url}, frameId);
+  }
+
+  // The client heard of this frame and has dropped it since (a commit above it), or a restore is being said and the
+  // frame comes before the worker in what is said: the worker waits.
+  _clientIsToHearOfFrameFirst(frameId) {
+    if (frameId === undefined)
+      return false;
+    if (this._restoreBeingSaid)
+      return true;
+    return this._reportedFrameIds.has(frameId) && !this._liveFrameIds.has(frameId);
+  }
+
+  // The workers that waited, whose frame the client knows now, in the order they came.
+  _tellWorkersNotToldYet() {
+    for (const [workerId, {frameId, url}] of [...this._workersNotToldYet]) {
+      if (frameId !== undefined && !this._liveFrameIds.has(frameId))
+        continue;
+      this._workersNotToldYet.delete(workerId);
+      this._session.emitEvent('Page.workerCreated', {workerId, frameId, url});
+    }
   }
 
   _onWorkerDestroyed({workerId}) {
@@ -285,40 +424,461 @@ export class PageHandler {
       return;
     this._workers.delete(workerId);
     worker.dispose();
+    // The client was never told of it: nothing to end for it.
+    if (this._workersNotToldYet.delete(workerId))
+      return;
     this._session.emitEvent('Page.workerDestroyed', {workerId});
   }
 
   _handleNetworkEvent(protocolEventName, eventDetails, frameId) {
-    if (!this._reportedFrameIds.has(frameId)) {
-      let events = this._networkEventsForUnreportedFrameIds.get(frameId);
-      if (!events) {
-        events = [];
-        this._networkEventsForUnreportedFrameIds.set(frameId, events);
+    if (this._isDropped(frameId))
+      return;
+    // A document request tells the navigation it belongs to before the request itself is told.
+    if (protocolEventName === 'Network.requestWillBeSent' && eventDetails.navigationId)
+      this._frameNavigations.onDocumentRequest(frameId, eventDetails.navigationId, eventDetails.url);
+    this._emitFrameKeyed(protocolEventName, eventDetails, frameId);
+  }
+
+  // An event of a frame leaves once the client knows the frame; until then it waits, in the order it came.
+  // Without a frame it leaves at once.
+  _emitFrameKeyed(protocolEventName, payload, frameId) {
+    // The commit of this frame waits for the name of its <iframe>: what comes after the commit waits behind it.
+    const afterName = this._eventsAfterName.get(frameId);
+    if (afterName) {
+      afterName.push([protocolEventName, payload]);
+      return;
+    }
+    // An event of this frame is already held behind the commit of a frame below it (its `load`): what the frame says
+    // after it waits there too, in order.
+    const holder = this._nameQueueHolding(frameId);
+    if (holder) {
+      holder.push([protocolEventName, payload, frameId]);
+      return;
+    }
+    // The end of the load of a frame is told after the commit of every frame below it: the client reads the frames
+    // when `load` comes, and the commit of a frame in another process is told when the name of its <iframe> has been
+    // asked of the embedder, which is the process that says this `load`.
+    if (protocolEventName === 'Page.eventFired' && payload && (payload.name === 'load' || payload.name === 'DOMContentLoaded')) {
+      const below = this._frameWaitingForNameBelow(frameId);
+      if (below !== undefined) {
+        this._eventsAfterName.get(below).push([protocolEventName, payload, frameId]);
+        return;
       }
-      events.push({eventName: protocolEventName, eventDetails});
-    } else {
-      this._session.emitEvent(protocolEventName, eventDetails);
+    }
+    // The `load` of a frame is told when every frame below it that is loading has its first document (or was refused
+    // it, or is gone). The document of an iframe in another process is relayed by that process, the `load` of this frame
+    // by this frame's: the two channels are not ordered, and the client reads the frames when `load` comes. In the page
+    // the `load` follows the first document of each iframe that loads, and the parent sees the request of that document
+    // before any `load` above it, so the wait ends when the relay comes. What the frame says after its `load` waits
+    // behind it.
+    const behind = this._loadsBehindFirstDocuments().get(frameId);
+    if (behind) {
+      behind.push([protocolEventName, payload]);
+      return;
+    }
+    if (protocolEventName === 'Page.eventFired' && payload && payload.name === 'load' &&
+        this._frameBelowWithoutItsFirstDocument(frameId) !== undefined) {
+      this._loadsBehindFirstDocuments().set(frameId, [[protocolEventName, payload]]);
+      return;
+    }
+    if (frameId === undefined || this._reportedFrameIds.has(frameId))
+      return this._session.emitEvent(protocolEventName, payload);
+    if (this._droppedFrameIds.has(frameId))
+      return;
+    let queue = this._frameEventsBeforeFrame.get(frameId);
+    if (!queue) {
+      queue = [];
+      this._frameEventsBeforeFrame.set(frameId, queue);
+    }
+    if (queue.length >= MAX_EVENTS_BEFORE_FRAME) {
+      dump(`WARNING: ${queue.length} events wait for frame ${frameId}, ${protocolEventName} is dropped\n`);
+      return;
+    }
+    queue.push({protocolEventName, payload});
+  }
+
+  // The queue behind a commit that waits for a name, if it holds an event of `frameId` (a frame above that commit).
+  _nameQueueHolding(frameId) {
+    for (const queue of this._eventsAfterName.values()) {
+      if (queue.some(event => event[2] === frameId))
+        return queue;
+    }
+    return undefined;
+  }
+
+  // A frame below `frameId` whose commit waits for the name of its <iframe>, if there is one.
+  _frameWaitingForNameBelow(frameId) {
+    for (const waiting of this._eventsAfterName.keys()) {
+      for (let parent = this._parentOfFrame.get(waiting); parent !== undefined; parent = this._parentOfFrame.get(parent)) {
+        if (parent === frameId)
+          return waiting;
+      }
+    }
+    return undefined;
+  }
+
+  // A frame below `frameId` (announced, or held back) whose first navigation is in flight with no document yet.
+  _frameBelowWithoutItsFirstDocument(frameId) {
+    for (const id of this._liveFrameIds) {
+      if (id !== frameId && this._isBelow(this._parentOfFrame.get(id), frameId) &&
+          this._frameNavigations.waitsForItsFirstDocument(id))
+        return id;
+    }
+    for (const [id, held] of this._heldBackFrames) {
+      if (id !== frameId && this._isBelow(held.parentFrameId, frameId) && this._frameNavigations.waitsForItsFirstDocument(id))
+        return id;
+    }
+    return undefined;
+  }
+
+  // frameId -> [[protocolEventName, payload]]: the `load` of a frame waiting for the first document of a frame below it,
+  // and what the frame said after it. Made on first use.
+  _loadsBehindFirstDocuments() {
+    if (!this._behindFirstDocuments)
+      this._behindFirstDocuments = new Map();
+    return this._behindFirstDocuments;
+  }
+
+  // The `load`s that no frame below holds any more go, each with what its frame said after it, in order. Called when a
+  // frame gets its first document, is refused it, or goes.
+  _releaseLoadsBehindFirstDocuments() {
+    for (const [frameId, queue] of [...this._loadsBehindFirstDocuments()]) {
+      if (this._frameBelowWithoutItsFirstDocument(frameId) !== undefined)
+        continue;
+      this._loadsBehindFirstDocuments().delete(frameId);
+      for (const [protocolEventName, payload] of queue)
+        this._emitFrameKeyed(protocolEventName, payload, frameId);
     }
   }
 
+  // A browsing context of this page that went without the client ever hearing of it: nothing waits for it.
+  _dropBufferedFrameEvents(frameId) {
+    // A frame the content process told the client of is not dropped: its events leave at once, as they did.
+    if (!this._reportedFrameIds.has(frameId))
+      this._droppedFrameIds.add(frameId);
+    this._heldBackFrames.delete(frameId);
+    this._frameEventsBeforeFrame.delete(frameId);
+    this._frameNavigations.forget(frameId);
+    for (const contextId of this._contextsOfFrame.get(frameId) || [])
+      this._contextFrame.delete(contextId);
+    this._contextsOfFrame.delete(frameId);
+  }
+
+  // The browsing context of the frame went before the client heard of it, and what comes for it now is late.
+  _isDropped(frameId) {
+    return frameId !== undefined && this._droppedFrameIds.has(frameId) && !this._reportedFrameIds.has(frameId);
+  }
+
+  _unlessDropped(frameId, callback) {
+    if (!this._isDropped(frameId))
+      return callback();
+  }
+
+  _onExecutionContextCreated(payload) {
+    const frameId = payload.auxData ? payload.auxData.frameId : undefined;
+    if (this._isDropped(frameId))
+      return;
+    this._contextFrame.set(payload.executionContextId, frameId);
+    let contexts = this._contextsOfFrame.get(frameId);
+    if (!contexts) {
+      contexts = new Set();
+      this._contextsOfFrame.set(frameId, contexts);
+    }
+    contexts.add(payload.executionContextId);
+    this._emitFrameKeyed('Runtime.executionContextCreated', payload, frameId);
+  }
+
+  _onExecutionContextDestroyed(payload) {
+    // Not a context of ours any more: the frame's detach or a cleared has told the client already.
+    if (!this._contextFrame.has(payload.executionContextId))
+      return;
+    const frameId = this._contextFrame.get(payload.executionContextId);
+    this._contextFrame.delete(payload.executionContextId);
+    const contexts = this._contextsOfFrame.get(frameId);
+    if (contexts)
+      contexts.delete(payload.executionContextId);
+    // The queue of the frame's created, so a destroyed never leaves before its created.
+    this._emitFrameKeyed('Runtime.executionContextDestroyed', payload, frameId);
+  }
+
+  _onExecutionContextsCleared(payload) {
+    this._contextFrame.clear();
+    this._contextsOfFrame.clear();
+    // The client drops every context it held on this event: the ones still waiting for their frame are gone too.
+    for (const [frameId, queue] of this._frameEventsBeforeFrame)
+      this._frameEventsBeforeFrame.set(frameId, queue.filter(event => !event.protocolEventName.startsWith('Runtime.executionContext')));
+    this._session.emitEvent('Runtime.executionContextsCleared', payload);
+    // The restore of a document says its frames, then its contexts are cleared, then what lives in them is told.
+    this._restoreBeingSaid = false;
+    this._tellWorkersNotToldYet();
+  }
+
+  // What the registry of navigations says, as the protocol's events, gated like the other events of a frame.
+  _onFrameNavigationEvent(name, payload, frameId) {
+    switch (name) {
+      case 'navigationstarted':
+        this._emitFrameKeyed('Page.navigationStarted', payload, frameId);
+        break;
+      case 'navigationcommitted':
+        this._onNavigationCommitted(payload);
+        break;
+      case 'navigationaborted':
+        this._emitFrameKeyed('Page.navigationAborted', payload, frameId);
+        // The navigation was cut and the document stays: the frames that attached meanwhile are its own, and no commit
+        // will tell them. (Not while a newer navigation of the frame is in flight: that one will.)
+        if (this._frameNavigations.pendingNavigationId(frameId) === undefined)
+          this._announceHeldBackFramesBelow(frameId);
+        break;
+      case 'initialloadfailed':
+        // A frame refused its first load never fires `DOMContentLoaded` or `load`: whoever waits for them is told.
+        for (const eventName of ['DOMContentLoaded', 'load'])
+          this._emitFrameKeyed('Page.eventFired', {frameId, name: eventName}, frameId);
+        break;
+    }
+    if (this._behindFirstDocuments?.size)
+      this._releaseLoadsBehindFirstDocuments();
+  }
+
   _onNavigationCommitted(params) {
+    // Another commit of the frame is waiting for the name of its <iframe>: this one goes behind it, in order.
+    const waiting = this._eventsAfterName.get(params.frameId);
+    if (waiting) {
+      waiting.push([COMMIT_BEHIND, params]);
+      return;
+    }
+    if (this._needsTheNameFromTheEmbedder(params)) {
+      this._commitWithTheNameFromTheEmbedder(params);
+      return;
+    }
+    this._commitNow(params);
+  }
+
+  // The name of a frame is the name, else the id, of its <iframe> element, which exists only in the process of the
+  // embedder: a frame that is the root of its own process cannot say it.
+  _needsTheNameFromTheEmbedder({frameId, name}) {
+    if (name || typeof frameId !== 'string' || !frameId.startsWith('subframe-'))
+      return false;
+    const browsingContext = this._pageTarget?.frameIdToBrowsingContext?.(frameId);
+    return !!browsingContext && this._contentChannel.frameRootOf(browsingContext) === browsingContext.id;
+  }
+
+  _commitWithTheNameFromTheEmbedder(params) {
+    const frameId = params.frameId;
+    const queue = [];
+    this._eventsAfterName.set(frameId, queue);
+    this._contentPage.send('frameName', {childFrameId: frameId})
+        .then(answer => answer.name, () => '')
+        .then(name => {
+          this._eventsAfterName.delete(frameId);
+          try {
+            // The registry keeps the name the client is told: the frame says it again when its page comes back from
+            // the back-forward cache (_reannounceAfterRestore), and the process of the frame cannot say it.
+            this._frameNavigations.onCommitNamed(frameId, params.navigationId, params.url, name);
+            this._commitNow(name ? {...params, name} : params);
+          } finally {
+            this._flushAfterName(frameId, queue);
+          }
+        });
+  }
+
+  // What waited behind a commit, in order. A commit among it may wait for a name of its own: what is left of the queue
+  // then goes behind it.
+  _flushAfterName(frameId, queue) {
+    for (let i = 0; i < queue.length; i++) {
+      const [protocolEventName, payload, owner] = queue[i];
+      if (protocolEventName !== COMMIT_BEHIND) {
+        // An event of a frame above this one (its `load`, held behind this commit) goes out as that frame's.
+        this._emitFrameKeyed(protocolEventName, payload, owner === undefined ? frameId : owner);
+        continue;
+      }
+      this._onNavigationCommitted(payload);
+      const again = this._eventsAfterName.get(frameId);
+      if (again) {
+        again.push(...queue.slice(i + 1));
+        return;
+      }
+    }
+  }
+
+  _commitNow(params) {
     try {
-      this._session.emitEvent('Page.navigationCommitted', params);
+      this._emitFrameKeyed('Page.navigationCommitted', params, params.frameId);
     } finally {
       // The main frame's id is the browser's: `mainframe-<browserId>`. A subframe's navigation leaves the
       // documents of the page where they are. A session that is gone refuses the event, not the eviction.
       if (typeof params.frameId === 'string' && params.frameId.startsWith('mainframe-'))
         this._pageNetwork?.onMainFrameNavigationCommitted(params.navigationId);
+      this._forgetFramesBelow(params.frameId);
+      // A document restored from the back-forward cache keeps its frames, in every process. The content process
+      // reports the ones it holds (PageAgent._onDocumentRestored); the ones in other processes are known to the
+      // parent only, which says them again. A new document has the frames that attached while it was being
+      // loaded, which were held back (_onFrameSeenByTheParent); its old frames are not said again.
+      if (typeof params.navigationId === 'string' && params.navigationId.startsWith('nav-bfcache-')) {
+        this._restoreBeingSaid = true;
+        this._reannounceAfterRestore(params.frameId);
+      } else
+        this._announceHeldBackFramesBelow(params.frameId);
+      // The first document of a frame below a `load` that waits for it (a commit that waited for its name ends here).
+      if (this._behindFirstDocuments?.size)
+        this._releaseLoadsBehindFirstDocuments();
     }
   }
 
+  // The client drops the child frames of a frame when a document commits in it, and tells nobody: they are
+  // no longer announced, so a frame that is announced again (the iframes of a document restored from the
+  // back-forward cache, the iframes of the document that just committed) is told again.
+  _forgetFramesBelow(frameId) {
+    const below = [];
+    for (const id of this._liveFrameIds) {
+      for (let parent = this._parentOfFrame.get(id); parent !== undefined; parent = this._parentOfFrame.get(parent)) {
+        if (parent === frameId) {
+          below.push(id);
+          break;
+        }
+      }
+    }
+    for (const id of below) {
+      this._liveFrameIds.delete(id);
+      this._parentOfFrame.delete(id);
+      // The client drops these frames with their contexts, silently. The workers and the contexts of the frame are
+      // ours to release now: the detach of the frame that comes later finds the frame not live any more.
+      this._releaseFrame(id, {tellClient: false});
+    }
+    if (below.length && this._behindFirstDocuments?.size)
+      this._releaseLoadsBehindFirstDocuments();
+  }
+
+  // What the handler keeps for a frame that ended: its workers end (the process that held them may be gone, or
+  // may never say so), then its contexts go. `tellClient`: the client knows the frame, so it is told of each
+  // context; a frame it dropped itself (a commit above it) took them along.
+  _releaseFrame(frameId, {tellClient}) {
+    for (const [workerId, worker] of [...this._workers]) {
+      if (worker._frameId === frameId)
+        this._onWorkerDestroyed({workerId});
+    }
+    const contexts = this._contextsOfFrame.get(frameId);
+    if (contexts) {
+      for (const contextId of contexts) {
+        this._contextFrame.delete(contextId);
+        if (tellClient)
+          this._session.emitEvent('Runtime.executionContextDestroyed', {executionContextId: contextId});
+      }
+      this._contextsOfFrame.delete(frameId);
+    }
+  }
+
+  // The frames the parent knows below a document restored from the cache come back with it, in every process: each is
+  // announced and committed again with the document it had (the client dropped the frames below the frame at the commit
+  // of the restore, with their addresses), parents first. The content process says the ones it holds as well; the
+  // announcement is told once.
+  _reannounceAfterRestore(frameId) {
+    for (const below of this._frameLifecycle.framesBelow(frameId)) {
+      this._onFrameAttached(below);
+      const document = this._frameNavigations.lastDocument(below.frameId);
+      if (document) {
+        this._emitFrameKeyed('Page.navigationCommitted',
+            {frameId: below.frameId, navigationId: document.navigationId, url: document.url, name: document.name}, below.frameId);
+      }
+    }
+  }
+
+  // A frame attaches, as the parent sees it (FrameLifecycle) or as the process that holds it says (the page agent: an
+  // iframe starts in the process of its embedder and may leave it for a process of its own). While its parent frame has a
+  // navigation in flight it is not told: the client drops
+  // the frames below a frame when a document commits in it, and would drop this one at once. The commit says it
+  // (_onNavigationCommitted).
+  _onFrameSeenByTheParent(frame) {
+    const parent = frame.parentFrameId;
+    // The parent's navigation is in flight, or committed but not told yet (the commit of a frame in another process
+    // waits for the name of its <iframe>), or the parent itself is held back.
+    if (parent !== undefined &&
+        (this._frameNavigations.pendingNavigationId(parent) !== undefined || this._eventsAfterName.has(parent) ||
+         this._heldBackFrames.has(parent))) {
+      this._heldBackFrames.set(frame.frameId, frame);
+      return;
+    }
+    this._onFrameAttached(frame);
+  }
+
+  // The frames held back that are below `frameId`, parents first (they were held in the order they attached).
+  _announceHeldBackFramesBelow(frameId) {
+    for (const [id, held] of [...this._heldBackFrames]) {
+      if (!this._isBelow(held.parentFrameId, frameId))
+        continue;
+      this._heldBackFrames.delete(id);
+      this._onFrameAttached(held);
+    }
+  }
+
+  _isBelow(parentFrameId, ancestorFrameId) {
+    for (let parent = parentFrameId; parent !== undefined; ) {
+      if (parent === ancestorFrameId)
+        return true;
+      const held = this._heldBackFrames.get(parent);
+      parent = held ? held.parentFrameId : this._parentOfFrame.get(parent);
+    }
+    return false;
+  }
+
   _onFrameAttached({frameId, parentFrameId}) {
+    if (this._liveFrameIds.has(frameId))
+      return;
+    this._liveFrameIds.add(frameId);
+    this._parentOfFrame.set(frameId, parentFrameId);
     this._session.emitEvent('Page.frameAttached', {frameId, parentFrameId});
     this._reportedFrameIds.add(frameId);
-    const events = this._networkEventsForUnreportedFrameIds.get(frameId) || [];
-    this._networkEventsForUnreportedFrameIds.delete(frameId);
-    for (const {eventName, eventDetails} of events)
-      this._session.emitEvent(eventName, eventDetails);
+    const events = this._frameEventsBeforeFrame.get(frameId) || [];
+    this._frameEventsBeforeFrame.delete(frameId);
+    for (const {protocolEventName, payload} of events)
+      this._session.emitEvent(protocolEventName, payload);
+    if (!this._restoreBeingSaid)
+      this._tellWorkersNotToldYet();
+  }
+
+  _onFrameDetached(frameId) {
+    // A frame takes the frames below it along: the client drops the subtree at the detach of the frame, so each frame
+    // below that it knows is told first, the deepest first (the order of a crash), and the ones held back are
+    // never announced. The detach the engine says of each of them later finds them gone: said once.
+    this._detachFramesBelow(frameId);
+    this._heldBackFrames.delete(frameId);
+    // A frame the handler does not hold live (the client dropped it at a commit above it, or never heard of it)
+    // still leaves nothing behind; only a frame the client knows is told of its end.
+    const live = this._liveFrameIds.delete(frameId);
+    this._parentOfFrame.delete(frameId);
+    this._frameNavigations.forget(frameId);
+    // The workers of the frame end with it, then its contexts, then the frame: the order the content process kept
+    // when it was the only voice. If the process says it later, what it says finds nothing to end.
+    this._releaseFrame(frameId, {tellClient: live});
+    if (live)
+      this._session.emitEvent('Page.frameDetached', {frameId});
+    // A frame that goes holds no `load` above it any more; nor does a frame whose own `load` waited.
+    this._behindFirstDocuments?.delete(frameId);
+    if (this._behindFirstDocuments?.size)
+      this._releaseLoadsBehindFirstDocuments();
+  }
+
+  // The frames below `frameId`, as the handler holds them (announced or held back), ended with it.
+  _detachFramesBelow(frameId) {
+    const parentOf = id => this._parentOfFrame.get(id) ?? this._heldBackFrames.get(id)?.parentFrameId;
+    const depthOf = id => {
+      let depth = 0;
+      for (let p = parentOf(id); p !== undefined; p = parentOf(p))
+        depth++;
+      return depth;
+    };
+    const below = [];
+    for (const id of [...this._liveFrameIds, ...this._heldBackFrames.keys()]) {
+      if (id !== frameId && this._isBelow(parentOf(id), frameId))
+        below.push(id);
+    }
+    below.sort((a, b) => depthOf(b) - depthOf(a));
+    for (const id of below) {
+      if (this._heldBackFrames.has(id)) {
+        this._heldBackFrames.delete(id);
+        continue;
+      }
+      this._onFrameDetached(id);
+    }
   }
 
   async ['Page.close']({runBeforeUnload}) {
@@ -427,7 +987,7 @@ export class PageHandler {
   async ['Page.screenshot']({ mimeType, clip, omitDeviceScaleFactor, quality = 80}) {
     const rect = new DOMRect(clip.x, clip.y, clip.width, clip.height);
 
-    const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    let browsingContext = this._pageTarget.linkedBrowser().browsingContext;
     // `win.devicePixelRatio` returns a non-overriden value to priveleged code.
     // See https://bugzilla.mozilla.org/show_bug.cgi?id=1761032
     // See https://phabricator.services.mozilla.com/D141323
@@ -444,9 +1004,13 @@ export class PageHandler {
       throw new Error('Cannot take screenshot with more than ' + MAX_CANVAS_AREA + ' pixels');
 
     let snapshot;
+    // Every error is tried again, as it always was, but not for ever: the real one is thrown when the time is up.
+    const deadline = Date.now() + SNAPSHOT_RETRY_MS;
     while (!snapshot) {
+      // Read at each attempt: the top changes with a navigation to another group, and the one read before the
+      // first attempt would be the page that went.
+      browsingContext = this._pageTarget.linkedBrowser().browsingContext;
       try {
-        //TODO(fission): browsingContext will change in case of cross-group navigation.
         snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
           rect,
           scale,
@@ -456,6 +1020,8 @@ export class PageHandler {
         // The currentWindowGlobal.drawSnapshot might throw
         // NS_ERROR_LOSS_OF_SIGNIFICANT_DATA if called during navigation.
         // wait a little and re-try.
+        if (Date.now() > deadline)
+          throw e;
         await new Promise(x => setTimeout(x, 50));
       }
     }
@@ -492,8 +1058,67 @@ export class PageHandler {
     }
   }
 
-  async ['Page.getContentQuads'](options) {
-    return await this._contentPage.send('getContentQuads', options);
+  // The quads of a node in the CSS pixels of the main document, the viewport of the top as origin. The node
+  // is measured where it lives (up to the fragment root of its process: one layout call, as the page has
+  // always been measured), then carried up one process boundary at a time by the box of the <iframe> that
+  // holds its root, measured in the embedder's process.
+  async ['Page.getContentQuads']({frameId, objectId}) {
+    const mux = this._contentChannel;
+    let {quads, rootFrameId, viewport} = await this._contentPage.send('getFrameQuads', {frameId, objectId});
+    while (this._rootIdOf(rootFrameId) !== mux.mainRootId()) {
+      const transform = await this._contentPage.send('frameBoxTransform', {childFrameId: rootFrameId});
+      if (transform.empty)
+        return {quads: []};
+      if (transform.parentRootFrameId === rootFrameId)
+        throw new Error('Frame ' + rootFrameId + ' is its own parent');
+      quads = quads.map(quad => mapQuad(transform, viewport, quad));
+      rootFrameId = transform.parentRootFrameId;
+      if (this._rootIdOf(rootFrameId) !== mux.mainRootId())
+        viewport = await this._contentPage.send('frameViewport', {frameId: rootFrameId});
+    }
+    return {quads};
+  }
+
+  // Where the viewport of a frame starts, in the CSS pixels of the main document (the viewport of the top as
+  // origin, scroll applied: what getBoundingClientRect of the top would say of a box that starts there). The
+  // origin of the frame's viewport is carried up one <iframe> at a time, by the content box of the <iframe>
+  // measured where the <iframe> is, the way Page.getContentQuads carries a node: a step inside one process
+  // and a step across a process boundary are the same call. The client turns a point of the main document into
+  // the point of the frame by taking this from it; window.mozInnerScreenX/Y of the frame cannot say it, they
+  // are the same in every process of the window.
+  async ['Page.getFrameOrigin']({frameId}) {
+    const mux = this._contentChannel;
+    let point = {x: 0, y: 0};
+    let current = frameId;
+    while (this._rootIdOf(current) !== mux.mainRootId() || this._rootFrameIdOf(current) !== current) {
+      const viewport = await this._contentPage.send('frameViewport', {frameId: current});
+      const transform = await this._contentPage.send('frameBoxTransform', {childFrameId: current});
+      if (transform.empty)
+        throw new Error('Frame ' + current + ' has no box');
+      if (transform.parentRootFrameId === current)
+        throw new Error('Frame ' + current + ' is its own parent');
+      point = mapPoint(transform, viewport, point);
+      current = transform.parentRootFrameId;
+    }
+    return point;
+  }
+
+  // The root (the id of its browsing context) a frame belongs to. The mux does not know it for a frame in
+  // navigation: the command is tried again by the caller.
+  _rootIdOf(frameId) {
+    const rootId = this._contentChannel.rootOf(frameId);
+    if (rootId === null)
+      throw new Error('root of frame ' + frameId + ' unknown, retry');
+    return rootId;
+  }
+
+  // The frame id of the root a frame belongs to.
+  _rootFrameIdOf(frameId) {
+    const rootId = this._rootIdOf(frameId);
+    let browsingContext = this._pageTarget.frameIdToBrowsingContext(frameId);
+    while (browsingContext.id !== rootId)
+      browsingContext = browsingContext.parent;
+    return helper.browsingContextToFrameId(browsingContext);
   }
 
   async ['Page.navigate']({frameId, url, referer}) {
@@ -531,7 +1156,10 @@ export class PageHandler {
     }
 
     let navigationId;
-    const unsubscribe = helper.addObserver((browsingContext, topic, loadIdentifier) => {
+    const unsubscribe = helper.addObserver((started, topic, loadIdentifier) => {
+      // Only the load of the context being navigated: another frame may begin one while this call runs.
+      if (started.id !== browsingContext.id)
+        return;
       navigationId = helper.toProtocolNavigationId(loadIdentifier);
     }, 'juggler-navigation-started-browser');
     browsingContext.loadURI(Services.io.newURI(url), {
@@ -591,11 +1219,28 @@ export class PageHandler {
   }
 
   async ['Page.describeNode'](options) {
-    return await this._contentPage.send('describeNode', options);
+    const result = await this._contentPage.send('describeNode', options);
+    // The client turns contentFrameId into a Frame it already holds: a frame it was not told of yet
+    // (the parent announces it, FrameLifecycle) or has been told is gone is not named, so the answer is
+    // not one it cannot place. _liveFrameIds: announced and not detached.
+    if (result.contentFrameId && !this._liveFrameIds.has(result.contentFrameId))
+      result.contentFrameId = undefined;
+    return result;
   }
 
   async ['Page.scrollIntoViewIfNeeded'](options) {
-    return await this._contentPage.send('scrollIntoViewIfNeeded', options);
+    const result = await this._contentPage.send('scrollIntoViewIfNeeded', options);
+    // A node in a frame of another process scrolls its own frame here; Gecko sends the scroll of the frame's
+    // <iframe> to its embedder as a message of its own, which the embedder applies as it arrives. The client
+    // reads the quads of the node as soon as this answers, so the answer waits for the embedders: one
+    // request to each, from the node's root up. The scroll message left the node's process before this
+    // command's answer did, and reaches the embedder before the request does on the same channel.
+    let rootFrameId = this._rootFrameIdOf(options.frameId);
+    while (this._rootIdOf(rootFrameId) !== this._contentChannel.mainRootId()) {
+      const transform = await this._contentPage.send('frameBoxTransform', {childFrameId: rootFrameId});
+      rootFrameId = transform.parentRootFrameId;
+    }
+    return result;
   }
 
   async ['Page.setInitScripts']({ scripts }) {
@@ -652,8 +1297,30 @@ export class PageHandler {
       }
       return;
     }
+    // Inside activateAndRun: the window is focused and the tab chosen, so the focused context is read after the
+    // activation. The root is decided once, before the key's own latency, as the key is already on its way to the
+    // frame that had the focus when it was sent.
     return await this._pageTarget.activateAndRun(() =>
-      this._contentPage.send('dispatchKeyEvent', {type, keyCode, code, key, repeat, location, text, latency}));
+      this._contentChannel.sendTo(this._focusedRootId(), 'page', 'dispatchKeyEvent',
+          {type, keyCode, code, key, repeat, location, text, latency}));
+  }
+
+  /**
+   * The root of the fragment that holds the focused browsing context of THIS page: the process that has to
+   * receive the key, because the text input processor of a process delivers to its own documents only. The
+   * main root when the focus is not in this page's content: in the browser's chrome, in another tab or window
+   * (`focusedContentBrowsingContext` is the browser's, not the page's), or in a root not known yet (a context
+   * moving between processes has no document to receive the key).
+   *
+   * The context is read at every key and not kept: an iframe that changes process with the focus in it keeps
+   * its context and gets a new root.
+   */
+  _focusedRootId() {
+    const main = this._contentChannel.mainRootId();
+    const focused = Services.focus.focusedContentBrowsingContext;
+    if (!focused || focused.top !== this._pageTarget.linkedBrowser().browsingContext)
+      return main;
+    return this._contentChannel.frameRootOf(focused) ?? main;
   }
 
   /**
@@ -682,12 +1349,17 @@ export class PageHandler {
    * of 2 on two different pointer actions, green 2 out of 2 without it. The
    * gesture's own watcher already ends with the gesture.
    */
-  _onContentDetached() {
-    this._endGesture();
-    const waits = [...this._documentScopedWaits];
-    this._documentScopedWaits.clear();
-    for (const fail of waits)
-      fail(new Error('the document this was aimed at is gone'));
+  // A root's content went: `{rootId, isMain}`. The gesture ends with the main root's, and a wait aimed at
+  // a root ends with it; the end of a frame's process leaves the page's gesture and waits where they are.
+  _onContentDetached({rootId, isMain} = {isMain: true}) {
+    if (isMain)
+      this._endGesture();
+    for (const [fail, wait] of [...this._documentScopedWaits]) {
+      if (wait.rootId === rootId || (isMain && wait.isMain)) {
+        this._documentScopedWaits.delete(fail);
+        fail(new Error('the document this was aimed at is gone'));
+      }
+    }
   }
 
   /**
@@ -697,7 +1369,8 @@ export class PageHandler {
   async _sendToCurrentDocument(methodName, params) {
     let fail;
     const abandoned = new Promise((_, reject) => { fail = reject; });
-    this._documentScopedWaits.add(fail);
+    // The drag is the main root's. A flag, not only its id: the id of the main root changes with the top.
+    this._documentScopedWaits.set(fail, {rootId: this._contentChannel.mainRootId(), isMain: true});
     try {
       return await Promise.race([this._contentPage.send(methodName, params), abandoned]);
     } finally {
@@ -813,9 +1486,155 @@ export class PageHandler {
    * was sent and the page has not handled it, and saying "done" would bring the
    * defect back silently. Five seconds, as the other waits on this ack.
    */
-  async _awaitInputHandled(eventId, type, landingToken) {
-    if (this._pageTarget.dialogs().length)
+  /**
+   * An input event of a root: the ack of a mouse event (from whichever root the APZ hit test sent it to), and
+   * the events the gestures wait for.
+   */
+  _onPageInputEvent(event, {rootId}) {
+    // An ack counts for this page when the event it names is one this page sent (a mouse event with no id is no ack).
+    // The acks of one event come from EVERY root of the process that handled it, not from the one root it reached
+    // (the notification is the process's, and each root hears it): a page with several iframes of one site has them
+    // all in one process. The first ack to arrive is the first root's to answer, not the owner's, so the id stays
+    // the page's, with the processes that acked it, for the acks still to come.
+    this._ackedEvents = this._ackedEvents || new Map();
+    if (event.jugglerEventId && (this._ownEventIds.has(event.jugglerEventId) || this._ackedEvents.has(event.jugglerEventId))) {
+      if (event.jugglerEventId > this._lastHitEventId)
+        this._lastHitEventId = event.jugglerEventId;
+      this._ownEventIds.delete(event.jugglerEventId);
+      let processes = this._ackedEvents.get(event.jugglerEventId);
+      if (!processes)
+        this._ackedEvents.set(event.jugglerEventId, processes = new Set());
+      processes.add(event.pid);
+      if (this._ackedEvents.size > 256)        // the same bound as the ids sent
+        this._ackedEvents.delete(this._ackedEvents.keys().next().value);
+      // What each root has answered: a root answers in the order it got the events, so its ack of a later id says it
+      // is past the earlier ones (the event that has no ack of its own went to another root, or was folded into a later one).
+      this._lastHitByRoot = this._lastHitByRoot || new Map();
+      this._lastHitByRoot.set(rootId, Math.max(event.jugglerEventId, this._lastHitByRoot.get(rootId) || 0));
+      for (const [rootToken, perType] of Object.entries(event.verdicts || {})) {
+        this._landingVerdicts.set(rootId + ':' + rootToken, {id: event.jugglerEventId, perType});
+        if (this._landingVerdicts.size > 16)   // an armed landing no event reads does not stay for good
+          this._landingVerdicts.delete(this._landingVerdicts.keys().next().value);
+      }
+      for (const waiter of [...this._hitWaiters]) {
+        if (this._ackEndsWait(waiter, event.jugglerEventId, rootId, event.pid)) {
+          this._hitWaiters.delete(waiter);
+          waiter.resolve();
+        }
+      }
+    }
+    // A drag is the main root's: the dragstart of an iframe in another process must not make the watcher of
+    // the gesture believe the session is the top's.
+    const isDragSignal = event.type === 'dragstart' || event.type === 'juggler-drag-finalized';
+    if (!isDragSignal || rootId === this._contentChannel.mainRootId())
+      this._pageEventSink.emit(event.type, event);
+  }
+
+  /**
+   * A mouse event to the widget, its id kept as this page's own (see `_ownEventIds`).
+   */
+  _sendMouseEvent(win, ...args) {
+    const id = win.windowUtils.jugglerSendMouseEvent(...args);
+    this._ownEventIds.add(id);
+    if (this._ownEventIds.size > 256)       // the ids of events that were never acked do not stay for good
+      this._ownEventIds.delete(this._ownEventIds.values().next().value);
+    return id;
+  }
+
+  // Does the ack `ackedId` of the root `rootId` (in the process `pid`) end the wait for the event `waiter.id`? The event
+  // itself acked by the root the wait is for, or by a root of ANOTHER PROCESS (the event was handled there, the root of
+  // the landing is not in that process and will not answer: there is no verdict, and the answer is that it did not
+  // land). An ack of the event by another root of the owner's own process says nothing: every root of the process acks
+  // it, and the owner's own ack, with the verdict of its landing, may still come. A later id counts for the event only
+  // from the root the wait is for: the ack of a higher id from another root, which can come first, says nothing of
+  // whether this root has handled it. A wait that is for no root (no landing was armed) is ended by any later id.
+  // (Where the process of the root or of the ack is not known, any ack of the event ends it.)
+  _ackEndsWait(waiter, ackedId, rootId, pid) {
+    if (ackedId === waiter.id) {
+      if (waiter.rootId === undefined || rootId === waiter.rootId)
+        return true;
+      return waiter.pid === undefined || pid === undefined || pid !== waiter.pid;
+    }
+    if (ackedId < waiter.id)
+      return false;
+    if (waiter.rootId === undefined)
+      return true;
+    return rootId === waiter.rootId || (waiter.rootIsMain && rootId === this._contentChannel.mainRootId());
+  }
+
+  // Has the root `owner.rootId` answered the event `id`, or one after it? Or has the event been acked from another
+  // process than the owner's (then the owner will not answer: there is no verdict)?
+  _ownerIsPast(owner, id) {
+    const processes = this._ackedEvents && this._ackedEvents.get(id);
+    if (processes) {
+      if (owner.pid === undefined)
+        return true;
+      for (const pid of processes) {
+        if (pid === undefined || pid !== owner.pid)
+          return true;
+      }
+    }
+    const last = this._lastHitByRoot;
+    return !!last && (last.get(owner.rootId) || 0) >= id;
+  }
+
+  // Until the event `id` has been handled. `owner`: the armed landing it is for ({rootId}), if there is one.
+  _whenInputHit(id, owner) {
+    if (owner === undefined ? this._lastHitEventId >= id : this._ownerIsPast(owner, id))
+      return Promise.resolve();
+    const waiter = {id, resolve: null};
+    if (owner !== undefined) {
+      waiter.rootId = owner.rootId;
+      waiter.pid = owner.pid;
+      waiter.rootIsMain = owner.rootId === this._contentChannel.mainRootId();
+    }
+    return new Promise(resolve => {
+      waiter.resolve = resolve;
+      this._hitWaiters.add(waiter);
+    });
+  }
+
+  /**
+   * Where the event of `type` landed, as the root that owns the armed landing said it with its ack. Read once:
+   * the armed entry of the mux is taken with it. A root that never acked this event (it went to another
+   * document) has no verdict, and the answer is that it did not land.
+   */
+  _landingVerdict(eventId, type, muxToken) {
+    if (!muxToken)
       return null;
+    const armed = this._contentChannel.takeArmed(muxToken);
+    if (!armed)
+      return null;
+    const key = armed.rootId + ':' + armed.rootToken;
+    const entry = this._landingVerdicts.get(key);
+    this._landingVerdicts.delete(key);
+    if (entry && entry.id >= eventId && entry.perType[type])
+      return entry.perType[type];
+    return {type, landed: false, seen: 0, on: 'the event reached another document'};
+  }
+
+  async _awaitInputHandled(eventId, type, landingToken) {
+    try {
+      // The root that owns the landing is the one whose ack is waited for (not read: the verdict is taken after).
+      const owner = landingToken ? this._contentChannel.armedEntry(landingToken) : undefined;
+      const outcome = await this._awaitBounded(this._whenInputHit(eventId, owner), 'mouse event ' + eventId);
+      return outcome === 'dialog' ? null : this._landingVerdict(eventId, type, landingToken);
+    } finally {
+      // A wait that ended on a dialog or on its bound read no verdict: the landing is not left in the mux.
+      if (landingToken)
+        this._contentChannel.takeArmed(landingToken);
+    }
+  }
+
+  /**
+   * `promise` bounded, as every wait on the page's input: 5 seconds, and an error when they pass (`what` did not
+   * happen: saying "done" would bring the defect back silently); a dialog ends the wait, because the process that
+   * would answer is inside it, and so does a dialog already open. Resolves to 'dialog' for either, else to what
+   * the promise resolves to.
+   */
+  async _awaitBounded(promise, what) {
+    if (this._pageTarget.dialogs().length)
+      return 'dialog';
     const offs = [];
     const dialogOpened = new Promise(resolve => {
       offs.push(helper.on(this._pageTarget, PageTarget.Events.DialogOpened, resolve));
@@ -824,15 +1643,13 @@ export class PageHandler {
     const expired = new Promise(resolve => { timer = setTimeout(() => resolve('expired'), 5000); });
     try {
       const outcome = await Promise.race([
-        this._contentPage.send('awaitInputHandled', { eventId, type, landingToken }),
+        promise.then(() => 'done'),
         dialogOpened.then(() => 'dialog'),
         expired,
       ]);
       if (outcome === 'expired')
-        throw new Error('the page did not handle mouse event ' + eventId + ' within 5 s');
-      if (outcome === 'dialog')
-        return null;
-      return (outcome && outcome.landing) || null;
+        throw new Error('the page did not handle ' + what + ' within 5 s');
+      return outcome;
     } finally {
       clearTimeout(timer);
       helper.removeListeners(offs);
@@ -875,12 +1692,22 @@ export class PageHandler {
     };
   }
 
-  async ['Page.dispatchMouseEvent']({type, x, y, button, clickCount, modifiers, buttons, landsOn, latency}) {
-    const win = this._pageTarget._window;
-    const page = await this._pagePixels();
+  async ['Page.dispatchMouseEvent'](options) {
     // The element this event is meant for, held by the content process BEFORE
     // anything is sent: the event's handler may take it away. [B230]
-    const armed = landsOn ? await this._contentPage.send('armLanding', landsOn) : null;
+    const armed = options.landsOn ? await this._contentPage.send('armLanding', options.landsOn) : null;
+    try {
+      return await this._dispatchMouseEvent(options, armed);
+    } finally {
+      // However the command ended (an early return, an error, a dialog, the bound): the mux keeps no landing of it.
+      if (armed)
+        this._contentChannel.takeArmed(armed.token);
+    }
+  }
+
+  async _dispatchMouseEvent({type, x, y, button, clickCount, modifiers, buttons, latency}, armed) {
+    const win = this._pageTarget._window;
+    const page = await this._pagePixels();
     // The id of the last mouse event handed to the widget, which the renderer
     // acks once it has handled it: the command answers after that ack. [B230]
     let lastEventId = 0;
@@ -904,7 +1731,7 @@ export class PageHandler {
       const point = page.inWindow(x, y);
 
       for (const type of types) {
-        lastEventId = win.windowUtils.jugglerSendMouseEvent(
+        lastEventId = this._sendMouseEvent(win,
           type,
           point.x,
           point.y,
@@ -937,7 +1764,7 @@ export class PageHandler {
         // viewport coordinates, then move the mouse off from the Web Content.
         // This way we can eliminate all the hover effects.
         landsInPage = false;
-        lastEventId = win.windowUtils.jugglerSendMouseEvent(
+        lastEventId = this._sendMouseEvent(win,
           'mousemove',
           0 /* x */,
           0 /* y */,
@@ -999,7 +1826,7 @@ export class PageHandler {
             if (!page.contains(px, py)) continue;
             const point = page.inWindow(px, py);
             try {
-              lastEventId = win.windowUtils.jugglerSendMouseEvent('mousemove',
+              lastEventId = this._sendMouseEvent(win, 'mousemove',
                   point.x, point.y, button, clickCount, modifiers,
                   false, (buttons ? 0.5 : 0.0) /* pressure */, 1 /* inputSource: real mouse */, true, false, buttons,
                   win.windowUtils.DEFAULT_MOUSE_POINTER_ID, latency || 0);
@@ -1076,6 +1903,8 @@ export class PageHandler {
     const lineOrPageDeltaY = deltaY > 0 ? Math.floor(deltaY) : Math.ceil(deltaY);
 
     const page = await this._pagePixels();
+    let delivered;
+    const deliveredP = new Promise(resolve => { delivered = resolve; });
     await this._pageTarget.activateAndRun(async () => {
       this._pageTarget.ensureContextMenuClosed();
 
@@ -1095,17 +1924,19 @@ export class PageHandler {
         modifiers,
         lineOrPageDeltaX,
         lineOrPageDeltaY,
-        0 /* options */,
-        null /* callback */,
+        win.windowUtils.WHEEL_EVENT_ASYNC_ENABLED /* the APZ hit test: an iframe of another process gets the wheel */,
+        delivered /* called once the process the event went to has dispatched it */,
         latency || 0 /* [B301] born this many ms before the dispatch */);
     }, { muteNotificationsPopup: true });
+    // Outside the activation, as the ack of a mouse event: the chain of inputs is not held while the page scrolls.
+    await this._awaitBounded(deliveredP, 'the wheel event');
   }
 
   // Same class as `Page.dispatchKeyEvent` above, and the same reason: it is
   // input reaching the page, so it must find the window focused.
   async ['Page.insertText'](options) {
     return await this._pageTarget.activateAndRun(() =>
-      this._contentPage.send('insertText', options));
+      this._contentChannel.sendTo(this._focusedRootId(), 'page', 'insertText', options));
   }
 
   async ['Page.handleDialog']({dialogId, accept, promptText}) {

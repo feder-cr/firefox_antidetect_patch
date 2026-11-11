@@ -8,6 +8,22 @@ Test: TODO
 
 TODO: one paragraph, from the notes below.
 
+## The route of the mouse and the wheel (one process per site)
+
+A mouse event of Juggler goes to the widget on the asynchronous route (`StealthJugglerInput.h`: `mIsAsyncEnabled = true`), so
+the APZ hit test gives it the layers id of the process that owns the point and a click on an iframe of another site reaches
+it; on the main thread, which is the controller thread, the dispatch is still in place and the event keeps its id. The
+asynchronous route marks a synthesized event "async synthesized for tests", which would send a drag to the native drag loop:
+`StealthJugglerNotAsyncSynthesized` (`StealthJugglerEventId.h`, one hook line in `nsContentUtils.cpp`) clears the flag for an event
+that carries a Juggler id. The wheel takes the same route with `WHEEL_EVENT_ASYNC_ENABLED` and waits for the engine's delivery
+callback. The renderer's ack of a mouse event comes from whichever process handled it; the page handler counts the acks of the
+ids it sent, from every root of the page, and reads the landing verdict the owner root sent with its ack.
+
+Tests (node): `juggler/tests/mouse_ack_comes_from_any_root.test.mjs`, `keys_go_to_the_focused_root.test.mjs`,
+`wheel_waits_for_its_delivery.test.mjs`, `input_review_findings.test.mjs`. In a browser (the wrapper's e2e):
+`test_mouse_events_keep_their_values_e2e.py` (the events of the page and of a same-process iframe keep their order and values),
+`test_drag_motion.py` (the drag keeps its session).
+
 ## Hooks in Mozilla files
 
 - `dom/base/nsDOMWindowUtils.cpp` (nsDOMWindowUtils::JugglerSendMouseEvent (new); nsDOMWindowUtils::JugglerSendDragEvent (new); nsDOMWindowUtils::SendWheelEvent; CanvasToDataSourceSurface, movable): Four pieces in one file. (1) juggler: JugglerSendMouseEvent (new, about 45 lines) with a plain static counter sJugglerEventId. (2) juggler: JugglerSendDragEvent (new, about 60 lines) dispatches WidgetDragEvent directly and sets the drag session action from the modifier keys (B212). (3) spoof, input-event-birth: SendWheelEvent gets aLatency and sets mTimeStamp (same hunk as the signature change). (

@@ -210,6 +210,14 @@ function handler() {
   const pageHandler = Object.create(PageHandler.prototype);
   pageHandler._session = { emitEvent: (name, params) => emitted.push([name, params.frameId]) };
   pageHandler._pageNetwork = { onMainFrameNavigationCommitted: id => committed.push(id) };
+  // The frames the client has been told of: a frame's events leave once it is announced.
+  pageHandler._reportedFrameIds = new Set([mainFrameId, subframeId]);
+  pageHandler._droppedFrameIds = new Set();
+  pageHandler._frameEventsBeforeFrame = new Map();
+  pageHandler._eventsAfterName = new Map();
+  pageHandler._liveFrameIds = new Set();
+  pageHandler._parentOfFrame = new Map();
+  pageHandler._heldBackFrames = new Map();
   return { pageHandler, emitted, committed };
 }
 
@@ -234,9 +242,11 @@ test('the bodies are evicted even when the session refuses the event', () => {
   assert.deepEqual(committed, ['nav-F']);
 });
 
-test("the content process's commit of a navigation is the one that reaches the handler", () => {
-  // The registration, read in the code: with `emitProtocolEvent` here the event would reach the client and not
-  // the page's network.
-  const source = fs.readFileSync(path.join(ROOT, 'protocol/PageHandler.js'), 'utf8');
-  assert.match(source, /pageNavigationCommitted:\s*this\._onNavigationCommitted\.bind\(this\)/);
+test("the commit the registry of navigations reports is the one that evicts the bodies", () => {
+  // FrameNavigations says 'navigationcommitted' to the handler; with a plain emit here the event would reach the client
+  // and not the page's network.
+  const { pageHandler, emitted, committed } = handler();
+  pageHandler._onFrameNavigationEvent('navigationcommitted', { frameId: mainFrameId, navigationId: 'nav-G', url: 'https://example.com/' }, mainFrameId);
+  assert.deepEqual(emitted, [['Page.navigationCommitted', mainFrameId]]);
+  assert.deepEqual(committed, ['nav-G']);
 });

@@ -16,6 +16,49 @@ export class Helper {
     objectToDecorate.emit = emitter.emit.bind(emitter);
   }
 
+  // A fragment root is the browsing context a content process holds at the top
+  // of its part of the page: it has no parent, or its parent's docShell is in
+  // another process. This climbs from `bc` to that root.
+  fragmentRootOf(bc) {
+    let cur = bc;
+    while (cur.parent && cur.parent.docShell)
+      cur = cur.parent;
+    return cur;
+  }
+
+  // True when `bc` is a fragment root: no parent, or a parent that has no
+  // docShell here (it lives in another process).
+  isFragmentRoot(bc) {
+    return !bc.parent || !bc.parent.docShell;
+  }
+
+  // True when `bc` belongs to the tree of the fragment root `root`: climbing the
+  // parents that are in this process (that have a docShell here) arrives at
+  // `root`. `bc` itself counts only if it IS the root: at the attach of a
+  // browsing context its own docShell says nothing about where it lives (a
+  // local iframe's is often not born yet), but its parent's does.
+  belongsToFragment(bc, root) {
+    for (let cur = bc; cur; cur = cur.parent) {
+      if (cur === root)
+        return true;
+      if (!cur.parent || !cur.parent.docShell)
+        return false;
+    }
+    return false;
+  }
+
+  // What a docShell is told by the client, written to every docShell of the page that is in this process: the
+  // flags live on the docShell, and the code that reads them (the CSP bypass, the file chooser of an <input>)
+  // reads the docShell of the document it runs for, not the root's. `settings` names only what it sets.
+  applyDocShellSettings(docShell, settings) {
+    if (!docShell)
+      return;
+    if (settings.bypassCSP !== undefined)
+      docShell.bypassCSPEnabled = !!settings.bypassCSP;
+    if (settings.interceptFileChooser !== undefined)
+      docShell.fileInputInterceptionEnabled = !!settings.interceptFileChooser;
+  }
+
   collectAllBrowsingContexts(rootBrowsingContext, allBrowsingContexts = []) {
     allBrowsingContexts.push(rootBrowsingContext);
     for (const child of rootBrowsingContext.children)

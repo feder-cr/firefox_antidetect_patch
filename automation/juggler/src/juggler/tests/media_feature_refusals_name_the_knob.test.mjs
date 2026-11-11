@@ -36,6 +36,8 @@ const { BrowserHandler } = load('protocol/BrowserHandler.js', scope(), ['Browser
 function pageHandler() {
   const calls = [];
   const handler = Object.create(PageHandler.prototype);
+  handler._workersNotToldYet = new Map();
+  handler._restoreBeingSaid = false;
   handler._pageTarget = {
     setColorScheme: value => calls.push(['setColorScheme', value]),
     setEmulatedMedia: value => calls.push(['setEmulatedMedia', value]),

@@ -5,6 +5,7 @@
 const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
 const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
+const {ContentMux} = ChromeUtils.importESModule('resource://gre/modules/juggler/ContentMux.js');
 const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs");
@@ -14,6 +15,11 @@ const {AppConstants} = ChromeUtils.importESModule("resource://gre/modules/AppCon
 const Cr = Components.results;
 
 const helper = new Helper();
+
+// A root is told apart by its page and by its browsing context.
+function rootKey(browserId, rootId) {
+  return browserId + '/' + rootId;
+}
 
 
 // Chrome flag of a popup whose window.open features give a size: the value
@@ -191,7 +197,10 @@ export class TargetRegistry {
     // so every page that navigated twice left a stale entry behind, and the
     // first new tab whose browserId equalled that number lost its actor.
     // Browser.newPage then never answered (the fifth page, measured).
-    this._browserIdToActor = new Map();
+    //
+    // A page has one actor per fragment root: the top, and every frame whose parent is in another
+    // process. The key is the page and the root together (see rootKey).
+    this._rootActors = new Map();
 
     this._proxiesWithClashingAuthCacheKeys = new Set();
     this._browserProxy = null;
@@ -207,20 +216,39 @@ export class TargetRegistry {
     this._defaultContext = new BrowserContext(this, undefined, undefined);
 
     Services.obs.addObserver({
-      observe: (subject, topic, data) => {
-        const browser = subject.ownerElement;
-        if (!browser) {
-          return;
-        }
-        const target = this._browserToTarget.get(browser);
-        if (!target) {
-          return;
-        }
-        target.emit(PageTarget.Events.Crashed);
-        target.dispose();
-        target.closeCrashedTab();
-      }
+      observe: (subject, topic, data) => this._onFrameLoaderCrashed(subject, data),
     }, 'oop-frameloader-crashed');
+
+    // A root whose browsing context is discarded has no process to wait for: without this its endpoint
+    // would stay in the page's mux with no actor. The main root is not touched here; it changes its
+    // browsing context with the top and ends with the page.
+    Services.obs.addObserver({
+      observe: (browsingContext, topic, data) => {
+        let browserId;
+        try {
+          browserId = browsingContext.browserId;
+        } catch (e) {
+          return;
+        }
+        this._browserIdToTarget.get(browserId)?._contentMux.onRootRemoved(browsingContext.id);
+        this._rootActors.delete(rootKey(browserId, browsingContext.id));
+      }
+    }, 'browsing-context-discarded');
+
+    // A document that is not a process root, created for the browsing context of a root: the frame turned local (it
+    // navigated to the site of its parent). The browsing context stays, so the root would stay with it.
+    Services.obs.addObserver({
+      observe: (windowGlobal, topic, data) => {
+        try {
+          const browsingContext = windowGlobal.browsingContext;
+          if (!browsingContext.parent || windowGlobal.isProcessRoot)
+            return;
+          this._browserIdToTarget.get(browsingContext.browserId)?._contentMux.onRootTurnedLocal(browsingContext.id);
+        } catch (e) {
+          // a window global of a context that is going: nothing to do
+        }
+      }
+    }, 'window-global-created');
 
     const onTabOpenListener = (appWindow, window, event) => {
       const tab = event.target;
@@ -522,15 +550,48 @@ export class TargetRegistry {
   // Called by JugglerFrameParent for the actor of a CURRENT top-level document
   // only: when it is created, and when a document restored from the bfcache
   // becomes current again.
-  onActorCreated(actor, browserId) {
-    this._browserIdToActor.set(browserId, actor);
-    this._browserIdToTarget.get(browserId)?.setActor(actor);
+  onActorCreated(actor, browserId, rootId) {
+    this._rootActors.set(rootKey(browserId, rootId), actor);
+    this._browserIdToTarget.get(browserId)?.setActor(actor, rootId);
   }
 
-  onActorDestroyed(actor, browserId) {
-    this._browserIdToTarget.get(browserId)?.removeActor(actor);
-    if (this._browserIdToActor.get(browserId) === actor)
-      this._browserIdToActor.delete(browserId);
+  onActorDestroyed(actor, browserId, rootId) {
+    this._browserIdToTarget.get(browserId)?.removeActor(actor, rootId);
+    const key = rootKey(browserId, rootId);
+    if (this._rootActors.get(key) === actor)
+      this._rootActors.delete(key);
+  }
+
+  // ⛔ AN IFRAME'S PROCESS CRASHING IS NOT THE TAB CRASHING. The owner element of an out-of-process iframe's
+  // BrowserParent is the <browser> of the TAB (BrowserBridgeParent::Init, SetOwnerElement), so the notification comes
+  // with the tab's frameloader for either crash, and before the engine passed the crashed BrowsingContext's id as `data`
+  // (nsFrameLoader::MaybeNotifyCrashed) the tab branch closed the whole page for a crash of one iframe. `data` is that
+  // id, empty when the notification does not say (a frameloader that failed to build: a tab).
+  //
+  // A context that is named but already gone (the iframe was removed, or the page navigated, in the same turn as the
+  // crash) is neither: there is nothing of it to tell, and the tab is not what crashed.
+  _onFrameLoaderCrashed(frameLoader, data) {
+    const browser = frameLoader.ownerElement;
+    if (!browser) {
+      return;
+    }
+    const target = this._browserToTarget.get(browser);
+    if (!target) {
+      return;
+    }
+    if (data) {
+      const crashed = BrowsingContext.get(data);
+      if (!crashed) {
+        return;
+      }
+      if (crashed.parent) {
+        target.frameCrashed(crashed);
+        return;
+      }
+    }
+    target.emit(PageTarget.Events.Crashed);
+    target.dispose();
+    target.closeCrashedTab();
   }
 
   targetForId(targetId) {
@@ -569,9 +630,16 @@ export class PageTarget {
     this._initialDPPX = this._linkedBrowser.browsingContext.overrideDPPX;
     this._url = 'about:blank';
     this._openerId = opener ? opener.id() : undefined;
-    this._actor = undefined;
     this._actorSequenceNumber = 0;
-    this._channel = new SimpleChannel(`browser::page[${this._targetId}]`, 'target-' + this._targetId);
+    // What the page's handler talks through: one channel to the content process of each fragment root.
+    this._contentMux = new ContentMux({
+      pageTarget: this,
+      name: `browser::page[${this._targetId}]`,
+      uid: 'target-' + this._targetId,
+      createChannel: (name, uid) => new SimpleChannel(name, uid),
+      nextTask: callback => Services.tm.dispatchToMainThread(callback),
+      wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+    });
     this._dialogs = new Map();
     this.disableCache = false;
     this.mediumOverride = '';
@@ -583,7 +651,12 @@ export class PageTarget {
 
     const navigationListener = {
       QueryInterface: ChromeUtils.generateQI([Ci.nsIWebProgressListener, Ci.nsISupportsWeakReference]),
-      onLocationChange: (aWebProgress, aRequest, aLocation) => this._onNavigated(aLocation),
+      // The progress of a frame climbs to the browsing contexts above it (BrowsingContextWebProgress): without the
+      // test the address of an iframe became the page's url, and the page's permissions were asked for it.
+      onLocationChange: (aWebProgress, aRequest, aLocation) => {
+        if (aWebProgress.isTopLevel)
+          this._onNavigated(aLocation);
+      },
     };
     this._eventListeners = [
       helper.addObserver(this._updateModalDialogs.bind(this), 'common-dialog-loaded'),
@@ -598,9 +671,13 @@ export class PageTarget {
     browserContext.pages.add(this);
     this._registry._browserToTarget.set(this._linkedBrowser, this);
     this._registry._browserIdToTarget.set(this._browserId, this);
-    const actor = this._registry._browserIdToActor.get(this._browserId);
-    if (actor)
-      this.setActor(actor);
+    // The actors that were there before the target: the top first, so a root that is not the main one finds
+    // the main endpoint made.
+    const prefix = this._browserId + '/';
+    const actors = [...this._registry._rootActors].filter(([key]) => key.startsWith(prefix));
+    actors.sort(([, a], [, b]) => (a.browsingContext.parent ? 1 : 0) - (b.browsingContext.parent ? 1 : 0));
+    for (const [, actor] of actors)
+      this.setActor(actor, actor.browsingContext.id);
 
     this._registry.emit(TargetRegistry.Events.TargetCreated, this);
   }
@@ -637,26 +714,30 @@ export class PageTarget {
     return ++this._actorSequenceNumber;
   }
 
-  setActor(actor) {
-    this._actor = actor;
+  setActor(actor, rootId = actor.browsingContext.id) {
+    // Every actor that comes (a new process, a document restored from the back-forward cache, a new top after a
+    // change of browsing context group) finds the setting in place: see updateJavaScriptDisabled.
+    this.updateJavaScriptDisabled();
     actor.actorName = `browser::page[${this._targetId}]/${actor.browsingContext.browserId}/${actor.browsingContext.id}/${this.nextActorSequenceNumber()}`;
-    this._channel.bindToActor(actor);
+    const isMain = !actor.browsingContext.parent;
+    this._contentMux.onRootAdded(rootId, actor.browsingContext);
+    this._contentMux.bindRoot(rootId, actor, {isMain});
   }
 
-  removeActor(actor) {
+  removeActor(actor, rootId) {
     // Note: the order between setActor and removeActor is non-deterministic.
-    // Therefore we check that we are still bound to the actor that is being removed.
-    if (this._actor !== actor)
+    // Therefore we check that we are still bound to the actor that is being removed. The root comes from
+    // the registry: the actor may not be readable any more.
+    const endpoint = this._contentMux.unbindRoot(rootId, actor);
+    if (!endpoint)
       return;
-    this._actor = undefined;
     // ⛔ THE CHANNEL GOES QUIET HERE AND MIGHT NEVER SPEAK AGAIN. `resetTransport`
     // keeps every pending request in the hope that a new actor binds and
     // replays it; measured 2026-09-19, a reload during a drag removed this
     // actor and NO replacement ever arrived. Whoever holds a request that only
     // the old document could answer has to hear about it, so this is emitted
     // whether or not a replacement follows. [B216]
-    this.emit(PageTarget.Events.ContentDetached);
-    this._channel.resetTransport();
+    this.emit(PageTarget.Events.ContentDetached, {rootId: endpoint.rootId, isMain: endpoint.isMain});
   }
 
   dialog(dialogId) {
@@ -689,6 +770,22 @@ export class PageTarget {
     this.updateCacheDisabled(browsingContext);
     this.updateLanguageOverride(browsingContext);
     this.updateTimezoneOverride(browsingContext);
+    this.updateJavaScriptDisabled(browsingContext);
+  }
+
+  // Whether scripts run in the page is the BrowsingContext's AllowJavascript field, written here, by the parent,
+  // on the page's top-level context. The field is parent-only, synchronized to every process, inherited by the
+  // contexts born under it (an iframe of any process, a popup) and applied by its DidSet to the documents that
+  // exist; a document that is created later computes it at birth, so no script of its first load runs. A browsing
+  // context group change copies it to the new top (CanonicalBrowsingContext::ReplacedBy). It used to be written
+  // by the content process on the WindowContext of each document, which is owner-or-parent-only: a process that
+  // does not own the document of an iframe could not write it, and the write on a document that exists comes after
+  // its first scripts.
+  updateJavaScriptDisabled(browsingContext = undefined) {
+    const context = browsingContext || this._linkedBrowser.browsingContext;
+    const allowed = !this._browserContext.crossProcessCookie.settings.javaScriptDisabled;
+    if (context.allowJavascript !== allowed)
+      context.allowJavascript = allowed;
   }
 
   // The context's language list goes into the BrowsingContext's
@@ -841,7 +938,7 @@ export class PageTarget {
    */
   async _awaitContentSize(width, height) {
     const scale = this._window.devicePixelRatio;
-    await this._channel.connect('').send('awaitViewportDimensions', {
+    await this._contentMux.connect('').send('awaitViewportDimensions', {
       deviceWidth: Math.round(width * scale),
       deviceHeight: Math.round(height * scale),
     });
@@ -868,7 +965,7 @@ export class PageTarget {
   async setInterceptFileChooserDialog(enabled) {
     this.crossProcessCookie.interceptFileChooserDialog = enabled;
     this._updateCrossProcessCookie();
-    await this._channel.connect('').send('setInterceptFileChooserDialog', enabled).catch(e => {});
+    await this._contentMux.connect('').send('setInterceptFileChooserDialog', enabled).catch(e => {});
   }
 
   async setViewportSize(viewportSize) {
@@ -906,8 +1003,27 @@ export class PageTarget {
     this._gBrowser.removeTab(this._tab, { skipPermitUnload: true });
   }
 
+  /**
+   * The process of an iframe crashed; the tab and its top document are alive.
+   * The client is told the frame is gone (Page.frameDetached, the event it
+   * already knows, for the crashed frame: the client removes the frames below
+   * it with it) and no Page.crashed is sent: that event is the tab's.
+   *
+   * What the crashed process held besides the frame (its execution contexts
+   * and workers) is the content multiplexer's to announce as destroyed, when
+   * it exists; here the page keeps working, which is the part that was broken.
+   */
+  frameCrashed(browsingContext) {
+    // The roots of the crashed frame and of the frames below it end: what waits for them is refused, what they held is
+    // forgotten. Then the client is told.
+    this._contentMux.disposeRootsOf(browsingContext);
+    this.emit(PageTarget.Events.FrameCrashed, {
+      frameId: helper.browsingContextToFrameId(browsingContext),
+    });
+  }
+
   channel() {
-    return this._channel;
+    return this._contentMux;
   }
 
   id() {
@@ -943,7 +1059,7 @@ export class PageTarget {
   }
 
   async ensurePermissions() {
-    await this._channel.connect('').send('ensurePermissions', {}).catch(e => void e);
+    await this._contentMux.connect('').send('ensurePermissions', {}).catch(e => void e);
   }
 
   async setInitScripts(scripts) {
@@ -953,17 +1069,22 @@ export class PageTarget {
   }
 
   async pushInitScripts() {
-    await this._channel.connect('').send('setInitScripts', [...this._browserContext.crossProcessCookie.initScripts, ...this.crossProcessCookie.initScripts]).catch(e => void e);
+    await this._contentMux.connect('').send('setInitScripts', [...this._browserContext.crossProcessCookie.initScripts, ...this.crossProcessCookie.initScripts]).catch(e => void e);
   }
 
   async addBinding(worldName, name, script) {
     this.crossProcessCookie.bindings.push({ worldName, name, script });
     this._updateCrossProcessCookie();
-    await this._channel.connect('').send('addBinding', { worldName, name, script }).catch(e => void e);
+    await this._contentMux.connect('').send('addBinding', { worldName, name, script }).catch(e => void e);
   }
 
   async applyContextSetting(name, value) {
-    await this._channel.connect('').send('applyContextSetting', { name, value }).catch(e => void e);
+    // The parent's, not the content's: the content processes are not told.
+    if (name === 'javaScriptDisabled') {
+      this.updateJavaScriptDisabled();
+      return;
+    }
+    await this._contentMux.connect('').send('applyContextSetting', { name, value }).catch(e => void e);
   }
 
   /**
@@ -1070,6 +1191,14 @@ export class PageTarget {
     this._browserContext.pages.delete(this);
     this._registry._browserToTarget.delete(this._linkedBrowser);
     this._registry._browserIdToTarget.delete(this._browserId);
+    // The page's roots: what waits for them is refused, and the registry forgets their actors.
+    for (const rootId of this._contentMux.rootIds())
+      this._contentMux.disposeRoot(rootId);
+    const prefix = this._browserId + '/';
+    for (const key of [...this._registry._rootActors.keys()]) {
+      if (key.startsWith(prefix))
+        this._registry._rootActors.delete(key);
+    }
     if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {
       Services.ppmm.sharedData.delete(this._crossProcessCookieKey());
       Services.ppmm.sharedData.flush();
@@ -1090,6 +1219,7 @@ PageTarget.Events = {
   ContentDetached: Symbol('PageTarget.ContentDetached'),
   Crashed: Symbol('PageTarget.Crashed'),
   DialogOpened: Symbol('PageTarget.DialogOpened'),
+  FrameCrashed: Symbol('PageTarget.FrameCrashed'),
   ScreencastFrame: Symbol('PageTarget.ScreencastFrame'),
 };
 

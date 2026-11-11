@@ -79,3 +79,24 @@ TEST(StealthWindowGeometry, OutsideFullscreenNothingChanges)
   ASSERT_TRUE(shift);
   EXPECT_EQ(*shift, nsPoint(-10 * kAuPerDevPx, -20 * kAuPerDevPx));
 }
+
+// An out-of-process iframe that starts before the parent sent its dimensions
+// has a real outer size of 0x0, and inner 0x0 with it. Retail answers 0x0 for
+// outerWidth/outerHeight there; the declared window (1936x1048) only stands in
+// for a real window that has a size. Before this the declaration was put over
+// the 0x0, and a page read outer 1936x1048 around inner 0x0.
+TEST(StealthWindowGeometry, ARealZeroOuterSizeStaysZero)
+{
+  EXPECT_FALSE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(0, 0)));
+}
+
+TEST(StealthWindowGeometry, AnyOtherRealOuterSizeIsStillDeclared)
+{
+  // The states outside the zero one are unchanged: the declaration replaces
+  // the real size, whatever it is (a headless widget, a popup, a main window).
+  EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(1280, 1024)));
+  EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(500, 400)));
+  EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(1, 1)));
+  EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(0, 600)));
+  EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(800, 0)));
+}

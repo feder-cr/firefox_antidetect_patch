@@ -22,8 +22,13 @@ export function initialize(browsingContext, docShell) {
 
   const applySetting = {
     geolocation: (geolocation) => {
+      // The override is a field of the page's TOP browsing context, not synchronized: GetGeolocationServiceOverride
+      // reads Top()'s, and the setter asserts IsTop() (BrowsingContext.cpp). A fragment root that is not the top is
+      // in a process that holds a proxy of the top, the object its Top() answers: the override is set there, in
+      // each process that has a root, from the shared settings at initialize and from the parent's broadcast.
+      const top = browsingContext.top;
       if (geolocation) {
-        browsingContext.setGeolocationServiceOverride({
+        top.setGeolocationServiceOverride({
           coords: {
             latitude: geolocation.latitude,
             longitude: geolocation.longitude,
@@ -36,11 +41,11 @@ export function initialize(browsingContext, docShell) {
           timestamp: Date.now() + 24 * 60 * 60 * 1000,  // Make sure it does not expire for a day.
         });
       } else {
-        browsingContext.setGeolocationServiceOverride();
+        top.setGeolocationServiceOverride();
       }
     },
     bypassCSP: (bypassCSP) => {
-      docShell.bypassCSPEnabled = bypassCSP;
+      data.frameTree.setDocShellSettings({ bypassCSP: !!bypassCSP });
     },
 
     // No `locale` and no `timezoneId` here: the context's language list and
@@ -48,9 +53,8 @@ export function initialize(browsingContext, docShell) {
     // fields, set from the parent (see PageTarget.updateLanguageOverride and
     // updateTimezoneOverride in TargetRegistry.js).
 
-    javaScriptDisabled: (javaScriptDisabled) => {
-      data.frameTree.setJavaScriptDisabled(javaScriptDisabled);
-    },
+    // No `javaScriptDisabled` either: whether scripts run is the BrowsingContext's AllowJavascript, written by
+    // the parent (PageTarget.updateJavaScriptDisabled), the one process that can write it for every document.
   };
 
   const contextCrossProcessCookie = Services.cpmm.sharedData.get(helper.contextCookieKey(browsingContext.originAttributes.userContextId)) || { initScripts: [], bindings: [], settings: {} };
@@ -71,8 +75,11 @@ export function initialize(browsingContext, docShell) {
   // (zoom.stealth.juggler.disallow_bfcache) set an attribute nothing read, so
   // it never did anything, and it is gone with the attribute.
   data.frameTree = new FrameTree(browsingContext);
+  // Every root of a page runs this for its own part. The cookie holds the settings of the context, among them
+  // some that are not applied here (javaScriptDisabled is the parent's): a name this process does not apply is
+  // skipped, not an error that would stop the root from coming up.
   for (const [name, value] of Object.entries(contextCrossProcessCookie.settings)) {
-    if (value !== undefined)
+    if (value !== undefined && Object.hasOwn(applySetting, name))
       applySetting[name](value);
   }
   data.frameTree.applyCrossProcessState(
@@ -84,8 +91,12 @@ export function initialize(browsingContext, docShell) {
   // its channel is attached again, before anything it said meanwhile goes
   // out: the client learns the document before it hears it. The detachment
   // and the request to be bound again are JugglerFrameChild's.
-  data.channel.onReattached(() => data.frameTree.announceRestoredDocument());
-  docShell.fileInputInterceptionEnabled = !!pageCrossProcessCookie.interceptFileChooserDialog;
+  data.channel.onReattached(() => {
+    data.frameTree.announceRestoredDocument();
+    // The workers of the document are said again once it is the current one (a no-op if the restore did).
+    data.pageAgent.leaveCache();
+  });
+  data.frameTree.setDocShellSettings({ interceptFileChooser: !!pageCrossProcessCookie.interceptFileChooserDialog });
 
   data.channel.register('', {
     setInitScripts(scripts) {
@@ -97,11 +108,12 @@ export function initialize(browsingContext, docShell) {
     },
 
     applyContextSetting({name, value}) {
-      applySetting[name](value);
+      if (Object.hasOwn(applySetting, name))
+        applySetting[name](value);
     },
 
     setInterceptFileChooserDialog(enabled) {
-      docShell.fileInputInterceptionEnabled = !!enabled;
+      data.frameTree.setDocShellSettings({ interceptFileChooser: !!enabled });
     },
 
     ensurePermissions() {

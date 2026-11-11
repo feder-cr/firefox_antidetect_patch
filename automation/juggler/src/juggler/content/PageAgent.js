@@ -59,13 +59,21 @@ export class PageAgent {
   constructor(browserChannel, frameTree) {
     this._browserChannel = browserChannel;
     this._browserPage = browserChannel.connect('page');
+    // What the parent needs of this process to keep the navigations of the page: it assigns the ids and says
+    // started, committed, aborted (FrameNavigations). This process says what only it sees.
+    this._framesChannel = browserChannel.connect('frames');
     this._frameTree = frameTree;
     this._runtime = frameTree.runtime();
 
     this._workerData = new Map();
+    // The document of this root is in the back-forward cache: its workers were said ended (enterCache) and are said
+    // again when it is the current document again (leaveCache).
+    this._inCache = false;
     // Elements pointer events are meant for, resolved BEFORE the events are
     // sent and read when the page has handled them (`_armLanding`). [B230]
     this._armedLandings = new Map();
+    // The events of each type that had reached this tree when the landing was armed: a landing counts only if one came after.
+    this._armedSeen = new Map();
     this._lastLandingToken = 0;
 
     const docShell = frameTree.mainFrame().docShell();
@@ -75,11 +83,10 @@ export class PageAgent {
     for (const frame of this._frameTree.frames())
       this._reportFrame(frame);
 
-    // Report created workers.
-    for (const worker of this._frameTree.workers())
-      this._onWorkerCreated(worker);
-
+    // The contexts first, then the workers: the parent takes `runtimeExecutionContextsCleared` as "these agents
+    // start over" and ends the workers it knew of this root, so the ones said after it are the ones that are here.
     this._reportExecutionContexts();
+    this._reportWorkers();
 
     if (this._frameTree.isPageReady()) {
       this._browserPage.emit('pageReady', {});
@@ -110,7 +117,9 @@ export class PageAgent {
       helper.on(this._frameTree, 'frameattached', this._onFrameAttached.bind(this)),
       helper.on(this._frameTree, 'framedetached', this._onFrameDetached.bind(this)),
       helper.on(this._frameTree, 'navigationstarted', this._onNavigationStarted.bind(this)),
-      helper.on(this._frameTree, 'navigationcommitted', this._onNavigationCommitted.bind(this)),
+      helper.on(this._frameTree, 'documentinserted', this._onDocumentInserted.bind(this)),
+      helper.on(this._frameTree, 'navigationcommitted', this._onInitialDocumentCommitted.bind(this)),
+      helper.on(this._frameTree, 'navigationcommitted', () => this._pruneArmedLandings()),
       // A document restored from the back-forward cache is loaded
       // already: its two lifecycle events fired the first time round and
       // will not fire again, so they are reported here or a caller waits
@@ -127,6 +136,14 @@ export class PageAgent {
       helper.on(this._frameTree, 'websocketframereceived', event => this._browserPage.emit('webSocketFrameReceived', event)),
       helper.on(this._frameTree, 'websocketclosed', event => this._browserPage.emit('webSocketClosed', event)),
       helper.on(this._frameTree, 'inputevent', inputEvent => {
+        // The verdict of every armed landing is read in the turn of the ack: FrameTree emits the event
+        // synchronously, and the record of where the event landed is the one this event wrote. The parent
+        // aggregates the acks of every root and reads the verdict of the root that owns the landing.
+        if (inputEvent.jugglerEventId)
+          inputEvent.verdicts = this._landingVerdictsFor();
+        // The ack is heard by every root of the process that handled the event, not by the one it reached: the page
+        // handler tells the root of the landing from the others by the process.
+        inputEvent.pid = Services.appinfo.processID;
         this._browserPage.emit('pageInputEvent', inputEvent);
         if (inputEvent.type === 'dragstart') {
           // After the dragStart event is dispatched and handled by Web,
@@ -167,13 +184,15 @@ export class PageAgent {
       browserChannel.register('page', {
         adoptNode: this._adoptNode.bind(this),
         describeNode: this._describeNode.bind(this),
+        frameName: this._frameName.bind(this),
+        frameBoxTransform: this._frameBoxTransform.bind(this),
+        frameViewport: this._frameViewport.bind(this),
         elementAtom: this._elementAtom.bind(this),
         dispatchKeyEvent: this._dispatchKeyEvent.bind(this),
         dispatchDragEvent: this._dispatchDragEvent.bind(this),
-        awaitInputHandled: this._awaitInputHandled.bind(this),
         armLanding: this._armLanding.bind(this),
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
-        getContentQuads: this._getContentQuads.bind(this),
+        getFrameQuads: this._getFrameQuads.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -192,17 +211,30 @@ export class PageAgent {
   // flight. What the client is told of a page it attaches to.
   _reportFrame(frame) {
     this._onFrameAttached(frame);
-    if (frame.url())
-      this._onNavigationCommitted(frame);
-    if (frame.pendingNavigationId())
-      this._onNavigationStarted(frame);
+    if (frame.url() || frame.pendingNavigationId()) {
+      this._framesChannel.emit('frameKnown', {
+        frameId: frame.id(),
+        url: frame.url(),
+        name: frame.name(),
+        navigationId: frame.lastCommittedNavigationId() || undefined,
+        pendingNavigationId: frame.pendingNavigationId() || undefined,
+      });
+    }
   }
 
   // Every execution context there is, after the client drops the ones it held.
   _reportExecutionContexts() {
     this._browserPage.emit('runtimeExecutionContextsCleared', {});
-    for (const context of this._runtime.executionContexts())
+    for (const context of this._runtime.executionContexts()) {
+      // An iframe starts in the process of its embedder and may leave it for a process of its own: the contexts
+      // it made here stay in the runtime, of a window that is not the frame's any more. The process that holds the
+      // frame now says its contexts; said from here as well they would replace the real ones (the mux takes the
+      // last root to announce a frame's context for the frame's), and the client would evaluate in a stale window.
+      const frameId = context.auxData().frameId;
+      if (frameId !== undefined && !this._frameTree.frame(frameId))
+        continue;
       this._onExecutionContextCreated(context);
+    }
   }
 
   /**
@@ -215,12 +247,45 @@ export class PageAgent {
    * again, so a caller waiting for them would wait for good.
    */
   _onDocumentRestored(mainFrame) {
+    // The parent counts the restores of the page and makes the navigation of this one (started, committed).
+    this._framesChannel.emit('frameDocumentRestored', {
+      frameId: mainFrame.id(),
+      url: mainFrame.url(),
+      name: mainFrame.name(),
+    });
     for (const frame of this._frameTree.frames()) {
       if (frame !== mainFrame)
         this._reportFrame(frame);
     }
     this._reportExecutionContexts();
+    // The contexts first, then the workers (see the constructor).
+    this.leaveCache();
     this._emitAllEvents(mainFrame);
+  }
+
+  // The document of this root goes into the back-forward cache (its `pagehide` with `persisted`, said BEFORE the
+  // channel detaches: what is said after waits for the restore). A worker belongs to the current document, so the
+  // workers of this root end for the client now, not when the document comes back. The worker itself lives on,
+  // frozen, in the cache: its WorkerData stays, and `leaveCache` says it again.
+  enterCache() {
+    if (this._inCache)
+      return;
+    this._inCache = true;
+    // Before the window is frozen: the debuggers that go away from now on are the ones that come back.
+    this._frameTree.enterCache();
+    for (const workerId of this._workerData.keys())
+      this._browserPage.emit('pageWorkerDestroyed', { workerId });
+  }
+
+  // The document of this root is the current one again (the channel is attached again, in main.js). Said once, by
+  // whichever of the restore of the main document and the reattachment comes first: every root has this, the one
+  // that restores a main document and the ones that do not.
+  leaveCache() {
+    if (!this._inCache)
+      return;
+    this._inCache = false;
+    this._frameTree.leaveCache();
+    this._reportWorkers();
   }
 
   _emitAllEvents(frame) {
@@ -247,9 +312,26 @@ export class PageAgent {
     });
   }
 
+  // Every worker there is, said again after `runtimeExecutionContextsCleared` (which makes the parent forget the
+  // workers of this root). A worker already followed keeps its WorkerData; it is only announced anew.
+  _reportWorkers() {
+    for (const worker of this._frameTree.workers()) {
+      if (this._workerData.has(worker.id()))
+        this._announceWorker(worker);
+      else
+        this._onWorkerCreated(worker);
+    }
+  }
+
   _onWorkerCreated(worker) {
     const workerData = new WorkerData(this, this._browserChannel, worker);
     this._workerData.set(worker.id(), workerData);
+    // In the cache the client holds no worker of this root; `leaveCache` says every worker there is.
+    if (!this._inCache)
+      this._announceWorker(worker);
+  }
+
+  _announceWorker(worker) {
     this._browserPage.emit('pageWorkerCreated', {
       workerId: worker.id(),
       frameId: worker.frame().id(),
@@ -263,6 +345,9 @@ export class PageAgent {
       return;
     this._workerData.delete(worker.id());
     workerData.dispose();
+    // Already said ended when the document went into the cache: not twice.
+    if (this._inCache)
+      return;
     this._browserPage.emit('pageWorkerDestroyed', {
       workerId: worker.id(),
     });
@@ -274,7 +359,9 @@ export class PageAgent {
     const props = subject.QueryInterface(Ci.nsIPropertyBag2);
     const hasUrl = props.hasKey('url');
     const createdDocShell = props.getPropertyAsInterface('createdTabDocShell', Ci.nsIDocShell);
-    if (!hasUrl && createdDocShell === this._docShell && this._frameTree.forcePageReady())
+    // The root of a fragment that is not the page's main frame does not handle a window opened for the page.
+    if (!hasUrl && createdDocShell === this._docShell && this._frameTree._isPageMain(this._frameTree.mainFrame()) &&
+        this._frameTree.forcePageReady())
       this._emitAllEvents(this._frameTree.mainFrame());
   }
 
@@ -296,8 +383,8 @@ export class PageAgent {
 
   _findFrameForNode(node) {
     return this._frameTree.frames().find(frame => {
-      const doc = frame.domWindow().document;
-      return node === doc || node.ownerDocument === doc;
+      const doc = frame.domWindow()?.document;
+      return !!doc && (node === doc || node.ownerDocument === doc);
     });
   }
 
@@ -336,22 +423,47 @@ export class PageAgent {
     });
   }
 
+  // The load of a frame began in this process: the parent hears of it here when no request tells it (about:blank,
+  // data:, a navigation the network never sees).
   _onNavigationStarted(frame) {
-    this._browserPage.emit('pageNavigationStarted', {
+    this._framesChannel.emit('frameNavigationStarted', {
       frameId: frame.id(),
       navigationId: frame.pendingNavigationId(),
     });
   }
 
+  // A document appeared in a frame of this process. The parent knows whether a navigation of the frame is in flight.
+  _onDocumentInserted(frame, navigationId) {
+    this._framesChannel.emit('frameDocumentInserted', {
+      frameId: frame.id(),
+      navigationId,
+      url: frame.url(),
+      name: frame.name(),
+    });
+  }
+
+  // The first document of a frame, which no navigation made (the about:blank a tree finds when it is born): the
+  // parent has no navigation for it, so it is said as a frame that is already loaded.
+  _onInitialDocumentCommitted(frame) {
+    if (frame.lastCommittedNavigationId())
+      return;
+    this._framesChannel.emit('frameKnown', {
+      frameId: frame.id(),
+      url: frame.url(),
+      name: frame.name(),
+    });
+  }
+
+  // A navigation of this process ended in an error, or Firefox refused it before any channel reported progress. This
+  // process says so because it is the one that sees the end of the load in order with the documents it inserts: a
+  // navigation whose document was inserted before the load was cut (a page that navigates from its first script) has
+  // committed, and is not aborted.
   _onNavigationAborted(frame, navigationId, errorText) {
-    this._browserPage.emit('pageNavigationAborted', {
+    this._framesChannel.emit('frameNavigationAborted', {
       frameId: frame.id(),
       navigationId,
       errorText,
     });
-    if (!frame._initialNavigationDone && frame !== this._frameTree.mainFrame())
-      this._emitAllEvents(frame);
-    frame._initialNavigationDone = true;
   }
 
   _onSameDocumentNavigation(frame) {
@@ -361,17 +473,16 @@ export class PageAgent {
     });
   }
 
-  _onNavigationCommitted(frame) {
-    this._browserPage.emit('pageNavigationCommitted', {
-      frameId: frame.id(),
-      navigationId: frame.lastCommittedNavigationId() || undefined,
-      url: frame.url(),
-      name: frame.name(),
-    });
-    frame._initialNavigationDone = true;
+  // The root of a fragment that is not the page's main frame (a frame whose parent is in another process) is
+  // announced by the parent (FrameLifecycle) with the right parent: said from here too, the client would see a
+  // second frame with no parent.
+  _isFragmentRootOfAnotherProcess(frame) {
+    return frame === this._frameTree.mainFrame() && !this._frameTree._isPageMain(frame);
   }
 
   _onFrameAttached(frame) {
+    if (this._isFragmentRootOfAnotherProcess(frame))
+      return;
     this._browserPage.emit('pageFrameAttached', {
       frameId: frame.id(),
       parentFrameId: frame.parentFrame() ? frame.parentFrame().id() : undefined,
@@ -379,6 +490,8 @@ export class PageAgent {
   }
 
   _onFrameDetached(frame) {
+    if (this._isFragmentRootOfAnotherProcess(frame))
+      return;
     this._browserPage.emit('pageFrameDetached', {
       frameId: frame.id(),
     });
@@ -404,18 +517,27 @@ export class PageAgent {
     } finally {
       this._workerData.clear();
       this._armedLandings.clear();
+      this._framesChannel.dispose();
       helper.removeListeners(this._eventListeners);
     }
   }
 
   async _adoptNode({frameId, objectId, executionContextId}) {
-    const frame = this._frameTree.frame(frameId);
-    if (!frame)
-      throw new Error('Failed to find frame with id = ' + frameId);
     let unsafeObject;
     if (!objectId) {
-      unsafeObject = frame.domWindow().frameElement;
+      // The <iframe> of a frame, asked in the process of its parent (ContentMux routes it by the
+      // execution context). The child may be in another process: it has no Frame here, only a browsing
+      // context, and the browsing context knows its embedder element.
+      const browsingContext = this._frameTree.browsingContextOf(frameId);
+      if (!browsingContext)
+        throw new Error('Failed to find frame with id = ' + frameId);
+      unsafeObject = browsingContext.embedderElement;
+      if (!unsafeObject)
+        throw new Error('Frame has been detached');
     } else {
+      const frame = this._frameTree.frame(frameId);
+      if (!frame)
+        throw new Error('Failed to find frame with id = ' + frameId);
       unsafeObject = frame.unsafeObject(objectId);
     }
     const context = this._runtime.findExecutionContext(executionContextId);
@@ -652,14 +774,21 @@ export class PageAgent {
     return { zoom: viewer.deviceFullZoomForTest };
   }
 
-  _getContentQuads({objectId, frameId}) {
+  // The quads of a node in the document of the fragment root of THIS process, with the root's frame id and
+  // the size of its viewport: what the parent needs to carry them across a process boundary
+  // (PageHandler['Page.getContentQuads']). For the main root the fragment root is the top document: the
+  // numbers are those of the page. Everything between the node and the root, however many frames of this
+  // process, is one layout call, transforms included.
+  _getFrameQuads({objectId, frameId}) {
     const frame = this._frameTree.frame(frameId);
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const unsafeObject = frame.unsafeObject(objectId);
     if (!unsafeObject.getBoxQuads)
       throw new Error('RemoteObject is not a node');
-    const quads = unsafeObject.getBoxQuads({relativeTo: this._frameTree.mainFrame().domWindow().document, recurseWhenNoFrame: true}).map(quad => {
+    const rootFrame = this._frameTree.mainFrame();
+    const win = rootFrame.domWindow();
+    const quads = unsafeObject.getBoxQuads({relativeTo: win.document}).map(quad => {
       return {
         p1: {x: quad.p1.x, y: quad.p1.y},
         p2: {x: quad.p2.x, y: quad.p2.y},
@@ -667,7 +796,7 @@ export class PageAgent {
         p4: {x: quad.p4.x, y: quad.p4.y},
       };
     });
-    return {quads};
+    return {quads, rootFrameId: rootFrame.id(), viewport: {width: win.innerWidth, height: win.innerHeight}};
   }
 
   _describeNode({objectId, frameId}) {
@@ -675,21 +804,73 @@ export class PageAgent {
     if (!frame)
       throw new Error('Failed to find frame with id = ' + frameId);
     const unsafeObject = frame.unsafeObject(objectId);
-    const browsingContextGroup = frame.docShell().browsingContext.group;
-    const frames = this._frameTree.allFramesInBrowsingContextGroup(browsingContextGroup);
-    let contentFrame;
-    let ownerFrame;
-    for (const frame of frames) {
-      if (unsafeObject.contentWindow && frame.docShell() === unsafeObject.contentWindow.docShell)
-        contentFrame = frame;
-      const document = frame.domWindow().document;
-      if (unsafeObject === document || unsafeObject.ownerDocument === document)
-        ownerFrame = frame;
-    }
+    // The frame of an <iframe>, <object> or <embed> is the frame of the browsing context it holds. The
+    // browsing context is there in every process, also when the content is in another one and has no
+    // docShell here to compare.
+    let contentBrowsingContext = unsafeObject.browsingContext;
+    // An <iframe> nested too deep (nsFrameLoader::DepthTooGreat) has a browsing context that loads nothing, and
+    // `contentWindow` is null for it (nsGenericHTMLFrameElement::GetContentWindowInternal). A frame that is in
+    // another process has a window here, a WindowProxy. No window: no frame for the client to name.
+    if (contentBrowsingContext && (unsafeObject.localName === 'iframe' || unsafeObject.localName === 'frame') && !unsafeObject.contentWindow)
+      contentBrowsingContext = null;
+    const contentFrameId = contentBrowsingContext ? helper.browsingContextToFrameId(contentBrowsingContext) : undefined;
+    // The element is in the document of a frame of this process; a frame whose docShell is not here yet
+    // has no window to ask.
+    const ownerFrame = this._frameTree.frames().find(f => {
+      const document = f.domWindow()?.document;
+      return !!document && (unsafeObject === document || unsafeObject.ownerDocument === document);
+    });
     return {
-      contentFrameId: contentFrame ? contentFrame.id() : undefined,
+      contentFrameId,
       ownerFrameId: ownerFrame ? ownerFrame.id() : undefined,
     };
+  }
+
+  // The name (name, else id) of the <iframe> that holds `childFrameId`. Asked in the process of the
+  // embedder (ContentMux routes it by the parent of the child): the attributes of the element exist
+  // only there, and a child in another process has no Frame in this one.
+  _frameName({childFrameId}) {
+    const browsingContext = this._frameTree.browsingContextOf(childFrameId);
+    if (!browsingContext)
+      throw new Error('Failed to find frame with id = ' + childFrameId);
+    const element = browsingContext.embedderElement;
+    return {name: element ? (element.getAttribute('name') || element.getAttribute('id') || '') : ''};
+  }
+
+  // The content box of the <iframe> that holds `childFrameId`, as the affine map that carries the child's
+  // viewport into the CSS pixels of the fragment root of THIS process: O is where the child's origin lands,
+  // Ex and Ey where its x and y axes go. Asked in the process of the embedder (ContentMux routes it by the
+  // parent of the child); the child may be in another process and have no Frame here. The box comes from
+  // the layout of this process, which is always current: the matrix the compositor sends to a child lags
+  // after a scroll. Everything between the element and the fragment root of this process is one
+  // getBoxQuads call, so only the step across a process boundary is an affine map.
+  _frameBoxTransform({childFrameId}) {
+    const browsingContext = this._frameTree.browsingContextOf(childFrameId);
+    if (!browsingContext)
+      throw new Error('Failed to find frame with id = ' + childFrameId);
+    const embedder = browsingContext.embedderElement;
+    if (!embedder)
+      throw new Error('Frame has been detached');
+    const rootFrame = this._frameTree.mainFrame();
+    const [quad] = embedder.getBoxQuads({box: 'content', relativeTo: rootFrame.domWindow().document});
+    // An <iframe> with no box (display: none) has no quad: the answer is empty, not an error.
+    if (!quad)
+      return {empty: true, parentRootFrameId: rootFrame.id()};
+    return {
+      O: {x: quad.p1.x, y: quad.p1.y},
+      Ex: {x: quad.p2.x - quad.p1.x, y: quad.p2.y - quad.p1.y},
+      Ey: {x: quad.p4.x - quad.p1.x, y: quad.p4.y - quad.p1.y},
+      parentRootFrameId: rootFrame.id(),
+    };
+  }
+
+  // The size of the viewport of a frame of this process, in its CSS pixels.
+  _frameViewport({frameId}) {
+    const frame = this._frameTree.frame(frameId);
+    if (!frame)
+      throw new Error('Failed to find frame with id = ' + frameId);
+    const win = frame.domWindow();
+    return {width: win.innerWidth, height: win.innerHeight};
   }
 
   async _scrollIntoViewIfNeeded({objectId, frameId, rect}) {
@@ -736,26 +917,6 @@ export class PageAgent {
       top: (target.top + target.bottom) / 2 - vh / 2,
       behavior: 'instant',
     });
-  }
-
-  _getNodeBoundingBox(unsafeObject) {
-    if (!unsafeObject.getBoxQuads)
-      throw new Error('RemoteObject is not a node');
-    const quads = unsafeObject.getBoxQuads({relativeTo: this._frameTree.mainFrame().domWindow().document});
-    if (!quads.length)
-      return;
-    let x1 = Infinity;
-    let y1 = Infinity;
-    let x2 = -Infinity;
-    let y2 = -Infinity;
-    for (const quad of quads) {
-      const boundingBox = quad.getBounds();
-      x1 = Math.min(boundingBox.x, x1);
-      y1 = Math.min(boundingBox.y, y1);
-      x2 = Math.max(boundingBox.x + boundingBox.width, x2);
-      y2 = Math.max(boundingBox.y + boundingBox.height, y2);
-    }
-    return {x: x1, y: y1, width: x2 - x1, height: y2 - y1};
   }
 
   async _dispatchKeyEvent({type, keyCode, code, key, repeat, location, text, latency}) {
@@ -858,28 +1019,61 @@ export class PageAgent {
     const node = frame.unsafeObject(objectId);
     if (!node)
       throw new Error('Object not found for id = ' + objectId);
+    this._pruneArmedLandings();
     const token = ++this._lastLandingToken;
     this._armedLandings.set(token, node);
-    return { token };
+    const seenOf = type => this._frameTree.pointerLanding(type)?.seen || 0;
+    this._armedSeen.set(token, {mousemove: seenOf('mousemove'), mousedown: seenOf('mousedown'), mouseup: seenOf('mouseup')});
+    // An armed landing that no ack ever reads (the event went to another document) does not stay for good.
+    if (this._armedLandings.size > 8) {
+      const oldest = this._armedLandings.keys().next().value;
+      this._armedLandings.delete(oldest);
+      this._armedSeen.delete(oldest);
+    }
+    // The process of this root: the acks of an event come from all the roots of the process that handled it.
+    return { token, pid: Services.appinfo.processID };
   }
 
   /**
-   * Resolves once the renderer has handled mouse event `eventId`; with a
-   * `landingToken`, also says whether the event of `type` LANDED on the
-   * element armed under it. The parent awaits this before
-   * `Page.dispatchMouseEvent` answers, and bounds it there, where a dialog
-   * that suspends this process can also end the wait. [B230]
-   *
-   * ⛔ THE VERDICT IS READ IN THE SAME TURN AS THE ACK. The record of where the
-   * event landed is written by `FrameTree` while the page handles it; reading
-   * it here, before anything else runs in this process, is what makes it
-   * about THIS event.
+   * The armed nodes of a document that is not the current one of its window any more are let go: a navigation replaced
+   * the document, and the node would keep the whole old document alive until the page closes.
    */
-  async _awaitInputHandled({eventId, type, landingToken}) {
-    const node = landingToken ? this._armedLandings.get(landingToken) : null;
-    this._armedLandings.delete(landingToken);
-    await this._frameTree.whenEventHit(eventId);
-    return node ? { landing: this._landingOn(node, type) } : {};
+  _pruneArmedLandings() {
+    for (const [token, node] of [...this._armedLandings]) {
+      let stale = true;
+      try {
+        // A document that left its window (a navigation replaced it) has no `defaultView`. (Not compared with
+        // `window.document`: the node and the window reach us through different wrappers, and `!==` of two views of one
+        // document is true.) A document in the back-forward cache keeps its window, and its nodes.
+        stale = !node.ownerDocument || !node.ownerDocument.defaultView;
+      } catch (e) {
+        // a dead object: stale
+      }
+      if (stale)
+        this._armedLandings.delete(token);
+    }
+  }
+
+  /**
+   * One verdict per armed landing and per type FrameTree records (mousemove, mousedown, mouseup), read in
+   * the process that heard the ack. The key is this root's token; the parent composes it with the root.
+   */
+  _landingVerdictsFor() {
+    this._pruneArmedLandings();
+    const verdicts = {};
+    for (const token of [...this._armedSeen.keys()]) {
+      if (!this._armedLandings.has(token))
+        this._armedSeen.delete(token);
+    }
+    for (const [rootToken, node] of this._armedLandings) {
+      const since = this._armedSeen.get(rootToken) || {};
+      verdicts[rootToken] = {
+        mousemove: this._landingOn(node, 'mousemove', since.mousemove),
+        mousedown: this._landingOn(node, 'mousedown', since.mousedown),
+        mouseup: this._landingOn(node, 'mouseup', since.mouseup),
+      };
+    }
+    return verdicts;
   }
 
   /**
@@ -894,7 +1088,7 @@ export class PageAgent {
    * which is also how the DOM `click` composes from `mousedown` and `mouseup`.
    * [B217]
    */
-  _landingOn(node, type) {
+  _landingOn(node, type, since = 0) {
     const describe = (t) => {
       if (!t)
         return 'nothing';
@@ -909,6 +1103,11 @@ export class PageAgent {
     const landing = this._frameTree.pointerLanding(type);
     if (!landing)
       return { type, landed: false, seen: 0, on: 'no ' + type + ' has reached the page' };
+    // An ack is heard by every root of the process, so this tree may be answering an event that went to a root next to
+    // it: the last pointer event of the type it holds is then an older one (the click before), and it is not the event's.
+    if (landing.seen <= since)
+      return { type, landed: false, seen: landing.seen,
+               on: 'no ' + type + ' has reached this document since the landing was armed' };
     if (landing.document !== node.ownerDocument)
       return { type, landed: false, seen: landing.seen,
                on: 'a previous document; none has reached this one' };

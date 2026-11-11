@@ -69,11 +69,13 @@ function setup() {
                       currentURI: { spec: 'http://x/old' }, QueryInterface() { return this; } };
   const childShell = { destroyed: false, browsingContext: { isInBFCache: false },
                        isBeingDestroyed() { return this.destroyed; } };
-  const main = { _pendingNavigationId: 'nav-1', _children: new Set() };
-  const child = { _pendingNavigationId: 'nav-2', _children: new Set() };
+  // The page's main frame has no parent browsing context; a child has one (FrameTree._isPageMain).
+  const main = { _pendingNavigationId: 'nav-1', _children: new Set(), _browsingContext: { parent: null } };
+  const child = { _pendingNavigationId: 'nav-2', _children: new Set(), _browsingContext: { parent: {} } };
   const emitted = [];
   const t = {
     _mainFrame: main,
+    _isPageMain: FrameTree.prototype._isPageMain,
     frameForDocShell: shell => shell === mainShell ? main : shell === childShell ? child : null,
     emit: (event, frame, ...args) => emitted.push([event, frame === main ? 'main' : 'child', ...args]),
     forcePageReady: () => emitted.push(['pageReady']),
@@ -109,7 +111,8 @@ test('the document.write after the abort is not taken for the navigation\'s comm
   runQueue();
   assert.equal(main._pendingNavigationId, null);
   assert.equal(emitted.filter(e => e[0] === COMMITTED).length, 0);
-  assert.deepEqual(emitted, [[ABORTED, 'main', 'nav-1', 'NS_BINDING_ABORTED']]);
+  // The document is still said to the parent, with no navigation: the one in flight was aborted.
+  assert.deepEqual(emitted, [['documentinserted', 'main', undefined], [ABORTED, 'main', 'nav-1', 'NS_BINDING_ABORTED']]);
 });
 
 test('the process swap\'s abort, the old document entering the BFCache in the same task, is not reported', () => {
@@ -134,8 +137,30 @@ test('a network failure of the main frame is reported at once, and readies the p
   assert.deepEqual(emitted, [[ABORTED, 'main', 'nav-1', 'NS_ERROR_CONNECTION_REFUSED'], ['pageReady']]);
 });
 
-test('a child frame\'s abort is reported at once', () => {
+test('a child frame\'s real abort (the iframe\'s window.stop) is reported, once the task has ended', () => {
   const { t, childShell, emitted } = setup();
   stop(t, childShell, Cr.NS_BINDING_ABORTED);
+  runQueue();
   assert.deepEqual(emitted, [[ABORTED, 'child', 'nav-2', 'NS_BINDING_ABORTED']]);
+});
+
+test('the abort an iframe\'s old process makes when the iframe goes to another process is not the navigation\'s', () => {
+  // Measured on the engine (strategy 1): an iframe that navigates to another site gets, from the process it leaves,
+  // STATE_STOP with NS_BINDING_ABORTED while its docShell is being destroyed. Reported, the parent ended the
+  // navigation and the document that committed in the new process found none in flight: the client saw an abort, never
+  // the commit, and page.frames kept the old url.
+  const { t, childShell, child, emitted } = setup();
+  childShell.destroyed = true;
+  stop(t, childShell, Cr.NS_BINDING_ABORTED);
+  runQueue();
+  assert.deepEqual(emitted, [], 'nothing is reported for a frame whose docShell the swap is destroying');
+  assert.equal(child._pendingNavigationId, null, 'and nothing of this process is in flight');
+});
+
+test('the abort of an iframe that is in the cache by the end of the task is not reported either', () => {
+  const { t, childShell, emitted } = setup();
+  stop(t, childShell, Cr.NS_BINDING_ABORTED);
+  childShell.browsingContext.isInBFCache = true;
+  runQueue();
+  assert.deepEqual(emitted, []);
 });
