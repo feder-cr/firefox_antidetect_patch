@@ -8,6 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -20,12 +21,19 @@ function load(calls) {
   const code = source.replace(/^export function /gm, 'function ') +
       '\nthis.newProxyInfoFor = newProxyInfoFor;';
   const context = {
-    Math, TextEncoder, btoa, String,
-    Cc: { '@mozilla.org/network/protocol-proxy-service;1': { getService: () => ({
-      newProxyInfoWithAuth: (...args) => { calls.push(args); return { args }; },
-    }) } },
+    Math, TextEncoder, btoa, String, Array,
+    Cc: {
+      '@mozilla.org/network/protocol-proxy-service;1': { getService: () => ({
+        newProxyInfoWithAuth: (...args) => { calls.push(args); return { args }; },
+      }) },
+      // nsICryptoHash, enough for the isolation key of an http proxy.
+      '@mozilla.org/security/hash;1': { createInstance: () => {
+        const h = crypto.createHash('sha256');
+        return { init() {}, update(b, n) { h.update(Buffer.from(b.slice(0, n))); }, finish() { return h.digest('latin1'); } };
+      } },
+    },
     // The value is the one of nsIProxyInfo.idl: 1 << 0.
-    Ci: { nsIProxyInfo: { TRANSPARENT_PROXY_RESOLVES_HOST: 1 } },
+    Ci: { nsIProxyInfo: { TRANSPARENT_PROXY_RESOLVES_HOST: 1 }, nsICryptoHash: { SHA256: 3 } },
   };
   vm.createContext(context);
   vm.runInContext(code, context);

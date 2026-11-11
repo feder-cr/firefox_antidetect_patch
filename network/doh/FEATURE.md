@@ -6,7 +6,8 @@ Test: TestStealthTRRContext.* (netwerk/test/gtest/TestStealthTRRContext.cpp, in 
 tests of juggler/tests: dns_has_no_gate_of_ours, doh_never_goes_direct_when_its_proxy_is_lost,
 doh_request_carries_the_context_of_its_lookup, proxy_info_leaves_name_resolution_to_the_browser,
 trr_connection_info_is_not_cached_in_this_build, etc_hosts_exclusion_is_off, http_proxy_credentials_are_sent_preemptively_for_doh,
-parental_controls_are_declared_off_where_the_os_is_read, no_channel_leaves_before_the_session_proxy_is_decided,
+parental_controls_are_declared_off_where_the_os_is_read, doh_tunnel_is_not_shared_between_credentials,
+doh_request_on_the_main_thread_fails_closed, no_channel_leaves_before_the_session_proxy_is_decided,
 no_channel_leaves_before_the_network_observer_exists, no_ping_leaves_before_the_session_proxy_is_decided
 
 ## What it does
@@ -21,6 +22,11 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
   answers it, as upstream. The cached connection info of the default server is not used for another context.
 - Fail closed. A DoH request whose proxy lookup fails or cannot start ends with an error (`StealthTRRProxyFailure`) instead of
   failing over to DIRECT, which would send the name from the machine's own address. A cancellation keeps its own code.
+- Fail closed on the main thread too. With no socket process, or after a proxy 401/407, the DoH request is sent from the main thread by a
+  real `nsHttpChannel` (DNSUtils::CreateChannelHelper), whose own `OnProxyAvailable` would fail over to DIRECT. `StealthFailClosedOnProxyFailure`
+  is true for a TRR channel, not cancelled, whose proxy lookup failed: it ends with `StealthTRRProxyFailure`. Other channels keep upstream's behaviour.
+- The tunnel is isolated by credentials. The connection info of a DoH request carries the origin attributes of the context, so the tunnel
+  (CONNECT through the proxy, which is authenticated) of one browser context is never reused by another context with other credentials.
 - Parental controls are declared off, where the OS is read. The constructor of every `nsIParentalControlsService` implementation
   (Windows, Cocoa, Android, Default) takes the declared value (`StealthParentalControlsDeclared`, a header of toolkit/components/
   parentalcontrols) and returns before its first OS call. Every reader (`nsHttpHandler`, the DoH heuristics, downloads,
@@ -40,7 +46,8 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
 ## Hooks in Mozilla files
 
 - `netwerk/dns/TRR.cpp`: the context goes to the channel's load info; the cached connection info is skipped for a non-default context.
-- `netwerk/protocol/http/TRRServiceChannel.cpp`: the proxy lookup is made for the load info's context and fails closed.
+- `netwerk/protocol/http/TRRServiceChannel.cpp`: the proxy lookup is made for the load info's context and fails closed; the connection info carries the context.
+- `netwerk/protocol/http/nsHttpChannel.cpp`: the same fail-closed rule for a DoH request that runs as an nsHttpChannel (two hooks).
 - `toolkit/components/parentalcontrols/nsParentalControlsService{Win,Cocoa,Android,Default}.{cpp,mm}`: the declared value before the first OS call.
 - Hooks of this feature in files another folder owns (a file has one owner): `netwerk/base/TRRLoadInfo.cpp`
   (automation/navigation), `netwerk/ipc/ProxyConfigLookup*.{h,cpp}`, `PSocketProcess.ipdl`, `SocketProcessParent.{h,cpp}`,

@@ -70,4 +70,10 @@ nsresult StealthTRRProxyFailure(nsresult aProxyStatus) {
   return NS_ERROR_PROXY_CONNECTION_REFUSED;
 }
 
+bool StealthFailClosedOnProxyFailure(nsresult aProxyStatus,
+                                     bool aIsTRRServiceChannel,
+                                     bool aCanceled) {
+  return NS_FAILED(aProxyStatus) && aIsTRRServiceChannel && !aCanceled;
+}
+
 }  // namespace mozilla::net

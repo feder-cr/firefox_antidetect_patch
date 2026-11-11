@@ -31,6 +31,17 @@ export const EarlyProxyHold = {
   _filter: null,
   _pending: [],
   _delegate: null,
+  _waitingSaid: false,
+
+  // One line, the first time a channel is held, so a driver that never sends
+  // Browser.setBrowserProxy or Browser.setNoBrowserProxy does not hang without
+  // a word. No URL, no credential, no line per channel, no timeout.
+  noteHeld() {
+    if (this._waitingSaid)
+      return;
+    this._waitingSaid = true;
+    dump('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
+  },
 
   // The (channel, callback) pairs waiting for the decision.
   get pending() {
@@ -46,8 +57,10 @@ export const EarlyProxyHold = {
       applyFilter: (channel, defaultProxyInfo, proxyFilter) => {
         if (this._delegate)
           this._delegate(channel, defaultProxyInfo, proxyFilter);
-        else
+        else {
           this._pending.push({ channel, defaultProxyInfo, proxyFilter });
+          this.noteHeld();
+        }
       },
     };
     const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();

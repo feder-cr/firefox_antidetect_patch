@@ -6930,18 +6930,18 @@
   "category": "other",
   "feature": "doh-trr-context",
   "prefs": [],
-  "added": 18,
-  "removed": 2,
-  "hunks": 5,
-  "inline_logic_lines": 8,
+  "added": 30,
+  "removed": 4,
+  "hunks": 9,
+  "inline_logic_lines": 10,
   "hookable": "movable",
-  "anchor": "include of StealthTRRContext.h; MaybeResolveProxyAndBeginConnect; ResolveProxy; OnProxyAvailable",
+  "anchor": "include of StealthTRRContext.h; MaybeResolveProxyAndBeginConnect; ResolveProxy; OnProxyAvailable; BeginConnect (the connection info)",
   "evidence": [
    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
    "+  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)",
    "+      NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "The proxy lookup of a DoH request is made for the context of its load info, and fails closed: a lookup that fails or cannot start ends the request (StealthTRRProxyFailure) instead of going DIRECT, which would send the name from the host's own address.",
+  "notes": "The proxy lookup of a DoH request is made for the context of its load info, and fails closed: a lookup that fails or cannot start ends the request (StealthTRRProxyFailure) instead of going DIRECT, which would send the name from the host's own address. The connection info of the request carries the context's origin attributes, so a tunnel of one browser context (its proxy credentials) is never reused by another.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -7206,6 +7206,28 @@
    "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
   ],
   "notes": "The constructor takes the declared value (off), as the other implementations.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/nsHttpChannel.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 19,
+  "removed": 1,
+  "hunks": 5,
+  "inline_logic_lines": 12,
+  "hookable": "movable",
+  "anchor": "include of StealthTRRContext.h; nsHttpChannel::MaybeResolveProxyAndBeginConnect; nsHttpChannel::OnProxyAvailable",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)",
+   "+    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "A DoH request that runs as an nsHttpChannel (the main thread) fails closed like the TRRServiceChannel: when its proxy lookup fails or cannot start, the channel ends with StealthTRRProxyFailure instead of failing over to DIRECT (StealthFailClosedOnProxyFailure decides: a TRR channel, not cancelled, with a failed status). Other channels are untouched.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."

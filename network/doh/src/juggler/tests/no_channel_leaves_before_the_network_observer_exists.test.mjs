@@ -317,3 +317,58 @@ test('source: the hold file is ours, listed in moz.build, and asks only for what
   assert.deepEqual(services, ['@mozilla.org/network/protocol-proxy-service;1']);
   assert.doesNotMatch(hold, /TargetRegistry|importESModule/);
 });
+
+// A driver that sends neither Browser.setBrowserProxy nor
+// Browser.setNoBrowserProxy would hang without a word: one line says why.
+const WAITING = 'juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n';
+const waitingLines = b => b.dumped.filter(text => /waiting for Browser\.setBrowserProxy/.test(text));
+
+test('the first held channel writes one line, however many are held', async () => {
+  const b = browser();
+  await b.start();
+  assert.deepEqual(waitingLines(b), [], 'nothing before a channel is held');
+  for (let i = 0; i < 5; i++)
+    b.ask('early' + i);
+  assert.deepEqual(waitingLines(b), [WAITING]);
+  await b.finalUi();
+  for (let i = 0; i < 5; i++)
+    b.ask('late' + i);
+  assert.deepEqual(waitingLines(b), [WAITING], 'still one line after the observer took over');
+  assert.ok(!b.dumped.join('').includes('.example'), 'no URL or host is printed');
+});
+
+test('a hold that the observer registered itself writes the line once too', async () => {
+  const b = browser({ failFirstRegistration: true });
+  await b.start();
+  await b.finalUi();
+  for (let i = 0; i < 3; i++)
+    b.ask('late' + i);
+  assert.deepEqual(waitingLines(b), [WAITING]);
+});
+
+test('no line when the decision already exists', async () => {
+  const b = browser();
+  await b.start();
+  await b.finalUi();
+  b.registry().setNoBrowserProxy();
+  for (let i = 0; i < 3; i++)
+    b.ask('late' + i);
+  assert.deepEqual(waitingLines(b), []);
+});
+
+test('a decision that comes before any channel is held writes no line, and a proxy neither', async () => {
+  const b = browser();
+  await b.start();
+  await b.finalUi();
+  b.registry().setBrowserProxy({ type: 'http', host: 'gw', port: 3128, username: 'u', password: 'secret', bypass: [] });
+  b.ask('late');
+  assert.deepEqual(waitingLines(b), []);
+  assert.ok(!b.dumped.join('').includes('secret'));
+});
+
+test('source: the line is written by the hold and, for the fallback, by the observer, with the same words', () => {
+  const hold = read('EarlyProxyHold.js');
+  const observer = read('NetworkObserver.js');
+  const line = /'(juggler: waiting for Browser\.setBrowserProxy or Browser\.setNoBrowserProxy before the first proxied channel can start)\\n'/;
+  assert.equal(hold.match(line)[1], observer.match(line)[1]);
+});

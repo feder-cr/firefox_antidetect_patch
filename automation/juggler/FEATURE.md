@@ -18,7 +18,7 @@ network/doh) and connects to the IP.
 The proxy filter starts pending: channels asked before the session's proxy is decided (`Browser.setBrowserProxy` or
 `Browser.setNoBrowserProxy`) wait unanswered, `EarlyProxyHold.js` holds them from command-line-startup, and `TargetRegistry.roadOfSession`
 tells the parent whether the road is decided (the pingsender at exit waits for it). An http/https proxy with credentials carries a
-preemptive Basic `Proxy-Authorization` for the DoH CONNECT. Why and tests: network/doh.
+preemptive Basic `Proxy-Authorization` for the DoH CONNECT, and an isolation key made from its credentials, so the tunnel of one context is not shared with another. Why and tests: network/doh.
 
 ## Hooks in Mozilla files
 

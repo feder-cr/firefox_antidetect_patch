@@ -31,7 +31,10 @@ test('the lookup message carries the origin attributes', () => {
 });
 
 test('every layer of the lookup passes them on', () => {
-  for (const [file, minimum] of [
+  // [file, minimum, pattern]: SocketProcessParent.cpp has older lines about
+  // aOriginAttributes (the DNS resolve calls), so its own lines are told apart
+  // by the optional type our change adds.
+  for (const [file, minimum, pattern] of [
     ['netwerk/ipc/ProxyConfigLookup.h', 3],
     ['netwerk/ipc/ProxyConfigLookup.cpp', 6],
     ['netwerk/ipc/ProxyConfigLookupChild.h', 1],
@@ -39,9 +42,9 @@ test('every layer of the lookup passes them on', () => {
     ['netwerk/ipc/ProxyConfigLookupParent.h', 2],
     ['netwerk/ipc/ProxyConfigLookupParent.cpp', 3],
     ['netwerk/ipc/SocketProcessParent.h', 2],
-    ['netwerk/ipc/SocketProcessParent.cpp', 4],
+    ['netwerk/ipc/SocketProcessParent.cpp', 2, /Maybe<OriginAttributes>/],
   ]) {
-    const lines = read(file).split(/\r?\n/).filter(l => /aOriginAttributes|mOriginAttributes/.test(l));
+    const lines = read(file).split(/\r?\n/).filter(l => (pattern || /aOriginAttributes|mOriginAttributes/).test(l));
     assert.ok(lines.length >= minimum, `${file}: ${lines.length} lines carry the attributes`);
   }
 });

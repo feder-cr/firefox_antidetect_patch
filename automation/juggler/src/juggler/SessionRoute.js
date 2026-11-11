@@ -101,6 +101,24 @@ function proxyAuthorizationHeaderFor(proxy) {
   return 'Basic ' + btoa(String.fromCharCode(...bytes));
 }
 
+// The connection isolation key of an http/https proxy with credentials: the
+// SHA-256 of user NUL pass, in hex. The connection hash key of a tunnel has the
+// proxy's host and port but not the Proxy-Authorization header, so without this
+// two contexts behind one endpoint with two credentials would share a tunnel
+// (and one's DoH names would leave under the other's credentials). The digest
+// only: the credentials never reach the key, a log or a return value.
+function connectionIsolationKeyFor(proxy) {
+  if (PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type))
+    return '';
+  if (!proxy.username && !proxy.password)
+    return '';
+  const bytes = new TextEncoder().encode((proxy.username || '') + '\0' + (proxy.password || ''));
+  const hasher = Cc['@mozilla.org/security/hash;1'].createInstance(Ci.nsICryptoHash);
+  hasher.init(Ci.nsICryptoHash.SHA256);
+  hasher.update(bytes, bytes.length);
+  return Array.from(hasher.finish(false), c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+
 function buildProxyInfo(proxy) {
   const carriesOwnCredentials = PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type);
   const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
@@ -111,7 +129,7 @@ function buildProxyInfo(proxy) {
       carriesOwnCredentials ? (proxy.username || '') : '',
       carriesOwnCredentials ? (proxy.password || '') : '',
       proxyAuthorizationHeaderFor(proxy), /* aProxyAuthorizationHeader */
-      '', /* aConnectionIsolationKey */
+      connectionIsolationKeyFor(proxy), /* aConnectionIsolationKey */
       0, /* aFlags: the browser resolves names itself (DoH) and connects to the IP */
       UINT32_MAX, /* aFailoverTimeout */
       null, /* failover proxy */

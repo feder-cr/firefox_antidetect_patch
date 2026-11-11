@@ -695,12 +695,15 @@ export class NetworkObserver {
     // channels asked before wait here, unanswered, so nothing leaves the host
     // before the client said how it must leave. DoH lookups come through the
     // same filter (the stand-in channel of ProxyConfigLookup) and wait too.
+    this._earlyHold = earlyHold;
+    this._waitingSaid = false;
     this._pendingProxyFilters = earlyHold ? earlyHold.pending : [];
     this._channelProxyFilter = {
       QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolProxyChannelFilter]),
       applyFilter: (channel, defaultProxyInfo, proxyFilter) => {
         if (!this._targetRegistry.browserProxyDecided) {
           this._pendingProxyFilters.push({ channel, defaultProxyInfo, proxyFilter });
+          this._noteHeld();
           return;
         }
         this._answerProxyFilter(channel, defaultProxyInfo, proxyFilter);
@@ -726,6 +729,20 @@ export class NetworkObserver {
       // synthesized response reaches http-on-examine-response.
       helper.addObserver(this._onServiceWorkerResponse.bind(this), 'service-worker-synthesized-response'),
     ];
+  }
+
+  // The one line that says why channels wait (see EarlyProxyHold.noteHeld, which
+  // writes it when the hold has the channels; this is the same line for an
+  // observer that registered its own filter).
+  _noteHeld() {
+    if (this._earlyHold) {
+      this._earlyHold.noteHeld();
+      return;
+    }
+    if (this._waitingSaid)
+      return;
+    this._waitingSaid = true;
+    dump('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
   }
 
   // The answer of the filter for one channel, once the session's road is decided.

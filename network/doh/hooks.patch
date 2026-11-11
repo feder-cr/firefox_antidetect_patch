@@ -37,7 +37,7 @@ index a960b375a00d55f8dc4baee1049b4af6859ff360..1f679729efb265d63ebdeaa62e73f367
          TRRService::Get()->TRRConnectionInfo();
      if (trrConnInfo) {
 diff --git a/netwerk/protocol/http/TRRServiceChannel.cpp b/netwerk/protocol/http/TRRServiceChannel.cpp
-index 376ae9120226120b8a0f7c2335b9207e2b985a97..167bc15c81263bdba78515b19f4a10a42d845c8f 100644
+index 376ae9120226120b8a0f7c2335b9207e2b985a97..da2639ddd9cd0878d4dcabc4b8da695e02b0ad49 100644
 --- a/netwerk/protocol/http/TRRServiceChannel.cpp
 +++ b/netwerk/protocol/http/TRRServiceChannel.cpp
 @@ -15,6 +15,7 @@
@@ -91,6 +91,92 @@ index 376ae9120226120b8a0f7c2335b9207e2b985a97..167bc15c81263bdba78515b19f4a10a4
    if (NS_SUCCEEDED(status)) mProxyInfo = pi;
  
    if (!gHttpHandler->Active()) {
+@@ -405,8 +421,17 @@ nsresult TRRServiceChannel::BeginConnect() {
+   gHttpHandler->MaybeAddAltSvcForTesting(mURI, mUsername, mPrivateBrowsing,
+                                          mCallbacks, OriginAttributes());
+ 
++  // STEALTH-HOOK(network/doh): the connection info carries the context of the
++  // lookup, so a tunnel of one browser context is never reused by another.
++  Maybe<OriginAttributes> stealthContext =
++      StealthTRRContextOfLoadInfo(mLoadInfo);  // STEALTH-HOOK(network/doh)
++  OriginAttributes stealthAttrs;  // STEALTH-HOOK(network/doh)
++  if (stealthContext.isSome()) {  // STEALTH-HOOK(network/doh)
++    stealthAttrs = *stealthContext;  // STEALTH-HOOK(network/doh)
++  }  // STEALTH-HOOK(network/doh)
++
+   RefPtr<nsHttpConnectionInfo> connInfo = new nsHttpConnectionInfo(
+-      host, port, ""_ns, mUsername, proxyInfo, OriginAttributes(), isHttps);
++      host, port, ""_ns, mUsername, proxyInfo, stealthAttrs, isHttps);  // STEALTH-HOOK(network/doh)
+   // TODO: Bug 1622778 for using AltService in socket process.
+   StoreAllowAltSvc(XRE_IsParentProcess() && LoadAllowAltSvc());
+   bool http2Allowed = !gHttpHandler->IsHttp2Excluded(connInfo);
+@@ -445,8 +470,9 @@ nsresult TRRServiceChannel::BeginConnect() {
+ 
+     LOG(("TRRServiceChannel %p Using connection info from altsvc mapping",
+          this));
++    // STEALTH-HOOK(network/doh)
+     mapping->GetConnectionInfo(getter_AddRefs(mConnectionInfo), proxyInfo,
+-                               OriginAttributes());
++                               stealthAttrs);
+     glean::http::transaction_use_altsvc
+         .EnumGet(glean::http::TransactionUseAltsvcLabel::eTrue)
+         .Add();
+diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
+index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..4ea20197926ea37ae5076387c48615b9b6989f5d 100644
+--- a/netwerk/protocol/http/nsHttpChannel.cpp
++++ b/netwerk/protocol/http/nsHttpChannel.cpp
+@@ -71,6 +71,7 @@
+ #include "mozilla/net/OpaqueResponseUtils.h"
+ #include "mozilla/net/SFVService.h"
+ #include "mozilla/net/SocketProcessParent.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "mozilla/net/TRRService.h"
+ #include "mozilla/net/URLPatternGlue.h"
+ #include "mozilla/net/urlpattern_glue.h"
+@@ -8048,6 +8049,7 @@ void nsHttpChannel::AsyncOpenFinal(TimeStamp aTimeStamp) {
+ 
+ void nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
+   nsresult rv;
++  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)
+ 
+   // The common case for HTTP channels is to begin proxy resolution and return
+   // at this point. The only time we know mProxyInfo already is if we're
+@@ -8062,11 +8064,19 @@ void nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
+     if (pps2 && pps2->IsEffectivelyDirect()) {
+       mozilla::glean::networking::proxy_fast_path_used.Add(1);
+       MaybeStartDNSPrefetch();
+-    } else if (NS_SUCCEEDED(ResolveProxy())) {
++    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)
+       return;
+     }
+   }
+ 
++  // STEALTH-HOOK(network/doh): a DoH request never fails over to DIRECT.
++  if (StealthFailClosedOnProxyFailure(proxyRv, LoadIsTRRServiceChannel(),
++                                      mCanceled)) {
++    CloseCacheEntry(false);
++    (void)AsyncAbort(StealthTRRProxyFailure(proxyRv));
++    return;
++  }
++
+   if (!gHttpHandler->Active()) {
+     LOG(
+         ("nsHttpChannel::MaybeResolveProxyAndBeginConnect [this=%p] "
+@@ -8836,6 +8846,14 @@ nsHttpChannel::OnProxyAvailable(nsICancelable* request, nsIChannel* channel,
+   // request was canceled.  We just failover to DIRECT when proxy resolution
+   // fails (failure can mean that the PAC URL could not be loaded).
+ 
++  // STEALTH-HOOK(network/doh): a DoH request never fails over to DIRECT.
++  if (StealthFailClosedOnProxyFailure(status, LoadIsTRRServiceChannel(),
++                                      mCanceled)) {
++    CloseCacheEntry(false);
++    (void)AsyncAbort(StealthTRRProxyFailure(status));
++    return NS_OK;
++  }
++
+   if (NS_SUCCEEDED(status)) {
+     mProxyInfo = pi;
+ 
 diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp
 index f8c239dfc25946f434ecd59c105762ac6af00c0e..04a6172791fdfb633e702d60e4748244f4cd64ba 100644
 --- a/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp

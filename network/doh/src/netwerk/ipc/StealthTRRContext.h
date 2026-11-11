@@ -59,6 +59,19 @@ nsresult StealthApplyTRRContextToChannel(
  */
 nsresult StealthTRRProxyFailure(nsresult aProxyStatus);
 
+/**
+ * The same rule for the nsHttpChannel of a DoH request. DNS runs in the parent
+ * when there is no socket process, and after a proxy 401/407 the request is
+ * sent from the main thread, where DNSUtils::CreateChannelHelper makes a real
+ * nsHttpChannel whose own OnProxyAvailable fails over to DIRECT. True when the
+ * channel is a TRR service channel (TRR.cpp marks it) whose proxy lookup failed
+ * and that was not cancelled: it must end with StealthTRRProxyFailure. Every
+ * other channel keeps upstream's behaviour.
+ */
+bool StealthFailClosedOnProxyFailure(nsresult aProxyStatus,
+                                     bool aIsTRRServiceChannel,
+                                     bool aCanceled);
+
 }  // namespace mozilla::net
 
 #endif  // mozilla_net_StealthTRRContext_h

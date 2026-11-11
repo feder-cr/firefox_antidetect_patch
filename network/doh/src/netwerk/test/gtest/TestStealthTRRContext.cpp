@@ -153,6 +153,26 @@ TEST(TestStealthTRRContext, ACancellationKeepsItsCode)
   EXPECT_EQ(StealthTRRProxyFailure(NS_BINDING_ABORTED), NS_BINDING_ABORTED);
 }
 
+// The nsHttpChannel of a DoH request (main thread of the parent, no socket
+// process) fails closed like TRRServiceChannel: a failed lookup of a TRR service
+// channel ends it; a success, a cancellation and any other channel do not.
+TEST(TestStealthTRRContext, ATRRServiceChannelWhoseProxyLookupFailedFailsClosed)
+{
+  EXPECT_TRUE(StealthFailClosedOnProxyFailure(NS_ERROR_FAILURE, true, false));
+  EXPECT_TRUE(
+      StealthFailClosedOnProxyFailure(NS_ERROR_NOT_AVAILABLE, true, false));
+}
+
+TEST(TestStealthTRRContext, OtherChannelsAndOtherOutcomesKeepUpstreamBehaviour)
+{
+  // An ordinary channel fails over as upstream does.
+  EXPECT_FALSE(StealthFailClosedOnProxyFailure(NS_ERROR_FAILURE, false, false));
+  // A lookup that succeeded.
+  EXPECT_FALSE(StealthFailClosedOnProxyFailure(NS_OK, true, false));
+  // A cancelled channel goes on as upstream (BeginConnect returns its status).
+  EXPECT_FALSE(StealthFailClosedOnProxyFailure(NS_ERROR_FAILURE, true, true));
+}
+
 // The proxy lookup of a DoH request asks the proxy filters with a stand-in
 // channel. With the context of the lookup it is that context's channel; without
 // one it is the default context's, as upstream.
