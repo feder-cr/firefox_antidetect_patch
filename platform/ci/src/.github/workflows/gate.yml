@@ -308,6 +308,9 @@ jobs:
         include:
           - { suite: wrapper.e2e.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.e2e.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the unit tests of the line, on both OSes, with the same core and wrapper as the e2e
+          - { suite: wrapper.unit.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.unit.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
           # the DoH suite: Linux (root: its resolver trap points /etc/resolv.conf at a counting resolver) and Windows, the system
           # of reference (there the trap does not run: the one assertion it makes is the only one not made)
           - { suite: wrapper.e2e.doh, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
@@ -408,11 +411,11 @@ jobs:
           JUDGE=scripts/ci_verdict.py
           [ -f wrapper-main/scripts/ci_verdict.py ] && JUDGE=wrapper-main/scripts/ci_verdict.py
           echo "JUDGE=$JUDGE" >> "$GITHUB_ENV"
-          python "$JUDGE" args --required ci/required-suites.json --suite "${{ matrix.suite }}" --os "${{ matrix.os }}" > result/args.txt
+          python "$JUDGE" args --required ci/required-suites.json --suite "${{ matrix.suite }}" --os "${{ matrix.os }}" --with-marker > result/args.txt
           mapfile -t SELECT < <(tr -d '\r' < result/args.txt)
           # no PYTEST_ADDOPTS from the environment, no rerun plugin (a test that passes on its second try is not green), junit
           # in the xunit2 family (the judge reads the class of every test from it)
-          PYTEST=(python -m pytest "${SELECT[@]}" -m e2e -o addopts='' -o junit_family=xunit2 -q -p no:cacheprovider -p no:rerunfailures -rs --junitxml="result/${{ matrix.suite }}.${{ matrix.os }}.xml")
+          PYTEST=(python -m pytest "${SELECT[@]}" -o addopts='' -o junit_family=xunit2 -q -p no:cacheprovider -p no:rerunfailures -rs --junitxml="result/${{ matrix.suite }}.${{ matrix.os }}.xml")
           if [ "${{ matrix.root }}" = "true" ]; then
             # -H: the browser must not see the runner's home as another user's. The trap must run: a test that cannot make it
             # fails instead of going on without its assertion.
