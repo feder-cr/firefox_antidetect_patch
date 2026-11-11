@@ -110,9 +110,10 @@ inline bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {
  *     QUEL socket (nsSOCKSUDPIOLayerIsOn): si decide per socket.
  *   - NrUdpSocketIpc (processo di contenuto): il socket vero sta nel parent
  *     (nsUDPSocket), che innesta il livello da solo; qui si sa solo se la
- *     sessione e' armata (StealthSocksUdpRouted). Se il parent non riesce a
- *     innestarlo il socket non nasce (nsUDPSocket::InitWithAddress fallisce),
- *     quindi non resta un invio diretto da lasciar passare per sbaglio.
+ *     sessione e' armata (StealthSocksUdpRouted). Il livello e' sempre sul
+ *     socket del parent (se non si puo' innestare InitWithAddress fallisce), e
+ *     se l'associazione col proxy non riesce gli invii di quel socket
+ *     falliscono: non resta un invio diretto da lasciar passare per sbaglio.
  * Senza livello decide solo zoom.stealth.webrtc.no_direct_udp, che resta una
  * protezione e non dipende dal verdetto del core sull'UDP del proxy.
  *

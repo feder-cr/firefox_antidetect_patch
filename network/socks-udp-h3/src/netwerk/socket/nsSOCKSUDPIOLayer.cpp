@@ -6,25 +6,41 @@
 
 #include "nsSOCKSUDPIOLayer.h"
 
-#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <inttypes.h>
 
+#include <algorithm>
+
 #include "nspr.h"
 #include "private/pprio.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Components.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/net/DNS.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/net/SocketProcessParent.h"
+#include "../protocol/http/nsHttpHandler.h"
+#include "nsASocketHandler.h"
+#include "nsICancelable.h"
+#include "nsIDNSListener.h"
+#include "nsIDNSRecord.h"
+#include "nsIDNSService.h"
+#include "nsISocketTransportService.h"
 #include "nsProxyInfo.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
+#include "nsTArray.h"
 #include "nsThreadUtils.h"
+#include "prnetdb.h"
 #include "nsXULAppAPI.h"
 
 namespace mozilla {
@@ -39,219 +55,688 @@ namespace {
 
 PRDescIdentity gIdentity = PR_INVALID_IO_LAYER;
 PRIOMethods gMethods;
-bool gMethodsInitialized = false;
 
-// Per-socket private state.
-struct SocksUdpInfo {
-  PRFileDesc* mTcpControl = nullptr;  // TCP control connection (held open)
-  PRNetAddr mRelayAddr;                // Where to send UDP datagrams
-  bool mAssociated = false;            // True once UDP ASSOCIATE succeeded
+// ── The association ─────────────────────────────────────────────────────────
+//
+// The layer is put on the socket at once, and the association (the TCP control
+// connection to the proxy, the greeting, the authentication, UDP ASSOCIATE) is
+// made afterwards, on the socket thread, the way a Necko socket makes its own
+// handshake (nsSOCKSIOLayer.cpp): the control connection is a non-blocking
+// socket the socket transport service polls, each answer is read when it
+// arrives, and the name of the proxy is resolved by the resolver, not by a
+// call that waits. Nothing waits for the proxy, so the sockets of an ICE
+// gather are made side by side and the first candidate is born at once. What
+// is sent while the association is not made is held, a few packets, and goes
+// to the relay when it is; it never goes direct.
+
+constexpr size_t kMaxHeld = 16;       // datagrams held before the association
+constexpr size_t kHeaderMax = 22;     // RSV(2) FRAG(1) ATYP(1) ADDR(16) PORT(2)
+constexpr PRInt32 kPayloadMax = 2048;
+
+enum class State : uint8_t { Pending, Ready, Failed };
+
+// What the layer on the socket and the association share: the state, the
+// relay, and the datagrams held. Any thread; the layer is on whatever thread
+// uses the socket, the association on the socket thread.
+class SocksUdpShared final {
+ public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SocksUdpShared)
+
+  // The association is made: send what was held, then go on.
+  void MakeReady(const PRNetAddr& aRelay) {
+    MutexAutoLock lock(mMutex);
+    if (!mLayer || mState != State::Pending) {
+      mState = State::Failed;
+      mHeld.Clear();
+      return;
+    }
+    mRelay = aRelay;
+    for (const nsTArray<uint8_t>& frame : mHeld) {
+      // UDP: one that cannot be sent is lost, as any datagram can be.
+      if (mLayer->lower->methods->sendto(mLayer->lower, frame.Elements(),
+                                         frame.Length(), 0, &mRelay,
+                                         PR_INTERVAL_NO_WAIT) < 0) {
+        LOGE(("SOCKS UDP: a held datagram was not sent (%d)", PR_GetError()));
+      }
+    }
+    mHeld.Clear();
+    mState = State::Ready;
+  }
+
+  // The association failed or is over: what is sent from now on fails.
+  void Fail() {
+    MutexAutoLock lock(mMutex);
+    mState = State::Failed;
+    mHeld.Clear();
+  }
+
+  // The socket is being closed: nothing is sent through it any more.
+  void Detach() {
+    MutexAutoLock lock(mMutex);
+    mLayer = nullptr;
+    mState = State::Failed;
+    mHeld.Clear();
+  }
+
+  Mutex mMutex{"SocksUdpShared"};
+  State mState = State::Pending;
+  PRNetAddr mRelay;
+  PRFileDesc* mLayer = nullptr;  // the layer's fd; null once the socket closes
+  nsTArray<nsTArray<uint8_t>> mHeld;
+
+ private:
+  ~SocksUdpShared() = default;
 };
 
-// Send N bytes on a TCP fd, looping on partial writes.
-bool TcpSendAll(PRFileDesc* fd, const uint8_t* buf, size_t len) {
-  size_t sent = 0;
-  while (sent < len) {
-    PRInt32 n = PR_Send(fd, buf + sent, len - sent, 0,
-                       PR_SecondsToInterval(4));
-    if (n <= 0) {
-      LOGE(("TcpSendAll: PR_Send failed (sent=%zu/%zu, err=%d)",
-            sent, len, PR_GetError()));
+// The control connection of one socket, as a socket handler of the socket
+// transport service.
+class SocksUdpAssociation final : public nsASocketHandler,
+                                  public nsIDNSListener {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIDNSLISTENER
+
+  SocksUdpAssociation(SocksUdpShared* aShared, const nsACString& aHost,
+                      int32_t aPort, const nsACString& aUser,
+                      const nsACString& aPass)
+      : mShared(aShared),
+        mHost(aHost),
+        mPort(static_cast<uint16_t>(aPort)),
+        mUser(aUser),
+        mPass(aPass) {}
+
+  // Any thread: begin, on the socket thread.
+  void Start() {
+    nsCOMPtr<nsIEventTarget> sts =
+        do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+    nsCOMPtr<nsIRunnable> begin = NewRunnableMethod(
+        "SocksUdpAssociation::Begin", this, &SocksUdpAssociation::Begin);
+    if (!sts || NS_FAILED(sts->Dispatch(begin.forget(), NS_DISPATCH_NORMAL))) {
+      LOGE(("SOCKS UDP association: no socket thread"));
+      mShared->Fail();
+    }
+  }
+
+  // Any thread: the socket is closing; let the proxy go.
+  void Cancel() {
+    mCancelled = true;
+    nsCOMPtr<nsIEventTarget> sts =
+        do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+    nsCOMPtr<nsIRunnable> cancel = NewRunnableMethod(
+        "SocksUdpAssociation::DoCancel", this, &SocksUdpAssociation::DoCancel);
+    if (sts) {
+      (void)sts->Dispatch(cancel.forget(), NS_DISPATCH_NORMAL);
+    }
+  }
+
+  // nsASocketHandler (socket thread)
+  void OnSocketReady(PRFileDesc* aFd, int16_t aOutFlags) override {
+    if (NS_FAILED(mCondition) || mStep == Step::Idle) {
+      return;
+    }
+    if (aOutFlags == -1) {
+      if (mStep == Step::Connecting && mRecord) {
+        mRetry = true;
+        mCondition = NS_ERROR_ABORT;
+        return;
+      }
+      Fail("timeout");
+      return;
+    }
+    if (mStep == Step::Connecting) {
+      PRPollDesc pd = {aFd, PR_POLL_WRITE, aOutFlags};
+      if (PR_GetConnectStatus(&pd) != PR_SUCCESS) {
+        if (PR_GetError() == PR_IN_PROGRESS_ERROR) {
+          return;  // not yet
+        }
+        if (mRecord) {
+          mRetry = true;  // OnSocketDetached goes on with the next address
+          mCondition = NS_ERROR_ABORT;
+          return;
+        }
+        Fail("connect");
+        return;
+      }
+      QueueGreeting();
+    } else if (mStep == Step::Associated) {
+      WatchControl();
+      return;
+    } else if (aOutFlags & (PR_POLL_ERR | PR_POLL_NVAL)) {
+      Fail("socket error");
+      return;
+    }
+    Pump();
+  }
+
+  void OnSocketDetached(PRFileDesc* aFd) override {
+    if (mFd) {
+      PR_Close(mFd);
+      mFd = nullptr;
+    }
+    mAttached = false;
+    if (mRetry) {
+      // The connection to this address failed and the name has another: try it (after the service is done with us).
+      mRetry = false;
+      mCondition = NS_OK;
+      mStep = Step::Idle;
+      nsCOMPtr<nsIRunnable> next = NewRunnableMethod(
+          "SocksUdpAssociation::ConnectNext", this, &SocksUdpAssociation::ConnectNext);
+      if (NS_SUCCEEDED(NS_DispatchToCurrentThread(next.forget()))) {
+        return;
+      }
+    }
+    // The control connection is closed, so the proxy ends the association (RFC 1928 section 6): whatever the socket
+    // was doing, and whatever made the service let go of it (an error, the shutdown, the browser going offline).
+    mShared->Fail();
+  }
+
+  void IsLocal(bool* aIsLocal) override { *aIsLocal = false; }
+  uint64_t ByteCountSent() override { return 0; }
+  uint64_t ByteCountReceived() override { return 0; }
+
+ private:
+  ~SocksUdpAssociation() = default;
+
+  enum class Step : uint8_t {
+    Idle,
+    Resolving,
+    Connecting,
+    SendGreeting,
+    ReadGreeting,
+    SendAuth,
+    ReadAuth,
+    SendAssociate,
+    ReadAssociateHead,
+    ReadAssociateTail,
+    Associated,
+  };
+
+  // Socket thread.
+  void Begin() {
+    if (mCancelled) {
+      mShared->Fail();
+      return;
+    }
+    PRNetAddr addr;
+    if (PR_StringToNetAddr(mHost.get(), &addr) == PR_SUCCESS) {
+      // An address, not a name: nothing to resolve.
+      if (addr.raw.family == PR_AF_INET) {
+        addr.inet.port = PR_htons(mPort);
+      } else {
+        addr.ipv6.port = PR_htons(mPort);
+      }
+      Connect(addr);
+      return;
+    }
+    // A name: the resolver, the way Necko resolves the proxy of a TCP
+    // connection. The flag is the one that says the name is the proxy's own,
+    // which a session behind a proxy that resolves names may still look up.
+    nsCOMPtr<nsIDNSService> dns = mozilla::components::DNS::Service();
+    if (!dns) {
+      Fail("no resolver");
+      return;
+    }
+    mStep = Step::Resolving;
+    OriginAttributes attrs;
+    nsresult rv = dns->AsyncResolveNative(
+        mHost, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+        nsIDNSService::RESOLVE_IGNORE_SOCKS_DNS, nullptr, this,
+        GetCurrentSerialEventTarget(), attrs, getter_AddRefs(mLookup));
+    if (NS_FAILED(rv)) {
+      Fail("resolve");
+    }
+  }
+
+  void ConnectNext();
+
+  void DoCancel() {
+    if (mLookup) {
+      mLookup->Cancel(NS_ERROR_ABORT);
+      mLookup = nullptr;
+    }
+    if (mAttached) {
+      mCondition = NS_BINDING_ABORTED;  // the service detaches us
+    } else if (mFd) {
+      PR_Close(mFd);
+      mFd = nullptr;
+    }
+    mStep = Step::Idle;
+  }
+
+  void Connect(const PRNetAddr& aAddr) {
+    mFd = PR_OpenTCPSocket(aAddr.raw.family);
+    if (!mFd) {
+      Fail("socket");
+      return;
+    }
+    PRSocketOptionData opt;
+    opt.option = PR_SockOpt_Nonblocking;
+    opt.value.non_blocking = PR_TRUE;
+    if (PR_SetSocketOption(mFd, &opt) != PR_SUCCESS) {
+      Fail("nonblocking");
+      return;
+    }
+    mStep = Step::Connecting;
+    if (PR_Connect(mFd, &aAddr, PR_INTERVAL_NO_WAIT) != PR_SUCCESS) {
+      PRErrorCode err = PR_GetError();
+      if (err != PR_IN_PROGRESS_ERROR && err != PR_WOULD_BLOCK_ERROR) {
+        if (mRecord) {  // the next address of the name, if there is one
+          PR_Close(mFd);
+          mFd = nullptr;
+          ConnectNext();
+          return;
+        }
+        Fail("connect");
+        return;
+      }
+    }
+    mPollFlags = PR_POLL_WRITE | PR_POLL_EXCEPT;
+    // The time Necko gives a connection to be made, the same for the connection of a page through a SOCKS proxy
+    // (network.http.connection-timeout, ConnectionAttemptPool.cpp): a proxy that does not answer ends the association
+    // instead of keeping the socket waiting for ever. None once the association is made.
+    uint32_t seconds = gHttpHandler ? gHttpHandler->ConnectTimeout() / PR_MSEC_PER_SEC : 0;
+    mPollTimeout = (seconds && seconds < UINT16_MAX) ? static_cast<uint16_t>(seconds) : UINT16_MAX;
+    nsCOMPtr<nsISocketTransportService> sts =
+        do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+    if (!sts || NS_FAILED(sts->AttachSocket(mFd, this))) {
+      Fail("attach");
+      return;
+    }
+    mAttached = true;
+  }
+
+  // Socket thread. The association is over, whatever it was doing.
+  void Fail(const char* aWhy) {
+    LOGE(("SOCKS UDP association failed: %s", aWhy));
+    mShared->Fail();
+    mStep = Step::Idle;
+    if (mAttached) {
+      mCondition = NS_ERROR_ABORT;  // the service detaches us, which closes
+    } else if (mFd) {
+      PR_Close(mFd);
+      mFd = nullptr;
+    }
+  }
+
+  void QueueGreeting() {
+    bool wantAuth = !mUser.IsEmpty() && !mPass.IsEmpty();
+    mOut.Clear();
+    mOut.AppendElement(0x05);  // VER
+    mOut.AppendElement(wantAuth ? 2 : 1);  // NMETHODS
+    mOut.AppendElement(0x00);  // no authentication
+    if (wantAuth) {
+      mOut.AppendElement(0x02);  // user/password
+    }
+    mOutPos = 0;
+    mStep = Step::SendGreeting;
+  }
+
+  bool QueueAuth() {
+    if (mUser.Length() > 255 || mPass.Length() > 255) {
       return false;
     }
-    sent += n;
+    mOut.Clear();
+    mOut.AppendElement(0x01);  // VER of the subnegotiation
+    mOut.AppendElement(static_cast<uint8_t>(mUser.Length()));
+    mOut.AppendElements(mUser.get(), mUser.Length());
+    mOut.AppendElement(static_cast<uint8_t>(mPass.Length()));
+    mOut.AppendElements(mPass.get(), mPass.Length());
+    mOutPos = 0;
+    mStep = Step::SendAuth;
+    return true;
   }
-  return true;
+
+  void QueueAssociate() {
+    // The client's address is not known to the socket: 0.0.0.0:0, which
+    // RFC 1928 section 6 allows.
+    static const uint8_t kAssociate[10] = {0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0};
+    mOut.Clear();
+    mOut.AppendElements(kAssociate, sizeof(kAssociate));
+    mOutPos = 0;
+    mStep = Step::SendAssociate;
+  }
+
+  // What to read next, once what was queued is sent.
+  void AfterSent() {
+    mIn.Clear();
+    switch (mStep) {
+      case Step::SendGreeting:
+        mStep = Step::ReadGreeting;
+        mNeed = 2;
+        break;
+      case Step::SendAuth:
+        mStep = Step::ReadAuth;
+        mNeed = 2;
+        break;
+      default:
+        mStep = Step::ReadAssociateHead;
+        mNeed = 4;
+        break;
+    }
+  }
+
+  // The bytes wanted are in: take the next step. False when it failed.
+  bool Parse() {
+    switch (mStep) {
+      case Step::ReadGreeting: {
+        if (mIn[0] != 0x05) {
+          Fail("greeting: not SOCKS5");
+          return false;
+        }
+        mNeed = 0;
+        if (mIn[1] == 0x00) {
+          QueueAssociate();
+        } else if (mIn[1] == 0x02 && !mUser.IsEmpty() && !mPass.IsEmpty()) {
+          if (!QueueAuth()) {
+            Fail("authentication: too long");
+            return false;
+          }
+        } else {
+          Fail("greeting: no acceptable method");
+          return false;
+        }
+        return true;
+      }
+      case Step::ReadAuth:
+        mNeed = 0;
+        if (mIn[1] != 0x00) {
+          Fail("authentication refused");
+          return false;
+        }
+        QueueAssociate();
+        return true;
+      case Step::ReadAssociateHead:
+        if (mIn[0] != 0x05 || mIn[1] != 0x00) {
+          LOGE(("UDP ASSOCIATE rejected ver=%02x rep=%02x", mIn[0], mIn[1]));
+          Fail("UDP ASSOCIATE rejected");
+          return false;
+        }
+        if (mIn[3] == 0x01) {
+          mNeed = 4 + 4 + 2;
+        } else if (mIn[3] == 0x04) {
+          mNeed = 4 + 16 + 2;
+        } else {
+          Fail("UDP ASSOCIATE: relay address not supported");
+          return false;
+        }
+        mStep = Step::ReadAssociateTail;
+        return true;
+      default: {  // ReadAssociateTail
+        PRNetAddr relay;
+        memset(&relay, 0, sizeof(relay));
+        uint16_t bndPort = 0;
+        if (mIn[3] == 0x01) {
+          relay.inet.family = PR_AF_INET;
+          memcpy(&relay.inet.ip, &mIn[4], 4);
+          memcpy(&bndPort, &mIn[8], 2);
+          relay.inet.port = bndPort;
+        } else {
+          relay.ipv6.family = PR_AF_INET6;
+          memcpy(&relay.ipv6.ip, &mIn[4], 16);
+          memcpy(&bndPort, &mIn[20], 2);
+          relay.ipv6.port = bndPort;
+        }
+        if (!bndPort) {
+          Fail("UDP ASSOCIATE: relay port 0");
+          return false;
+        }
+        if (PR_IsNetAddrType(&relay, PR_IpAddrAny)) {
+          // The proxy says "the address you reached me by".
+          PRNetAddr peer;
+          if (PR_GetPeerName(mFd, &peer) != PR_SUCCESS) {
+            Fail("UDP ASSOCIATE: no address for the relay");
+            return false;
+          }
+          relay = peer;
+          if (relay.raw.family == PR_AF_INET) {
+            relay.inet.port = bndPort;
+          } else {
+            relay.ipv6.port = bndPort;
+          }
+        }
+        mNeed = 0;
+        mStep = Step::Associated;
+        mPollTimeout = UINT16_MAX;  // the control connection is idle for as long as the relay lives
+        mShared->MakeReady(relay);
+        LOG(("UDP ASSOCIATE OK"));
+        return true;
+      }
+    }
+  }
+
+  // Send what is queued, read what is wanted, as far as the socket lets us;
+  // then ask the service to call back for the rest.
+  void Pump() {
+    for (;;) {
+      if (mOutPos < mOut.Length()) {
+        int32_t n = PR_Send(mFd, mOut.Elements() + mOutPos,
+                            mOut.Length() - mOutPos, 0, PR_INTERVAL_NO_WAIT);
+        if (n < 0) {
+          if (PR_GetError() == PR_WOULD_BLOCK_ERROR) {
+            mPollFlags = PR_POLL_WRITE;
+            return;
+          }
+          Fail("send");
+          return;
+        }
+        mOutPos += n;
+        if (mOutPos < mOut.Length()) {
+          mPollFlags = PR_POLL_WRITE;
+          return;
+        }
+        mOut.Clear();
+        mOutPos = 0;
+        AfterSent();
+        continue;
+      }
+      if (mStep == Step::Associated) {
+        mPollFlags = PR_POLL_READ;  // the control connection is the relay's life
+        return;
+      }
+      if (mNeed == 0) {
+        return;
+      }
+      while (mIn.Length() < mNeed) {
+        uint8_t buf[32];
+        size_t want = std::min(mNeed - mIn.Length(), sizeof(buf));
+        int32_t n = PR_Recv(mFd, buf, want, 0, PR_INTERVAL_NO_WAIT);
+        if (n < 0) {
+          if (PR_GetError() == PR_WOULD_BLOCK_ERROR) {
+            mPollFlags = PR_POLL_READ;
+            return;
+          }
+          Fail("receive");
+          return;
+        }
+        if (n == 0) {
+          Fail("the proxy closed the connection");
+          return;
+        }
+        mIn.AppendElements(buf, n);
+      }
+      if (!Parse()) {
+        return;
+      }
+    }
+  }
+
+  // Associated: the proxy ends the relay by closing the control connection.
+  void WatchControl() {
+    uint8_t b;
+    int32_t n = PR_Recv(mFd, &b, 1, 0, PR_INTERVAL_NO_WAIT);
+    if (n == 0 || (n < 0 && PR_GetError() != PR_WOULD_BLOCK_ERROR)) {
+      Fail("the proxy ended the association");
+    }
+  }
+
+  RefPtr<SocksUdpShared> mShared;
+  nsCString mHost;
+  uint16_t mPort;
+  nsCString mUser;
+  nsCString mPass;
+  PRFileDesc* mFd = nullptr;
+  nsCOMPtr<nsICancelable> mLookup;
+  nsCOMPtr<nsIDNSAddrRecord> mRecord;  // the addresses of the proxy's name
+  bool mRetry = false;
+  Step mStep = Step::Idle;
+  bool mAttached = false;
+  Atomic<bool> mCancelled{false};
+  nsTArray<uint8_t> mOut;
+  size_t mOutPos = 0;
+  nsTArray<uint8_t> mIn;
+  size_t mNeed = 0;
+};
+
+NS_IMPL_ISUPPORTS(SocksUdpAssociation, nsIDNSListener)
+
+NS_IMETHODIMP
+SocksUdpAssociation::OnLookupComplete(nsICancelable*, nsIDNSRecord* aRecord,
+                                      nsresult aStatus) {
+  mLookup = nullptr;
+  if (mCancelled || mStep != Step::Resolving) {
+    return NS_OK;
+  }
+  nsCOMPtr<nsIDNSAddrRecord> record = do_QueryInterface(aRecord);
+  NetAddr netAddr;
+  if (NS_FAILED(aStatus) || !record ||
+      NS_FAILED(record->GetNextAddr(mPort, &netAddr))) {
+    Fail("the proxy's name did not resolve");
+    return NS_OK;
+  }
+  PRNetAddr addr;
+  NetAddrToPRNetAddr(&netAddr, &addr);
+  mRecord = record;
+  Connect(addr);
+  return NS_OK;
 }
 
-bool TcpRecvAll(PRFileDesc* fd, uint8_t* buf, size_t len) {
-  size_t got = 0;
-  while (got < len) {
-    PRInt32 n = PR_Recv(fd, buf + got, len - got, 0,
-                       PR_SecondsToInterval(4));
-    if (n <= 0) {
-      LOGE(("TcpRecvAll: PR_Recv failed (got=%zu/%zu, err=%d)",
-            got, len, PR_GetError()));
-      return false;
-    }
-    got += n;
+// Socket thread: the connection to an address of the proxy's name failed; the next one, as nsSocketTransport does.
+void SocksUdpAssociation::ConnectNext() {
+  NetAddr netAddr;
+  if (mCancelled || !mRecord || NS_FAILED(mRecord->GetNextAddr(mPort, &netAddr))) {
+    Fail("no address of the proxy answered");
+    return;
   }
-  return true;
+  PRNetAddr addr;
+  NetAddrToPRNetAddr(&netAddr, &addr);
+  Connect(addr);
 }
 
-// Perform SOCKS5 greeting + (optional) user/pass auth + UDP ASSOCIATE.
-// On success, writes BND.ADDR/BND.PORT to `relayOut`.
-bool SocksHandshake(PRFileDesc* tcp, const char* user, const char* pass,
-                    PRNetAddr* relayOut) {
-  bool wantAuth = user && user[0] && pass && pass[0];
+// What the layer keeps on the socket.
+struct SocksUdpLayerData {
+  RefPtr<SocksUdpShared> mShared;
+  RefPtr<SocksUdpAssociation> mAssociation;
+};
 
-  // ── 1. Greeting ──────────────────────────────────────────────────
-  uint8_t greet[4];
-  greet[0] = 0x05;  // VER
-  greet[1] = wantAuth ? 2 : 1;  // NMETHODS
-  greet[2] = 0x00;  // METHOD: no-auth
-  uint8_t greetLen = 3;
-  if (wantAuth) {
-    greet[3] = 0x02;  // METHOD: user/pass
-    greetLen = 4;
+SocksUdpShared* SharedOf(PRFileDesc* fd) {
+  auto* data = reinterpret_cast<SocksUdpLayerData*>(fd->secret);
+  return data ? data->mShared.get() : nullptr;
+}
+
+// True when a datagram comes from the relay (address and port).
+bool FromTheRelay(const PRNetAddr& aRelay, const PRNetAddr& aSource) {
+  if (aRelay.raw.family == PR_AF_INET && aSource.raw.family == PR_AF_INET) {
+    return aRelay.inet.ip == aSource.inet.ip && aRelay.inet.port == aSource.inet.port;
   }
-  if (!TcpSendAll(tcp, greet, greetLen)) return false;
-
-  uint8_t greetReply[2];
-  if (!TcpRecvAll(tcp, greetReply, 2)) return false;
-  if (greetReply[0] != 0x05) {
-    LOGE(("greet: bad VER %02x", greetReply[0]));
-    return false;
+  if (aRelay.raw.family == PR_AF_INET6 && aSource.raw.family == PR_AF_INET6) {
+    return !memcmp(&aRelay.ipv6.ip, &aSource.ipv6.ip, 16) && aRelay.ipv6.port == aSource.ipv6.port;
   }
-  uint8_t method = greetReply[1];
-  LOG(("greet OK method=%02x", method));
+  return false;
+}
 
-  // ── 2. Optional user/pass auth ───────────────────────────────────
-  if (method == 0x02) {
-    if (!wantAuth) {
-      LOGE(("proxy required user/pass but no creds provided"));
-      return false;
-    }
-    size_t ulen = strlen(user), plen = strlen(pass);
-    if (ulen > 255 || plen > 255) return false;
-    uint8_t buf[2 + 255 + 1 + 255];
-    size_t off = 0;
-    buf[off++] = 0x01;  // VER (auth subnegotiation)
-    buf[off++] = (uint8_t)ulen;
-    memcpy(buf + off, user, ulen); off += ulen;
-    buf[off++] = (uint8_t)plen;
-    memcpy(buf + off, pass, plen); off += plen;
-    if (!TcpSendAll(tcp, buf, off)) return false;
-    uint8_t authReply[2];
-    if (!TcpRecvAll(tcp, authReply, 2)) return false;
-    if (authReply[1] != 0x00) {
-      LOGE(("auth failed: status=%02x", authReply[1]));
-      return false;
-    }
-    LOG(("auth OK"));
-  } else if (method == 0xff) {
-    LOGE(("proxy: no acceptable auth method"));
-    return false;
-  } else if (method != 0x00) {
-    LOGE(("proxy: unsupported auth method %02x", method));
-    return false;
+// The datagram as the relay wants it: [RSV(2) FRAG(1) ATYP ADDR PORT DATA].
+// Returns the length of the header (0 with the NSPR error set when it cannot
+// be built); the datagram is aOut[0 .. header + aAmount).
+size_t BuildFrame(const PRNetAddr* aTo, const void* aBuf, PRInt32 aAmount,
+                  uint8_t* aOut) {
+  if (aAmount < 0 || aAmount > kPayloadMax) {
+    PR_SetError(PR_BUFFER_OVERFLOW_ERROR, 0);
+    return 0;
   }
-
-  // ── 3. UDP ASSOCIATE: client tells proxy its expected UDP src ────
-  // We use 0.0.0.0:0 ("any") since the OS picks the ephemeral port
-  // dynamically. RFC 1928 §6 explicitly allows this.
-  uint8_t assoc[10];
-  assoc[0] = 0x05;  // VER
-  assoc[1] = 0x03;  // CMD = UDP ASSOCIATE
-  assoc[2] = 0x00;  // RSV
-  assoc[3] = 0x01;  // ATYP = IPv4
-  memset(assoc + 4, 0, 4);  // ADDR = 0.0.0.0
-  memset(assoc + 8, 0, 2);  // PORT = 0
-  if (!TcpSendAll(tcp, assoc, sizeof(assoc))) return false;
-
-  uint8_t hdr[4];
-  if (!TcpRecvAll(tcp, hdr, 4)) return false;
-  if (hdr[0] != 0x05 || hdr[1] != 0x00) {
-    LOGE(("UDP ASSOCIATE rejected ver=%02x rep=%02x", hdr[0], hdr[1]));
-    return false;
-  }
-
-  // BND.ADDR
-  memset(relayOut, 0, sizeof(*relayOut));
-  if (hdr[3] == 0x01) {  // IPv4
-    uint8_t addr[4 + 2];
-    if (!TcpRecvAll(tcp, addr, 6)) return false;
-    relayOut->inet.family = PR_AF_INET;
-    memcpy(&relayOut->inet.ip, addr, 4);
-    memcpy(&relayOut->inet.port, addr + 4, 2);
-  } else if (hdr[3] == 0x04) {  // IPv6
-    uint8_t addr[16 + 2];
-    if (!TcpRecvAll(tcp, addr, 18)) return false;
-    relayOut->ipv6.family = PR_AF_INET6;
-    memcpy(&relayOut->ipv6.ip, addr, 16);
-    memcpy(&relayOut->ipv6.port, addr + 16, 2);
-  } else if (hdr[3] == 0x03) {  // domain name
-    uint8_t dlen;
-    if (!TcpRecvAll(tcp, &dlen, 1)) return false;
-    uint8_t buf[256 + 2];
-    if (!TcpRecvAll(tcp, buf, dlen + 2)) return false;
-    LOGE(("UDP ASSOCIATE returned domain name; not supported"));
-    return false;
+  size_t hlen = 0;
+  aOut[hlen++] = 0x00;  // RSV
+  aOut[hlen++] = 0x00;  // RSV
+  aOut[hlen++] = 0x00;  // FRAG (no fragmentation)
+  if (aTo->raw.family == PR_AF_INET) {
+    aOut[hlen++] = 0x01;  // ATYP IPv4
+    memcpy(aOut + hlen, &aTo->inet.ip, 4);
+    hlen += 4;
+    memcpy(aOut + hlen, &aTo->inet.port, 2);
+    hlen += 2;
+  } else if (aTo->raw.family == PR_AF_INET6) {
+    aOut[hlen++] = 0x04;  // ATYP IPv6
+    memcpy(aOut + hlen, &aTo->ipv6.ip, 16);
+    hlen += 16;
+    memcpy(aOut + hlen, &aTo->ipv6.port, 2);
+    hlen += 2;
   } else {
-    LOGE(("UDP ASSOCIATE bad ATYP %02x", hdr[3]));
-    return false;
+    PR_SetError(PR_ADDRESS_NOT_SUPPORTED_ERROR, 0);
+    return 0;
   }
-
-  LOG(("UDP ASSOCIATE OK"));
-  return true;
+  memcpy(aOut + hlen, aBuf, aAmount);
+  return hlen;
 }
 
-// ── NSPR layer methods ────────────────────────────────────────────
+// ── NSPR layer methods ──────────────────────────────────────────────────────
 
 PRStatus PR_CALLBACK SocksUdpClose(PRFileDesc* fd) {
-  // Takes our layer off the stack, frees it, and closes what is below. The
-  // layer used to free itself and return, so the UDP socket under it was never
-  // closed: one operating-system socket left behind per socket that had the
-  // layer (netwerk/test/gtest/TestStealthSessionUdpProxy.cpp).
+  // Lets the proxy go, takes our layer off the stack, frees it, and closes
+  // what is below. The layer used to free itself and return, so the UDP socket
+  // under it was never closed: one operating-system socket left behind per
+  // socket that had the layer (netwerk/test/gtest/TestStealthSocksCredentials.cpp).
+  auto* data = reinterpret_cast<SocksUdpLayerData*>(fd->secret);
+  if (data) {
+    data->mShared->Detach();
+    data->mAssociation->Cancel();
+  }
   PRFileDesc* layer = PR_PopIOLayer(fd, gIdentity);
   if (layer) {
-    auto* info = reinterpret_cast<SocksUdpInfo*>(layer->secret);
     layer->secret = nullptr;
-    if (info) {
-      if (info->mTcpControl) {
-        PR_Close(info->mTcpControl);
-      }
-      delete info;
-    }
     layer->dtor(layer);
   }
+  delete data;
   return fd->methods->close(fd);
 }
 
-// sendto: wrap data in SOCKS5 UDP header, redirect to relay.
+// sendto: wrap data in SOCKS5 UDP header, redirect to relay. Before the
+// association is made the datagram is held (a few of them), after a failure it
+// is refused: it is never sent direct.
 PRInt32 PR_CALLBACK SocksUdpSendTo(PRFileDesc* fd, const void* buf,
                                    PRInt32 amount, PRIntn flags,
                                    const PRNetAddr* addr,
                                    PRIntervalTime timeout) {
-  auto* info = reinterpret_cast<SocksUdpInfo*>(fd->secret);
-  if (!info || !info->mAssociated) {
+  SocksUdpShared* shared = SharedOf(fd);
+  if (!shared) {
     PR_SetError(PR_NOT_CONNECTED_ERROR, 0);
     return -1;
   }
-
-  // Build SOCKS5 UDP header.
-  // Worst case: RSV(2) + FRAG(1) + ATYP(1) + ADDR(16) + PORT(2) = 22 bytes
-  uint8_t header[22];
-  size_t hlen = 0;
-  header[hlen++] = 0x00;  // RSV
-  header[hlen++] = 0x00;  // RSV
-  header[hlen++] = 0x00;  // FRAG (no fragmentation)
-  if (addr->raw.family == PR_AF_INET) {
-    header[hlen++] = 0x01;  // ATYP IPv4
-    memcpy(header + hlen, &addr->inet.ip, 4); hlen += 4;
-    memcpy(header + hlen, &addr->inet.port, 2); hlen += 2;
-  } else if (addr->raw.family == PR_AF_INET6) {
-    header[hlen++] = 0x04;  // ATYP IPv6
-    memcpy(header + hlen, &addr->ipv6.ip, 16); hlen += 16;
-    memcpy(header + hlen, &addr->ipv6.port, 2); hlen += 2;
-  } else {
-    PR_SetError(PR_ADDRESS_NOT_SUPPORTED_ERROR, 0);
+  uint8_t frame[kHeaderMax + kPayloadMax];
+  size_t hlen = BuildFrame(addr, buf, amount, frame);
+  if (!hlen) {
     return -1;
   }
-
-  // sendmsg-style atomic send: NSPR doesn't have it for UDP layers, so we
-  // build a single buffer and call lower-layer sendto.
-  // For typical QUIC/STUN packet sizes (<1500 bytes), this is fine.
-  static thread_local uint8_t scratch[2048 + 22];
-  if (amount < 0 || (size_t)amount + hlen > sizeof(scratch)) {
-    PR_SetError(PR_BUFFER_OVERFLOW_ERROR, 0);
+  PRNetAddr relay;
+  {
+    MutexAutoLock lock(shared->mMutex);
+    if (shared->mState == State::Failed) {
+      PR_SetError(PR_NOT_CONNECTED_ERROR, 0);
+      return -1;
+    }
+    if (shared->mState == State::Pending) {
+      // UDP: what cannot be held is dropped, and the sender is not told.
+      if (shared->mHeld.Length() < kMaxHeld) {
+        shared->mHeld.AppendElement()->AppendElements(frame, hlen + amount);
+      }
+      return amount;
+    }
+    relay = shared->mRelay;
+  }
+  if (addr->raw.family == PR_AF_INET6 && relay.raw.family == PR_AF_INET) {
+    PR_SetError(PR_ADDRESS_NOT_SUPPORTED_ERROR, 0);  // no conversion: an IPv4 relay does not reach IPv6
     return -1;
   }
-  memcpy(scratch, header, hlen);
-  memcpy(scratch + hlen, buf, amount);
-
   PRInt32 sent = (fd->lower->methods->sendto)(
-      fd->lower, scratch, hlen + amount, flags, &info->mRelayAddr, timeout);
+      fd->lower, frame, hlen + amount, flags, &relay, timeout);
   if (sent < 0) return sent;
   if ((size_t)sent < hlen) {
     PR_SetError(PR_IO_ERROR, 0);
@@ -273,17 +758,36 @@ PRInt32 PR_CALLBACK SocksUdpSend(PRFileDesc* fd, const void* buf,
 PRInt32 PR_CALLBACK SocksUdpRecvFrom(PRFileDesc* fd, void* buf, PRInt32 amount,
                                      PRIntn flags, PRNetAddr* addr,
                                      PRIntervalTime timeout) {
-  auto* info = reinterpret_cast<SocksUdpInfo*>(fd->secret);
-  if (!info || !info->mAssociated) {
+  SocksUdpShared* shared = SharedOf(fd);
+  if (!shared) {
     PR_SetError(PR_NOT_CONNECTED_ERROR, 0);
     return -1;
   }
-
   static thread_local uint8_t scratch[2048 + 22];
+  PRNetAddr relay;
+  {
+    MutexAutoLock lock(shared->mMutex);
+    if (shared->mState != State::Ready) {
+      // Nothing is expected from a relay that is not there; whatever the socket holds is thrown away, or the socket
+      // stays readable and the socket thread comes back to it at once, for ever.
+      PRNetAddr discarded;
+      (void)(fd->lower->methods->recvfrom)(fd->lower, scratch, sizeof(scratch), flags, &discarded,
+                                           PR_INTERVAL_NO_WAIT);
+      PR_SetError(shared->mState == State::Failed ? PR_NOT_CONNECTED_ERROR : PR_WOULD_BLOCK_ERROR, 0);
+      return -1;
+    }
+    relay = shared->mRelay;
+  }
+
   PRNetAddr relaySrc;
   PRInt32 got = (fd->lower->methods->recvfrom)(
       fd->lower, scratch, sizeof(scratch), flags, &relaySrc, timeout);
   if (got < 0) return got;
+  if (!FromTheRelay(relay, relaySrc)) {
+    // A datagram of someone else (RFC 1928 section 7 wants the relay's): not ours to hand to the application.
+    PR_SetError(PR_WOULD_BLOCK_ERROR, 0);
+    return -1;
+  }
   if (got < 10) {
     PR_SetError(PR_IO_ERROR, 0);
     return -1;
@@ -348,132 +852,88 @@ PRInt32 PR_CALLBACK SocksUdpRecv(PRFileDesc* fd, void* buf, PRInt32 amount,
   return SocksUdpRecvFrom(fd, buf, amount, flags, nullptr, timeout);
 }
 
+PRInt32 PR_CALLBACK SocksUdpNoRead(PRFileDesc*, void*, PRInt32) {
+  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+  return -1;
+}
+PRInt32 PR_CALLBACK SocksUdpNoWrite(PRFileDesc*, const void*, PRInt32) {
+  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+  return -1;
+}
+PRInt32 PR_CALLBACK SocksUdpNoWritev(PRFileDesc*, const PRIOVec*, PRInt32, PRIntervalTime) {
+  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+  return -1;
+}
+PRStatus PR_CALLBACK SocksUdpNoConnect(PRFileDesc*, const PRNetAddr*, PRIntervalTime) {
+  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+  return PR_FAILURE;
+}
+PRInt32 PR_CALLBACK SocksUdpNoSendfile(PRFileDesc*, PRSendFileData*, PRTransmitFileFlags, PRIntervalTime) {
+  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+  return -1;
+}
+
 void EnsureMethods() {
-  if (gMethodsInitialized) return;
-  gIdentity = PR_GetUniqueIdentity("SOCKS UDP layer");
-  gMethods = *PR_GetDefaultIOMethods();
-  gMethods.close = SocksUdpClose;
-  gMethods.send = SocksUdpSend;
-  gMethods.recv = SocksUdpRecv;
-  gMethods.sendto = SocksUdpSendTo;
-  gMethods.recvfrom = SocksUdpRecvFrom;
-  gMethodsInitialized = true;
+  // Any thread: the first caller makes them, the others wait for it.
+  static const bool sMade = [] {
+    gIdentity = PR_GetUniqueIdentity("SOCKS UDP layer");
+    gMethods = *PR_GetDefaultIOMethods();
+    gMethods.close = SocksUdpClose;
+    gMethods.send = SocksUdpSend;
+    gMethods.recv = SocksUdpRecv;
+    gMethods.sendto = SocksUdpSendTo;
+    gMethods.recvfrom = SocksUdpRecvFrom;
+    // The calls that do not frame a datagram would reach the socket under the layer as it is: a send direct, around the
+    // proxy, or a read of the relay's frames with their headers.
+    gMethods.read = SocksUdpNoRead;
+    gMethods.write = SocksUdpNoWrite;
+    gMethods.writev = SocksUdpNoWritev;
+    gMethods.connect = SocksUdpNoConnect;
+    gMethods.sendfile = SocksUdpNoSendfile;
+    return true;
+  }();
+  (void)sMade;
 }
 
 }  // namespace
-
-// Negative cache: after a proxy has refused (or not answered) the UDP ASSOCIATE,
-// further attempts for the SAME endpoint are skipped for a few seconds, because
-// each would block up to ~4 seconds and starve the network thread. It was a
-// process-wide flag that never reset. That was acceptable while a failure meant
-// "go on with direct UDP"; a session that is armed refuses instead (see
-// nsSOCKSUDPIOLayerAttachSession), so a flag that never reset would turn one
-// hiccup into an outage until restart, and it would also outlive the proxy the
-// Juggler swaps for another one. The key is a hash of host, port and user: a
-// different endpoint is never held back by the failure of another.
-static std::atomic<uint64_t> sFailedEndpoint{0};
-static std::atomic<PRIntervalTime> sFailedAt{0};
-static constexpr uint32_t kNegativeCacheSeconds = 10;
-
-static uint64_t EndpointKey(const char* aHost, int32_t aPort,
-                            const char* aUser) {
-  uint64_t h = 1469598103934665603ULL;  // FNV-1a
-  auto mix = [&h](const char* p) {
-    for (; p && *p; ++p) {
-      h = (h ^ static_cast<uint8_t>(*p)) * 1099511628211ULL;
-    }
-    h = (h ^ 0xFF) * 1099511628211ULL;
-  };
-  mix(aHost);
-  h = (h ^ static_cast<uint32_t>(aPort)) * 1099511628211ULL;
-  mix(aUser);
-  return h ? h : 1;
-}
-
-static bool RecentlyFailed(uint64_t aKey) {
-  if (sFailedEndpoint.load(std::memory_order_relaxed) != aKey) {
-    return false;
-  }
-  PRIntervalTime elapsed =
-      PR_IntervalNow() - sFailedAt.load(std::memory_order_relaxed);
-  return elapsed < PR_SecondsToInterval(kNegativeCacheSeconds);
-}
-
-static void RememberFailure(uint64_t aKey) {
-  sFailedAt.store(PR_IntervalNow(), std::memory_order_relaxed);
-  sFailedEndpoint.store(aKey, std::memory_order_relaxed);
-}
 
 nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
                                       int32_t aProxyPort,
                                       const char* aProxyUsername,
                                       const char* aProxyPassword) {
-  const uint64_t key = EndpointKey(aProxyHost, aProxyPort, aProxyUsername);
-  if (RecentlyFailed(key)) {
-    return NS_ERROR_NOT_AVAILABLE;
+  if (!aProxyHost || !aProxyHost[0] || aProxyPort <= 0 || aProxyPort > 65535) {
+    return NS_ERROR_INVALID_ARG;
   }
   EnsureMethods();
 
-  // Resolve proxy host (via PR_AF_INET only for now — extending to v6 is
-  // straightforward but most SOCKS endpoints we hit are v4).
-  PRNetAddr proxyAddr;
-  PRStatus rv;
-  PRHostEnt host;
-  char buf[PR_NETDB_BUF_SIZE];
-  rv = PR_GetHostByName(aProxyHost, buf, sizeof(buf), &host);
-  if (rv != PR_SUCCESS) {
-    LOGE(("PR_GetHostByName(%s) failed: %d", aProxyHost, PR_GetError()));
-    return NS_ERROR_UNKNOWN_HOST;
-  }
-  if (PR_EnumerateHostEnt(0, &host, (PRUint16)aProxyPort, &proxyAddr) <= 0) {
-    LOGE(("PR_EnumerateHostEnt: empty"));
-    return NS_ERROR_UNKNOWN_HOST;
-  }
-
-  // Open TCP control connection.
-  PRFileDesc* tcp = PR_OpenTCPSocket(proxyAddr.raw.family);
-  if (!tcp) {
-    LOGE(("PR_OpenTCPSocket failed"));
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  if (PR_Connect(tcp, &proxyAddr, PR_SecondsToInterval(4)) != PR_SUCCESS) {
-    LOGE(("TCP connect to proxy failed: %d", PR_GetError()));
-    PR_Close(tcp);
-    RememberFailure(key);
-    return NS_ERROR_CONNECTION_REFUSED;
-  }
-  LOG(("TCP control connected to %s:%d", aProxyHost, aProxyPort));
-
-  PRNetAddr relay;
-  if (!SocksHandshake(tcp, aProxyUsername, aProxyPassword, &relay)) {
-    PR_Close(tcp);
-    RememberFailure(key);
-    return NS_ERROR_FAILURE;
-  }
-
-  auto* info = new SocksUdpInfo();
-  info->mTcpControl = tcp;
-  info->mRelayAddr = relay;
-  info->mAssociated = true;
-
   PRFileDesc* layer = PR_CreateIOLayerStub(gIdentity, &gMethods);
   if (!layer) {
-    PR_Close(tcp);
-    delete info;
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  layer->secret = reinterpret_cast<PRFilePrivate*>(info);
+  auto* data = new SocksUdpLayerData();
+  data->mShared = new SocksUdpShared();
+  data->mAssociation = new SocksUdpAssociation(
+      data->mShared, nsDependentCString(aProxyHost), aProxyPort,
+      nsDependentCString(aProxyUsername ? aProxyUsername : ""),
+      nsDependentCString(aProxyPassword ? aProxyPassword : ""));
+  layer->secret = reinterpret_cast<PRFilePrivate*>(data);
 
   if (PR_PushIOLayer(aFd, PR_GetLayersIdentity(aFd), layer) != PR_SUCCESS) {
     LOGE(("PR_PushIOLayer failed"));
-    PR_Close(tcp);
-    delete info;
-    PR_Free(layer);
+    layer->secret = nullptr;
+    delete data;
+    layer->dtor(layer);
     return NS_ERROR_FAILURE;
   }
-
-  sFailedEndpoint.store(0, std::memory_order_relaxed);
-  LOG(("SOCKS5 UDP layer pushed onto fd"));
+  {
+    // aFd is the layer now (the stack keeps its head).
+    PRFileDesc* layerFd = PR_GetIdentitiesLayer(aFd, gIdentity);
+    MutexAutoLock lock(data->mShared->mMutex);
+    data->mShared->mLayer = layerFd ? layerFd : aFd;
+  }
+  // The association is made on the socket thread; this returns at once.
+  data->mAssociation->Start();
+  LOG(("SOCKS5 UDP layer pushed onto fd; the association is being made"));
   return NS_OK;
 }
 

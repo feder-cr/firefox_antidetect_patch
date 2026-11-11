@@ -40,15 +40,20 @@ namespace net {
 class nsProxyInfo;
 
 /*
- * Push the SOCKS5 UDP layer onto `aFd`. The layer immediately opens a TCP
- * control connection to `aProxyHost:aProxyPort`, performs greeting+auth+
- * UDP_ASSOCIATE, and rewrites all subsequent sendto() / recvfrom() calls.
+ * Push the SOCKS5 UDP layer onto `aFd` and return at once. The association
+ * (the TCP control connection to `aProxyHost:aProxyPort`, greeting, auth,
+ * UDP_ASSOCIATE) is made afterwards on the socket thread, without waiting: the
+ * name of the proxy is resolved by the resolver, the connection is a
+ * non-blocking socket the socket transport service polls. The layer rewrites
+ * all subsequent sendto() / recvfrom() calls. What is sent before the
+ * association is made is held (a few datagrams) and goes to the relay once it
+ * is; when the association fails every later send fails: nothing is sent direct.
  *
  * `aProxyUsername` / `aProxyPassword` may be empty for no-auth proxies;
  * if non-empty, the layer offers method 0x02 (user/pass) to the proxy.
  *
- * Returns NS_OK on success. On failure, the caller's UDP fd is left
- * untouched (still usable for direct UDP).
+ * Returns NS_OK once the layer is on the socket; an error only when it cannot
+ * be pushed (bad arguments, no memory), and then the fd is left as it was.
  */
 nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd,
                                       const char* aProxyHost,
@@ -91,10 +96,13 @@ void StealthSessionUdpProxyResend();
 /*
  * Push the layer for the session proxy onto aFd. NS_OK and no layer when the
  * session is not armed (a plain direct socket is then what is wanted). When it
- * IS armed and the layer cannot be pushed (the proxy refuses UDP ASSOCIATE,
- * does not answer, a wrong password) it returns the error and leaves aFd as it
- * was: the caller must fail the socket, because a socket that goes on as a
- * plain one would send direct, around a proxy that was declared to carry it.
+ * IS armed the layer is pushed and this returns at once, whatever the proxy
+ * takes to answer; a proxy that refuses UDP ASSOCIATE, does not answer or does
+ * not accept the password makes the sends of this socket fail afterwards, and
+ * nothing is sent direct. An error is returned only when the layer cannot be
+ * pushed: the caller must then fail the socket, because a socket that goes on
+ * as a plain one would send direct, around a proxy that was declared to carry
+ * it.
  */
 nsresult nsSOCKSUDPIOLayerAttachSession(PRFileDesc* aFd);
 
