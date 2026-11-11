@@ -255,8 +255,10 @@ class SocksUdpAssociation final : public nsASocketHandler,
   // The pool calls this with its lock held: a start that cannot be made fails the association WITHOUT telling the pool
   // (Failed(false)): the proxy refused nothing, there is no socket thread, and the pool's lock is not recursive.
   void Start() {
-    nsCOMPtr<nsIEventTarget> sts =
-        sNoSocketThreadForTests ? nullptr : do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+    nsCOMPtr<nsIEventTarget> sts;
+    if (!sNoSocketThreadForTests) {
+      sts = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+    }
     nsCOMPtr<nsIRunnable> begin = NewRunnableMethod(
         "SocksUdpAssociation::Begin", this, &SocksUdpAssociation::Begin);
     if (!sts || NS_FAILED(sts->Dispatch(begin.forget(), NS_DISPATCH_NORMAL))) {
