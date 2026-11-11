@@ -5,6 +5,7 @@
   "dom/media/webrtc/transport/nr_socket_proxy_config.h",
   "dom/media/webrtc/transport/nr_socket_prsock.cpp",
   "dom/media/webrtc/transport/nr_socket_prsock.h",
+  "netwerk/base/nsIProxyInfo.idl",
   "netwerk/base/nsIUDPSocket.idl",
   "netwerk/base/nsProxyInfo.cpp",
   "netwerk/base/nsProxyInfo.h",
@@ -17,6 +18,8 @@
   "netwerk/ipc/ProxyConfigLookupChild.h",
   "netwerk/ipc/ProxyConfigLookupParent.cpp",
   "netwerk/ipc/ProxyConfigLookupParent.h",
+  "netwerk/ipc/SocketProcessChild.cpp",
+  "netwerk/ipc/SocketProcessChild.h",
   "netwerk/ipc/SocketProcessParent.cpp",
   "netwerk/ipc/SocketProcessParent.h",
   "netwerk/ipc/moz.build",
@@ -32,6 +35,8 @@
  ],
  "added": {
   "dom/media/webrtc/transport/nr_stealth_proxy_udp.h": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth.cpp": "100644",
+  "juggler/tests/the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info.test.mjs": "100644",
   "netwerk/ipc/StealthDocumentChannel.cpp": "100644",
   "netwerk/ipc/StealthDocumentChannel.h": "100644",
   "netwerk/socket/StealthPcUdpProxy.cpp": "100644",
@@ -45,9 +50,9 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 14,
-   "removed": 40,
-   "hunks": 8,
+   "added": 17,
+   "removed": 42,
+   "hunks": 5,
    "inline_logic_lines": 9,
    "hookable": "movable",
    "anchor": "WebrtcTCPSocket::DoProxyConfigLookup and OpenWithHttpProxy (the channel of the proxy lookup and of the HTTP tunnel)",
@@ -69,7 +74,7 @@
    "prefs": [],
    "added": 14,
    "removed": 1,
-   "hunks": 5,
+   "hunks": 2,
    "inline_logic_lines": 9,
    "hookable": "movable",
    "anchor": "NrSocketProxyConfig constructor and UdpProxy()",
@@ -91,7 +96,7 @@
    "prefs": [],
    "added": 8,
    "removed": 1,
-   "hunks": 3,
+   "hunks": 2,
    "inline_logic_lines": 3,
    "hookable": "movable",
    "anchor": "NrSocketProxyConfig: UdpProxy()",
@@ -145,6 +150,28 @@
     "+  std::shared_ptr<NrSocketProxyConfig> mProxyConfig;  // STEALTH-HOOK(network/proxy-udp)"
    ],
    "notes": "A NrSocket takes the proxy config of its PeerConnection, so create() can put the proxy's layer on it. Also (feature webrtc-declared-network): the port the socket registered as one of ours.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsIProxyInfo.idl",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 6,
+   "hookable": "movable",
+   "anchor": "nsIProxyInfo flags",
+   "evidence": [
+    "+",
+    "+  /**",
+    "+   * STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Flag CARRIES_COHERENT_UDP: only a SOCKS5 proxy the session measured coherent carries UDP. The value is in a free slot, tested in juggler.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
@@ -261,9 +288,9 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 3,
+   "added": 8,
    "removed": 1,
-   "hunks": 1,
+   "hunks": 2,
    "inline_logic_lines": 1,
    "hookable": "already-hook",
    "anchor": "parent: block, PProxyConfigLookup constructor",
@@ -283,9 +310,9 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 26,
+   "added": 21,
    "removed": 6,
-   "hunks": 8,
+   "hunks": 3,
    "inline_logic_lines": 10,
    "hookable": "movable",
    "anchor": "ProxyConfigLookup::Create, constructor, DoProxyResolve",
@@ -307,7 +334,7 @@
    "prefs": [],
    "added": 11,
    "removed": 2,
-   "hunks": 4,
+   "hunks": 3,
    "inline_logic_lines": 2,
    "hookable": "already-hook",
    "anchor": "ProxyConfigLookup::Create, mLoadInfo",
@@ -373,7 +400,7 @@
    "prefs": [],
    "added": 10,
    "removed": 5,
-   "hunks": 3,
+   "hunks": 2,
    "inline_logic_lines": 4,
    "hookable": "movable",
    "anchor": "ProxyConfigLookupParent constructor and DoProxyLookup",
@@ -411,13 +438,56 @@
    }
   },
   {
+   "file": "netwerk/ipc/SocketProcessChild.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "SocketProcessChild::RecvStealthWarmSocksUdp (after RecvNotifyObserver)",
+   "evidence": [
+    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+mozilla::ipc::IPCResult SocketProcessChild::RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort,",
+    "+  nsSOCKSUDPIOLayerWarm(aHost, aPort, aUser, aPass);"
+   ],
+   "notes": "Receiver of PSocketProcess::StealthWarmSocksUdp: the pool of UDP associations is warmed in the socket process, where the sockets of the PeerConnections are made. The body is one call.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/SocketProcessChild.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "SocketProcessChild (before RecvGetSocketData)",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/proxy-udp)",
+    "+  mozilla::ipc::IPCResult RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort, const nsACString& aUser,"
+   ],
+   "notes": "Declaration of the receiver of PSocketProcess::StealthWarmSocksUdp.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
    "file": "netwerk/ipc/SocketProcessParent.cpp",
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
    "added": 9,
    "removed": 3,
-   "hunks": 3,
+   "hunks": 1,
    "inline_logic_lines": 3,
    "hookable": "movable",
    "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
@@ -439,7 +509,7 @@
    "prefs": [],
    "added": 6,
    "removed": 3,
-   "hunks": 2,
+   "hunks": 1,
    "inline_logic_lines": 2,
    "hookable": "already-hook",
    "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
@@ -568,9 +638,9 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 5,
-   "removed": 17,
-   "hunks": 2,
+   "added": 3,
+   "removed": 1,
+   "hunks": 1,
    "inline_logic_lines": 2,
    "hookable": "already-hook",
    "anchor": "HttpBaseChannel (the proxy test of the h3 decision)",
@@ -639,8 +709,8 @@
    "hookable": "already-hook",
    "anchor": "EXPORTS and UNIFIED_SOURCES lists",
    "evidence": [
-    "+EXPORTS += [\"nsSOCKSUDPIOLayer.h\", \"StealthPcUdpProxy.h\"]  # STEALTH-HOOK(network/socks-udp-h3)",
-    "+UNIFIED_SOURCES += [\"nsSOCKSUDPIOLayer.cpp\", \"StealthPcUdpProxy.cpp\"]  # STEALTH-HOOK(network/socks-udp-h3)"
+    "+EXPORTS += [\"nsSOCKSUDPIOLayer.h\", \"StealthPcUdpProxy.h\"]  # STEALTH-HOOK(network/proxy-udp)",
+    "+UNIFIED_SOURCES += [\"nsSOCKSUDPIOLayer.cpp\", \"StealthPcUdpProxy.cpp\"]  # STEALTH-HOOK(network/proxy-udp)"
    ],
    "notes": "Registers our SOCKS5 UDP layer and PcUdpProxy.",
    "verifier": {
@@ -660,8 +730,8 @@
    "hookable": "already-hook",
    "anchor": "nsSOCKSIOLayerAddToSocket after Init",
    "evidence": [
-    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/socks)",
-    "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/socks)"
+    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/proxy-udp)"
    ],
    "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it). Also (network/ipv6-literal): the connect to the proxy goes through StealthIPv6Connect (one line replaced).",
    "verifier": {

@@ -11,7 +11,7 @@ index b85d03a786b52a0598280a9b4da8b006edc59b8e..94c0035ddc20eec968d785cae8f50fb2
      "../nricemediastream.h",
      "../nriceresolverfake.h",
 diff --git a/dom/media/webrtc/transport/common.build b/dom/media/webrtc/transport/common.build
-index 215d61190dbe192fba09e129e869093ced0eacca..41778cf8c9bcc12b06eb0f90acbfe897602b2720 100644
+index 215d61190dbe192fba09e129e869093ced0eacca..9ee56099518c282ebd01dca8148ed3194d5406ff 100644
 --- a/dom/media/webrtc/transport/common.build
 +++ b/dom/media/webrtc/transport/common.build
 @@ -8,6 +8,7 @@ transport_lcppsrcs = [
@@ -22,6 +22,14 @@ index 215d61190dbe192fba09e129e869093ced0eacca..41778cf8c9bcc12b06eb0f90acbfe897
      "nr_timer.cpp",
      "nricecandidate.cpp",
      "nricectx.cpp",
+@@ -30,6 +31,7 @@ transport_lcppsrcs = [
+     "transportlayersrtp.cpp",
+     "WebrtcTCPSocketWrapper.cpp",
+ ]
++transport_lcppsrcs += ["StealthIceResolverContext.cpp"]  # STEALTH-HOOK(network/doh)
+ 
+ transport_cppsrcs = [
+     "/dom/media/webrtc/transport/%s" % s for s in sorted(transport_lcppsrcs)
 diff --git a/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp b/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp
 index db8a3c004486d5b27e012b0b318b4d8ac477569a..989438d66fb7b276c3eb99bc85f4243103f14981 100644
 --- a/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp
@@ -1125,27 +1133,22 @@ index 9449432365c9b0371c1f13ebf20f50cd18ed1dbe..56fc41adb0c984298bdd8f84f09df66f
      for (i = 0; i < *count; ++i) {
        nr_local_addr_fmt_info_string(addrs+i,typestr,sizeof(typestr));
 diff --git a/netwerk/base/nsIOService.cpp b/netwerk/base/nsIOService.cpp
-index 31b794135b1e02e35dab6dc6714402ee699f1d69..997797d6fc192b9cab241d42f6e4a3a6941588f7 100644
+index 31b794135b1e02e35dab6dc6714402ee699f1d69..aec9b83ddd81a3a7d3600d0724dfd67b137544b6 100644
 --- a/netwerk/base/nsIOService.cpp
 +++ b/netwerk/base/nsIOService.cpp
-@@ -66,6 +66,9 @@
- #include "nsURLHelper.h"
- #include "nsXPCOM.h"
- #include "nsXULAppAPI.h"
-+#ifdef MOZ_WEBRTC
-+#  include "transport/nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
-+#endif
- #include "nscore.h"
- #include "prprf.h"
- #include "ssl.h"
-@@ -286,6 +289,11 @@ static const char* gCallbackSecurityPrefs[] = {
+@@ -8,6 +8,7 @@
+ #include "MainThreadUtils.h"
+ #include "SerializedLoadContext.h"
+ #include "StaticComponents.h"
++#include "StealthIPv6Literal.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ #include "SuspendableChannelWrapper.h"
+ #include "WebTransportSessionProxy.h"
+ #include "mozilla/AppShutdown.h"
+@@ -286,6 +287,8 @@ static const char* gCallbackSecurityPrefs[] = {
  };
  
  nsresult nsIOService::Init() {
-+#ifdef MOZ_WEBRTC
-+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): IPv6 is one fact, the declared network's (nr_stealth_network.h).
-+  if (XRE_IsParentProcess()) mozilla::StealthApplyDeclaredIPFamilyFromEnvironment();
-+#endif
++  StealthApplyDeclaredNetwork();  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
 +
    SSLTokensCache::Init();
  

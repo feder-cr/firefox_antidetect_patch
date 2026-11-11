@@ -1,6 +1,9 @@
 // Parental controls are declared off, and the declaration lives where the OS is
-// read: the constructor of every OS implementation of nsIParentalControlsService
-// (toolkit/components/parentalcontrols/). Every reader then sees the same value
+// read: the constructor of every implementation of nsIParentalControlsService
+// that our builds compile, Windows and the default one (Linux)
+// (toolkit/components/parentalcontrols/). The Android and macOS implementations
+// are not compiled by any build of ours and stay byte for byte as Mozilla wrote
+// them (last test). Every reader then sees the same value
 // without a hook of its own: nsHttpHandler (TRR skip, "Prefer: safe"),
 // CanonicalBrowsingContext::ShouldEnforceParentalControls, DownloadIntegration
 // and the DoH heuristics all go through the service. nsHttpHandler is upstream's.
@@ -13,6 +16,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const TREE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -20,8 +24,10 @@ const read = rel => fs.readFileSync(path.join(TREE, rel), 'utf8');
 const DIR = 'toolkit/components/parentalcontrols';
 const HOOK = 'if (StealthParentalControlsDeclared(&mEnabled)) {';
 
+// The implementations our builds compile: Windows x86_64 and Linux x86_64.
 const implementations = fs.readdirSync(path.join(TREE, DIR))
-    .filter(f => /^nsParentalControlsService(Win|Cocoa|Android|Default)\.(cpp|mm)$/.test(f));
+    .filter(f => /^nsParentalControlsService(Win|Default)\.cpp$/.test(f));
+const OUT_OF_PERIMETER = ['nsParentalControlsServiceAndroid.cpp', 'nsParentalControlsServiceCocoa.mm'];
 
 function constructorBody(text) {
   const start = text.indexOf('nsParentalControlsService::nsParentalControlsService()');
@@ -42,8 +48,9 @@ const OS_CALLS = [
   'CFPreferences', 'CFSTR(', 'GetWebSettings', 'GetUserSettings',
 ];
 
-test('all four implementations are known to this test', () => {
-  assert.equal(implementations.length, 4, implementations.join());
+test('the implementations our builds compile are known to this test', () => {
+  assert.deepEqual(implementations.sort(),
+      ['nsParentalControlsServiceDefault.cpp', 'nsParentalControlsServiceWin.cpp']);
 });
 
 test('the declared value is set in the constructor of every implementation', () => {
@@ -110,4 +117,17 @@ test('the other readers take the value from the service', () => {
     assert.doesNotMatch(read(file), /do_CreateInstance\("@mozilla\.org\/parental-controls-service;1"\)/, file);
   assert.match(read('toolkit/components/build/components.conf'),
       /'contract_ids': \['@mozilla\.org\/parental-controls-service;1'\],\n\s+'type': 'nsParentalControlsService',/);
+});
+
+test('the implementations no build of ours compiles (Android, macOS) are as Mozilla wrote them', () => {
+  for (const file of OUT_OF_PERIMETER) {
+    const text = read(`${DIR}/${file}`);
+    assert.doesNotMatch(text, /Stealth/, file);
+    let diff = null;
+    try {
+      diff = execFileSync('git', ['diff', 'FIREFOX_159_0_RELEASE', '--', `${DIR}/${file}`],
+        { cwd: TREE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (e) { /* no tag in this checkout */ }
+    if (diff !== null) assert.equal(diff, '', `${file} differs from the release`);
+  }
 });

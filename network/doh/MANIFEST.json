@@ -1,20 +1,24 @@
 {
  "modified": [
-  "browser/components/tabbrowser/Tabbrowser.sys.mjs",
-  "netwerk/base/NetworkConnectivityService.cpp",
+  "dom/media/webrtc/jsapi/MediaTransportHandler.cpp",
+  "dom/media/webrtc/transport/nriceresolver.cpp",
+  "dom/media/webrtc/transport/nriceresolver.h",
   "netwerk/dns/TRR.cpp",
+  "netwerk/dns/moz.build",
+  "netwerk/dns/nsHostResolver.cpp",
   "netwerk/protocol/http/TRRServiceChannel.cpp",
   "netwerk/protocol/http/nsHttpChannel.cpp",
-  "toolkit/components/captivedetect/CaptiveDetect.sys.mjs",
-  "toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp",
-  "toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp"
  ],
  "added": {
+  "dom/media/webrtc/transport/StealthIceResolverContext.cpp": "100644",
+  "dom/media/webrtc/transport/StealthIceResolverContext.h": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthIceResolverContext.cpp": "100644",
   "juggler/EarlyProxyHold.js": "100644",
   "juggler/TrrPrefs.js": "100644",
   "juggler/tests/dns_has_no_gate_of_ours.test.mjs": "100644",
+  "juggler/tests/doh_hooks_stay_small.test.mjs": "100644",
   "juggler/tests/doh_never_goes_direct_when_its_proxy_is_lost.test.mjs": "100644",
   "juggler/tests/doh_request_carries_the_context_of_its_lookup.test.mjs": "100644",
   "juggler/tests/doh_request_on_the_main_thread_fails_closed.test.mjs": "100644",
@@ -30,51 +34,73 @@
   "juggler/tests/trr_connection_info_is_not_cached_in_this_build.test.mjs": "100644",
   "juggler/tests/trr_follows_the_proxies_present.test.mjs": "100644",
   "juggler/tests/warnings_reach_a_sink_that_is_not_gated.test.mjs": "100644",
+  "netwerk/dns/StealthSessionResolver.cpp": "100644",
+  "netwerk/dns/StealthSessionResolver.h": "100644",
   "netwerk/ipc/StealthTRRContext.cpp": "100644",
   "netwerk/ipc/StealthTRRContext.h": "100644",
+  "netwerk/test/gtest/TestStealthSessionResolver.cpp": "100644",
   "netwerk/test/gtest/TestStealthTRRContext.cpp": "100644",
   "toolkit/components/parentalcontrols/StealthParentalControls.h": "100644"
  },
  "inventory": [
   {
-   "file": "browser/components/tabbrowser/Tabbrowser.sys.mjs",
+   "file": "dom/media/webrtc/jsapi/MediaTransportHandler.cpp",
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
    "added": 2,
-   "removed": 4,
+   "removed": 0,
    "hunks": 2,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "the load flags of the captive portal tab (LOAD_FLAGS_DISABLE_TRR)",
+   "anchor": "MediaTransportImplNicer::SetProxyConfig",
    "evidence": [
-    "+      // STEALTH-HOOK(network/doh): the captive portal tab loads with the",
-    "-      if (isCaptivePortalTab) {",
-    "-        loadFlags |= LOAD_FLAGS_DISABLE_TRR;"
+    "+#include \"transport/StealthIceResolverContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+  mDNSResolver->SetOriginAttributes(StealthIceResolverAttributes(aProxyConfig));  // STEALTH-HOOK(network/doh)"
    ],
-   "notes": "The captive portal tab loads with the session resolver: upstream asks for the system one here (LOAD_FLAGS_DISABLE_TRR), which would make the name leave through the host resolver. The flag and its import are removed; a comment with the hook sits in the place of the `if`.",
+   "notes": "The name of an ICE server is resolved in the context of its PeerConnection: the resolver gets the origin attributes our file derives from the proxy config. Include and one call.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
    }
   },
   {
-   "file": "netwerk/base/NetworkConnectivityService.cpp",
+   "file": "dom/media/webrtc/transport/nriceresolver.cpp",
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
-   "added": 12,
-   "removed": 14,
-   "hunks": 3,
+   "added": 1,
+   "removed": 1,
+   "hunks": 1,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
-   "anchor": "RecheckDNS (four lookups); SetupIPCheckChannel (SetTRRMode)",
+   "anchor": "NrIceResolver::resolve",
    "evidence": [
-    "+  // STEALTH-HOOK(network/doh): the four lookups follow the session resolver",
-    "-                                   nsIDNSService::RESOLVE_TRR_DISABLED_MODE,",
-    "-  rv = channel->SetTRRMode(nsIRequest::TRR_DISABLED_MODE);"
+    "+  OriginAttributes attrs = mAttrs;  // STEALTH-HOOK(network/doh)"
    ],
-   "notes": "The four DNS lookups and the IP check channel of the connectivity service follow the session resolver: upstream asks for the system one with RESOLVE_TRR_DISABLED_MODE and SetTRRMode(TRR_DISABLED_MODE). The flag is dropped from each call (the arguments stay Mozilla's) and the hook comments say why.",
+   "notes": "The lookup starts from the origin attributes of the resolver (the DoH context of its PeerConnection) instead of default ones. One line replaced.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nriceresolver.h",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "NrIceResolver class members",
+   "evidence": [
+    "+#include \"StealthIceResolverContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+  void SetOriginAttributes(const OriginAttributes& aAttrs) { mAttrs = aAttrs; }  // STEALTH-HOOK(network/doh)",
+    "+  OriginAttributes mAttrs;  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "The origin attributes of the resolver: one member, its setter and getter (one-line accessors) and the include of the header of our file.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
@@ -85,9 +111,9 @@
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
-   "added": 11,
+   "added": 4,
    "removed": 1,
-   "hunks": 4,
+   "hunks": 3,
    "inline_logic_lines": 5,
    "hookable": "movable",
    "anchor": "include of StealthTRRContext.h; TRR::SendHTTPRequest (the channel's load info; the cached connection info)",
@@ -103,13 +129,55 @@
    }
   },
   {
+   "file": "netwerk/dns/moz.build",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "moz.build after the closing bracket",
+   "evidence": [
+    "+UNIFIED_SOURCES += [\"StealthSessionResolver.cpp\"]  # STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Compiles StealthSessionResolver.cpp.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/dns/nsHostResolver.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "nsHostResolver",
+   "evidence": [
+    "+#include \"StealthSessionResolver.h\"  // STEALTH-HOOK(network/doh)",
+    "+  // STEALTH-HOOK(network/doh): a \"TRR disabled\" request follows the session.",
+    "+  flags = StealthFlagsFollowSession(aHost, flags);"
+   ],
+   "notes": "One-line hook: the session resolver decides the request.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
    "file": "netwerk/protocol/http/TRRServiceChannel.cpp",
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
-   "added": 30,
+   "added": 9,
    "removed": 4,
-   "hunks": 9,
+   "hunks": 6,
    "inline_logic_lines": 10,
    "hookable": "movable",
    "anchor": "include of StealthTRRContext.h; MaybeResolveProxyAndBeginConnect; ResolveProxy; OnProxyAvailable; BeginConnect (the connection info)",
@@ -129,9 +197,9 @@
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
-   "added": 19,
+   "added": 5,
    "removed": 1,
-   "hunks": 5,
+   "hunks": 4,
    "inline_logic_lines": 12,
    "hookable": "movable",
    "anchor": "include of StealthTRRContext.h; nsHttpChannel::MaybeResolveProxyAndBeginConnect; nsHttpChannel::OnProxyAvailable",
@@ -147,79 +215,13 @@
    }
   },
   {
-   "file": "toolkit/components/captivedetect/CaptiveDetect.sys.mjs",
-   "category": "other",
-   "feature": "doh-trr-context",
-   "prefs": [],
-   "added": 2,
-   "removed": 2,
-   "hunks": 1,
-   "inline_logic_lines": 0,
-   "hookable": "already-hook",
-   "anchor": "URLFetcher: the TRR mode of the check channel",
-   "evidence": [
-    "+  // STEALTH-HOOK(network/doh): the check follows the session resolver",
-    "-  // Use the system's resolver for this check",
-    "-  xhr.channel.setTRRMode(Ci.nsIRequest.TRR_DISABLED_MODE);"
-   ],
-   "notes": "The captive portal check follows the session resolver: upstream sets TRR_DISABLED_MODE on the channel to use the system resolver, which no lookup of ours may ask for.",
-   "verifier": {
-    "changed": [],
-    "why": "Written from the diff against the tag."
-   }
-  },
-  {
-   "file": "toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp",
-   "category": "other",
-   "feature": "doh-trr-context",
-   "prefs": [],
-   "added": 7,
-   "removed": 1,
-   "hunks": 2,
-   "inline_logic_lines": 5,
-   "hookable": "movable",
-   "anchor": "include of StealthParentalControls.h; the nsParentalControlsService constructor",
-   "evidence": [
-    "+#include \"StealthParentalControls.h\"  // STEALTH-HOOK(network/doh)",
-    "+nsParentalControlsService::nsParentalControlsService() : mEnabled(false) {",
-    "+  // STEALTH-HOOK(network/doh): declared, the OS is never read."
-   ],
-   "notes": "The constructor takes the declared value (off), as the other implementations.",
-   "verifier": {
-    "changed": [],
-    "why": "Written from the diff against the tag."
-   }
-  },
-  {
-   "file": "toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm",
-   "category": "other",
-   "feature": "doh-trr-context",
-   "prefs": [],
-   "added": 5,
-   "removed": 0,
-   "hunks": 2,
-   "inline_logic_lines": 3,
-   "hookable": "movable",
-   "anchor": "include of StealthParentalControls.h; the nsParentalControlsService constructor",
-   "evidence": [
-    "+#include \"StealthParentalControls.h\"  // STEALTH-HOOK(network/doh)",
-    "+  // STEALTH-HOOK(network/doh): declared, the OS is never read.",
-    "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
-   ],
-   "notes": "The constructor takes the declared value (off) and returns before reading the macOS preferences.",
-   "verifier": {
-    "changed": [],
-    "why": "Written from the diff against the tag."
-   }
-  },
-  {
    "file": "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
-   "added": 5,
+   "added": 2,
    "removed": 0,
-   "hunks": 2,
+   "hunks": 1,
    "inline_logic_lines": 3,
    "hookable": "movable",
    "anchor": "include of StealthParentalControls.h; the nsParentalControlsService constructor",
@@ -239,7 +241,7 @@
    "category": "other",
    "feature": "doh-trr-context",
    "prefs": [],
-   "added": 5,
+   "added": 2,
    "removed": 0,
    "hunks": 2,
    "inline_logic_lines": 3,

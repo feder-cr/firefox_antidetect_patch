@@ -72,6 +72,43 @@ bool StealthFailClosedOnProxyFailure(nsresult aProxyStatus,
                                      bool aIsTRRServiceChannel,
                                      bool aCanceled);
 
+/**
+ * What the two channel classes do with that rule, once, in the header: a
+ * template over the channel class, whose AsyncAbort (HttpAsyncAborter) and
+ * CloseCacheEntry are public. True: the channel is ended and the caller returns
+ * at once; false: nothing was done and upstream's code goes on.
+ *
+ * nsHttpChannel (a DoH request made on the main thread): the rule above, then
+ * the cache entry is closed, as upstream does when BeginConnect fails.
+ */
+template <typename ChannelT>
+bool StealthTRRFailClosed(ChannelT* aChannel, nsresult aProxyStatus,
+                          bool aIsTRRServiceChannel, bool aCanceled) {
+  if (!StealthFailClosedOnProxyFailure(aProxyStatus, aIsTRRServiceChannel,
+                                       aCanceled)) {
+    return false;
+  }
+  aChannel->CloseCacheEntry(false);
+  (void)aChannel->AsyncAbort(StealthTRRProxyFailure(aProxyStatus));
+  return true;
+}
+
+/**
+ * TRRServiceChannel: the same rule for a channel that is one by construction,
+ * and has no cache entry. A failed lookup of the channel's proxy ends it unless
+ * it was cancelled (aCanceled; the start of the request has no cancellation to
+ * consult and passes false).
+ */
+template <typename ServiceChannelT>
+bool StealthTRRServiceFailClosed(ServiceChannelT* aChannel,
+                                 nsresult aProxyStatus, bool aCanceled) {
+  if (!StealthFailClosedOnProxyFailure(aProxyStatus, true, aCanceled)) {
+    return false;
+  }
+  (void)aChannel->AsyncAbort(StealthTRRProxyFailure(aProxyStatus));
+  return true;
+}
+
 }  // namespace mozilla::net
 
 #endif  // mozilla_net_StealthTRRContext_h

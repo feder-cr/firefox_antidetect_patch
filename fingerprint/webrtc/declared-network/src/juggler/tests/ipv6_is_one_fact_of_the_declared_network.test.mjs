@@ -92,18 +92,28 @@ test('the application sets a default value, clears the user one, and does nothin
   assert.match(text, /getenv\("STEALTHFOX_WEBRTC_NETWORK"\)/);
 });
 
-test('the hook is one parent-only call at the top of nsIOService::Init, tagged', () => {
+test('the hook is one call at the top of nsIOService::Init, tagged; the parent-only rule lives in our file', () => {
   const text = read('netwerk/base/nsIOService.cpp');
   const init = text.slice(text.indexOf('nsresult nsIOService::Init() {'));
   const head = init.slice(0, init.indexOf('SSLTokensCache::Init();'));
-  assert.match(head, /#ifdef MOZ_WEBRTC/);
-  assert.match(head, /STEALTH-HOOK\(fingerprint\/webrtc\/declared-network\)/);
-  assert.match(head, /if \(XRE_IsParentProcess\(\)\) mozilla::StealthApplyDeclaredIPFamilyFromEnvironment\(\);/);
-  assert.equal(text.match(/StealthApplyDeclaredIPFamily/g).length, 1);
+  assert.match(head, /^nsresult nsIOService::Init\(\) \{\n  StealthApplyDeclaredNetwork\(\);  \/\/ STEALTH-HOOK\(fingerprint\/webrtc\/declared-network\)\n\n  $/);
+  assert.match(text, /#include \"StealthIPv6Literal\.h\"  \/\/ STEALTH-HOOK\(fingerprint\/webrtc\/declared-network\)\n/);
+  // Two lines of ours in the Mozilla file, no conditional compilation and no
+  // mention of the WebRTC header or of the parent process.
+  assert.equal((text.match(/STEALTH-HOOK/g) || []).length, 2);
+  assert.equal(text.match(/StealthApplyDeclaredNetwork/g).length, 1);
+  assert.doesNotMatch(text, /StealthApplyDeclaredIPFamily|nr_stealth_network/);
   // Before the callbacks that read the pref are registered.
   assert.ok(init.indexOf('RegisterPrefixCallbacks') > head.length);
   // The pref is still followed by the socket process.
   assert.match(text, /"network\.dns\.disableIPv6",/);
+  // The function: parent process only, only where WebRTC is built, and it calls
+  // the one writer.
+  const ours = read('netwerk/base/StealthIPv6Literal.cpp');
+  const fn = ours.slice(ours.indexOf('void StealthApplyDeclaredNetwork() {'));
+  assert.match(fn, /^void StealthApplyDeclaredNetwork\(\) \{\n#ifdef MOZ_WEBRTC\n  if \(XRE_IsParentProcess\(\)\) \{\n    StealthApplyDeclaredIPFamilyFromEnvironment\(\);\n  \}\n#endif\n\}/);
+  assert.match(ours, /#ifdef MOZ_WEBRTC\n#  include \"transport\/nr_stealth_network\.h\"\n#endif/);
+  assert.match(read('netwerk/base/StealthIPv6Literal.h'), /void StealthApplyDeclaredNetwork\(\);/);
 });
 
 test('the gtest runs one table through the parser, the accessor and the application', () => {

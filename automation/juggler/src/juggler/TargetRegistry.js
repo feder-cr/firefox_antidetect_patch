@@ -478,15 +478,20 @@ export class TargetRegistry {
   }
 
   // The proxy records present: the browser-wide one and those of every live
-  // context. The DoH prefs follow this set (see TrrPrefs.js).
+  // context, each with its userContextId. The DoH prefs, and the list of the
+  // contexts that have a proxy, follow this set (see TrrPrefs.js). It is the
+  // same registry that proxyRecordFor() answers the channel filter from.
   _proxiesPresent() {
-    const proxies = [...this._browserContextIdToBrowserContext.values()].map(bc => bc._proxy);
-    proxies.push(this._browserProxy);
-    return proxies.filter(Boolean);
+    return {
+      browserProxy: this._browserProxy,
+      contexts: [...this._browserContextIdToBrowserContext.values()]
+          .map(bc => ({ userContextId: bc.userContextId, proxy: bc._proxy })),
+    };
   }
 
   _syncTrrPrefs() {
-    syncTrrPrefs(this._proxiesPresent());
+    const {browserProxy, contexts} = this._proxiesPresent();
+    syncTrrPrefs(browserProxy, contexts);
   }
 
   get browserProxyDecided() {

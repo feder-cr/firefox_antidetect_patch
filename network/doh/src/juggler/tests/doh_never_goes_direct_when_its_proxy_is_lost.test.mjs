@@ -19,7 +19,7 @@ const read = rel => fs.readFileSync(path.join(TREE, rel), 'utf8');
 test('a failed proxy status ends the TRR request, a cancelled one goes on as upstream', () => {
   const text = read('netwerk/protocol/http/TRRServiceChannel.cpp');
   const body = text.slice(text.indexOf('TRRServiceChannel::OnProxyAvailable('));
-  const fail = body.indexOf('if (NS_FAILED(status) && !mCanceled) {\n    (void)AsyncAbort(StealthTRRProxyFailure(status));\n    return NS_OK;\n  }');
+  const fail = body.indexOf('if (StealthTRRServiceFailClosed(this, status, mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)');
   const used = body.indexOf('if (NS_SUCCEEDED(status)) mProxyInfo = pi;');
   assert.ok(fail > 0, 'no abort on a failed proxy status');
   assert.ok(used > fail, 'the status is used before it is checked');
@@ -29,10 +29,15 @@ test('a lookup that cannot even be started ends the TRR request', () => {
   const text = read('netwerk/protocol/http/TRRServiceChannel.cpp');
   const body = text.slice(text.indexOf('nsresult TRRServiceChannel::MaybeResolveProxyAndBeginConnect()'));
   const resolve = body.indexOf('NS_SUCCEEDED(proxyRv = ResolveProxy())');
-  const fail = body.indexOf('if (NS_FAILED(proxyRv)) {\n    (void)AsyncAbort(StealthTRRProxyFailure(proxyRv));\n    return NS_OK;\n  }');
+  const fail = body.indexOf('if (StealthTRRServiceFailClosed(this, proxyRv, false)) { return NS_OK; }  // STEALTH-HOOK(network/doh)');
   const connect = body.indexOf('rv = BeginConnect();');
   assert.ok(resolve > 0 && fail > resolve, 'a failed lookup is not turned into an abort');
   assert.ok(connect > fail, 'the connection begins before the failure is handled');
+});
+
+test('the rule is a template in our header: the same test as the nsHttpChannel one, then AsyncAbort with the failure', () => {
+  const header = read('netwerk/ipc/StealthTRRContext.h');
+  assert.match(header, /bool StealthTRRServiceFailClosed\(ServiceChannelT\* aChannel,\s+nsresult aProxyStatus, bool aCanceled\) \{\n  if \(!StealthFailClosedOnProxyFailure\(aProxyStatus, true, aCanceled\)\) \{\n    return false;\n  \}\n  \(void\)aChannel->AsyncAbort\(StealthTRRProxyFailure\(aProxyStatus\)\);\n  return true;\n\}/);
 });
 
 test('the Mozilla comment that says failover to DIRECT stays, and the hook is above the line it governs', () => {

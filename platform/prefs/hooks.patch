@@ -39,7 +39,7 @@ index c18e30b24e407fe97518150b004b7291de392c2a..d964a823ed12cc9ff84158354f3954aa
 +// STEALTH-HOOK(platform/prefs): our defaults, after all.js so they win.
 +#include init/StealthPrefs.js
 diff --git a/modules/libpref/init/all.js b/modules/libpref/init/all.js
-index 26753001966ab944c524b4ede79d58afe3b4f4de..15ce93f214584925c2030095eb4beab744c50c84 100644
+index 26753001966ab944c524b4ede79d58afe3b4f4de..352bfe577470e4137262e0c791b6f1e3d3761482 100644
 --- a/modules/libpref/init/all.js
 +++ b/modules/libpref/init/all.js
 @@ -2687,19 +2687,19 @@ pref("font.size.monospace.x-math", 13);
@@ -90,6 +90,15 @@ index 26753001966ab944c524b4ede79d58afe3b4f4de..15ce93f214584925c2030095eb4beab7
  
    pref("font.name-list.serif.zh-CN", "serif");
    pref("font.name-list.sans-serif.zh-CN", "sans-serif");
+@@ -3070,7 +3070,7 @@ pref("network.tcp.keepalive.idle_time", 600); // seconds; 10 mins
+ // All the Geolocation preferences are here.
+ //
+ #if !defined(ANDROID) && !defined(XP_WIN)
+-  pref("geo.provider.network.url", "https://www.googleapis.com/geolocation/v1/geolocate?key=%GOOGLE_LOCATION_SERVICE_API_KEY%&solution_channel=%OS%");
++  pref("geo.provider.network.url", "");  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
+ 
+   // Timeout to wait before sending the location request.
+   pref("geo.provider.network.timeToWaitBeforeSending", 5000);
 diff --git a/modules/libpref/moz.build b/modules/libpref/moz.build
 index 2c8b218c618f8fa73ab4b21f4155d5f063bc1bb4..4d265ca09a7d9ab5fb429b13007993d3c89b0406 100644
 --- a/modules/libpref/moz.build

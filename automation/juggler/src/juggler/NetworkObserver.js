@@ -134,7 +134,10 @@ class NetworkRequest {
     this.httpChannel = httpChannel;
 
     const loadInfo = this.httpChannel.loadInfo;
-    const browsingContext = loadInfo?.frameBrowsingContext || loadInfo?.workerAssociatedBrowsingContext || loadInfo?.browsingContext;
+    // A request the parent makes for a page (a fetch with keepalive, which FetchService runs in the parent process) has no
+    // browsingContext in its loadInfo: Gecko names the page in `associatedBrowsingContext`. Without it the request belonged to
+    // no page, and the client heard no `request` event for it (stock Playwright's Firefox reports it).
+    const browsingContext = loadInfo?.frameBrowsingContext || loadInfo?.workerAssociatedBrowsingContext || loadInfo?.associatedBrowsingContext || loadInfo?.browsingContext;
 
     this._frameId = helper.browsingContextToFrameId(browsingContext);
 
@@ -257,6 +260,7 @@ class NetworkRequest {
     // but inherits notificationCallbacks and the listener,
     // and should be used instead of an old channel.
     this._networkObserver._channelToRequest.delete(this.httpChannel);
+    this._replacedChannel = this.httpChannel;
     this.httpChannel = newChannel;
     this._networkObserver._channelToRequest.set(this.httpChannel, this);
   }
@@ -472,8 +476,14 @@ class NetworkRequest {
     // Turns out webcompat shims might redirect to
     // SimpleChannel, so we get requests from a different channel.
     // See https://github.com/microsoft/playwright/issues/9418#issuecomment-944836244
-    if (aRequest !== this.httpChannel)
+    if (aRequest !== this.httpChannel) {
+      // A resumed request is replaced by an internal redirect. When the channel it replaced is cancelled (a beacon whose document
+      // went away) before the replacement ever started, the replacement never reaches http-on-modify-request and nothing else
+      // ends the request: the client waited for it for ever. Playwright's own Firefox reports it failed, here as the channel says.
+      if (aRequest === this._replacedChannel && aStatusCode !== 0 && this._expectingResumedRequest)
+        this._sendOnRequestFailed(aStatusCode);
       return;
+    }
     try {
       this._originalListener.onStopRequest(aRequest, aStatusCode);
     } catch (e) {

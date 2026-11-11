@@ -43,6 +43,7 @@ fingerprint/fonts/bundle
 fingerprint/fonts/font-list
 fingerprint/fonts/idwr
 fingerprint/fonts/metrics
+fingerprint/geolocation/no-host-provider
 fingerprint/hardware/concurrency
 fingerprint/hardware/profile
 fingerprint/hardware/storage-quota

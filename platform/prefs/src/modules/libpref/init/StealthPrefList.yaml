@@ -39,6 +39,24 @@
 # Prefs starting with "network."
 #---------------------------------------------------------------------------
 
+# The user contexts that have a proxy, written by Juggler: a comma-separated
+# list of tokens, "*" meaning the browser-wide proxy exists (so every context
+# without a proxy of its own is proxied) and decimal userContextIds meaning
+# contexts with their own proxy. Empty = no proxy anywhere. The only reader is
+# netwerk/dns/StealthSessionResolver.cpp, which sends the lookups of a proxied
+# context to DoH only and the others to the native resolver, per lookup, with
+# the global network.trr.mode left at 0.
+#
+# DataMutexString with a mirror, so that any thread reads it: the lookups run on
+# the socket thread of the process that owns the host resolver (the socket
+# process when it is on, as by default). The name starts with "network.trr.",
+# the prefix nsIOService forwards to the socket process
+# (gCallbackPrefsForSocketProcess), so a change in the parent reaches it.
+- name: network.trr.stealth.contexts
+  type: DataMutexString
+  value: ""
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "zoom."
 #---------------------------------------------------------------------------

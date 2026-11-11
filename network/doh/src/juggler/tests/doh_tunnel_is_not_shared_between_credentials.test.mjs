@@ -110,10 +110,12 @@ test('the TRR connection info carries the origin attributes of the lookup contex
   const text = fs.readFileSync(path.join(TREE, 'netwerk/protocol/http/TRRServiceChannel.cpp'), 'utf8');
   const begin = text.slice(text.indexOf('nsresult TRRServiceChannel::BeginConnect()'));
   const body = begin.slice(0, begin.indexOf('\n}\n'));
-  assert.match(body, /Maybe<OriginAttributes> stealthContext =\s+StealthTRRContextOfLoadInfo\(mLoadInfo\);  \/\/ STEALTH-HOOK\(network\/doh\)/);
-  assert.match(body, /OriginAttributes stealthAttrs;[^\n]*\n\s+if \(stealthContext\.isSome\(\)\) \{[^\n]*\n\s+stealthAttrs = \*stealthContext;/);
-  assert.match(body, /new nsHttpConnectionInfo\(\s*host, port, ""_ns, mUsername, proxyInfo, stealthAttrs, isHttps\)/);
-  assert.match(body, /\/\/ STEALTH-HOOK\(network\/doh\)\n\s+mapping->GetConnectionInfo\(getter_AddRefs\(mConnectionInfo\), proxyInfo,\s+stealthAttrs\);/);
+  // The attributes of the lookup's context are computed once, from the load info,
+  // and given to the connection info and to the alternative service mapping in
+  // place of the default ones (two Mozilla lines rewritten, registered).
+  assert.match(body, /OriginAttributes stealthAttrs = StealthTRRContextOfLoadInfo\(mLoadInfo\)\.valueOr\(OriginAttributes\(\)\);  \/\/ STEALTH-HOOK\(network\/doh\)\n/);
+  assert.match(body, /new nsHttpConnectionInfo\(\s*host, port, ""_ns, mUsername, proxyInfo, stealthAttrs, isHttps\);  \/\/ STEALTH-HOOK\(network\/doh\)/);
+  assert.match(body, /mapping->GetConnectionInfo\(getter_AddRefs\(mConnectionInfo\), proxyInfo,\s+stealthAttrs\);  \/\/ STEALTH-HOOK\(network\/doh\)/);
   // The default OriginAttributes() no longer builds the connection info.
   assert.doesNotMatch(body, /proxyInfo, OriginAttributes\(\), isHttps\)/);
 });

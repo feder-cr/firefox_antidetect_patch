@@ -72,6 +72,24 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, PcUdpProxy* aProxy);
 void nsSOCKSUDPIOLayerWarm(const nsACString& aHost, int32_t aPort, const nsACString& aUser, const nsACString& aPass);
 void nsSOCKSUDPIOLayerWarm(nsIProxyInfo* aProxy);
 
+/* How many associations the pool of a proxy keeps ready (the tests follow the code, not a copy of the number). */
+uint32_t nsSOCKSUDPIOLayerPoolReady();
+
+/*
+ * Parent process, main thread: whether the socket process aProcessId has to be told about this proxy: true the first time for a proxy
+ * and a process (and again for a new process id: a socket process that was restarted), false otherwise. The message is an advance, said
+ * once: the pool of the socket process replaces what it hands out and what the proxy closes by itself. The parent tells the socket
+ * process by PSocketProcess::StealthWarmSocksUdp, because the sockets of the PeerConnections are made there.
+ */
+bool nsSOCKSUDPIOLayerFirstWarmForProcess(uint64_t aProcessId, const nsACString& aHost, int32_t aPort, const nsACString& aUser,
+                                          const nsACString& aPass);
+
+/*
+ * Parent process, main thread: whether the sockets of the PeerConnections are made in the socket process (so the parent has to tell it
+ * about the proxies), which is the case by default: the socket process exists and WebRTC uses it.
+ */
+bool nsSOCKSUDPIOLayerSocketProcessMakesTheIceSockets();
+
 /*
  * The layer for the SOCKS5 proxy of a connection (an HTTP/3 connection through a proxy): aProxyInfo is the nsIProxyInfo the
  * connection was made with, so the proxy of its context, credentials included. NS_OK and no layer for a proxy that is not

@@ -1,5 +1,5 @@
 diff --git a/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp b/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
-index 28458bedcd1b97143c73e3cf0526439adbfa529e..ac2a6610e8496e1180ac8390a7713702f72c492e 100644
+index 28458bedcd1b97143c73e3cf0526439adbfa529e..8aec77e303a4282d1a19d499e51922968a090bd1 100644
 --- a/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
 +++ b/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
 @@ -6,6 +6,7 @@
@@ -10,7 +10,15 @@ index 28458bedcd1b97143c73e3cf0526439adbfa529e..ac2a6610e8496e1180ac8390a7713702
  #include "mozilla/StaticPrefs_media.h"
  #include "mozilla/dom/BrowserParent.h"
  #include "mozilla/dom/ContentProcessManager.h"
-@@ -216,19 +217,19 @@ nsresult WebrtcTCPSocket::DoProxyConfigLookup() {
+@@ -24,6 +25,7 @@
+ #include "nsProxyRelease.h"
+ #include "nsSocketTransportService2.h"
+ #include "nsString.h"
++#include "transport/nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ 
+ namespace mozilla::net {
+ 
+@@ -216,19 +218,19 @@ nsresult WebrtcTCPSocket::DoProxyConfigLookup() {
      return rv;
    }
  
@@ -38,7 +46,18 @@ index 28458bedcd1b97143c73e3cf0526439adbfa529e..ac2a6610e8496e1180ac8390a7713702
    if (NS_WARN_IF(NS_FAILED(rv))) {
      return rv;
    }
-@@ -391,46 +392,19 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
+@@ -333,8 +335,8 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
+     return;
+   }
+ 
+-  if (NS_WARN_IF(PR_SUCCESS !=
+-                 PR_StringToNetAddr(mLocalAddress.get(), &prAddr))) {
++  // STEALTH-HOOK(fingerprint/webrtc/declared-network): wildcard of the declared family, port 0 (nr_stealth_network.h).
++  if (NS_WARN_IF(!mozilla::StealthTcpBindAddress(mLocalAddress.get(), mLocalPort, &prAddr))) {
+     CloseWithReason(NS_ERROR_FAILURE);
+     return;
+   }
+@@ -391,46 +393,19 @@ nsresult WebrtcTCPSocket::OpenWithHttpProxy() {
    MOZ_ASSERT(NS_IsMainThread(), "not on main thread");
    LOG("WebrtcTCPSocket::OpenWithHttpProxy {}\n", fmt::ptr(this));
    nsresult rv;
@@ -339,6 +358,23 @@ index 929c68ce81478894578ad2dca1fb2e7b73ca19af..b4653023143999009f208196b3b56d9e
    nsCOMPtr<nsIEventTarget> ststhread_;
  };
  
+diff --git a/netwerk/base/nsIProxyInfo.idl b/netwerk/base/nsIProxyInfo.idl
+index 64522b8f7027475bb60db72be7fa35570dc3cab6..b8d95bbe93b668d5058823eba2fcfd5afa697e5c 100644
+--- a/netwerk/base/nsIProxyInfo.idl
++++ b/netwerk/base/nsIProxyInfo.idl
+@@ -122,4 +122,12 @@ interface nsIProxyInfo : nsISupports
+    * through the proxy.
+    */
+   const unsigned short ALWAYS_TUNNEL_VIA_PROXY = 1 << 1;
++
++  /**
++   * STEALTH-HOOK(network/proxy-udp)
++   * Set by the session on a SOCKS5 proxy whose UDP was measured coherent: UDP ASSOCIATE is granted and a STUN
++   * binding through the relay answers with the same public address as the proxy's TCP exit. Only such a proxy
++   * carries the UDP of a PeerConnection or of HTTP/3; every other proxy (flag absent) is a router that drops it.
++   */
++  const unsigned short CARRIES_COHERENT_UDP = 1 << 2;
+ };
 diff --git a/netwerk/base/nsIUDPSocket.idl b/netwerk/base/nsIUDPSocket.idl
 index 72270777e8eb7f2089a17d49bf0d285747f48518..b5058033f32c4a5029712c923aed6e0ab08fc824 100644
 --- a/netwerk/base/nsIUDPSocket.idl
@@ -457,7 +493,7 @@ index 33deecc4b4c4d8e46c2bedf1261aeafd6541b47b..e9b0f9aafa86c911aeec05189bf0a583
    nsCOMPtr<nsIUDPSocketListener> mListener MOZ_GUARDED_BY(mLock);
    nsCOMPtr<nsIUDPSocketSyncListener> mSyncListener;
 diff --git a/netwerk/ipc/PSocketProcess.ipdl b/netwerk/ipc/PSocketProcess.ipdl
-index 8168d164d782847642aabcda232c3081389290bf..f78d0bd0f7660896db1c8f283a0c21b81df58221 100644
+index 8168d164d782847642aabcda232c3081389290bf..5523df48ebf4725aafe951cece5698e93cbb586f 100644
 --- a/netwerk/ipc/PSocketProcess.ipdl
 +++ b/netwerk/ipc/PSocketProcess.ipdl
 @@ -128,7 +128,9 @@ parent:
@@ -471,8 +507,20 @@ index 8168d164d782847642aabcda232c3081389290bf..f78d0bd0f7660896db1c8f283a0c21b8
  
    async ExcludeHttp2OrHttp3(HttpConnectionInfoCloneArgs aArgs);
  
+@@ -191,6 +193,11 @@ child:
+   async PNativeDNSResolverOverride();
+   async NotifyObserver(nsCString aTopic, nsString aData);
+ 
++  // STEALTH-HOOK(network/proxy-udp)
++  // A SOCKS5 proxy the parent opened a connection to, whose UDP the session measured coherent: the pool of UDP associations of
++  // that proxy is made HERE, where the sockets of the PeerConnections are. Endpoint and credentials travel in this message only.
++  async StealthWarmSocksUdp(nsCString aHost, int32_t aPort, nsCString aUser, nsCString aPass);
++
+   async GetSocketData()
+     returns (SocketDataArgs data);
+   async GetDNSCacheEntries()
 diff --git a/netwerk/ipc/ProxyConfigLookup.cpp b/netwerk/ipc/ProxyConfigLookup.cpp
-index b09731c707ff8a47235fb6cbaeaaf3b5d25237b2..0faad4628b631a6ec1b1f0d6a9f355ee07c49ad7 100644
+index b09731c707ff8a47235fb6cbaeaaf3b5d25237b2..80c0d20c6c317ef6c7276a17ff263d8b290a9d90 100644
 --- a/netwerk/ipc/ProxyConfigLookup.cpp
 +++ b/netwerk/ipc/ProxyConfigLookup.cpp
 @@ -5,6 +5,8 @@
@@ -518,7 +566,7 @@ index b09731c707ff8a47235fb6cbaeaaf3b5d25237b2..0faad4628b631a6ec1b1f0d6a9f355ee
  
  ProxyConfigLookup::~ProxyConfigLookup() = default;
  
-@@ -47,13 +57,16 @@ nsresult ProxyConfigLookup::DoProxyResolve(nsICancelable** aLookupCancellable) {
+@@ -47,19 +57,24 @@ nsresult ProxyConfigLookup::DoProxyResolve(nsICancelable** aLookupCancellable) {
          mURI, mProxyResolveFlags, mIsTRRServiceChannel,
          [self](nsIProxyInfo* aProxyinfo, nsresult aResult) {
            self->OnProxyAvailable(nullptr, nullptr, aProxyinfo, aResult);
@@ -537,20 +585,14 @@ index b09731c707ff8a47235fb6cbaeaaf3b5d25237b2..0faad4628b631a6ec1b1f0d6a9f355ee
                       nsContentUtils::GetSystemPrincipal(),
                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                       nsIContentPolicy::TYPE_OTHER);
-@@ -61,6 +74,13 @@ nsresult ProxyConfigLookup::DoProxyResolve(nsICancelable** aLookupCancellable) {
+   if (NS_FAILED(rv)) {
      return rv;
    }
++  rv = StealthApplyTRRContextToChannel(channel, mOriginAttributes);  // STEALTH-HOOK(network/doh)
++  NS_ENSURE_SUCCESS(rv, rv);  // STEALTH-HOOK(network/doh)
  
-+  // STEALTH-HOOK(network/doh): the stand-in is the channel of the context that
-+  // asked, so the proxy filters answer with that context's proxy.
-+  rv = StealthApplyTRRContextToChannel(channel, mOriginAttributes);
-+  if (NS_FAILED(rv)) {
-+    return rv;
-+  }
-+
    // The real requester is a TRRServiceChannel, which can't be handed to the
    // proxy service because it doesn't live on the main thread. Propagate the
-   // flag onto this stand-in channel so that proxy filters see DoH traffic for
 diff --git a/netwerk/ipc/ProxyConfigLookup.h b/netwerk/ipc/ProxyConfigLookup.h
 index 5dff98ad643118e6f962c89e3656eb056aa9e321..ed2fdce3d4bee438fd9727aad0e2841167f47650 100644
 --- a/netwerk/ipc/ProxyConfigLookup.h
@@ -709,6 +751,47 @@ index ef0e206b40bcc0b4179eecc24dae937a5f26fe6f..fd165c7e53c460d2ede9a39c40c6f4ea
  };
  
  }  // namespace net
+diff --git a/netwerk/ipc/SocketProcessChild.cpp b/netwerk/ipc/SocketProcessChild.cpp
+index e7b838e4edd66ca5c7a6306af9e38713e6b4500c..efb53a55f98b91a226fbf089e331c50688ec9f8a 100644
+--- a/netwerk/ipc/SocketProcessChild.cpp
++++ b/netwerk/ipc/SocketProcessChild.cpp
+@@ -43,6 +43,7 @@
+ #include "mozilla/net/TRRServiceChild.h"
+ #include "nsDebugImpl.h"
+ #include "nsHttpConnectionInfo.h"
++#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/proxy-udp)
+ #include "nsHttpHandler.h"
+ #include "nsIDNSService.h"
+ #include "nsIHttpActivityObserver.h"
+@@ -584,6 +585,13 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvNotifyObserver(
+   return IPC_OK();
+ }
+ 
++// STEALTH-HOOK(network/proxy-udp)
++mozilla::ipc::IPCResult SocketProcessChild::RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort,
++                                                                    const nsACString& aUser, const nsACString& aPass) {
++  nsSOCKSUDPIOLayerWarm(aHost, aPort, aUser, aPass);
++  return IPC_OK();
++}
++
+ namespace {
+ 
+ class DataResolverBase {
+diff --git a/netwerk/ipc/SocketProcessChild.h b/netwerk/ipc/SocketProcessChild.h
+index 026db9b3016a0eb0f8fbbd6298ad6dc88156eaa5..2fcccc6dd3875e3552275d74677950ea1a00c20c 100644
+--- a/netwerk/ipc/SocketProcessChild.h
++++ b/netwerk/ipc/SocketProcessChild.h
+@@ -128,6 +128,10 @@ class SocketProcessChild final : public PSocketProcessChild {
+   mozilla::ipc::IPCResult RecvNotifyObserver(const nsACString& aTopic,
+                                              const nsAString& aData);
+ 
++  // STEALTH-HOOK(network/proxy-udp)
++  mozilla::ipc::IPCResult RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort, const nsACString& aUser,
++                                                  const nsACString& aPass);
++
+   mozilla::ipc::IPCResult RecvGetSocketData(GetSocketDataResolver&& aResolve);
+   mozilla::ipc::IPCResult RecvGetDNSCacheEntries(
+       GetDNSCacheEntriesResolver&& aResolve);
 diff --git a/netwerk/ipc/SocketProcessParent.cpp b/netwerk/ipc/SocketProcessParent.cpp
 index bf7e2b896b8fb3ad04a674a88456853d7ba4cb81..93dd6ebbce271d24e61a92fbb6711f6f13422627 100644
 --- a/netwerk/ipc/SocketProcessParent.cpp
@@ -855,35 +938,10 @@ index 6c3d72d113cba2ea2aa81b47cecfa19b76cc743a..46a1a111893bf1bff22c74502fc8614f
    uint32_t idleTimeout = StaticPrefs::network_http_http3_idle_timeout();
  
 diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
-index 2d53f5deee9d2dbaf55f6e4fbf4ba4ff2f97f1b8..56709d14e1a511ca0d9b6f46fe5f7cde3d5a04f1 100644
+index 2d53f5deee9d2dbaf55f6e4fbf4ba4ff2f97f1b8..35afc9adef126255176e69aaec608528b8e34fd1 100644
 --- a/netwerk/protocol/http/HttpBaseChannel.cpp
 +++ b/netwerk/protocol/http/HttpBaseChannel.cpp
-@@ -509,22 +509,8 @@ HttpBaseChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
- 
- NS_IMETHODIMP
- HttpBaseChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
--  if (!LoadIsOCSP()) {
--    return GetTRRModeImpl(aTRRMode);
--  }
--
--  nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
--  nsIDNSService::ResolverMode trrMode = nsIDNSService::MODE_NATIVEONLY;
--  // If this is an OCSP channel, and the global TRR mode is TRR_ONLY (3)
--  // then we set the mode for this channel as TRR_DISABLED_MODE.
--  // We do this to prevent a TRR service channel's OCSP validation from
--  // blocking DNS resolution completely.
--  if (dns && NS_SUCCEEDED(dns->GetCurrentTrrMode(&trrMode)) &&
--      trrMode == nsIDNSService::MODE_TRRONLY) {
--    *aTRRMode = nsIRequest::TRR_DISABLED_MODE;
--    return NS_OK;
--  }
--
-+  // STEALTH-HOOK(network/doh): an OCSP channel follows the session resolver
-+  // like any other (upstream asks for the system one when the mode is 3).
-   return GetTRRModeImpl(aTRRMode);
- }
- 
-@@ -6748,9 +6734,11 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
+@@ -6748,9 +6748,11 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
  void HttpBaseChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
  
  bool HttpBaseChannel::Http3Allowed() const {
@@ -945,7 +1003,7 @@ index 97b6d04e2c3d3e689b32daa848b9a7774106f885..e3ac0a2e87ad6dc3b859e02bf6c37b5b
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
      XPIDL_SOURCES += [
 diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.cpp
-index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..104fcdd301885b7f8967991e942ff9197106311d 100644
+index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..31e84c659f97aa7c78fa3f045363fc4830ddeee8 100644
 --- a/netwerk/socket/nsSOCKSIOLayer.cpp
 +++ b/netwerk/socket/nsSOCKSIOLayer.cpp
 @@ -17,6 +17,8 @@
@@ -953,7 +1011,7 @@ index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..104fcdd301885b7f8967991e942ff919
  #include "nsNamedPipeIOLayer.h"
  #include "nsNetCID.h"
 +#include "StealthIPv6Literal.h"  // STEALTH-HOOK(network/ipv6-literal)
-+#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/socks)
++#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/proxy-udp)
  #include "nsString.h"
  #include "nsThreadUtils.h"
  #include "nspr.h"
@@ -962,7 +1020,7 @@ index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..104fcdd301885b7f8967991e942ff919
      PRNetAddr prProxy;
      NetAddrToPRNetAddr(&proxy, &prProxy);
 -    status = fd->lower->methods->connect(fd->lower, &prProxy, mTimeout);
-+    status = StealthIPv6Connect(fd->lower, proxy, false, &prProxy, mTimeout);  // STEALTH-HOOK(network/ipv6-literal)
++    status = StealthConnect(fd->lower, proxy, StealthConnectTarget::kSocksProxyHop, &prProxy, mTimeout);  // STEALTH-HOOK(network/ipv6-literal)
      if (status != PR_SUCCESS) {
        PRErrorCode c = PR_GetError();
  
@@ -970,7 +1028,7 @@ index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..104fcdd301885b7f8967991e942ff919
  
    NS_ADDREF(infoObject);
    infoObject->Init(socksVersion, family, proxy, host, flags, tlsFlags);
-+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/socks)
++  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/proxy-udp)
    layer->secret = (PRFilePrivate*)infoObject;
  
    PRDescIdentity fdIdentity = PR_GetLayersIdentity(fd);

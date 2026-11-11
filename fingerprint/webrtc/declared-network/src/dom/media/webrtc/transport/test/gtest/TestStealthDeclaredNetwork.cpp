@@ -255,6 +255,29 @@ TEST(StealthDeclaredNetwork, APortTheSystemKeepsOrAnotherSocketHoldsIsSkipped)
   EXPECT_EQ(16384, tried);
 }
 
+TEST(StealthDeclaredNetwork, ATcpSocketToATurnServerBindsTheWildcardOfTheDeclaredFamilyOnPortZero)
+{
+  PRNetAddr a;
+  ASSERT_TRUE(mozilla::StealthTcpBindAddress("192.168.31.7", 51234, &a));
+  EXPECT_EQ(a.raw.family, PR_AF_INET);
+  EXPECT_EQ(a.inet.ip, 0u);       // the wildcard: the declared address is not this host's
+  EXPECT_EQ(a.inet.port, 0);       // the system gives a free port; a range it reserves cannot refuse it
+
+  PRNetAddr b;
+  ASSERT_TRUE(mozilla::StealthTcpBindAddress("2001:db8:1:2:3:4:5:6", 51234, &b));
+  EXPECT_EQ(b.raw.family, PR_AF_INET6);
+  EXPECT_EQ(b.ipv6.port, 0);
+  for (unsigned char byte : b.ipv6.ip.pr_s6_addr) EXPECT_EQ(byte, 0);
+}
+
+TEST(StealthDeclaredNetwork, ATcpBindAddressNeedsAnAddress)
+{
+  PRNetAddr a;
+  EXPECT_FALSE(mozilla::StealthTcpBindAddress("", 51234, &a));
+  EXPECT_FALSE(mozilla::StealthTcpBindAddress("not an address", 51234, &a));
+  EXPECT_FALSE(mozilla::StealthTcpBindAddress(nullptr, 51234, &a));
+}
+
 TEST(StealthDeclaredNetwork, ADatagramToOurOwnSocketGoesOnTheLoopback)
 {
   mozilla::StealthOwnPorts own;

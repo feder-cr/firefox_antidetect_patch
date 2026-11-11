@@ -2,12 +2,18 @@
 
 Category: other, spoof
 Prefs: none
-Test: StealthSessionUdpProxy.* (netwerk/test/gtest/TestStealthSocksCredentials.cpp); the e2e of invisible_playwright (tests/test_*_e2e.py: srflx through the relay, proxy without UDP, TURN over TCP per context, two contexts, HTTP/3)
+Test: StealthSessionUdpProxy.* (netwerk/test/gtest/TestStealthSocksCredentials.cpp), StealthUdpProxyBirth.* (dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth.cpp, the rule at the birth of a UDP socket); the node test the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info; the e2e of invisible_playwright (tests/test_*_e2e.py: srflx through the relay, proxy without UDP, TURN over TCP per context, two contexts, HTTP/3)
 
 ## What it does
 
 Behind a SOCKS5 proxy the UDP of WebRTC (STUN, TURN) and of HTTP/3 leaves through the proxy's UDP relay, or does not leave,
 and never goes out from the machine's own address. A browser with no proxy is a plain Firefox: nothing here changes it.
+
+Only a SOCKS5 proxy the session measured coherent carries UDP: the core says it in the proxy it declares (`udp`: 'coherent', 'no' or
+'unmeasured'), and the Juggler turns it into one flag of the nsIProxyInfo it builds, `nsIProxyInfo::CARRIES_COHERENT_UDP` (1 << 2;
+`SessionRoute.udpFlagFor`: SOCKS5 and 'coherent' only). The flag is part of the proxy info's IPC clone, so it reaches the socket
+process with the proxy. A "socks" proxy without it, SOCKS4 and HTTP are a router that drops: UDP goes nowhere, never direct, and
+HTTP/3 falls back to h2 by itself.
 
 The proxy is the one of the document, found by the same lookup Firefox uses for its TCP (ProxyConfigLookup, with the load
 info of the page, so the filters of the Juggler answer for the context of the page). `PcUdpProxy` (netwerk/socket/StealthPcUdpProxy)
@@ -22,7 +28,10 @@ drops: what is sent goes nowhere and nothing is received. Datagrams to loopback 
 process the UDP sockets of a PeerConnection are refused: they would go out direct.
 
 The SOCKS5 connections of Necko tell the layer's pool the proxy (nsSOCKSIOLayer), so an association is warm when the first
-socket asks for it. TURN over TCP and the HTTP tunnel build their lookup channel with the same function
+socket asks for it. The sockets of the PeerConnections are made in the socket process, which opens no SOCKS5 connection of Necko's, so the
+parent also tells it: one message, `PSocketProcess::StealthWarmSocksUdp` (host, port, user, pass), at most once per proxy and per socket
+process and only for a proxy measured coherent, whose receiver (`SocketProcessChild::RecvStealthWarmSocksUdp`) calls the same
+`nsSOCKSUDPIOLayerWarm`. Endpoint and credentials travel in this message only. TURN over TCP and the HTTP tunnel build their lookup channel with the same function
 (`StealthNewChannelOfLoadInfo`, netwerk/ipc/StealthDocumentChannel).
 
 HTTP/3 through SOCKS5: the h3 Alt-Svc is kept, the host name is resolved (QUIC needs the address) and the socket carries the
@@ -46,11 +55,12 @@ document's load info, so a page on the loopback, a `file:`, a `data:` or a docum
 - `netwerk/ipc/ProxyConfigLookup*.{h,cpp}`, `PSocketProcess.ipdl`, `SocketProcessParent.{h,cpp}`: the optional load info of the
   document goes with the lookup. The same files carry the hooks of network/doh (the origin attributes of the DoH context go with
   the load info; tagged with that feature).
-- `netwerk/base/nsIUDPSocket.idl`, `nsUDPSocket.{h,cpp}`, `nsProxyInfo.{h,cpp}`: `setSocksProxy`, the SOCKS5 test, and no OS handle for a socket with the layer.
+- `netwerk/base/nsIUDPSocket.idl`, `nsUDPSocket.{h,cpp}`, `nsProxyInfo.{h,cpp}`, `nsIProxyInfo.idl`: `setSocksProxy`, the SOCKS5 test, the flag CARRIES_COHERENT_UDP (a value of ours in a slot Mozilla leaves free), and no OS handle for a socket with the layer.
 - `netwerk/protocol/http/{AlternateServices,DnsAndConnectSocket,HttpBaseChannel,HttpConnectionUDP}.cpp`: the HTTP/3 gates.
 - `netwerk/protocol/http/Http3Session.cpp`: `mUseNSPRForIO` also for a SOCKS5 connection (3 lines).
 - `netwerk/protocol/http/Http3ConnectUDPStream.cpp`: `setSocksProxy` answers not implemented (the CONNECT-UDP stream has its own proxy).
-- `netwerk/socket/nsSOCKSIOLayer.cpp`: one call that warms the pool.
+- `netwerk/socket/nsSOCKSIOLayer.cpp`: one call that warms the pool (tagged `STEALTH-HOOK(network/proxy-udp)`).
+- `netwerk/ipc/SocketProcessChild.{h,cpp}`: the receiver of `StealthWarmSocksUdp`, one call.
 - `moz.build` of netwerk/ipc, netwerk/socket (and netwerk/protocol/http, for another folder's file): our sources.
 
 ## Our own files

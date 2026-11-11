@@ -30,18 +30,18 @@ const section = (text, start, length = 6000) => text.slice(text.indexOf(start), 
 test('nsHttpChannel::OnProxyAvailable ends a TRR service channel whose proxy lookup failed', () => {
   const text = read('netwerk/protocol/http/nsHttpChannel.cpp');
   const body = section(text, 'nsHttpChannel::OnProxyAvailable(');
-  const hook = body.search(/StealthFailClosedOnProxyFailure\(status, LoadIsTRRServiceChannel\(\),\s+mCanceled\)/);
+  const hook = body.search(/StealthTRRFailClosed\(this, status, LoadIsTRRServiceChannel\(\), mCanceled\)/);
   const used = body.indexOf('if (NS_SUCCEEDED(status)) {\n    mProxyInfo = pi;');
   assert.ok(hook > 0, 'no fail-closed rule in OnProxyAvailable');
   assert.ok(used > hook, 'the status is used before the rule');
-  assert.match(body.slice(hook, hook + 400), /AsyncAbort\(StealthTRRProxyFailure\(status\)\);\n\s+return NS_OK;/);
+  assert.match(body.slice(hook, hook + 200), /mCanceled\)\) \{ return NS_OK; \}  \/\/ STEALTH-HOOK\(network\/doh\)\n/);
 });
 
 test('nsHttpChannel: a proxy lookup that cannot start ends a TRR service channel too', () => {
   const text = read('netwerk/protocol/http/nsHttpChannel.cpp');
   const body = section(text, 'void nsHttpChannel::MaybeResolveProxyAndBeginConnect()', 2500);
   const lookup = body.indexOf('NS_SUCCEEDED(proxyRv = ResolveProxy())');
-  const hook = body.search(/StealthFailClosedOnProxyFailure\(proxyRv, LoadIsTRRServiceChannel\(\),\s+mCanceled\)/);
+  const hook = body.search(/StealthTRRFailClosed\(this, proxyRv, LoadIsTRRServiceChannel\(\), mCanceled\)\) \{ return; \}/);
   const direct = body.indexOf('rv = BeginConnect();');
   assert.ok(lookup > 0, 'the status of ResolveProxy is not kept');
   assert.ok(hook > lookup, 'no fail-closed rule after the lookup');
@@ -53,6 +53,9 @@ test('the rule is in our file, takes only the TRR flag, and the hooks are marked
   assert.match(header, /bool StealthFailClosedOnProxyFailure\(nsresult aProxyStatus,\s+bool aIsTRRServiceChannel,\s+bool aCanceled\);/);
   const source = read('netwerk/ipc/StealthTRRContext.cpp');
   assert.match(source, /bool StealthFailClosedOnProxyFailure\([^)]*\) \{\n\s+return NS_FAILED\(aProxyStatus\) && aIsTRRServiceChannel && !aCanceled;\n\}/);
+  // The nsHttpChannel version closes the cache entry and ends the channel, as
+  // upstream does when BeginConnect fails; both are public members.
+  assert.match(header, /bool StealthTRRFailClosed\(ChannelT\* aChannel, nsresult aProxyStatus,\s+bool aIsTRRServiceChannel, bool aCanceled\) \{\n  if \(!StealthFailClosedOnProxyFailure\(aProxyStatus, aIsTRRServiceChannel,\s+aCanceled\)\) \{\n    return false;\n  \}\n  aChannel->CloseCacheEntry\(false\);\n  \(void\)aChannel->AsyncAbort\(StealthTRRProxyFailure\(aProxyStatus\)\);\n  return true;\n\}/);
   const channel = read('netwerk/protocol/http/nsHttpChannel.cpp');
   assert.match(channel, /#include "mozilla\/net\/StealthTRRContext\.h"  \/\/ STEALTH-HOOK\(network\/doh\)/);
   assert.equal(channel.match(/STEALTH-HOOK\(network\/doh\)/g).length >= 4, true);

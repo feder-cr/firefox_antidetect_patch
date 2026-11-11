@@ -12,21 +12,21 @@
    "category": "spoof",
    "feature": "accept-language-override-list",
    "prefs": [],
-   "added": 18,
+   "added": 11,
    "removed": 3,
-   "hunks": 6,
-   "inline_logic_lines": 12,
-   "hookable": "movable",
+   "hunks": 2,
+   "inline_logic_lines": 5,
+   "hookable": "already-hook",
    "anchor": "nsHttpHandler::AddStandardRequestHeaders",
    "evidence": [
-    "+#include \"StealthParentalControls.h\"  // STEALTH-HOOK(network/doh)",
-    "+  // STEALTH-HOOK(network/doh): declared, the OS is never asked.",
-    "+  sParentalControlsEnabled = StealthParentalControlsEnabled();"
+    "+static nsresult PrepareAcceptLanguages(const char* i_AcceptLanguages,",
+    "+    // STEALTH-HOOK(fingerprint/locale-time/accept-language)",
+    "+    rv = PrepareAcceptLanguages(aLanguageOverride.get(), acceptLanguage);"
    ],
-   "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner.",
+   "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is two extra Mozilla lines. The 5 logic lines are at the already-hook limit.",
    "verifier": {
     "changed": [],
-    "why": "all fields checked against the diff; no change"
+    "why": "Restored from the diff against the tag (the record had the data of another feature)."
    }
   },
   {

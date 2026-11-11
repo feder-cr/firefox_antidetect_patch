@@ -31,10 +31,14 @@ namespace mozilla {
 /* NrSocket::create: the layer for the proxy of the PeerConnection on a new UDP socket. True = REFUSED (the layer could
  * not be pushed: the socket must not exist, a plain one would send direct). A socket with no proxy config (not of a
  * PeerConnection) or of a PeerConnection that has no proxy is left plain. */
+inline bool StealthUdpProxyAttachRefused(PRFileDesc* aFd, const RefPtr<net::PcUdpProxy>& aProxy) {
+  return aProxy && NS_FAILED(net::nsSOCKSUDPIOLayerAddToSocket(aFd, aProxy));
+}
+
 inline bool StealthUdpProxyAttachRefused(PRFileDesc* aFd,
                                          const std::shared_ptr<NrSocketProxyConfig>& aConfig) {
   RefPtr<net::PcUdpProxy> proxy = aConfig ? aConfig->UdpProxy() : nullptr;
-  return proxy && NS_FAILED(net::nsSOCKSUDPIOLayerAddToSocket(aFd, proxy));
+  return StealthUdpProxyAttachRefused(aFd, proxy);
 }
 
 }  // namespace mozilla

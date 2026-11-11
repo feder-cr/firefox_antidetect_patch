@@ -46,15 +46,26 @@ const Row kRows[] = {
     {"ff02::1", PR_ADDRESS_NOT_AVAILABLE_ERROR},
     {"ff05::1:3", PR_ADDRESS_NOT_AVAILABLE_ERROR},
     {"::", PR_ADDRESS_NOT_AVAILABLE_ERROR},
-    // IPv4-mapped: IPv4's, left to the socket layer.
-    {"::ffff:1.2.3.4", 0},
+    // IPv4-mapped is no route question: StealthConnectError judges it (below).
+    {"::ffff:192.0.2.4", 0},
     {"::ffff:127.0.0.1", 0},
+    // Not in ::ffff:0:0/96 (the translated and the compatible forms): plain
+    // IPv6 addresses, so the route rule applies to them.
+    {"::ffff:0:192.0.2.4", PR_NETWORK_UNREACHABLE_ERROR},
+    {"::192.0.2.4", PR_NETWORK_UNREACHABLE_ERROR},
     // IPv4 is not this predicate's.
-    {"1.2.3.4", 0},
+    {"192.0.2.4", 0},
     {"127.0.0.1", 0},
     {"0.0.0.0", 0},
     {"192.168.1.1", 0},
 };
+
+// A direct connection to an IPv4-mapped literal (::ffff:0:0/96): on Windows a
+// Firefox-style socket (IPV6_V6ONLY on) fails it with WSAEADDRNOTAVAIL,
+// PR_ADDRESS_NOT_AVAILABLE_ERROR, whatever IPv6 is declared; on every OS now.
+const char* const kMapped[] = {"::ffff:192.0.2.4", "::ffff:127.0.0.1",
+                               "::ffff:0.0.0.0", "::ffff:192.168.1.1",
+                               "::ffff:102:304"};
 
 NetAddr Parse(const char* aText) {
   NetAddr addr;
@@ -118,8 +129,100 @@ TEST(StealthDeclaredNetwork, TheConnectFailsWithTheRealErrorAndSendsNothing)
   // Refused before the system is asked: the socket is never connected, so no
   // SYN leaves for the documentation prefix. (The exemption of a destination
   // behind a proxy would be a real connect(): the source test guards it.)
-  EXPECT_EQ(StealthIPv6Connect(fd, addr, false, &prAddr, PR_INTERVAL_NO_WAIT),
+  EXPECT_EQ(StealthConnect(fd, addr, StealthConnectTarget::kDirect, &prAddr,
+                           PR_INTERVAL_NO_WAIT),
             PR_FAILURE);
   EXPECT_EQ(PR_GetError(), PR_NETWORK_UNREACHABLE_ERROR);
+  PR_Close(fd);
+}
+
+TEST(StealthDeclaredNetwork, AnIPv4MappedLiteralFailsLikeWindowsWhateverTheDeclaration)
+{
+  for (const char* text : kMapped) {
+    NetAddr addr = Parse(text);
+    ASSERT_EQ(addr.raw.family, AF_INET6) << text;
+    // IPv6 declared off, and declared on: the same error.
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kDirect, true),
+              PR_ADDRESS_NOT_AVAILABLE_ERROR)
+        << text;
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kDirect, false),
+              PR_ADDRESS_NOT_AVAILABLE_ERROR)
+        << text;
+  }
+  // Outside ::ffff:0:0/96 the mapped rule does not apply: with IPv6 declared on
+  // nothing is refused, with it off the route rule answers (unreachable, not
+  // "not available").
+  for (const char* text : {"::ffff:0:192.0.2.4", "::192.0.2.4"}) {
+    NetAddr addr = Parse(text);
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kDirect, false),
+              0)
+        << text;
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kDirect, true),
+              PR_NETWORK_UNREACHABLE_ERROR)
+        << text;
+  }
+  // The route rule is unchanged for every other row, direct.
+  for (const Row& row : kRows) {
+    NetAddr addr = Parse(row.text);
+    bool mapped = addr.raw.family == AF_INET6 && addr.IsIPAddrV4Mapped();
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kDirect, true),
+              mapped ? PR_ADDRESS_NOT_AVAILABLE_ERROR : row.ifDisabled)
+        << row.text;
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kDirect, false),
+              mapped ? PR_ADDRESS_NOT_AVAILABLE_ERROR : 0)
+        << row.text;
+  }
+}
+
+TEST(StealthDeclaredNetwork, AnIPv4MappedAddressIsLeftAloneBehindAProxyAndOnTheProxyHop)
+{
+  for (const char* text : kMapped) {
+    NetAddr addr = Parse(text);
+    // The destination of a SOCKS connection travels to the proxy.
+    EXPECT_EQ(
+        StealthConnectError(addr, StealthConnectTarget::kBehindSocksProxy, true),
+        0)
+        << text;
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kBehindSocksProxy,
+                                  false),
+              0)
+        << text;
+    // The mapped address the SOCKS layer builds for its own IPv4 proxy.
+    EXPECT_EQ(StealthConnectError(addr, StealthConnectTarget::kSocksProxyHop, true),
+              0)
+        << text;
+    EXPECT_EQ(
+        StealthConnectError(addr, StealthConnectTarget::kSocksProxyHop, false), 0)
+        << text;
+  }
+  // The proxy hop keeps the IPv6 route rule; behind a proxy neither rule applies.
+  NetAddr global = Parse("2001:db8::1");
+  EXPECT_EQ(StealthConnectError(global, StealthConnectTarget::kSocksProxyHop, true),
+            PR_NETWORK_UNREACHABLE_ERROR);
+  EXPECT_EQ(
+      StealthConnectError(global, StealthConnectTarget::kBehindSocksProxy, true),
+      0);
+  // IPv4 is never judged.
+  NetAddr v4 = Parse("192.0.2.4");
+  EXPECT_EQ(StealthConnectError(v4, StealthConnectTarget::kDirect, true), 0);
+  EXPECT_EQ(StealthConnectError(v4, StealthConnectTarget::kDirect, false), 0);
+}
+
+TEST(StealthDeclaredNetwork, ADirectConnectToAMappedLiteralFailsAndSendsNothing)
+{
+  DisableIPv6Pref restore;
+  // IPv6 not declared off: the mapped literal is refused all the same.
+  ASSERT_TRUE(NS_SUCCEEDED(
+      mozilla::Preferences::SetBool("network.dns.disableIPv6", false)));
+  NetAddr addr = Parse("::ffff:127.0.0.1");
+  PRNetAddr prAddr;
+  NetAddrToPRNetAddr(&addr, &prAddr);
+  PRFileDesc* fd = PR_OpenTCPSocket(PR_AF_INET6);
+  ASSERT_TRUE(fd);
+  PR_SetError(0, 0);
+  EXPECT_EQ(StealthConnect(fd, addr, StealthConnectTarget::kDirect, &prAddr,
+                           PR_INTERVAL_NO_WAIT),
+            PR_FAILURE);
+  EXPECT_EQ(PR_GetError(), PR_ADDRESS_NOT_AVAILABLE_ERROR);
   PR_Close(fd);
 }

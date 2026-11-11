@@ -20,7 +20,7 @@
    "prefs": [
     "zoom.stealth.voices.list"
    ],
-   "added": 40,
+   "added": 5,
    "removed": 0,
    "hunks": 2,
    "inline_logic_lines": 24,
@@ -44,7 +44,7 @@
    "category": "spoof",
    "feature": "speech-voices-declared",
    "prefs": [],
-   "added": 82,
+   "added": 12,
    "removed": 0,
    "hunks": 5,
    "inline_logic_lines": 42,
@@ -68,7 +68,7 @@
    "category": "build",
    "feature": "speech-voices-declared",
    "prefs": [],
-   "added": 2,
+   "added": 1,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 0,

@@ -144,7 +144,7 @@ index b4ee977ca56ca3afa98cfcf2215b7790b97bd4fe..b6c44065a3a5a85899096b9ad988c2c2
              if result.is_none() {
                  let created = match global.request_adapter(
 diff --git a/modules/libpref/init/StaticPrefList.yaml b/modules/libpref/init/StaticPrefList.yaml
-index 80be46d83cc04eb081ce58b4e322c8da15143c1c..beb4cc4d3c589fbda2dbad16fcfc4c5a17dd174b 100644
+index 80be46d83cc04eb081ce58b4e322c8da15143c1c..905d26642b3be37545ff20f2e362857428c6f291 100644
 --- a/modules/libpref/init/StaticPrefList.yaml
 +++ b/modules/libpref/init/StaticPrefList.yaml
 @@ -6248,7 +6248,7 @@
@@ -165,3 +165,21 @@ index 80be46d83cc04eb081ce58b4e322c8da15143c1c..beb4cc4d3c589fbda2dbad16fcfc4c5a
    mirror: always
  
  # Whether to use WPAD while configuring proxy with system settings
+@@ -16239,7 +16239,7 @@
+ # Single TRR request timeout, in milliseconds
+ - name: network.trr.request_timeout_ms
+   type: RelaxedAtomicUint32
+-  value: 1500
++  value: 30000  # STEALTH-HOOK(network/doh): the TRR-only timeout; a proxied lookup is TRR_ONLY per request in global mode 0
+   mirror: always
+ 
+ # Single TRR request timeout, in milliseconds for mode 3
+@@ -16393,7 +16393,7 @@
+ # soon after startup or when the pref is flipped.
+ - name: network.trr.exclude-etc-hosts
+   type: RelaxedAtomicBool
+-  value: true
++  value: false  # STEALTH-HOOK(network/doh): the host's hosts file is never read, not even at start-up
+   mirror: always
+ 
+ # Whether to add padding in the doh dns queries (rfc 7830)

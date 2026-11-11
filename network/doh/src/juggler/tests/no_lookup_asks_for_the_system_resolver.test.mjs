@@ -1,12 +1,20 @@
 // No lookup of a desktop session asks for the host's system resolver on its own.
 //
-// With a session proxy the core declares TRR mode 3 (DoH only, through the
-// proxy). A lookup that asks for the request mode "TRR disabled" (the channel
-// mode, the load flag, or the DNS flag RESOLVE_TRR_DISABLED_MODE) is answered by
-// getaddrinfo / DnsQueryEx of the host, whatever the global mode is. Those
-// services stay on as in retail, but their lookups follow the session: DoH
-// through the proxy under mode 3, the system resolver only without a proxy
-// (mode 0), where dropping the request is a no-op.
+// The global mode stays 0; a lookup of a context with a proxy is DoH only
+// (request mode TRR_ONLY), a lookup of a context without one is native. A lookup
+// that asks for the request mode "TRR disabled" (the channel mode, the load flag,
+// or the DNS flag RESOLVE_TRR_DISABLED_MODE) is answered by getaddrinfo /
+// DnsQueryEx of the host. Those services stay on as in retail, but their lookups
+// follow the context: DoH through its proxy when it has one, the system resolver
+// when it has none.
+//
+// That is done ONCE, in our file netwerk/dns/StealthSessionResolver.cpp, called
+// from the two places where the host resolver builds the key of a record from
+// the caller's flags (the rule itself is pinned in
+// the_resolver_chooses_by_context.test.mjs). The Mozilla files that ask for the
+// request mode (the connectivity service, the captive portal XHR and tab, the
+// OCSP channel) are as Mozilla wrote them. The first half pins that, the hook,
+// and the one request that must keep its mode (the DoH request itself).
 //
 // The second half is an allowlist: every remaining occurrence of the words that
 // disable TRR in non-test source has a verdict. A new one fails the test and
@@ -33,58 +41,125 @@ function body(text, startMarker, endMarker) {
   return text.slice(start, end);
 }
 
-// ---- the lookups that were asking for the system resolver -------------------
+// ---- the one place that turns "TRR disabled" into the session's mode ---------
 
-test('NetworkConnectivityService: none of its lookups or its IP check disables TRR', () => {
-  const text = read('netwerk/base/NetworkConnectivityService.cpp');
-  assert.doesNotMatch(text, TRR_OFF);
-  // The other flags of the four lookups are kept.
-  const recheck = body(text, 'NetworkConnectivityService::RecheckDNS', 'NetworkConnectivityService::Observe');
-  assert.equal((recheck.match(/AsyncResolveNative\(/g) || []).length, 4);
-  assert.match(recheck, /RESOLVE_DISABLE_IPV6/);
-  assert.match(recheck, /RESOLVE_DISABLE_IPV4/);
-  assert.match(recheck, /RESOLVE_TYPE_HTTPSSVC,\s*nsIDNSService::RESOLVE_DEFAULT_FLAGS,/);
-  // The HTTP channel of the IP check keeps its address-family limits.
-  const ipcheck = body(text, 'NetworkConnectivityService::SetupIPCheckChannel', 'return channel.forget();');
-  assert.match(ipcheck, /SetIPv6Disabled\(\)/);
-  assert.match(ipcheck, /SetIPv4Disabled\(\)/);
-  assert.doesNotMatch(ipcheck, /SetTRRMode/);
+// The request mode "TRR disabled" is resolved ONCE, where every lookup enters
+// the host resolver. The services that ask for it (the four lookups and the IP
+// check channel of NetworkConnectivityService, the captive portal XHR and its
+// tab, the OCSP channels) are Mozilla's files as Mozilla wrote them.
+const SERVICES = {
+  'netwerk/base/NetworkConnectivityService.cpp': [
+    // the four lookups and the IP check channel, as upstream
+    /nsIDNSService::RESOLVE_DISABLE_IPV6 \|\s*nsIDNSService::RESOLVE_TRR_DISABLED_MODE,/,
+    /nsIDNSService::RESOLVE_DISABLE_IPV4 \|\s*nsIDNSService::RESOLVE_TRR_DISABLED_MODE,/,
+    /nsIDNSService::RESOLVE_TYPE_HTTPSSVC,\s*nsIDNSService::RESOLVE_TRR_DISABLED_MODE,/,
+    /(RESOLVE_TRR_DISABLED_MODE[\s\S]*){4}/,
+    /channel->SetTRRMode\(nsIRequest::TRR_DISABLED_MODE\);/,
+  ],
+  'toolkit/components/captivedetect/CaptiveDetect.sys.mjs': [
+    /xhr\.channel\.setTRRMode\(Ci\.nsIRequest\.TRR_DISABLED_MODE\);/,
+  ],
+  'browser/components/tabbrowser/Tabbrowser.sys.mjs': [
+    /LOAD_FLAGS_DISABLE_TRR,\n\} = Ci\.nsIWebNavigation;/,
+    /if \(isCaptivePortalTab\) \{\n\s+loadFlags \|= LOAD_FLAGS_DISABLE_TRR;\n\s+\}/,
+  ],
+  'netwerk/protocol/http/HttpBaseChannel.cpp': [
+    // the OCSP special case, whole
+    /if \(!LoadIsOCSP\(\)\) \{\n\s+return GetTRRModeImpl\(aTRRMode\);\n\s+\}[\s\S]*?trrMode == nsIDNSService::MODE_TRRONLY\) \{\n\s+\*aTRRMode = nsIRequest::TRR_DISABLED_MODE;\n\s+return NS_OK;\n\s+\}\n\n\s+return GetTRRModeImpl\(aTRRMode\);/,
+  ],
+};
+
+for (const [file, upstream] of Object.entries(SERVICES)) {
+  test(`${file}: as Mozilla wrote it, with no hook of ours for the resolver`, () => {
+    const text = read(file);
+    for (const re of upstream) assert.match(text, re);
+    assert.doesNotMatch(text, /STEALTH-HOOK\(network\/doh\)/);
+    // Where the tag of the release exists, the file carries no line of this
+    // feature: nothing of the TRR words was added or taken out of it.
+    let diff = null;
+    try {
+      diff = execFileSync('git', ['diff', '-U0', 'FIREFOX_159_0_RELEASE', '--', file],
+        { cwd: TREE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (e) { /* no tag in this checkout */ }
+    if (diff !== null) assert.doesNotMatch(diff, /^[-+].*(TRR|Trr|trr)/m);
+  });
+}
+
+test('the resolver hook: two calls at the top of the functions that build the record key from the flags', () => {
+  const text = read('netwerk/dns/nsHostResolver.cpp');
+  // 3 lines of ours: the include and the two calls.
+  assert.equal((text.match(/STEALTH-HOOK\(network\/doh\)/g) || []).length, 3);
+  assert.match(text, /#include "PLDHashTable\.h"\n#include "StealthSessionResolver\.h"  \/\/ STEALTH-HOOK\(network\/doh\)\n#include "TRR\.h"\n/);
+  const resolve = body(text, 'nsresult nsHostResolver::ResolveHost(', 'nsAutoCString host(aHost);');
+  assert.match(resolve, /nsResolveHostCallback\* aCallback\) \{\n  \/\/ STEALTH-HOOK\(network\/doh\): [^\n]*\n  flags = StealthFlagsFollowSession\(aHost, aOriginAttributes, flags\);\n  $/);
+  const detach = body(text, 'void nsHostResolver::DetachCallback(', 'RefPtr<nsHostRecord> rec;');
+  assert.match(detach, /nsresult status\) \{\n  flags = StealthFlagsFollowSession\(host, aOriginAttributes,\n\s+flags\);  \/\/ STEALTH-HOOK\(network\/doh\)\n  $/);
+  // The Mozilla function that computes the effective mode is untouched.
+  const compute = body(text, 'void nsHostResolver::ComputeEffectiveTRRMode', '// Kick-off a name resolve operation');
+  assert.doesNotMatch(compute, /Stealth/);
+  assert.match(compute, /if \(requestMode == nsIRequest::TRR_DISABLED_MODE\) \{\n\s+aRec->RecordReason\(TRRSkippedReason::TRR_REQ_MODE_DISABLED\);/);
 });
 
-test('captive portal detection: the XHR follows the session resolver', () => {
-  const text = read('toolkit/components/captivedetect/CaptiveDetect.sys.mjs');
-  assert.doesNotMatch(text, TRR_OFF);
-  assert.doesNotMatch(text, /setTRRMode/);
-  assert.match(text, /STEALTH-HOOK\(network\/doh\)/);
-  // The flags around it stay.
-  assert.match(text, /LOAD_BYPASS_CACHE/);
-  assert.match(text, /LOAD_ANONYMOUS/);
-  assert.match(text, /HTTPS_ONLY_EXEMPT/);
+test('the resolver hook: only the two mode bits, per context, never the name of the DoH server', () => {
+  const cpp = read('netwerk/dns/StealthSessionResolver.cpp');
+  const h = read('netwerk/dns/StealthSessionResolver.h');
+  // Pure core: the other flags (RESOLVE_DISABLE_TRR included) stay.
+  assert.match(cpp, /\(aFlags & ~nsIDNSService::RESOLVE_TRR_MODE_MASK\) \| mode/);
+  assert.match(cpp, /if \(aHostIsTRRServer\) \{\s*return aFlags;/);
+  assert.doesNotMatch(cpp, /RESOLVE_DISABLE_TRR/);
+  // The DoH server's name is read from the TRR service only for a request for
+  // "TRR disabled", the one the DoH request itself makes, and compared
+  // case-insensitively with the host of its URI.
+  const wrapper = body(cpp, 'nsIDNSService::DNSFlags StealthFlagsFollowSession(', '}  // namespace mozilla::net');
+  assert.match(wrapper, /TRRService::Get\(\)/);
+  assert.match(wrapper, /\(aFlags & nsIDNSService::RESOLVE_TRR_MODE_MASK\) ==\s*nsIDNSService::RESOLVE_TRR_DISABLED_MODE &&\s*HostIsTRRServer\(service, aHost\)/);
+  assert.match(cpp, /GetAsciiHost\(serverHost\)/);
+  assert.match(cpp, /nsCaseInsensitiveCStringComparator/);
+  assert.match(h, /StealthFlagsFollowSession\(\s*const nsACString& aHost, const OriginAttributes& aAttrs,\s*nsIDNSService::DNSFlags aFlags\)/);
+  // Built in the DNS library, and with its gtest.
+  assert.match(read('netwerk/dns/moz.build'), /\]\nUNIFIED_SOURCES \+= \["StealthSessionResolver\.cpp"\]  # STEALTH-HOOK\(network\/doh\)\n/);
+  assert.match(read('netwerk/test/gtest/moz.build'), /SOURCES \+= \["TestStealthSessionResolver\.cpp"\]  # STEALTH-HOOK\(network\/doh\)/);
+  const gtest = read('netwerk/test/gtest/TestStealthSessionResolver.cpp');
+  for (const name of ['ListParsing', 'ContextAgainstList', 'ProxiedLookupIsDoHOnly', 'UnproxiedLookupIsNative',
+    'OtherFlagsStay', 'TheResultIsStableUnderASecondCall', 'TheDoHServerKeepsItsRequest'])
+    assert.match(gtest, new RegExp(`TEST\\(TestStealthSessionResolver,\\s*${name}\\)`));
 });
 
-test('captive portal tab: opens with the load flags of any other tab', () => {
-  const text = read('browser/components/tabbrowser/Tabbrowser.sys.mjs');
-  assert.doesNotMatch(text, TRR_OFF);
-  assert.match(text, /STEALTH-HOOK\(network\/doh\)/);
+test('the DoH request is the one "TRR disabled" request that must stay one', () => {
+  // TRR.cpp asks for it on purpose (resolving the DoH server through DoH would
+  // wait for itself); its server's name is the only name the hook leaves alone,
+  // the proxy's names being excluded by the pref the engine derives.
+  const trr = read('netwerk/dns/TRR.cpp');
+  assert.match(trr, /httpChannel->SetTRRMode\(nsIRequest::TRR_DISABLED_MODE\)/);
+  const dns = read('netwerk/dns/nsDNSService2.cpp');
+  // With a bootstrap address the name never reaches the resolver at all.
+  assert.match(dns, /mTrrService->MaybeBootstrap\(aInput, aACE\)/);
 });
 
-test('OCSP channel: asks the mode of a normal channel, mode 3 included', () => {
-  const text = read('netwerk/protocol/http/HttpBaseChannel.cpp');
-  const getter = body(text, 'HttpBaseChannel::GetTRRMode(', 'HttpBaseChannel::SetTRRMode(');
-  assert.doesNotMatch(getter, TRR_OFF);
-  assert.doesNotMatch(getter, /LoadIsOCSP/);
-  assert.doesNotMatch(getter, /GetCurrentTrrMode/);
-  assert.match(getter, /return GetTRRModeImpl\(aTRRMode\);/);
-  assert.match(getter, /STEALTH-HOOK\(network\/doh\)/);
+test('the records and the callbacks agree: a lookup and its cancellation build the same key', () => {
+  // nsDNSAsyncRequest keeps the flags it was given and hands them to
+  // DetachCallback; both entries of the resolver apply the same function.
+  const dns = read('netwerk/dns/nsDNSService2.cpp');
+  assert.match(dns, /mResolver->DetachCallback\(mHost, mTrrServer, mType, mOriginAttributes, mFlags,/);
+  const text = read('netwerk/dns/nsHostResolver.cpp');
+  assert.equal((text.match(/StealthFlagsFollowSession\(/g) || []).length, 2);
 });
 
 // ---- premises the "leave" verdicts rest on ---------------------------------
 
-test('premise: under mode 3 the flag RESOLVE_DISABLE_TRR alone never reaches the native lookup', () => {
+test('premise: for a proxied lookup the flag RESOLVE_DISABLE_TRR alone never reaches the native lookup', () => {
   const text = read('netwerk/dns/nsHostResolver.cpp');
   const compute = body(text, 'void nsHostResolver::ComputeEffectiveTRRMode', '// Kick-off a name resolve operation');
-  // A default request under mode 3 is TRR_ONLY, whatever the flags say.
-  assert.match(compute, /requestMode == nsIRequest::TRR_DEFAULT_MODE &&\s*resolverMode == nsIDNSService::MODE_TRRONLY\)[\s\S]*?mEffectiveTRRMode = nsIRequest::TRR_ONLY_MODE;/);
+  // A request that asks for TRR_ONLY (what the hook sets for a proxied
+  // context, with the global mode at 0) keeps that effective mode, whatever the
+  // other flags say: the last statement of the function.
+  assert.match(compute, /\n  aRec->mEffectiveTRRMode = requestMode;\n\}\n+$/);
+  // The names the TRR service excludes (the proxies' own, localhost, local) are
+  // the one way out of it: they fall to the native lookup, checked with the
+  // request mode, which for TRR_ONLY applies the excluded list.
+  assert.match(compute, /IsExcludedFromTRR\(aRec->host, requestMode\)\) \{\n\s+aRec->RecordReason\(TRRSkippedReason::TRR_EXCLUDED\);\n\s+aRec->mEffectiveTRRMode = nsIRequest::TRR_DISABLED_MODE;/);
+  assert.match(read('netwerk/dns/TRRService.cpp'),
+    /const bool trrOnly = aRequestMode == nsIRequest::TRR_ONLY_MODE \|\|/);
   // The native lookup runs only for the effective mode "disabled", or for
   // TRR-first when TRR was skipped or failed.
   const lookup = body(text, 'nsresult nsHostResolver::NameLookup', 'nsresult nsHostResolver::ConditionallyRefreshRecord');
@@ -119,7 +194,7 @@ test('premise: TRR over OHTTP, the only user of the OHTTP config fetch, is off',
 
 // file -> [number of occurrences, verdict]. A comment that names one counts.
 const ALLOWED = {
-  // the global mode 5 is a user setting (about:preferences); the core declares 0 or 3
+  // the global mode 5 is a user setting (about:preferences); the core leaves it at 0
   'browser/components/preferences/config/privacy.mjs': [3, 'user setting of about:preferences'],
   'browser/components/preferences/privacy.js': [2, 'user setting of about:preferences'],
   'dom/ipc/ContentParent.cpp': [2, 'clamp of the pref value sent to content'],
@@ -128,18 +203,26 @@ const ALLOWED = {
   'netwerk/dns/TRRService.cpp': [8, 'mode 5 checks and IsExcludedFromTRR (excluded domains, mode 5)'],
   // derivation of the effective mode: excluded domains (localhost, local, the
   // proxy name), parental control (declared off), mode 0 and 5, and a request
-  // that asks for it (which nothing above does any more)
+  // that asks for it (turned into TRR_ONLY or native by the hook below, by the
+  // context of the lookup, for every name but the DoH server's)
   'netwerk/dns/nsHostResolver.cpp': [21, 'derives the effective mode; native only when disabled'],
+  'netwerk/dns/StealthSessionResolver.cpp': [3, 'the hook: the TRR mode bits of a lookup become DoH only (a context with a proxy) or "TRR disabled" (none)'],
+  'netwerk/dns/StealthSessionResolver.h': [1, 'the comment of that hook'],
+  // asked for as upstream does, answered by the hook above
+  'netwerk/base/NetworkConnectivityService.cpp': [5, 'four lookups and the IP check channel; follow the session through the hook'],
+  'toolkit/components/captivedetect/CaptiveDetect.sys.mjs': [1, 'captive portal XHR; follows the session through the hook'],
+  'browser/components/tabbrowser/Tabbrowser.sys.mjs': [2, 'captive portal tab flag; follows the session through the hook'],
+  'netwerk/protocol/http/HttpBaseChannel.cpp': [2, 'OCSP channels; follow the session through the hook'],
   'netwerk/dns/nsHostResolver.h': [2, 'macro that tests the global mode'],
   'netwerk/dns/nsHostRecord.cpp': [3, 'telemetry of the lookup'],
-  'netwerk/dns/nsDNSService2.cpp': [4, 'main-thread sync resolve sets the DNS flag (fails closed under mode 3); skip-reason names'],
-  // the flag RESOLVE_DISABLE_TRR alone never reaches the native lookup under
-  // mode 3 (see the premise test); the retry paths skip TRR_ONLY
+  'netwerk/dns/nsDNSService2.cpp': [4, 'main-thread sync resolve sets the DNS flag (fails closed for a proxied lookup); skip-reason names'],
+  // the flag RESOLVE_DISABLE_TRR alone never reaches the native lookup for
+  // a proxied lookup (see the premise test); the retry paths skip TRR_ONLY
   'netwerk/base/nsSocketTransport2.cpp': [4, 'DISABLE_TRR flag set by the retry that skips TRR_ONLY'],
   'netwerk/protocol/http/DnsAndConnectSocket.cpp': [2, 'retry that skips TRR_ONLY'],
   'netwerk/protocol/http/HappyEyeballsConnectionAttempt.cpp': [1, 'retry that skips TRR_ONLY'],
   'netwerk/protocol/http/nsHttpChannel.cpp': [1, 'reads the channel mode, does not set it'],
-  'toolkit/components/extensions/parent/ext-dns.js': [1, 'dns.resolve flag an extension asks for: fails closed under mode 3'],
+  'toolkit/components/extensions/parent/ext-dns.js': [1, 'dns.resolve flag an extension asks for: fails closed for a proxied lookup'],
   // DoH itself
   'netwerk/dns/TRR.cpp': [1, 'the DoH request is not itself resolved through TRR; its proxy is the session proxy'],
   'netwerk/protocol/http/ObliviousHttpService.cpp': [1, 'TRR over OHTTP only: network.trr.use_ohttp is false'],

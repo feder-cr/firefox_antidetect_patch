@@ -49,7 +49,7 @@
    ],
    "added": 7,
    "removed": 0,
-   "hunks": 3,
+   "hunks": 2,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "includes; Instance::RequestAdapter before and after wgpu_client_request_adapter",
@@ -152,9 +152,9 @@
    "prefs": [
     "dom.webgpu.external-texture.enabled"
    ],
-   "added": 2,
-   "removed": 2,
-   "hunks": 2,
+   "added": 4,
+   "removed": 4,
+   "hunks": 4,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",

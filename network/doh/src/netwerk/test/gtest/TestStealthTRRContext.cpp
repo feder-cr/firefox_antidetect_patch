@@ -52,6 +52,19 @@ class RecordingFilter final : public nsIProtocolProxyChannelFilter {
 };
 NS_IMPL_ISUPPORTS(RecordingFilter, nsIProtocolProxyChannelFilter)
 
+// The two members the channel hooks use, as the channel classes have them.
+struct FakeChannel {
+  int mClosed = 0;
+  int mAborted = 0;
+  nsresult mAbortStatus = NS_OK;
+  void CloseCacheEntry(bool aDoomOnFailure) { ++mClosed; }
+  nsresult AsyncAbort(nsresult aStatus) {
+    ++mAborted;
+    mAbortStatus = aStatus;
+    return NS_OK;
+  }
+};
+
 Maybe<OriginAttributes> ContextOf(uint32_t aUserContextId) {
   OriginAttributes attrs;
   attrs.mUserContextId = aUserContextId;
@@ -93,6 +106,19 @@ TEST(TestStealthTRRContext, ATRRLoadInfoTakesTheContext)
   Maybe<OriginAttributes> context = StealthTRRContextOfLoadInfo(loadInfo);
   ASSERT_TRUE(context.isSome());
   EXPECT_EQ(context->mUserContextId, 7u);
+}
+
+// TRRLoadInfo::SetOriginAttributes stores what it is given (upstream refused
+// with NS_ERROR_NOT_IMPLEMENTED) and the load info reads it back.
+TEST(TestStealthTRRContext, ATRRLoadInfoStoresWhatItIsGiven)
+{
+  OriginAttributes given;
+  given.mUserContextId = 9;
+  RefPtr<TRRLoadInfo> loadInfo =
+      new TRRLoadInfo(nullptr, nsIContentPolicy::TYPE_OTHER);
+  nsCOMPtr<nsILoadInfo> asLoadInfo = loadInfo.get();
+  EXPECT_EQ(asLoadInfo->SetOriginAttributes(given), NS_OK);
+  EXPECT_EQ(asLoadInfo->GetOriginAttributes().mUserContextId, 9u);
 }
 
 // A redirect of the DoH request is made on a clone of the load info: it stays
@@ -172,6 +198,50 @@ TEST(TestStealthTRRContext, OtherChannelsAndOtherOutcomesKeepUpstreamBehaviour)
   EXPECT_FALSE(StealthFailClosedOnProxyFailure(NS_OK, true, false));
   // A cancelled channel goes on as upstream (BeginConnect returns its status).
   EXPECT_FALSE(StealthFailClosedOnProxyFailure(NS_ERROR_FAILURE, true, true));
+}
+
+// The hook of nsHttpChannel: a TRR service channel whose lookup failed is
+// closed and aborted with the proxy failure; nothing else is touched.
+TEST(TestStealthTRRContext, TheHttpChannelHookEndsAFailedTRRServiceChannel)
+{
+  FakeChannel channel;
+  EXPECT_TRUE(StealthTRRFailClosed(&channel, NS_ERROR_FAILURE, true, false));
+  EXPECT_EQ(channel.mClosed, 1);
+  EXPECT_EQ(channel.mAborted, 1);
+  EXPECT_EQ(channel.mAbortStatus, NS_ERROR_PROXY_CONNECTION_REFUSED);
+}
+
+TEST(TestStealthTRRContext, TheHttpChannelHookLeavesTheOtherCasesToUpstream)
+{
+  FakeChannel channel;
+  EXPECT_FALSE(StealthTRRFailClosed(&channel, NS_ERROR_FAILURE, false, false));
+  EXPECT_FALSE(StealthTRRFailClosed(&channel, NS_OK, true, false));
+  EXPECT_FALSE(StealthTRRFailClosed(&channel, NS_ERROR_FAILURE, true, true));
+  EXPECT_EQ(channel.mClosed, 0);
+  EXPECT_EQ(channel.mAborted, 0);
+}
+
+// The hook of TRRServiceChannel: the same rule, no cache entry; the start of
+// the request (nothing to cancel yet) passes false for the cancellation.
+TEST(TestStealthTRRContext, TheServiceChannelHookEndsAFailedLookup)
+{
+  FakeChannel channel;
+  EXPECT_TRUE(StealthTRRServiceFailClosed(&channel, NS_ERROR_NOT_AVAILABLE,
+                                          false));
+  EXPECT_EQ(channel.mClosed, 0);
+  EXPECT_EQ(channel.mAborted, 1);
+  EXPECT_EQ(channel.mAbortStatus, NS_ERROR_PROXY_CONNECTION_REFUSED);
+}
+
+TEST(TestStealthTRRContext, TheServiceChannelHookKeepsACancellationAndASuccess)
+{
+  FakeChannel channel;
+  EXPECT_FALSE(StealthTRRServiceFailClosed(&channel, NS_OK, false));
+  EXPECT_FALSE(StealthTRRServiceFailClosed(&channel, NS_ERROR_FAILURE, true));
+  EXPECT_EQ(channel.mAborted, 0);
+  // A cancellation that reaches the rule keeps its own code.
+  EXPECT_TRUE(StealthTRRServiceFailClosed(&channel, NS_BINDING_ABORTED, false));
+  EXPECT_EQ(channel.mAbortStatus, NS_BINDING_ABORTED);
 }
 
 // The proxy lookup of a DoH request asks the proxy filters with a stand-in

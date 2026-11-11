@@ -5,7 +5,11 @@
 #include "StealthIPv6Literal.h"
 
 #include "mozilla/StaticPrefs_network.h"
+#include "nsXULAppAPI.h"
 #include "prerr.h"
+#ifdef MOZ_WEBRTC
+#  include "transport/nr_stealth_network.h"
+#endif
 
 namespace mozilla::net {
 
@@ -21,8 +25,7 @@ PRErrorCode StealthIPv6ConnectError(const NetAddr& aAddr, bool aIPv6Disabled) {
   if (ip.u8[0] == 0xfe && (ip.u8[1] & 0xc0) == 0x80) {
     return 0;
   }
-  // An IPv4-mapped address is IPv4's, not ours: the SOCKS layer builds one for
-  // its IPv4 proxy when the NSPR emulation layer is under the socket.
+  // An IPv4-mapped address is no route question; StealthConnectError has it.
   if (IPv6ADDR_IS_V4MAPPED(&ip)) {
     return 0;
   }
@@ -33,16 +36,41 @@ PRErrorCode StealthIPv6ConnectError(const NetAddr& aAddr, bool aIPv6Disabled) {
   return PR_NETWORK_UNREACHABLE_ERROR;
 }
 
-PRStatus StealthIPv6Connect(PRFileDesc* aFd, const NetAddr& aAddr,
-                            bool aAddrIsBehindProxy, const PRNetAddr* aPrAddr,
-                            PRIntervalTime aTimeout) {
-  PRErrorCode error = StealthIPv6ConnectError(
-      aAddr, !aAddrIsBehindProxy && StaticPrefs::network_dns_disableIPv6());
+PRErrorCode StealthConnectError(const NetAddr& aAddr,
+                                StealthConnectTarget aTarget,
+                                bool aIPv6Disabled) {
+  if (aTarget == StealthConnectTarget::kBehindSocksProxy) {
+    return 0;
+  }
+  if (aTarget == StealthConnectTarget::kDirect &&
+      aAddr.raw.family == AF_INET6) {
+    const IPv6Addr& ip = aAddr.inet6.ip;
+    // Windows: WSAEADDRNOTAVAIL on a V6ONLY socket, declared or not.
+    if (IPv6ADDR_IS_V4MAPPED(&ip)) {
+      return PR_ADDRESS_NOT_AVAILABLE_ERROR;
+    }
+  }
+  return StealthIPv6ConnectError(aAddr, aIPv6Disabled);
+}
+
+PRStatus StealthConnect(PRFileDesc* aFd, const NetAddr& aAddr,
+                        StealthConnectTarget aTarget, const PRNetAddr* aPrAddr,
+                        PRIntervalTime aTimeout) {
+  PRErrorCode error = StealthConnectError(
+      aAddr, aTarget, StaticPrefs::network_dns_disableIPv6());
   if (error) {
     PR_SetError(error, 0);
     return PR_FAILURE;
   }
   return PR_Connect(aFd, aPrAddr, aTimeout);
+}
+
+void StealthApplyDeclaredNetwork() {
+#ifdef MOZ_WEBRTC
+  if (XRE_IsParentProcess()) {
+    StealthApplyDeclaredIPFamilyFromEnvironment();
+  }
+#endif
 }
 
 }  // namespace mozilla::net

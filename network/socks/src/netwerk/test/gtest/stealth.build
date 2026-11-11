@@ -1,0 +1,14 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# The gtests of the engine's own network code: the SOCKS5 UDP layer and its pool, the DoH context, the session resolver and
+# the IPv6 literal rule. One line in moz.build includes this file, so the tests of the network line are listed here and
+# not one line each in Mozilla's file.
+
+SOURCES += [
+    "TestStealthIPv6Literal.cpp",
+    "TestStealthSessionResolver.cpp",
+    "TestStealthSocksCredentials.cpp",
+    "TestStealthTRRContext.cpp",
+]

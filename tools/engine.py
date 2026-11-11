@@ -34,7 +34,9 @@ check    needs no Firefox: SERIES lists exactly the folders that exist, every fo
          budgets only go down: logic belongs in our own files, Mozilla's files get hooks,
          and Mozilla's lines stay as Mozilla wrote them (a removed or rewritten line
          conflicts at a port like an added one, and a copy of it in a file of ours
-         stops following Mozilla). A C++ file of ours has no control character (a carriage return inside a
+         stops following Mozilla). Every STEALTH-HOOK(<folder>) tag, in a hooks.patch and in the
+         evidence of an inventory record, names a folder of SERIES, and the added, removed and hunk
+         counts of each inventory record are those of its file in the hooks.patch. A C++ file of ours has no control character (a carriage return inside a
          string literal ended the literal and broke the build of a test) and no byte outside ASCII inside a
          string or character literal: write them as escapes.
 """
@@ -566,6 +568,59 @@ def removed_lines(patch: Path) -> dict:
     return _patch_lines(patch, "-")
 
 
+def hunk_counts(patch: Path) -> dict:
+    """Mozilla file -> hunks of its diff, read from a hooks.patch."""
+    counts, current = {}, None
+    for line in patch.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = PATCH_FILE.match(line)
+        if m:
+            current = m.group(1)
+            counts[current] = 0
+        elif line.startswith("@@") and current:
+            counts[current] += 1
+    return counts
+
+
+HOOK_TAG = re.compile(r"STEALTH-HOOK\(([^)]*)\)")
+
+
+def hook_tag_problems(folders: set, records: list, patches: dict) -> list:
+    """A STEALTH-HOOK(<folder>) tag names the folder that owns the hook; one that names
+    nothing in SERIES (a folder deleted or renamed since) sends whoever greps it to a place
+    that is not there. Looked at: the evidence of every inventory record, and every line of
+    every hooks.patch (`patches`: folder -> text)."""
+    found = []
+    for r in records:
+        for line in r.get("evidence") or []:
+            for tag in HOOK_TAG.findall(line):
+                if tag not in folders:
+                    found.append("tools/inventory.json: the evidence of %s quotes STEALTH-HOOK(%s), and %s is not a "
+                                 "folder of SERIES: regenerate the record from the code" % (r["file"], tag, tag))
+    for folder, text in sorted(patches.items()):
+        for tag in sorted(set(HOOK_TAG.findall(text))):
+            if tag not in folders:
+                found.append("%s/hooks.patch carries STEALTH-HOOK(%s), and %s is not a folder of SERIES: "
+                             "retag the hook in the source" % (folder, tag, tag))
+    return found
+
+
+def record_count_problems(records: list, counts: dict) -> list:
+    """Each inventory record says how many lines of ours (added), of Mozilla's (removed) and how
+    many hunks its file has: the numbers of the file in its hooks.patch (`counts`: file ->
+    (added, removed, hunks)). A record written once and never refreshed, or copied from another
+    feature, reads as truth to whoever sizes a hook from it."""
+    found = []
+    for r in records:
+        real = counts.get(r["file"])
+        if real is None:
+            continue
+        have = (r.get("added"), r.get("removed"), r.get("hunks"))
+        if have != tuple(real):
+            found.append("tools/inventory.json: the record of %s says added %s, removed %s, hunks %s; its hooks.patch has "
+                         "%d, %d, %d: rewrite the record from the diff against the tag" % ((r["file"],) + have + tuple(real)))
+    return found
+
+
 BACKPORT = "BACKPORT.json"
 # Where upstream code lives in Firefox's tree: its vendored copies, and the lock and
 # checksums Cargo checks them against.
@@ -745,6 +800,17 @@ def problems() -> list:
     for path in sorted(set(removed_budget) - set(seen)):
         found.append("tools/removed-budget.json still lists %s, which no patch touches: remove it"
                      % path)
+    patches = {f: (ROOT / f / "hooks.patch").read_text(encoding="utf-8", errors="replace")
+               for f in present if (ROOT / f / "hooks.patch").exists()}
+    records = json.loads(INVENTORY.read_text(encoding="utf-8"))
+    found += hook_tag_problems(set(listed), records, patches)
+    counts = {}
+    for f in present:
+        patch = ROOT / f / "hooks.patch"
+        if patch.exists():
+            added, removed, hunks = added_lines(patch), removed_lines(patch), hunk_counts(patch)
+            counts.update({path: (added[path], removed.get(path, 0), hunks.get(path, 0)) for path in added})
+    found += record_count_problems(records, counts)
     found += own_cxx_problems()
     series_wf = {p.name: p.read_bytes() for p in WORKFLOWS_SERIES.glob("*.yml")}
     root_wf = {p.name: p.read_bytes() for p in WORKFLOWS_ROOT.glob("*.yml")}

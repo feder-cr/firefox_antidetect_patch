@@ -119,6 +119,13 @@ function connectionIsolationKeyFor(proxy) {
   return Array.from(hasher.finish(false), c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
 }
 
+// The one flag the session sets: a SOCKS5 proxy whose UDP the core measured coherent with its TCP exit carries the UDP of a
+// PeerConnection and of HTTP/3 (the engine reads it, PcUdpProxy). Absent, 'no' and 'unmeasured' are the same: no flag, and
+// the engine treats the proxy as a router that drops UDP, never as a way out around it.
+function udpFlagFor(proxy) {
+  return proxy.type === 'socks' && proxy.udp === 'coherent' ? Ci.nsIProxyInfo.CARRIES_COHERENT_UDP : 0;
+}
+
 function buildProxyInfo(proxy) {
   const carriesOwnCredentials = PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type);
   const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
@@ -130,7 +137,7 @@ function buildProxyInfo(proxy) {
       carriesOwnCredentials ? (proxy.password || '') : '',
       proxyAuthorizationHeaderFor(proxy), /* aProxyAuthorizationHeader */
       connectionIsolationKeyFor(proxy), /* aConnectionIsolationKey */
-      0, /* aFlags: the browser resolves names itself (DoH) and connects to the IP */
+      udpFlagFor(proxy), /* aFlags: the browser resolves names itself (DoH) and connects to the IP; the UDP flag only */
       UINT32_MAX, /* aFailoverTimeout */
       null, /* failover proxy */
   );

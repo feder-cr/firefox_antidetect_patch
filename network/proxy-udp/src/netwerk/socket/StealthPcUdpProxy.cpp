@@ -55,7 +55,10 @@ void PcUdpProxy::DoLookup(const LoadInfoArgs& aLoadInfo) {
         if (NS_SUCCEEDED(aStatus) && aProxyInfo) {
           nsAutoCString type;
           aProxyInfo->GetType(type);
-          if (type.EqualsLiteral("socks")) {
+          uint32_t flags = 0;
+          aProxyInfo->GetFlags(&flags);
+          if (type.EqualsLiteral("socks") && (flags & nsIProxyInfo::CARRIES_COHERENT_UDP)) {
+            // SOCKS5 whose UDP the session measured coherent: the road of the PeerConnection's UDP.
             kind = Kind::Socks5;
             aProxyInfo->GetHost(info.mHost);
             aProxyInfo->GetPort(&info.mPort);

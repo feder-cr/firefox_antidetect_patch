@@ -28,22 +28,61 @@ namespace mozilla::net {
  *    PR_ADDRESS_NOT_AVAILABLE_ERROR, whatever the routes are.
  *  - ::1 connects. A link-local address (fe80::/10) is left to the OS: it
  *    needs an interface, and what comes back is the OS's own. An IPv4-mapped
- *    address is IPv4's and is left alone too.
+ *    address is not a route question: StealthConnectError judges it.
  * Both codes become NS_ERROR_CONNECTION_REFUSED in ErrorAccordingToNSPR
  * (NS_ERROR_PROXY_CONNECTION_REFUSED when the socket goes to a proxy).
  */
 PRErrorCode StealthIPv6ConnectError(const NetAddr& aAddr, bool aIPv6Disabled);
 
 /**
- * PR_Connect(aFd, aPrAddr, aTimeout) unless the declaration refuses aAddr
- * (the same address as aPrAddr), in which case nothing is sent: PR_FAILURE and
- * the error of StealthIPv6ConnectError, as a failed connect() leaves it.
- * aAddrIsBehindProxy: aAddr is a destination a SOCKS proxy reaches, not an
- * address this host connects to; it is never refused.
+ * What the address in front of a connect is.
+ *  - kDirect: an address this host connects to, chosen by a page or by DNS.
+ *  - kBehindSocksProxy: the destination of a connection a SOCKS proxy makes;
+ *    the proxy reaches it, not this host, so it is never refused.
+ *  - kSocksProxyHop: the SOCKS layer's own connection to its proxy. The
+ *    address may be an IPv4-mapped one that the layer built itself (the NSPR
+ *    IPv6-to-IPv4 emulation layer needs it), which is not a page's literal.
  */
-PRStatus StealthIPv6Connect(PRFileDesc* aFd, const NetAddr& aAddr,
-                            bool aAddrIsBehindProxy, const PRNetAddr* aPrAddr,
-                            PRIntervalTime aTimeout);
+enum class StealthConnectTarget {
+  kDirect,
+  kBehindSocksProxy,
+  kSocksProxyHop,
+};
+
+/**
+ * StealthConnectError is the answer for one connect, as an NSPR error code
+ * (0 = connect as usual). It is pure: aIPv6Disabled is the declaration.
+ *  - kBehindSocksProxy: 0.
+ *  - A direct connection to an IPv4-mapped literal (::ffff:0:0/96, not
+ *    ::ffff:0:a.b.c.d and not ::a.b.c.d): WSAEADDRNOTAVAIL,
+ *    PR_ADDRESS_NOT_AVAILABLE_ERROR, on every OS and whatever the declaration
+ *    says. A Firefox-style socket has IPV6_V6ONLY on, and a Windows connect()
+ *    to a mapped address fails; a dual-stack Linux socket would connect over
+ *    IPv4. The SOCKS hop is exempt (see kSocksProxyHop).
+ *  - Otherwise StealthIPv6ConnectError.
+ */
+PRErrorCode StealthConnectError(const NetAddr& aAddr,
+                                StealthConnectTarget aTarget,
+                                bool aIPv6Disabled);
+
+/**
+ * PR_Connect(aFd, aPrAddr, aTimeout) unless StealthConnectError refuses aAddr
+ * (the same address as aPrAddr), in which case nothing is sent: PR_FAILURE and
+ * the error, as a failed connect() leaves it.
+ */
+PRStatus StealthConnect(PRFileDesc* aFd, const NetAddr& aAddr,
+                        StealthConnectTarget aTarget, const PRNetAddr* aPrAddr,
+                        PRIntervalTime aTimeout);
+
+/**
+ * Parent process, once, at the top of nsIOService::Init and before any lookup:
+ * IPv6 is one fact of the browser, the declared network's (the environment
+ * variable STEALTHFOX_WEBRTC_NETWORK, see nr_stealth_network.h). The DNS IPv6
+ * switch takes the value that fact gives, as a default value of its pref.
+ * Other processes get the pref from the parent. Nothing in a build without
+ * WebRTC.
+ */
+void StealthApplyDeclaredNetwork();
 
 }  // namespace mozilla::net
 

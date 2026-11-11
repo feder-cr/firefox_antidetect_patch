@@ -79,6 +79,8 @@ int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
 
 #  include <set>
 
+#  include "prnetdb.h"
+
 namespace mozilla {
 
 /* Parent process, once, before any lookup: sets network.dns.disableIPv6 from the IPv6 fact of `aDecl` (the value of
@@ -144,6 +146,15 @@ class StealthOwnPorts final {
   }
   std::set<uint32_t> mPorts;
 };
+
+/* R3 for the TCP socket that talks to a TURN or STUN server (WebrtcTCPSocket): the connection's declared address is not an
+ * address of this host, so it can only give the FAMILY, never the bind address. The socket binds the wildcard of that
+ * family on port 0, so the system hands out a free port and a range it keeps for itself (Windows reserves some of the
+ * dynamic range for Hyper-V, WSL, Docker, and refuses a bind to them) can never refuse it. The local port of such a
+ * socket is nowhere a page can read: a relay candidate carries the server's mapped address, not the local one, and the TCP
+ * host candidate that is announced is the active one, which declares port 9. False when `aDeclaredAddress` does not
+ * parse as an address. `aNicerPort` is the port nICEr proposed, only logged (WebrtcTCPSocket log module). */
+bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, PRNetAddr* aOut);
 
 }  // namespace mozilla
 

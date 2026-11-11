@@ -285,6 +285,8 @@ const Browser = {
         port: t.Number,
         username: t.Optional(t.String),
         password: t.Optional(t.String),
+        // Of a SOCKS5 proxy: whether its UDP was measured coherent with its TCP exit. Absent is 'no'.
+        udp: t.Optional(t.Enum(['coherent', 'no', 'unmeasured'])),
       },
     },
     'setNoBrowserProxy': {},
@@ -297,6 +299,7 @@ const Browser = {
         port: t.Number,
         username: t.Optional(t.String),
         password: t.Optional(t.String),
+        udp: t.Optional(t.Enum(['coherent', 'no', 'unmeasured'])),
       },
     },
     'setHTTPCredentials': {

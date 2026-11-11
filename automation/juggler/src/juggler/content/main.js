@@ -38,7 +38,10 @@ export function initialize(browsingContext, docShell) {
             heading: NaN,
             speed: NaN,
           },
-          timestamp: Date.now() + 24 * 60 * 60 * 1000,  // Make sure it does not expire for a day.
+          // The position is wrapped as an nsIDOMGeoPosition and Firefox reads this attribute each time it asks (cache check,
+          // maximumAge check, the page's position.timestamp): it is the time of each delivery, like a fix the provider just
+          // stamped, never the time of the set and never a day ahead. It cannot be older than a maximumAge either.
+          get timestamp() { return Date.now(); },
         });
       } else {
         top.setGeolocationServiceOverride();

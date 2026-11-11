@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
 
@@ -257,6 +258,19 @@ bool IsOwnPeer(const nr_transport_addr* aSelf, const mozilla::StealthOwnPorts& a
 }
 
 }  // namespace
+
+bool mozilla::StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, PRNetAddr* aOut) {
+  static LazyLogModule sLog("WebrtcTCPSocket");
+  PRNetAddr declared;
+  if (!aDeclaredAddress || PR_SUCCESS != PR_StringToNetAddr(aDeclaredAddress, &declared) ||
+      PR_SUCCESS != PR_SetNetAddr(PR_IpAddrAny, declared.raw.family, 0, aOut)) {
+    MOZ_LOG(sLog, LogLevel::Error, ("StealthTcpBindAddress: %s is not an address", aDeclaredAddress ? aDeclaredAddress : "(null)"));
+    return false;
+  }
+  MOZ_LOG(sLog, LogLevel::Debug, ("StealthTcpBindAddress: wildcard of the family of %s, port 0 (nICEr proposed %u)",
+                                  aDeclaredAddress, static_cast<unsigned>(aNicerPort)));
+  return true;
+}
 
 int nr_stealth_own_peer_to_kernel(const nr_transport_addr* aSelf, const mozilla::StealthOwnPorts& aOwn,
                                   nr_transport_addr* aAddr) {

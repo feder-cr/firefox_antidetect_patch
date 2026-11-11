@@ -8,7 +8,8 @@
  "added": {
   "netwerk/base/StealthSocksCredentials.cpp": "100644",
   "netwerk/base/StealthSocksCredentials.h": "100644",
-  "netwerk/test/gtest/TestStealthSocksCredentials.cpp": "100644"
+  "netwerk/test/gtest/TestStealthSocksCredentials.cpp": "100644",
+  "netwerk/test/gtest/stealth.build": "100644"
  },
  "inventory": [
   {
@@ -37,9 +38,9 @@
     "network.proxy.socks_username",
     "network.proxy.socks_password"
    ],
-   "added": 13,
+   "added": 8,
    "removed": 3,
-   "hunks": 2,
+   "hunks": 3,
    "inline_logic_lines": 11,
    "hookable": "movable",
    "anchor": "nsProtocolProxyService::PrefsChanged; nsProtocolProxyService::Resolve_Internal (SOCKS NewProxyInfo_Internal call)",
@@ -81,7 +82,7 @@
    "category": "build",
    "feature": "socks-credentials",
    "prefs": [],
-   "added": 3,
+   "added": 1,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 0,

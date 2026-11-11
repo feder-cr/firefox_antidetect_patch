@@ -377,19 +377,20 @@ index 2abc9c45814d6931ad1edcb9daacab750909d597..ca8e9958f4f62d70ca5936614b73f95f
  SOURCES += [
      "InlineTranslator.cpp",
 diff --git a/gfx/tests/gtest/moz.build b/gfx/tests/gtest/moz.build
-index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..b51becd548ea84cb31d401187fc334d405e7a715 100644
+index ec00ffc43e7dc3dcd8ea8f224969feb9b977e7b8..904b2b045324c1fc85076c7926789acbb0f0d4d0 100644
 --- a/gfx/tests/gtest/moz.build
 +++ b/gfx/tests/gtest/moz.build
-@@ -32,6 +32,8 @@ UNIFIED_SOURCES += [
+@@ -32,6 +32,9 @@ UNIFIED_SOURCES += [
      "TestVsync.cpp",
      "TestYUVtoRGB32.cpp",
  ]
 +UNIFIED_SOURCES += ["TestStealthCanvasProjection.cpp"]  # STEALTH-HOOK(fingerprint/canvas/noise-projection)
-+UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp", "TestStealthWebGPUExternalTexture.cpp"]  # STEALTH-HOOK(fingerprint/webgpu)
++UNIFIED_SOURCES += ["TestStealthWebGPUDeclaration.cpp"]  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration)
++UNIFIED_SOURCES += ["TestStealthWebGPUExternalTexture.cpp"]  # STEALTH-HOOK(fingerprint/webgpu/external-texture-vulkan)
  
  SOURCES += [
      "SwizzleGeneric.cpp",
-@@ -42,6 +44,16 @@ if CONFIG["OS_TARGET"] != "Android":
+@@ -42,6 +45,16 @@ if CONFIG["OS_TARGET"] != "Android":
          "TestRect.cpp",
      ]
  

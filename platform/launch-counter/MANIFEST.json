@@ -17,9 +17,9 @@
     "invisible_firefox.usage_ping.enabled",
     "invisible_firefox.usage_ping.url"
    ],
-   "added": 38,
+   "added": 3,
    "removed": 0,
-   "hunks": 1,
+   "hunks": 2,
    "inline_logic_lines": 8,
    "hookable": "movable",
    "anchor": "BrowserGlue.prototype._beforeUIStartup (before lazy.SessionStartup.init())",

@@ -7,7 +7,14 @@ include("/dom/media/webrtc/transport/common.build")
 
 # STEALTH-HOOK(fingerprint/webrtc/declared-network)
 SOURCES += ["TestStealthDeclaredNetwork.cpp"]
+SOURCES += ["TestStealthIceResolverContext.cpp"]  # STEALTH-HOOK(network/doh)
 
-LOCAL_INCLUDES += ["/dom/media/webrtc/transport/ipc"]
+# STEALTH-HOOK(network/proxy-udp)
+SOURCES += ["TestStealthUdpProxyBirth.cpp"]
+
+LOCAL_INCLUDES += [
+    "/dom/media/webrtc/transport/ipc",
+    "/netwerk/socket",  # STEALTH-HOOK(network/proxy-udp)
+]
 
 FINAL_LIBRARY = "xul-gtest"

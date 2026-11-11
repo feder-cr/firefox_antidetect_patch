@@ -19,7 +19,7 @@
    "prefs": [
     "zoom.stealth.apikey"
    ],
-   "added": 14,
+   "added": 2,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 1,
@@ -43,8 +43,8 @@
     "zoom.stealth.apikey.google_location_service",
     "zoom.stealth.apikey.google_safebrowsing"
    ],
-   "added": 78,
-   "removed": 13,
+   "added": 9,
+   "removed": 0,
    "hunks": 3,
    "inline_logic_lines": 22,
    "hookable": "movable",
@@ -65,7 +65,7 @@
    "category": "build",
    "feature": "api-keys-declared",
    "prefs": [],
-   "added": 2,
+   "added": 1,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 0,
@@ -101,7 +101,7 @@
    "category": "other",
    "feature": "api-keys-declared",
    "prefs": [],
-   "added": 26,
+   "added": 1,
    "removed": 5,
    "hunks": 1,
    "inline_logic_lines": 0,

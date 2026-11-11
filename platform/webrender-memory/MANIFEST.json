@@ -56,7 +56,7 @@
    "prefs": [],
    "added": 11,
    "removed": 14,
-   "hunks": 4,
+   "hunks": 1,
    "inline_logic_lines": 11,
    "hookable": "movable",
    "anchor": "ResourceCache::clear_namespace (the font resources are cleared through SharedFontResources::clear_namespace)",
