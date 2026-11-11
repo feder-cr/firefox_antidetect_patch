@@ -388,6 +388,10 @@ Maybe<LayoutDeviceIntRect> StealthDeclaredMaximizedWindow() {
   return Some(LayoutDeviceIntRect(-b, -b, w + 2 * b, h + 2 * b));
 }
 
+bool StealthOuterSizeIsDeclared(const LayoutDeviceIntSize& aRealOuter) {
+  return aRealOuter.width != 0 || aRealOuter.height != 0;
+}
+
 Maybe<nsPoint> StealthDeclaredOriginShift(
     const nsPoint& aRealContentOrigin,
     const Maybe<LayoutDeviceIntPoint>& aPopupWindowOrigin, bool aFullscreen,

@@ -95,6 +95,13 @@ inline bool StealthOuterSize(nsGlobalWindowOuter& aWindow, CSSIntSize& aSize,
     aSize = CSSIntSize();
     return true;
   }
+  // A window whose real outer size is still 0x0 (an out-of-process iframe
+  // that started before the parent sent its dimensions) keeps it, like retail:
+  // the declared window replaces a real window, not the absence of one, and
+  // inner is 0x0 in the same state.
+  if (!gfx::StealthOuterSizeIsDeclared(treeOwnerAsWin->GetSize())) {
+    return false;
+  }
   // In fullscreen the window is the declared screen, popups included: retail
   // answers outer == inner == screen. It used to answer the maximized window
   // (1936x1048 under a 1920x1080 inner), a window no screen holds.

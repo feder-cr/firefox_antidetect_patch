@@ -152,6 +152,22 @@ Maybe<StealthWindowFrame> StealthDeclaredWindowFrame();
 Maybe<LayoutDeviceIntRect> StealthDeclaredMaximizedWindow();
 
 /**
+ * Does a window answer the DECLARED outer size, or its own real one?
+ *
+ * The declaration stands in for a real window that exists. In a content
+ * process the outer size of an out-of-process iframe is whatever the parent
+ * last sent (BrowserChild::RecvUpdateDimensions); until the first message the
+ * rect is empty, and retail answers outerWidth/outerHeight 0x0 together with
+ * innerWidth/innerHeight 0x0. aRealOuter is that real size (the tree owner's
+ * GetSize(), device pixels). 0x0 is "the window has no size yet": a real 0
+ * stays 0, as on retail, and the declared window is not put over it - a page
+ * would read an outer window of 1936x1048 around an inner one of 0x0, which
+ * no retail window is. Any other real size is replaced by the declaration,
+ * unchanged.
+ */
+bool StealthOuterSizeIsDeclared(const LayoutDeviceIntSize& aRealOuter);
+
+/**
  * Lo SCARTO fra l'origine reale del contenuto e quella dichiarata, in app
  * units. Nothing() quando il motore e' spento.
  *
