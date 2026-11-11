@@ -168,6 +168,29 @@ export class TargetRegistry {
     return TargetRegistry._instance || null;
   }
 
+  // The browser was started with the Juggler pipe: its session has a proxy to
+  // be decided by a command, even before the registry exists (it is built at
+  // final-ui-startup).
+  static markDriven() {
+    TargetRegistry._driven = true;
+  }
+
+  /**
+   * The road of the requests that have no page (the pingsender at exit), as
+   * `{decided, proxy}`. `proxy` is null for the default road. A driven session
+   * whose proxy no command has decided is `{decided: false}`: the caller must
+   * send nothing, because null would mean DIRECT. A browser Juggler does not
+   * drive has nothing to wait for, and its road is the default one.
+   */
+  static roadOfSession(userContextId) {
+    const registry = TargetRegistry._instance;
+    if (!registry)
+      return TargetRegistry._driven ? { decided: false } : { decided: true, proxy: null };
+    if (!registry.browserProxyDecided)
+      return { decided: false };
+    return { decided: true, proxy: registry.proxyRecordFor(userContextId) };
+  }
+
   /**
    * @param {{survivesLastWindow: boolean}} options
    *   survivesLastWindow: the browser was started with -silent, so Juggler
@@ -204,6 +227,10 @@ export class TargetRegistry {
 
     this._proxiesWithClashingAuthCacheKeys = new Set();
     this._browserProxy = null;
+    // Whether the first command has decided the road of the session (a proxy,
+    // or none): until then the channel filter holds every channel unanswered.
+    this._browserProxyDecided = false;
+    this._browserProxyListeners = [];
 
     // Cleanup containers from previous runs (if any)
     for (const identity of ContextualIdentityService.getPublicIdentities()) {
@@ -422,7 +449,30 @@ export class TargetRegistry {
     // session that quietly goes out in the clear.
     newProxyInfoFor(proxy);
     this._browserProxy = proxy;
+    this._decideBrowserProxy();
+  }
+
+  // The session goes out with no proxy: an explicit decision, so that the
+  // filter answers the channels that waited with the default road.
+  setNoBrowserProxy() {
+    this._browserProxy = null;
+    this._decideBrowserProxy();
+  }
+
+  get browserProxyDecided() {
+    return this._browserProxyDecided;
+  }
+
+  // `callback` runs every time the browser proxy is decided or changed.
+  onBrowserProxyDecided(callback) {
+    this._browserProxyListeners.push(callback);
+  }
+
+  _decideBrowserProxy() {
     this._updateProxiesWithSameAuthCacheAndDifferentCredentials();
+    this._browserProxyDecided = true;
+    for (const callback of this._browserProxyListeners)
+      callback();
   }
 
   getProxyInfo(channel) {

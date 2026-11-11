@@ -73,7 +73,16 @@ export function invocation() {
  * @param {nsIObserver} observer
  */
 export function runAsync(process, params, observer) {
-  Services.env.set(PINGSENDER_ROUTE_ENV, JSON.stringify(sessionRoute()));
+  const route = sessionRoute();
+  if (!route) {
+    // The session's proxy is undecided: the ping would leave DIRECT. The ping
+    // stays on disk for a later session; nothing is started.
+    if (observer) {
+      observer.observe(process, "process-failed", null);
+    }
+    return;
+  }
+  Services.env.set(PINGSENDER_ROUTE_ENV, JSON.stringify(route));
   try {
     process.runAsync(params, params.length, observer);
   } finally {
@@ -93,6 +102,9 @@ export function runAsync(process, params, observer) {
  *   session was declared with (`network.proxy.*`, `network.trr.*`) rather
  *   than the defaults of its own empty profile. Saved at profile-before-change,
  *   before the shutdown pings are flushed.
+ *
+ * Returns null when a Juggler session has not decided its proxy yet (no
+ * command has said "this proxy" or "none"): a null record would mean DIRECT.
  */
 function sessionRoute() {
   let proxy = null;
@@ -100,9 +112,12 @@ function sessionRoute() {
     const { TargetRegistry } = ChromeUtils.importESModule(
       "resource://gre/modules/juggler/TargetRegistry.js"
     );
-    const registry = TargetRegistry.instance();
     // userContextId 0: the context of a request with the system principal.
-    proxy = registry ? registry.proxyRecordFor(0) : null;
+    const road = TargetRegistry.roadOfSession(0);
+    if (!road.decided) {
+      return null;
+    }
+    proxy = road.proxy;
   }
   const prefs = Services.dirsvc.get("ProfD", Ci.nsIFile);
   prefs.append("prefs.js");

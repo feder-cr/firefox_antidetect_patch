@@ -15,6 +15,11 @@ expressed), and the channel filter gives the same object on every request: a fil
 necko skips a filter that throws. The info does not tell the proxy to resolve the host: the browser resolves names itself (DoH,
 network/doh) and connects to the IP.
 
+The proxy filter starts pending: channels asked before the session's proxy is decided (`Browser.setBrowserProxy` or
+`Browser.setNoBrowserProxy`) wait unanswered, `EarlyProxyHold.js` holds them from command-line-startup, and `TargetRegistry.roadOfSession`
+tells the parent whether the road is decided (the pingsender at exit waits for it). An http/https proxy with credentials carries a
+preemptive Basic `Proxy-Authorization` for the DoH CONNECT. Why and tests: network/doh.
+
 ## Hooks in Mozilla files
 
 - `modules/libpref/moz.build` (pref_groups list, already-hook): Registers the 'juggler' pref group, so the juggler.* entries in StaticPrefList.yaml are built into the generated StaticPrefs headers. Pure registration.

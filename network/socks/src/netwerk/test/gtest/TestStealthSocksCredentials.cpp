@@ -248,6 +248,8 @@ constexpr char kProxyPass[] = "not-a-real-password";
 
 // A SOCKS5 server for one client: greets, answers UDP ASSOCIATE with a loopback UDP socket as the relay, and remembers
 // the datagrams that reach the relay.
+PRNetAddr HostAddress(uint16_t aPort);
+
 class FakeSocks {
  public:
   explicit FakeSocks(uint32_t aDelayMs = 0) : FakeSocks(ProxyOptions{aDelayMs}) {}
@@ -312,6 +314,11 @@ class FakeSocks {
     size_t len = std::strlen(aPayload);
     std::memcpy(frame + 10, aPayload, len);
     PRFileDesc* from = aFromTheRelay ? mRelay : PR_NewUDPSocket();
+    if (!aFromTheRelay) {
+      // Someone else on the network, not the machine itself: a datagram of the loopback is handed over as it is.
+      PRNetAddr other = HostAddress(0);
+      PR_Bind(from, &other);
+    }
     PRInt32 sent =
         PR_SendTo(from, frame, 10 + len, 0, &mClient, PR_INTERVAL_NO_TIMEOUT);
     if (!aFromTheRelay) PR_Close(from);
@@ -443,6 +450,19 @@ PRNetAddr HostAddress(uint16_t aPort) {
   PR_Close(s);
   mine.inet.port = PR_htons(aPort);
   return mine;
+}
+
+// The sockets of the engine (nsUDPSocket, NrSocket) are non-blocking: with nothing to read they answer WOULD_BLOCK, where a
+// blocking one answers a timeout.
+PRFileDesc* NonBlockingUdpSocket() {
+  PRFileDesc* fd = PR_NewUDPSocket();
+  if (fd) {
+    PRSocketOptionData opt;
+    opt.option = PR_SockOpt_Nonblocking;
+    opt.value.non_blocking = PR_TRUE;
+    PR_SetSocketOption(fd, &opt);
+  }
+  return fd;
 }
 
 uint32_t ElapsedMs(PRIntervalTime aStart) {
@@ -789,7 +809,7 @@ TEST(StealthSessionUdpProxy, ASocketReadsNothingBeforeTheAssociationAndFailsAfte
   {
     FakeSocks proxy(300);
     prefs.Arm("127.0.0.1", proxy.Port());
-    PRFileDesc* fd = PR_NewUDPSocket();
+    PRFileDesc* fd = NonBlockingUdpSocket();
     ASSERT_TRUE(fd);
     ASSERT_EQ(NS_OK, prefs.Attach(fd));
     char buf[64];
@@ -799,7 +819,7 @@ TEST(StealthSessionUdpProxy, ASocketReadsNothingBeforeTheAssociationAndFailsAfte
     PR_Close(fd);
   }
   prefs.Arm("127.0.0.1", DeadPort());
-  PRFileDesc* fd = PR_NewUDPSocket();
+  PRFileDesc* fd = NonBlockingUdpSocket();
   ASSERT_TRUE(fd);
   ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr stun = StunServer();
@@ -839,11 +859,6 @@ TEST(StealthSessionUdpProxy, OnlyTheDatagramsOfTheRelayAreHandedToTheApplication
   EXPECT_TRUE(got.EqualsLiteral("good")) << "got '" << got.get() << "'";
   PR_Close(fd);
 }
-
-// Nothing a socket with the layer sends is sent direct: not what is held, not what is sent after the proxy refused. A
-// receiver stands where the datagram was addressed to.
-// Nothing a socket with the layer sends is sent direct: not what is held, not what is sent after the proxy refused. A
-// receiver stands where the datagram was addressed to.
 
 // Nothing a socket with the layer sends is sent direct: not what is held, not what is sent after the proxy refused. A
 // receiver stands where the datagram was addressed to (an address of the host that is not loopback).

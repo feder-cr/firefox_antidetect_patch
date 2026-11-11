@@ -7,12 +7,10 @@
 // travels from the TRR request to the proxy lookup, and the proxy filter of the
 // session sees it on the stand-in channel.
 
-#include "StealthParentalControls.h"
 #include "TRRLoadInfo.h"
 #include "gtest/gtest.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/OriginAttributes.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/net/ProxyConfigLookup.h"
 #include "mozilla/net/StealthTRRContext.h"
@@ -23,8 +21,8 @@
 #include "nsILoadInfo.h"
 #include "nsIProtocolProxyFilter.h"
 #include "nsIProtocolProxyService.h"
+#include "nsIParentalControlsService.h"
 #include "nsIProxyInfo.h"
-#include "nsHttpHandler.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
@@ -155,20 +153,6 @@ TEST(TestStealthTRRContext, ACancellationKeepsItsCode)
   EXPECT_EQ(StealthTRRProxyFailure(NS_BINDING_ABORTED), NS_BINDING_ABORTED);
 }
 
-// Parental controls are declared off and the OS is never asked: the cached state
-// of a profile (written when the OS once said "on") is not taken either.
-TEST(TestStealthTRRContext, ParentalControlsAreDeclaredOff)
-{
-  EXPECT_FALSE(StealthParentalControlsEnabled());
-  ASSERT_EQ(Preferences::SetBool("network.parental_controls_cached_state", true),
-            NS_OK);
-  nsHttpHandler::UpdateParentalControlsEnabled(false);
-  EXPECT_FALSE(nsHttpHandler::GetParentalControlsEnabled());
-  nsHttpHandler::UpdateParentalControlsEnabled(true);
-  EXPECT_FALSE(nsHttpHandler::GetParentalControlsEnabled());
-  Preferences::ClearUser("network.parental_controls_cached_state");
-}
-
 // The proxy lookup of a DoH request asks the proxy filters with a stand-in
 // channel. With the context of the lookup it is that context's channel; without
 // one it is the default context's, as upstream.
@@ -206,6 +190,31 @@ TEST(TestStealthTRRContext, TheFilterSeesTheContextOfTheLookup)
   EXPECT_EQ(filter->mUserContextId, 0u);
 
   EXPECT_EQ(pps->UnregisterChannelFilter(filter), NS_OK);
+}
+
+// Parental controls are declared off by the service itself, so every reader
+// (nsHttpHandler, downloads, the DoH heuristics) sees the same value and the OS
+// is never asked. The Linux implementation is a stub that already says "off",
+// so this passes on the old code there; it is a guard for the contract.
+TEST(TestStealthTRRContext, ParentalControlsServiceReportsEverythingOff)
+{
+  nsCOMPtr<nsIParentalControlsService> pcs =
+      do_CreateInstance("@mozilla.org/parental-controls-service;1");
+  if (!pcs) {
+    GTEST_SKIP() << "no parental controls service in this build";
+  }
+  bool enabled = true;
+  EXPECT_EQ(pcs->GetParentalControlsEnabled(&enabled), NS_OK);
+  EXPECT_FALSE(enabled);
+  // An implementation without the state answers an error and leaves false.
+  bool blocked = false;
+  if (NS_SUCCEEDED(pcs->GetBlockFileDownloadsEnabled(&blocked))) {
+    EXPECT_FALSE(blocked);
+  }
+  bool logging = false;
+  if (NS_SUCCEEDED(pcs->GetLoggingEnabled(&logging))) {
+    EXPECT_FALSE(logging);
+  }
 }
 
 }  // namespace mozilla::net

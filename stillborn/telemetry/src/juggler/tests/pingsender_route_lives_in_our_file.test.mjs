@@ -76,7 +76,7 @@ function stubs({ loaded = false, registry = null, log = [] } = {}) {
         dirsvc: { get: () => ({ append() {}, path: 'P/prefs.js' }) },
       },
       Cu: { isESModuleLoaded: () => loaded },
-      ChromeUtils: { importESModule: () => ({ TargetRegistry: { instance: () => registry } }) },
+      ChromeUtils: { importESModule: () => ({ TargetRegistry: registry }) },
     },
   };
 }
@@ -134,6 +134,7 @@ test('the proxy record comes from the target registry when Juggler loaded it', (
     load('win', s.globals).runAsync({ runAsync() {} }, [], {});
     return JSON.parse(s.log[0][2]).proxy;
   };
-  assert.deepEqual(run({ proxyRecordFor: id => ({ id }) }), { id: 0 });
-  assert.equal(run(null), null);
+  const road = proxy => ({ roadOfSession: id => ({ decided: true, proxy: proxy && { id } }) });
+  assert.deepEqual(run(road(true)), { id: 0 });
+  assert.equal(run(road(null)), null);
 });

@@ -679,7 +679,10 @@ class NetworkRequest {
 }
 
 export class NetworkObserver {
-  constructor(targetRegistry) {
+  // `earlyHold` is the filter Juggler registered at command-line-startup
+  // (EarlyProxyHold.js): adopted, never registered a second time, and the
+  // channels it already holds stay held.
+  constructor(targetRegistry, earlyHold = null) {
     helper.decorateAsEventEmitter(this);
 
     this._targetRegistry = targetRegistry;
@@ -687,36 +690,27 @@ export class NetworkObserver {
     this._channelToRequest = new Map();  // http channel -> network request
     this._expectedRedirect = new Map();  // expected redirect channel id (string) -> network request
 
-    const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
+    // PENDING until the first command (Browser.setBrowserProxy or
+    // Browser.setNoBrowserProxy) has decided the road of the session: the
+    // channels asked before wait here, unanswered, so nothing leaves the host
+    // before the client said how it must leave. DoH lookups come through the
+    // same filter (the stand-in channel of ProxyConfigLookup) and wait too.
+    this._pendingProxyFilters = earlyHold ? earlyHold.pending : [];
     this._channelProxyFilter = {
       QueryInterface: ChromeUtils.generateQI([Ci.nsIProtocolProxyChannelFilter]),
       applyFilter: (channel, defaultProxyInfo, proxyFilter) => {
-        const proxy = this._targetRegistry.getProxyInfo(channel);
-        if (!proxy) {
-          proxyFilter.onProxyFilterResult(defaultProxyInfo);
+        if (!this._targetRegistry.browserProxyDecided) {
+          this._pendingProxyFilters.push({ channel, defaultProxyInfo, proxyFilter });
           return;
         }
-        if (this._targetRegistry.shouldBustHTTPAuthCacheForProxy(proxy))
-          Services.obs.notifyObservers(null, "net:clear-active-logins");
-        // ⛔ AND THE CREDENTIALS ARE NOT DECIDED HERE ANY MORE, because for
-        // seven releases they were decided here WRONGLY and nothing said so.
-        //
-        // The line this replaces passed the username and the password for
-        // every scheme, with a comment claiming "the same two fields carry
-        // HTTP proxy auth". They do not. Gecko refuses them for anything that
-        // is not SOCKS, so with an authenticated HTTP proxy this call threw,
-        // `onProxyFilterResult` was never reached, and necko went on with the
-        // DEFAULT proxy info: DIRECT, over the host's own address, with no
-        // error on the protocol and nothing in the log a client could see.
-        // Reported from the outside as a privacy failure, not caught here.
-        //
-        // `newProxyInfoFor` is now the only place that answers the question,
-        // and it is also called when the proxy is SET, so a proxy this engine
-        // cannot express refuses its command instead of arriving here to fail.
-        proxyFilter.onProxyFilterResult(newProxyInfoFor(proxy));
+        this._answerProxyFilter(channel, defaultProxyInfo, proxyFilter);
       },
     };
-    protocolProxyService.registerChannelFilter(this._channelProxyFilter, 0 /* position */);
+    this._targetRegistry.onBrowserProxyDecided(() => this._answerPendingProxyFilters());
+    if (earlyHold)
+      earlyHold.adopt(this._channelProxyFilter.applyFilter);
+    else
+      Cc['@mozilla.org/network/protocol-proxy-service;1'].getService().registerChannelFilter(this._channelProxyFilter, 0 /* position */);
 
     // Register self as ChannelEventSink to track redirects.
     ChannelEventSinkFactory.getService().registerCollector({
@@ -732,6 +726,46 @@ export class NetworkObserver {
       // synthesized response reaches http-on-examine-response.
       helper.addObserver(this._onServiceWorkerResponse.bind(this), 'service-worker-synthesized-response'),
     ];
+  }
+
+  // The answer of the filter for one channel, once the session's road is decided.
+  _answerProxyFilter(channel, defaultProxyInfo, proxyFilter) {
+    const proxy = this._targetRegistry.getProxyInfo(channel);
+    if (!proxy) {
+      proxyFilter.onProxyFilterResult(defaultProxyInfo);
+      return;
+    }
+    if (this._targetRegistry.shouldBustHTTPAuthCacheForProxy(proxy))
+      Services.obs.notifyObservers(null, "net:clear-active-logins");
+    // ⛔ AND THE CREDENTIALS ARE NOT DECIDED HERE ANY MORE, because for
+    // seven releases they were decided here WRONGLY and nothing said so.
+    //
+    // The line this replaces passed the username and the password for
+    // every scheme, with a comment claiming "the same two fields carry
+    // HTTP proxy auth". They do not. Gecko refuses them for anything that
+    // is not SOCKS, so with an authenticated HTTP proxy this call threw,
+    // `onProxyFilterResult` was never reached, and necko went on with the
+    // DEFAULT proxy info: DIRECT, over the host's own address, with no
+    // error on the protocol and nothing in the log a client could see.
+    // Reported from the outside as a privacy failure, not caught here.
+    //
+    // `newProxyInfoFor` is now the only place that answers the question,
+    // and it is also called when the proxy is SET, so a proxy this engine
+    // cannot express refuses its command instead of arriving here to fail.
+    proxyFilter.onProxyFilterResult(newProxyInfoFor(proxy));
+  }
+
+  // The decision was made: every channel that waited gets its answer, in the
+  // order it asked. One answer that throws does not leave the others waiting.
+  _answerPendingProxyFilters() {
+    const pending = this._pendingProxyFilters.splice(0);
+    for (const { channel, defaultProxyInfo, proxyFilter } of pending) {
+      try {
+        this._answerProxyFilter(channel, defaultProxyInfo, proxyFilter);
+      } catch (e) {
+        dump('Juggler: a proxy answer failed: ' + (e && e.message) + '\n');
+      }
+    }
   }
 
   /**

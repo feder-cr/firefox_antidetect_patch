@@ -173,11 +173,14 @@ OWN_FILES = [
     (r"^juggler/tests/updater_refuses_what_follows_the_check\.test\.", "stillborn/updater"),
     (r"^third_party/libwebrtc/modules/desktop_capture/win/StealthWindowInputDesktop\.", "platform/hidden-desktop"),
     (r"^netwerk/protocol/http/StealthInterception\.", "automation/network-interception"),
-    (r"^netwerk/dns/StealthParentalControls\.", "network/doh"),
+    (r"^toolkit/components/parentalcontrols/StealthParentalControls\.", "network/doh"),
     (r"^netwerk/ipc/StealthTRRContext\.", "network/doh"),
     (r"^netwerk/test/gtest/TestStealthTRRContext\.", "network/doh"),
+    (r"^juggler/EarlyProxyHold\.js$", "network/doh"),
     (r"^juggler/tests/(dns_has_no_gate_of_ours|doh_|proxy_info_leaves_name_resolution_to_the_browser|"
-     r"resolver_never_asks_the_os_for_parental_controls|trr_connection_info_is_not_cached_in_this_build)",
+     r"trr_connection_info_is_not_cached_in_this_build|etc_hosts_exclusion_is_off|"
+     r"http_proxy_credentials_are_sent_preemptively_for_doh|parental_controls_are_declared_off|"
+     r"no_channel_leaves_before_the_|no_ping_leaves_before_the_session_proxy_is_decided)",
      "network/doh"),
     (r"^js/src/debugger/StealthDebugger\.", "fingerprint/js-surface/debugger"),
     (r"^gfx/thebes/StealthDesignMetrics\.", "fingerprint/fonts/metrics"),

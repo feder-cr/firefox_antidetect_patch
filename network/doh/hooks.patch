@@ -36,18 +36,6 @@ index a960b375a00d55f8dc4baee1049b4af6859ff360..1f679729efb265d63ebdeaa62e73f367
      RefPtr<nsHttpConnectionInfo> trrConnInfo =
          TRRService::Get()->TRRConnectionInfo();
      if (trrConnInfo) {
-diff --git a/netwerk/dns/moz.build b/netwerk/dns/moz.build
-index 513f9476b1db6a19fd3b4a5163e91af2e55e36fe..bf982fd195e7bbbb09bc49bbea69e60da583e3f5 100644
---- a/netwerk/dns/moz.build
-+++ b/netwerk/dns/moz.build
-@@ -91,6 +91,7 @@ UNIFIED_SOURCES += [
-     "TRRServiceChild.cpp",
-     "TRRServiceParent.cpp",
- ]
-+UNIFIED_SOURCES += ["StealthParentalControls.cpp"]  # STEALTH-HOOK(network/doh)
- 
- IPDL_SOURCES = [
-     "PDNSRequest.ipdl",
 diff --git a/netwerk/protocol/http/TRRServiceChannel.cpp b/netwerk/protocol/http/TRRServiceChannel.cpp
 index 376ae9120226120b8a0f7c2335b9207e2b985a97..167bc15c81263bdba78515b19f4a10a42d845c8f 100644
 --- a/netwerk/protocol/http/TRRServiceChannel.cpp
@@ -103,3 +91,94 @@ index 376ae9120226120b8a0f7c2335b9207e2b985a97..167bc15c81263bdba78515b19f4a10a4
    if (NS_SUCCEEDED(status)) mProxyInfo = pi;
  
    if (!gHttpHandler->Active()) {
+diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp
+index f8c239dfc25946f434ecd59c105762ac6af00c0e..04a6172791fdfb633e702d60e4748244f4cd64ba 100644
+--- a/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp
++++ b/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp
+@@ -3,12 +3,18 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsParentalControlsService.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "nsString.h"
+ #include "nsIFile.h"
+ 
+ NS_IMPL_ISUPPORTS(nsParentalControlsService, nsIParentalControlsService)
+ 
+-nsParentalControlsService::nsParentalControlsService() : mEnabled(false) {}
++nsParentalControlsService::nsParentalControlsService() : mEnabled(false) {
++  // STEALTH-HOOK(network/doh): declared, the OS is never read.
++  if (StealthParentalControlsDeclared(&mEnabled)) {
++    return;
++  }
++}
+ 
+ nsParentalControlsService::~nsParentalControlsService() {}
+ 
+diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm b/toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm
+index 379998f23d48fe5b02277fd7cc1874d41691e37f..bd593ffd6fa0dcf8c8b6ffc4b045d6c0c57539b2 100644
+--- a/toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm
++++ b/toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsParentalControlsService.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "nsString.h"
+ #include "nsIFile.h"
+ 
+@@ -11,6 +12,10 @@
+ NS_IMPL_ISUPPORTS(nsParentalControlsService, nsIParentalControlsService)
+ 
+ nsParentalControlsService::nsParentalControlsService() : mEnabled(false) {
++  // STEALTH-HOOK(network/doh): declared, the OS is never read.
++  if (StealthParentalControlsDeclared(&mEnabled)) {
++    return;
++  }
+   mEnabled = CFPreferencesAppValueIsForced(
+       CFSTR("restrictWeb"), CFSTR("com.apple.familycontrols.contentfilter"));
+ }
+diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
+index 1f42525b3ea45282c0ea1de2fcc73e7c81ed578b..4cd98454b5a12d2bd78a098dbc8b94efba2e86c2 100644
+--- a/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
++++ b/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
+@@ -3,11 +3,16 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsParentalControlsService.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "nsIFile.h"
+ 
+ NS_IMPL_ISUPPORTS(nsParentalControlsService, nsIParentalControlsService)
+ 
+ nsParentalControlsService::nsParentalControlsService() : mEnabled(false) {
++  // STEALTH-HOOK(network/doh): declared, the OS is never read.
++  if (StealthParentalControlsDeclared(&mEnabled)) {
++    return;
++  }
+   (void)mEnabled;
+ }
+ 
+diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp
+index 118b630a5bfaece654861830b86fbdf15d076e8b..676088570a2b3cdae3bc834577fb2950174ee107 100644
+--- a/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp
++++ b/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsParentalControlsService.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "nsComponentManagerUtils.h"
+ #include "nsString.h"
+ #include "nsIArray.h"
+@@ -59,6 +60,10 @@ static nsAutoString GetUserSid() {
+ 
+ nsParentalControlsService::nsParentalControlsService()
+     : mEnabled(false), mProvider(0), mPC(nullptr) {
++  // STEALTH-HOOK(network/doh): declared, the OS is never read.
++  if (StealthParentalControlsDeclared(&mEnabled)) {
++    return;
++  }
+   // On at least some builds of Windows 10, the old parental controls API no
+   // longer exists, so we have to pull the info we need out of the registry.
+   nsAutoString regKeyName;

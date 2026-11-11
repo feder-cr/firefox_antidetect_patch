@@ -287,6 +287,7 @@ const Browser = {
         password: t.Optional(t.String),
       },
     },
+    'setNoBrowserProxy': {},
     'setContextProxy': {
       params: {
         browserContextId: t.Optional(t.String),

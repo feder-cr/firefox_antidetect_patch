@@ -863,14 +863,14 @@ index 1b8068f235e421e97fc316f218efc14e551a07a5..1a439dad2800858b7f3bf4e0bee6fc68
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
      UNIFIED_SOURCES += [
 diff --git a/netwerk/socket/moz.build b/netwerk/socket/moz.build
-index 97b6d04e2c3d3e689b32daa848b9a7774106f885..62c0ce2f0a26eae65e1eec32557442c54f901ce5 100644
+index 97b6d04e2c3d3e689b32daa848b9a7774106f885..e3ac0a2e87ad6dc3b859e02bf6c37b5bcc4a5c84 100644
 --- a/netwerk/socket/moz.build
 +++ b/netwerk/socket/moz.build
 @@ -22,6 +22,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
  EXPORTS += [
      "nsSocketProviderService.h",
  ]
-+EXPORTS += ["nsSOCKSUDPIOLayer.h", "StealthPcUdpProxy.h"]  # STEALTH-HOOK(network/socks-udp-h3)
++EXPORTS += ["nsSOCKSUDPIOLayer.h", "StealthPcUdpProxy.h"]  # STEALTH-HOOK(network/proxy-udp)
  
  UNIFIED_SOURCES += [
      "nsSocketProviderService.cpp",
@@ -878,7 +878,7 @@ index 97b6d04e2c3d3e689b32daa848b9a7774106f885..62c0ce2f0a26eae65e1eec32557442c5
      "nsSOCKSSocketProvider.cpp",
      "nsUDPSocketProvider.cpp",
  ]
-+UNIFIED_SOURCES += ["nsSOCKSUDPIOLayer.cpp", "StealthPcUdpProxy.cpp"]  # STEALTH-HOOK(network/socks-udp-h3)
++UNIFIED_SOURCES += ["nsSOCKSUDPIOLayer.cpp", "StealthPcUdpProxy.cpp"]  # STEALTH-HOOK(network/proxy-udp)
  
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
      XPIDL_SOURCES += [

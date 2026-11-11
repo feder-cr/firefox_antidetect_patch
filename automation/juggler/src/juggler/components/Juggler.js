@@ -10,6 +10,7 @@ const {Dispatcher} = ChromeUtils.importESModule("resource://gre/modules/juggler/
 const {BrowserHandler} = ChromeUtils.importESModule("resource://gre/modules/juggler/protocol/BrowserHandler.js");
 const {NetworkObserver} = ChromeUtils.importESModule("resource://gre/modules/juggler/NetworkObserver.js");
 const {TargetRegistry} = ChromeUtils.importESModule("resource://gre/modules/juggler/TargetRegistry.js");
+const {EarlyProxyHold} = ChromeUtils.importESModule("resource://gre/modules/juggler/EarlyProxyHold.js");
 const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
 const {ActorManagerParent} = ChromeUtils.importESModule('resource://gre/modules/ActorManagerParent.sys.mjs');
 const helper = new Helper();
@@ -82,6 +83,17 @@ export class Juggler {
         const jugglerPipeFlag = cmdLine.handleFlag('juggler-pipe', false);
         if (!jugglerPipeFlag)
           return;
+        TargetRegistry.markDriven();
+        // The first point where the pipe flag is known: from here every proxied
+        // channel is held until a command decides the road of the session. The
+        // NetworkObserver (final-ui-startup) adopts this filter. If it cannot be
+        // registered now the NetworkObserver registers its own, as before.
+        try {
+          this._earlyHold = EarlyProxyHold.register();
+        } catch (e) {
+          this._earlyHold = null;
+          dump('Juggler: early proxy hold not registered: ' + (e && e.message) + '\n');
+        }
 
         this._silent = cmdLine.findFlag('silent', false) >= 0;
         if (this._silent) {
@@ -98,7 +110,7 @@ export class Juggler {
         Services.obs.removeObserver(this, topic);
 
         const targetRegistry = new TargetRegistry({ survivesLastWindow: this._silent });
-        new NetworkObserver(targetRegistry);
+        new NetworkObserver(targetRegistry, this._earlyHold);
 
         const loadStyleSheet = () => {
           if (Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).isHeadless) {

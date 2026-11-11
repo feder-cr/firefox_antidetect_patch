@@ -20,7 +20,7 @@ function load(calls) {
   const code = source.replace(/^export function /gm, 'function ') +
       '\nthis.newProxyInfoFor = newProxyInfoFor;';
   const context = {
-    Math,
+    Math, TextEncoder, btoa, String,
     Cc: { '@mozilla.org/network/protocol-proxy-service;1': { getService: () => ({
       newProxyInfoWithAuth: (...args) => { calls.push(args); return { args }; },
     }) } },

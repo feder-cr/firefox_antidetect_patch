@@ -23,6 +23,7 @@ FINAL_TARGET_FILES.modules.juggler += [
     "content/JugglerFrameChild.jsm",
     "content/JugglerFrameChild.sys.mjs",
     "ContentMux.js",
+    "EarlyProxyHold.js",
     "FrameLifecycle.js",
     "FrameNavigations.js",
     "Helper.js",

@@ -36,6 +36,8 @@ The network WebRTC gathers on is declared by the core, never read from the host.
 - `dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp`, `mdns_service/src/lib.rs`: the responder on the loopback.
 - Build lists: `dom/media/webrtc/transport/{moz.build,common.build,build/moz.build}`, `third_party/nICEr/{nicer.gyp,moz.yaml}`,
   `test/gtest_utils.h`.
+  `common.build` has our source line (`nr_stealth_network.cpp`) inside Mozilla's `transport_lcppsrcs` list, without a marker: it is
+  the one hook of ours that sits in a list (the rule is to put it after the closing bracket); the check does not need a marker there.
 - `dom/media/webrtc/transport/nr_socket_prsock.{h,cpp}` carries the R3 hooks (bind, own ports, loopback rewrite); the file belongs to
   network/proxy-udp, which has the other hooks in it. Those lines are tagged `STEALTH-HOOK(fingerprint/webrtc/declared-network)`.
 

@@ -23,7 +23,7 @@
     "+  // STEALTH-HOOK(network/doh): declared, the OS is never asked.",
     "+  sParentalControlsEnabled = StealthParentalControlsEnabled();"
    ],
-   "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner. Also (feature doh-trr-context, network/doh): UpdateParentalControlsEnabled takes the declared value (StealthParentalControlsEnabled) and returns before the OS parental controls service is created, so TRR is not skipped by a host setting.",
+   "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner.",
    "verifier": {
     "changed": [],
     "why": "all fields checked against the diff; no change"

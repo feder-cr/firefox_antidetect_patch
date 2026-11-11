@@ -46,6 +46,11 @@
  * (TargetRegistry.js). So handing HTTP credentials to
  * the endpoint is not merely unsupported: it is the wrong mechanism, and the
  * right one was already wired and already working.
+ *
+ * One request has no such channel: the DoH request. TRRServiceChannel has no
+ * auth provider, so its 407 would never be answered; it sends the
+ * Proxy-Authorization of the nsIProxyInfo up front instead. So an HTTP proxy
+ * with credentials also carries that header (see proxyAuthorizationHeaderFor).
  */
 const PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS = new Set(['socks', 'socks4']);
 
@@ -84,6 +89,18 @@ export function newProxyInfoFor(proxy) {
   return info;
 }
 
+// The preemptive Proxy-Authorization of an http/https proxy with credentials:
+// Basic over the UTF-8 bytes of user:pass. Empty for SOCKS (its credentials
+// travel in the handshake) and for a proxy with no credentials.
+function proxyAuthorizationHeaderFor(proxy) {
+  if (PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type))
+    return '';
+  if (!proxy.username && !proxy.password)
+    return '';
+  const bytes = new TextEncoder().encode((proxy.username || '') + ':' + (proxy.password || ''));
+  return 'Basic ' + btoa(String.fromCharCode(...bytes));
+}
+
 function buildProxyInfo(proxy) {
   const carriesOwnCredentials = PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type);
   const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
@@ -93,7 +110,7 @@ function buildProxyInfo(proxy) {
       proxy.port,
       carriesOwnCredentials ? (proxy.username || '') : '',
       carriesOwnCredentials ? (proxy.password || '') : '',
-      '', /* aProxyAuthorizationHeader */
+      proxyAuthorizationHeaderFor(proxy), /* aProxyAuthorizationHeader */
       '', /* aConnectionIsolationKey */
       0, /* aFlags: the browser resolves names itself (DoH) and connects to the IP */
       UINT32_MAX, /* aFailoverTimeout */
