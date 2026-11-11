@@ -376,7 +376,7 @@ function namedPage({ ownRoot = true, answer }) {
   handler._contentChannel = { frameRootOf: bc => (ownRoot ? bc.id : 1) };
   handler._contentPage = { send: (method, params) => { asked.push([method, params]); return answer(); } };
   handler._pageNetwork = { onMainFrameNavigationCommitted() {} };
-  handler._frameNavigations = { forget() {} };
+  handler._frameNavigations = { forget() {}, onCommitNamed() {} };
   handler._heldBackFrames = new Map();
   handler._onFrameAttached({ frameId: 'subframe-7', parentFrameId: 'mainframe-1' });
   events.length = 0;
@@ -423,7 +423,7 @@ test('an embedder that cannot say the name leaves the commit with the name it ha
 test('a frame that attaches while the commit of its parent waits for the name of the parent is told after the commit', async () => {
   let reply;
   const { handler, events } = namedPage({ answer: () => new Promise(resolve => { reply = resolve; }) });
-  handler._frameNavigations = { forget() {}, pendingNavigationId: () => undefined };   // the registry has committed it
+  handler._frameNavigations = { forget() {}, onCommitNamed() {}, pendingNavigationId: () => undefined };   // the registry has committed it
   handler._onNavigationCommitted({ frameId: 'subframe-7', navigationId: 'nav-1', url: 'https://b.test/', name: '' });
   handler._onFrameSeenByTheParent({ frameId: 'subframe-8', parentFrameId: 'subframe-7' });
   assert.deepEqual(events, [], 'nothing leaves while the name is awaited: not the commit, and not the frame below it');

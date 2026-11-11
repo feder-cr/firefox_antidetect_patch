@@ -129,6 +129,17 @@ export class FrameNavigations {
     this._emit('navigationcommitted', {frameId, navigationId, url, name}, frameId);
   }
 
+  // The commit of a document was told to the client with another name than the one the registry had: the name of the
+  // <iframe> of a frame in a process of its own is asked of its embedder, which is where the element is. What the
+  // client was told is what the frame says again when it comes back from the cache, not the name the registry was
+  // given, which a process that holds no <iframe> element leaves empty. Only the document that was told: a later one
+  // keeps its own.
+  onCommitNamed(frameId, navigationId, url, name) {
+    const document = this._documents.get(frameId);
+    if (document && document.navigationId === navigationId && document.url === url)
+      document.name = name;
+  }
+
   // The last document told committed in the frame, or undefined: what a frame says again when it comes back with the
   // page from the back-forward cache, the client having dropped it.
   lastDocument(frameId) {

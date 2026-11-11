@@ -599,6 +599,9 @@ export class PageHandler {
         .then(name => {
           this._eventsAfterName.delete(frameId);
           try {
+            // The registry keeps the name the client is told: the frame says it again when its page comes back from
+            // the back-forward cache (_reannounceAfterRestore), and the process of the frame cannot say it.
+            this._frameNavigations.onCommitNamed(frameId, params.navigationId, params.url, name);
             this._commitNow(name ? {...params, name} : params);
           } finally {
             this._flushAfterName(frameId, queue);
@@ -756,6 +759,10 @@ export class PageHandler {
   }
 
   _onFrameDetached(frameId) {
+    // A frame takes the frames below it along: the client drops the subtree at the detach of the frame, so each frame
+    // below that it knows is told first, the deepest first (the order of a crash), and the ones held back are
+    // never announced. The detach the engine says of each of them later finds them gone: said once.
+    this._detachFramesBelow(frameId);
     this._heldBackFrames.delete(frameId);
     // A frame the handler does not hold live (the client dropped it at a commit above it, or never heard of it)
     // still leaves nothing behind; only a frame the client knows is told of its end.
@@ -767,6 +774,30 @@ export class PageHandler {
     this._releaseFrame(frameId, {tellClient: live});
     if (live)
       this._session.emitEvent('Page.frameDetached', {frameId});
+  }
+
+  // The frames below `frameId`, as the handler holds them (announced or held back), ended with it.
+  _detachFramesBelow(frameId) {
+    const parentOf = id => this._parentOfFrame.get(id) ?? this._heldBackFrames.get(id)?.parentFrameId;
+    const depthOf = id => {
+      let depth = 0;
+      for (let p = parentOf(id); p !== undefined; p = parentOf(p))
+        depth++;
+      return depth;
+    };
+    const below = [];
+    for (const id of [...this._liveFrameIds, ...this._heldBackFrames.keys()]) {
+      if (id !== frameId && this._isBelow(parentOf(id), frameId))
+        below.push(id);
+    }
+    below.sort((a, b) => depthOf(b) - depthOf(a));
+    for (const id of below) {
+      if (this._heldBackFrames.has(id)) {
+        this._heldBackFrames.delete(id);
+        continue;
+      }
+      this._onFrameDetached(id);
+    }
   }
 
   async ['Page.close']({runBeforeUnload}) {
