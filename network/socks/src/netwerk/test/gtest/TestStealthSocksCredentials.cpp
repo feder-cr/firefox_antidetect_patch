@@ -1421,7 +1421,7 @@ TEST(StealthSessionUdpProxy, AnIpv6DestinationGoesThroughAnIpv4Relay)
   nsCString got = proxy.FirstDatagram();
   ASSERT_EQ(got.Length(), 4u + 16u + 2u + 4u) << "the datagram of an IPv6 destination did not reach the IPv4 relay";
   EXPECT_EQ(0x04, static_cast<uint8_t>(got[3])) << "ATYP of an IPv6 destination";
-  EXPECT_EQ(0, std::memcmp(got.get() + 22, "", 2)) << "port 3478";
+  EXPECT_EQ(0, std::memcmp(got.get() + 22, "\x0d\x96", 2)) << "port 3478";
   EXPECT_EQ(0, std::memcmp(got.get() + 24, "ping", 4));
   PR_Close(fd);
 }

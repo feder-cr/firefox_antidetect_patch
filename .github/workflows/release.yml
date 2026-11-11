@@ -1003,7 +1003,9 @@ jobs:
         timeout-minutes: 180
         shell: bash
         run: |
-          python3 scripts/ci phase gtest -- ./mach build recurse_gtest
+          # --keep-going: make goes on after the first error, so one run shows EVERY gtest that does not build, not one per run
+          # (a build of the gtests that stops at the first error costs a run on the node for each of them)
+          python3 scripts/ci phase gtest -- ./mach build --keep-going recurse_gtest
           # And _tests/gtest, the directory mach runs them from: what they read at run time.
           mkdir -p obj-rel/_tests/gtest
           tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest

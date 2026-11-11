@@ -178,3 +178,41 @@ def test_only_vendored_code_can_be_a_backport(tmp_path, monkeypatch):
 def test_upstream_code_carries_no_budget(tmp_path, monkeypatch):
     found = _with_budget(tmp_path, monkeypatch, lambda b: b.__setitem__(BACKPORTED, 5000))
     assert any(BACKPORTED in p and "is upstream code" in p for p in found), found
+
+
+def test_a_carriage_return_inside_a_string_literal_is_refused():
+    """The build of a gtest broke on a carriage return and a C1 character written raw inside a string (the two bytes of a port)."""
+    bad = 'EXPECT_EQ(0, memcmp(p, "\r\u0096", 2)) << "port";\n'
+    problems = engine.cxx_byte_problems(bad)
+    assert problems and "literal" in problems[0][1], problems
+
+
+def test_a_character_outside_ascii_inside_a_literal_is_refused_but_not_in_a_comment():
+    assert engine.cxx_byte_problems('const char* s = "caf\u00e9";\n')
+    assert engine.cxx_byte_problems("// caf\u00e9 \u2014 a comment may say it\n/* \u00e0 */ int x;\n") == []
+
+
+def test_escapes_raw_strings_and_digit_separators_are_clean():
+    clean = (
+        'const char a[] = "\\x0d\\x96\\"";\n'
+        'const char b = \'\\n\';\n'
+        'int big = 1\'000\'000;\n'
+        'const char* r = R"x(a "quoted" \u00e9 text)x";\n'
+    )
+    assert engine.cxx_byte_problems(clean) == [], engine.cxx_byte_problems(clean)
+
+
+def test_a_control_character_anywhere_is_refused_and_a_crlf_is_not():
+    assert engine.cxx_byte_problems("int x;\x0b\n")
+    assert engine.cxx_byte_problems("int x;\r\nint y;\r\n") == []
+    assert engine.cxx_byte_problems("int x;\rint y;\n")
+
+
+def test_the_files_of_ours_as_committed_have_no_such_character():
+    assert engine.own_cxx_problems() == []
+
+
+def test_a_prefixed_character_literal_is_a_literal_not_a_digit_separator():
+    assert engine.cxx_byte_problems("int32_t bar = body.FindChar(u'|', start);\nconst auto s = aPath.RFindChar(u'\\\\');\n") == []
+    assert engine.cxx_byte_problems("char c = L'\\u00e9';\n") == []
+    assert engine.cxx_byte_problems("char16_t c = u'\u00e9';\n")

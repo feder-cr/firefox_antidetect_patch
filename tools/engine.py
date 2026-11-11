@@ -34,7 +34,9 @@ check    needs no Firefox: SERIES lists exactly the folders that exist, every fo
          budgets only go down: logic belongs in our own files, Mozilla's files get hooks,
          and Mozilla's lines stay as Mozilla wrote them (a removed or rewritten line
          conflicts at a port like an added one, and a copy of it in a file of ours
-         stops following Mozilla).
+         stops following Mozilla). A C++ file of ours has no control character (a carriage return inside a
+         string literal ended the literal and broke the build of a test) and no byte outside ASCII inside a
+         string or character literal: write them as escapes.
 """
 from __future__ import annotations
 
@@ -593,6 +595,97 @@ def backport_problems(folder: str, upstream_code: set, patch: Path) -> list:
     return found
 
 
+def _digit_separator(text: str, i: int) -> bool:
+    """text[i] is an apostrophe: inside a number (1'000, 0x1'0000) and not the start of a character literal (u'|', L'x')."""
+    j = i - 1
+    while j >= 0 and (text[j].isalnum() or text[j] == "_"):
+        j -= 1
+    token = text[j + 1:i]
+    return bool(token) and token[0].isdigit()
+
+
+def cxx_byte_problems(text: str) -> list:
+    """What in a C++ file of ours is not what it looks like: a control character anywhere (a carriage return is
+    allowed only as the first half of a line ending), and a character outside ASCII inside a string or character
+    literal (write it as an escape: the editor, the terminal and the compiler do not agree on what it is). Comments
+    may say whatever they like. Returns [(line, what)]."""
+    found = []
+    i, n, line = 0, len(text), 1
+    while i < n:
+        c = text[i]
+        two = text[i:i + 2]
+        if two == "//":
+            while i < n and text[i] != "\n":
+                if ord(text[i]) < 32 and text[i] not in "\t\r":
+                    found.append((line, "control character %r in a comment" % text[i]))
+                i += 1
+            continue
+        if two == "/*":
+            end = text.find("*/", i + 2)
+            end = n if end < 0 else end + 2
+            for ch in text[i:end]:
+                if ch == "\n":
+                    line += 1
+                elif ord(ch) < 32 and ch not in "\t\r":
+                    found.append((line, "control character %r in a comment" % ch))
+            i = end
+            continue
+        raw = c == "R" and text[i + 1:i + 2] == '"' and not (i and (text[i - 1].isalnum() or text[i - 1] == "_"))
+        if raw:
+            paren = text.find("(", i + 2)
+            delim = text[i + 2:paren] if paren > 0 else ""
+            end = text.find(")" + delim + '"', paren)
+            end = n if end < 0 else end + len(delim) + 2
+            line += text.count("\n", i, end)
+            i = end
+            continue
+        if c == '"' or (c == "'" and not _digit_separator(text, i)):
+            quote, j = c, i + 1
+            while j < n and text[j] != quote:
+                ch = text[j]
+                if ch == "\\":
+                    j += 2
+                    continue
+                if ch == "\n":
+                    found.append((line, "a %s literal that does not end on its line (a raw control character may have ended it)"
+                                  % ("string" if quote == '"' else "character")))
+                    break
+                if ord(ch) < 32 and ch != "\t":
+                    found.append((line, "control character %r inside a literal: write it as an escape" % ch))
+                elif ord(ch) > 127:
+                    found.append((line, "character %r outside ASCII inside a literal: write it as an escape" % ch))
+                j += 1
+            i = j + 1
+            continue
+        if c == "\n":
+            line += 1
+        elif ord(c) < 32 and c not in "\t\r":
+            found.append((line, "control character %r" % c))
+        elif c == "\r" and text[i + 1:i + 2] != "\n":
+            found.append((line, "a carriage return that is not part of a line ending"))
+        i += 1
+    return found
+
+
+def own_cxx_problems() -> list:
+    found = []
+    for folder in existing_folders():
+        src = ROOT / folder / "src"
+        if not src.is_dir():
+            continue
+        for p in sorted(src.rglob("*")):
+            if p.suffix not in (".cpp", ".h", ".mm") or not p.is_file():
+                continue
+            try:
+                text = p.read_bytes().decode("utf-8")
+            except UnicodeDecodeError as err:
+                found.append("%s/src/%s is not valid UTF-8 (%s)" % (folder, p.relative_to(src).as_posix(), err))
+                continue
+            for line, what in cxx_byte_problems(text)[:3]:
+                found.append("%s/src/%s:%d: %s" % (folder, p.relative_to(src).as_posix(), line, what))
+    return found
+
+
 def problems() -> list:
     """Every rule of the series that is broken now, as sentences."""
     found = []
@@ -652,6 +745,7 @@ def problems() -> list:
     for path in sorted(set(removed_budget) - set(seen)):
         found.append("tools/removed-budget.json still lists %s, which no patch touches: remove it"
                      % path)
+    found += own_cxx_problems()
     series_wf = {p.name: p.read_bytes() for p in WORKFLOWS_SERIES.glob("*.yml")}
     root_wf = {p.name: p.read_bytes() for p in WORKFLOWS_ROOT.glob("*.yml")}
     for name in sorted(set(series_wf) | set(root_wf) - ROOT_ONLY_WORKFLOWS):
