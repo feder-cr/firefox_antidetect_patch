@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DIRS += ["components", "pipe"]
+DIRS += ["components", "pipe", "udp"]
 
 # The screencast rests on DesktopCaptureImpl, which dom/media/systemservices
 # only builds when webrtc is in. Without the directory the XPCOM class is not

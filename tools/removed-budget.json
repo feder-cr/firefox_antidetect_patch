@@ -10,6 +10,7 @@
  "dom/base/Element.cpp": 2,
  "dom/base/Element.h": 1,
  "dom/base/nsDOMWindowUtils.cpp": 2,
+ "dom/base/nsFrameLoader.cpp": 1,
  "dom/base/nsGlobalWindowOuter.cpp": 2,
  "dom/canvas/CanvasRenderingContext2D.cpp": 2,
  "dom/canvas/ClientWebGLContext.cpp": 5,
@@ -46,6 +47,8 @@
  "gfx/thebes/gfxPlatformFontList.cpp": 6,
  "gfx/thebes/gfxPlatformFontList.h": 4,
  "gfx/thebes/gfxTextRun.cpp": 3,
+ "gfx/wr/webrender/src/render_backend.rs": 6,
+ "gfx/wr/webrender/src/resource_cache.rs": 14,
  "intl/locale/LocaleService.cpp": 4,
  "js/src/debugger/Debugger.cpp": 4,
  "js/src/debugger/Frame.cpp": 2,
@@ -78,8 +81,5 @@
  "widget/nsBaseDragService.cpp": 1,
  "widget/nsGUIEventIPC.h": 1,
  "widget/windows/TaskbarPreview.cpp": 1,
- "xpcom/reflect/xptinfo/xptinfo.h": 1,
- "gfx/wr/webrender/src/render_backend.rs": 6,
- "gfx/wr/webrender/src/resource_cache.rs": 14,
- "dom/base/nsFrameLoader.cpp": 1
+ "xpcom/reflect/xptinfo/xptinfo.h": 1
 }

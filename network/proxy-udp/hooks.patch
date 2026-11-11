@@ -1,5 +1,5 @@
 diff --git a/dom/media/webrtc/transport/nr_socket_prsock.cpp b/dom/media/webrtc/transport/nr_socket_prsock.cpp
-index f15df437c8b6bbe76fb701ad62dbb6308b07456a..a4f13d5c9a8a7e06a05c5d8083414153c36f4e94 100644
+index f15df437c8b6bbe76fb701ad62dbb6308b07456a..0de6758f59c7eade3f3839a20e17d6e1bae04bc8 100644
 --- a/dom/media/webrtc/transport/nr_socket_prsock.cpp
 +++ b/dom/media/webrtc/transport/nr_socket_prsock.cpp
 @@ -155,6 +155,7 @@ nrappkit copyright:
@@ -10,35 +10,59 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..a4f13d5c9a8a7e06a05c5d8083414153
  #include "simpletokenbucket.h"
  #include "stun_hint.h"
  #include "test_nr_socket.h"
-@@ -736,6 +737,9 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
+@@ -575,6 +576,7 @@ int NrSocket::create(nr_transport_addr* addr) {
+               naddr.raw.family, PR_GetError());
+         ABORT(R_INTERNAL);
+       }
++      if (StealthSocksUdpAttachRefused(fd_)) ABORT(R_INTERNAL);  // STEALTH-HOOK(network/proxy-udp)
+       break;
+     case IPPROTO_TCP:
+       // TODO: Rewrite this to use WebrtcTcpSocket.
+@@ -736,6 +738,7 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
    PRNetAddr naddr;
    int32_t status;
  
-+  // STEALTH-HOOK(network/proxy-udp)
-+  if (StealthUscitaUdpDirettaVietataLog(to)) ABORT(R_REJECTED);
-+
++  if (StealthUscitaUdpDirettaVietataLog(to, fd_)) ABORT(R_REJECTED);  // STEALTH-HOOK(network/proxy-udp)
    if ((r = nr_transport_addr_to_praddr(to, &naddr))) ABORT(r);
  
    if (fd_ == nullptr) ABORT(R_EOD);
-@@ -1271,6 +1275,9 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
+@@ -1271,6 +1274,7 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
                             const nr_transport_addr* to) {
    ASSERT_ON_THREAD(sts_thread_);
  
-+  // STEALTH-HOOK(network/proxy-udp)
-+  if (StealthUscitaUdpDirettaVietata(to)) return R_REJECTED;
-+
++  if (StealthUscitaUdpDirettaVietataIpc(to)) return R_REJECTED;  // STEALTH-HOOK(network/proxy-udp)
    ReentrantMonitorAutoEnter mon(monitor_);
  
    // If send err happened before, simply return the error.
+diff --git a/netwerk/base/nsIOService.cpp b/netwerk/base/nsIOService.cpp
+index 31b794135b1e02e35dab6dc6714402ee699f1d69..81db9afdfda383f3077691c52f5fa46d15e22871 100644
+--- a/netwerk/base/nsIOService.cpp
++++ b/netwerk/base/nsIOService.cpp
+@@ -47,6 +47,7 @@
+ #include "nsINetworkLinkService.h"
+ #include "nsINode.h"
+ #include "nsIObserverService.h"
++#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/proxy-udp)
+ #include "nsIProtocolHandler.h"
+ #include "nsIProtocolProxyCallback.h"
+ #include "nsIProtocolProxyService2.h"
+@@ -733,6 +734,7 @@ void nsIOService::OnProcessLaunchComplete(SocketProcessHost* aHost,
+     return;
+   }
+ 
++  StealthSessionUdpProxyResend();  // STEALTH-HOOK(network/proxy-udp)
+   if (!mPendingEvents.IsEmpty()) {
+     nsTArray<std::function<void()>> pendingEvents = std::move(mPendingEvents);
+     for (auto& func : pendingEvents) {
 diff --git a/netwerk/base/nsUDPSocket.cpp b/netwerk/base/nsUDPSocket.cpp
-index f052d8afa22e136bb85ce10d02de6c732dd26cc8..f1319bd0bd31c314c88b5d05559c310e103ff479 100644
+index f052d8afa22e136bb85ce10d02de6c732dd26cc8..99dddf7d4bf6640ee2f7cc41b80bfa43fb742572 100644
 --- a/netwerk/base/nsUDPSocket.cpp
 +++ b/netwerk/base/nsUDPSocket.cpp
 @@ -33,6 +33,7 @@
  #include "prio.h"
  #include "private/pprio.h"
  #include "prnetdb.h"
-+#include "StealthSocksUdp.h"  // STEALTH-HOOK(network/proxy-udp)
++#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/proxy-udp)
  
  #if defined(FUZZING)
  #  include "FuzzyLayer.h"
@@ -47,7 +71,31 @@ index f052d8afa22e136bb85ce10d02de6c732dd26cc8..f1319bd0bd31c314c88b5d05559c310e
    }
  
 +  // STEALTH-HOOK(network/proxy-udp)
-+  StealthAttachSocksUdpLayer(mFD);
++  if (NS_FAILED(nsSOCKSUDPIOLayerAttachSession(mFD))) goto fail;
  #ifdef FUZZING
    if (StaticPrefs::fuzzing_necko_enabled()) {
      rv = AttachFuzzyIOLayer(mFD);
+diff --git a/netwerk/ipc/PSocketProcess.ipdl b/netwerk/ipc/PSocketProcess.ipdl
+index 8168d164d782847642aabcda232c3081389290bf..5a9baf3f0187049ccd026045c9e3ae2992cd8b8f 100644
+--- a/netwerk/ipc/PSocketProcess.ipdl
++++ b/netwerk/ipc/PSocketProcess.ipdl
+@@ -206,6 +206,7 @@ child:
+ 
+   async RecheckIPConnectivity();
+   async RecheckDNS();
++  async StealthSessionUdpProxy(nsCString aHost, int32_t aPort, nsCString aUser, nsCString aPass);  // STEALTH-HOOK(network/proxy-udp)
+ 
+   // Tells the Socket process to flush any pending telemetry.
+   // Used in tests and ping assembly. Buffer contains bincoded Rust structs.
+diff --git a/netwerk/ipc/SocketProcessChild.h b/netwerk/ipc/SocketProcessChild.h
+index 026db9b3016a0eb0f8fbbd6298ad6dc88156eaa5..2f5a7280c9dbfc0baf18cdd5fc832115796d27f5 100644
+--- a/netwerk/ipc/SocketProcessChild.h
++++ b/netwerk/ipc/SocketProcessChild.h
+@@ -52,6 +52,7 @@ class SocketProcessChild final : public PSocketProcessChild {
+       const Maybe<mozilla::ipc::FileDescriptor>& DMDFile,
+       const RequestMemoryReportResolver& aResolver);
+   mozilla::ipc::IPCResult RecvSetOffline(const bool& aOffline);
++  mozilla::ipc::IPCResult RecvStealthSessionUdpProxy(const nsACString& aHost, const int32_t& aPort, const nsACString& aUser, const nsACString& aPass);  // STEALTH-HOOK(network/proxy-udp)
+   mozilla::ipc::IPCResult RecvSetConnectivity(const bool& aConnectivity);
+   mozilla::ipc::IPCResult RecvInitLinuxSandbox(
+       const Maybe<ipc::FileDescriptor>& aBrokerFd);

@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Proxy UDP egress: refuse the DIRECT send of an ICE UDP packet to a public
- * destination when the engine runs behind a proxy.
+ * destination when the engine runs behind a proxy, unless the packet goes
+ * through the proxy's own UDP road (the SOCKS5 UDP layer, see the end).
  *
  * Header-only on purpose: transport_lcppsrcs (common.build) is compiled with
  * SOURCES (build/moz.build:40), so a new .cpp would need a new line in
@@ -16,6 +17,8 @@
 #include <stdint.h>
 
 #include "mozilla/StaticPrefs_zoom.h"
+#include "nsSOCKSUDPIOLayer.h"
+#include "prio.h"
 
 // nICEr / nrappkit includes. r_log, LOG_GENERIC, LOG_INFO and R_REJECTED come
 // from nr_api.h (r_log.h, r_common.h -> r_errors.h); nr_transport_addr, NR_IPV4,
@@ -98,17 +101,52 @@ inline bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {
   return false;
 }
 
-/* Same decision, plus the LOG_INFO line of the NrSocket::sendto path. Used by
- * that path only: the NrUdpSocketIpc::sendto path has never logged, and must
- * keep not logging. */
-inline bool StealthUscitaUdpDirettaVietataLog(const nr_transport_addr* to) {
-  if (!StealthUscitaUdpDirettaVietata(to)) {
+/* Quando il pacchetto NON esce direttamente ma passa dal livello SOCKS5 UDP
+ * (ASSOCIATE) del proxy della sessione, il divieto qui sopra non si applica: il
+ * server non vede il nostro indirizzo ma l'uscita del proxy, che e' esattamente
+ * cio' che vede chi sta dietro un proxy con UDP. Il livello si riconosce in due
+ * modi, uno per percorso:
+ *   - NrSocket (processo socket o parent): il livello e' sul PRFileDesc di
+ *     QUEL socket (nsSOCKSUDPIOLayerIsOn): si decide per socket.
+ *   - NrUdpSocketIpc (processo di contenuto): il socket vero sta nel parent
+ *     (nsUDPSocket), che innesta il livello da solo; qui si sa solo se la
+ *     sessione e' armata (StealthSocksUdpRouted). Se il parent non riesce a
+ *     innestarlo il socket non nasce (nsUDPSocket::InitWithAddress fallisce),
+ *     quindi non resta un invio diretto da lasciar passare per sbaglio.
+ * Senza livello decide solo zoom.stealth.webrtc.no_direct_udp, che resta una
+ * protezione e non dipende dal verdetto del core sull'UDP del proxy.
+ *
+ * Torna true = RIFIUTA l'invio. */
+inline bool StealthUscitaUdpDirettaVietataSeNonProxato(
+    const nr_transport_addr* to, bool aViaSocksUdp) {
+  return !aViaSocksUdp && StealthUscitaUdpDirettaVietata(to);
+}
+
+/* NrSocket::sendto: the decision for the socket whose fd is aFd, plus the
+ * LOG_INFO line of that path. */
+inline bool StealthUscitaUdpDirettaVietataLog(const nr_transport_addr* to,
+                                              PRFileDesc* aFd) {
+  if (!StealthUscitaUdpDirettaVietataSeNonProxato(
+          to, net::nsSOCKSUDPIOLayerIsOn(aFd))) {
     return false;
   }
   r_log(LOG_GENERIC, LOG_INFO,
         "stealth: UDP diretto rifiutato verso %s (dietro proxy)",
         to->as_string);
   return true;
+}
+
+/* NrSocket::create: the layer for the session proxy on a new UDP socket. True
+ * = REFUSED: the session is armed and the layer could not be pushed, so the
+ * socket must not exist (a plain one would send direct). */
+inline bool StealthSocksUdpAttachRefused(PRFileDesc* aFd) {
+  return NS_FAILED(net::nsSOCKSUDPIOLayerAttachSession(aFd));
+}
+
+/* NrUdpSocketIpc::sendto: no log, as it has never had one. */
+inline bool StealthUscitaUdpDirettaVietataIpc(const nr_transport_addr* to) {
+  return StealthUscitaUdpDirettaVietataSeNonProxato(
+      to, net::StealthSocksUdpRouted());
 }
 
 }  // namespace mozilla

@@ -1,0 +1,22 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * The proxy the session's UDP leaves by, handed by the Juggler (parent process
+ * only, SessionRoute.js) to the engine's SOCKS5 UDP layer.
+ *
+ * The credentials go to the parent and the socket process and nowhere else: not
+ * to a pref, not to a content process, not to a log.
+ */
+[scriptable, uuid(95194b81-2a5e-41d0-a809-b15903b9ad5d)]
+interface nsIStealthSessionUdpProxy : nsISupports
+{
+  /** Hold this SOCKS5 proxy for the UDP of the session. */
+  void set(in ACString aHost, in long aPort, in ACString aUser, in ACString aPass);
+
+  /** The session has no proxy for UDP any more. */
+  void clear();
+};

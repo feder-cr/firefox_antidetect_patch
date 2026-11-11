@@ -9,12 +9,23 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <inttypes.h>
 
 #include "nspr.h"
 #include "private/pprio.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_zoom.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/net/SocketProcessChild.h"
+#include "mozilla/net/SocketProcessParent.h"
 #include "nsProxyInfo.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
 namespace net {
@@ -178,16 +189,23 @@ bool SocksHandshake(PRFileDesc* tcp, const char* user, const char* pass,
 // ── NSPR layer methods ────────────────────────────────────────────
 
 PRStatus PR_CALLBACK SocksUdpClose(PRFileDesc* fd) {
-  auto* info = reinterpret_cast<SocksUdpInfo*>(fd->secret);
-  if (info) {
-    if (info->mTcpControl) {
-      PR_Close(info->mTcpControl);
+  // Takes our layer off the stack, frees it, and closes what is below. The
+  // layer used to free itself and return, so the UDP socket under it was never
+  // closed: one operating-system socket left behind per socket that had the
+  // layer (netwerk/test/gtest/TestStealthSessionUdpProxy.cpp).
+  PRFileDesc* layer = PR_PopIOLayer(fd, gIdentity);
+  if (layer) {
+    auto* info = reinterpret_cast<SocksUdpInfo*>(layer->secret);
+    layer->secret = nullptr;
+    if (info) {
+      if (info->mTcpControl) {
+        PR_Close(info->mTcpControl);
+      }
+      delete info;
     }
-    delete info;
-    fd->secret = nullptr;
+    layer->dtor(layer);
   }
-  fd->dtor(fd);
-  return PR_SUCCESS;
+  return fd->methods->close(fd);
 }
 
 // sendto: wrap data in SOCKS5 UDP header, redirect to relay.
@@ -344,17 +362,54 @@ void EnsureMethods() {
 
 }  // namespace
 
-// Process-wide cache: once we've failed to UDP_ASSOCIATE with a proxy, skip
-// further attempts (they would each block ~4 seconds and starve the
-// network thread). Reset on browser restart. Negative-cache only — a
-// single success invalidates nothing.
-static std::atomic<bool> sProxyFailed{false};
+// Negative cache: after a proxy has refused (or not answered) the UDP ASSOCIATE,
+// further attempts for the SAME endpoint are skipped for a few seconds, because
+// each would block up to ~4 seconds and starve the network thread. It was a
+// process-wide flag that never reset. That was acceptable while a failure meant
+// "go on with direct UDP"; a session that is armed refuses instead (see
+// nsSOCKSUDPIOLayerAttachSession), so a flag that never reset would turn one
+// hiccup into an outage until restart, and it would also outlive the proxy the
+// Juggler swaps for another one. The key is a hash of host, port and user: a
+// different endpoint is never held back by the failure of another.
+static std::atomic<uint64_t> sFailedEndpoint{0};
+static std::atomic<PRIntervalTime> sFailedAt{0};
+static constexpr uint32_t kNegativeCacheSeconds = 10;
+
+static uint64_t EndpointKey(const char* aHost, int32_t aPort,
+                            const char* aUser) {
+  uint64_t h = 1469598103934665603ULL;  // FNV-1a
+  auto mix = [&h](const char* p) {
+    for (; p && *p; ++p) {
+      h = (h ^ static_cast<uint8_t>(*p)) * 1099511628211ULL;
+    }
+    h = (h ^ 0xFF) * 1099511628211ULL;
+  };
+  mix(aHost);
+  h = (h ^ static_cast<uint32_t>(aPort)) * 1099511628211ULL;
+  mix(aUser);
+  return h ? h : 1;
+}
+
+static bool RecentlyFailed(uint64_t aKey) {
+  if (sFailedEndpoint.load(std::memory_order_relaxed) != aKey) {
+    return false;
+  }
+  PRIntervalTime elapsed =
+      PR_IntervalNow() - sFailedAt.load(std::memory_order_relaxed);
+  return elapsed < PR_SecondsToInterval(kNegativeCacheSeconds);
+}
+
+static void RememberFailure(uint64_t aKey) {
+  sFailedAt.store(PR_IntervalNow(), std::memory_order_relaxed);
+  sFailedEndpoint.store(aKey, std::memory_order_relaxed);
+}
 
 nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
                                       int32_t aProxyPort,
                                       const char* aProxyUsername,
                                       const char* aProxyPassword) {
-  if (sProxyFailed.load(std::memory_order_relaxed)) {
+  const uint64_t key = EndpointKey(aProxyHost, aProxyPort, aProxyUsername);
+  if (RecentlyFailed(key)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
   EnsureMethods();
@@ -384,7 +439,7 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
   if (PR_Connect(tcp, &proxyAddr, PR_SecondsToInterval(4)) != PR_SUCCESS) {
     LOGE(("TCP connect to proxy failed: %d", PR_GetError()));
     PR_Close(tcp);
-    sProxyFailed.store(true, std::memory_order_relaxed);
+    RememberFailure(key);
     return NS_ERROR_CONNECTION_REFUSED;
   }
   LOG(("TCP control connected to %s:%d", aProxyHost, aProxyPort));
@@ -392,7 +447,7 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
   PRNetAddr relay;
   if (!SocksHandshake(tcp, aProxyUsername, aProxyPassword, &relay)) {
     PR_Close(tcp);
-    sProxyFailed.store(true, std::memory_order_relaxed);
+    RememberFailure(key);
     return NS_ERROR_FAILURE;
   }
 
@@ -417,8 +472,158 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
     return NS_ERROR_FAILURE;
   }
 
+  sFailedEndpoint.store(0, std::memory_order_relaxed);
   LOG(("SOCKS5 UDP layer pushed onto fd"));
   return NS_OK;
+}
+
+// The proxy the session leaves by, for UDP: the ONE place that says whether
+// UDP goes through it. Everything that decides something about UDP behind the
+// proxy asks here: the layer on every UDP socket (nsUDPSocket.cpp and
+// NrSocket::create), the filter of direct ICE sends (nr_stealth_proxy_udp.h),
+// the declared srflx (nr_stealth_bridge.cpp) and the HTTP/3 decisions below.
+//
+// Two inputs and no more. The verdict, network.proxy.socks_remote_udp, is
+// declared by the core after it proved that the proxy relays UDP and that the
+// UDP exit is the TCP exit. The proxy is the Juggler's (SessionRoute.js), which
+// hands it to StealthSessionUdpProxyPublish when the verdict is true and the
+// session proxy is SOCKS5, and clears it when the proxy goes away.
+// network.proxy.* is not read: nothing in a Juggler session writes it.
+//
+// WHERE THE PROXY LIVES, and why it is not a pref. The credentials are held by
+// two processes only: the parent, which publishes them, and the socket
+// process, where ICE's UDP sockets are. They reach the socket process by one
+// IPC message (PSocketProcess::StealthSessionUdpProxy), sent when they change
+// and again whenever the process (re)launches (StealthSessionUdpProxyResend).
+// No content process holds them and no pref does: libpref cannot keep a static
+// string pref out of content processes, and
+// docs/decisions/motore-06 forbids credentials in prefs. A content process
+// only needs to know that UDP is routed, which is the one non-secret bool pref
+// zoom.stealth.udp_proxy.armed, written next to the IPC message.
+namespace {
+
+struct SessionProxy {
+  nsCString mHost;
+  int32_t mPort = 0;
+  nsCString mUser;
+  nsCString mPass;
+};
+
+StaticMutex sSessionProxyMutex;
+StaticAutoPtr<SessionProxy> sSessionProxy MOZ_GUARDED_BY(sSessionProxyMutex);
+
+}  // namespace
+
+void StealthSessionUdpProxySet(const nsACString& aHost, int32_t aPort,
+                               const nsACString& aUser,
+                               const nsACString& aPass) {
+  StaticMutexAutoLock lock(sSessionProxyMutex);
+  if (aHost.IsEmpty() || aPort <= 0 || aPort > 65535) {
+    sSessionProxy = nullptr;
+    return;
+  }
+  if (!sSessionProxy) {
+    sSessionProxy = new SessionProxy();
+    if (NS_IsMainThread()) {
+      ClearOnShutdown(&sSessionProxy);
+    }
+  }
+  sSessionProxy->mHost.Assign(aHost);
+  sSessionProxy->mPort = aPort;
+  sSessionProxy->mUser.Assign(aUser);
+  sSessionProxy->mPass.Assign(aPass);
+}
+
+bool StealthSessionUdpProxy(nsACString& aHost, int32_t& aPort,
+                            nsACString& aUser, nsACString& aPass) {
+  if (!StaticPrefs::network_proxy_socks_remote_udp()) {
+    return false;
+  }
+  StaticMutexAutoLock lock(sSessionProxyMutex);
+  if (!sSessionProxy) {
+    return false;
+  }
+  aHost.Assign(sSessionProxy->mHost);
+  aPort = sSessionProxy->mPort;
+  aUser.Assign(sSessionProxy->mUser);
+  aPass.Assign(sSessionProxy->mPass);
+  return true;
+}
+
+bool StealthSocksUdpRouted() {
+  if (!StaticPrefs::network_proxy_socks_remote_udp()) {
+    return false;
+  }
+  if (XRE_IsContentProcess()) {
+    return StaticPrefs::zoom_stealth_udp_proxy_armed();
+  }
+  StaticMutexAutoLock lock(sSessionProxyMutex);
+  return !!sSessionProxy;
+}
+
+static void SendSessionProxyToSocketProcess() {
+  RefPtr<SocketProcessParent> socketProcess = SocketProcessParent::GetSingleton();
+  if (!socketProcess) {
+    return;
+  }
+  nsAutoCString host, user, pass;
+  int32_t port = 0;
+  {
+    StaticMutexAutoLock lock(sSessionProxyMutex);
+    if (sSessionProxy) {
+      host = sSessionProxy->mHost;
+      port = sSessionProxy->mPort;
+      user = sSessionProxy->mUser;
+      pass = sSessionProxy->mPass;
+    }
+  }
+  (void)socketProcess->SendStealthSessionUdpProxy(host, port, user, pass);
+}
+
+void StealthSessionUdpProxyPublish(const nsACString& aHost, int32_t aPort,
+                                   const nsACString& aUser,
+                                   const nsACString& aPass) {
+  MOZ_ASSERT(XRE_IsParentProcess() && NS_IsMainThread());
+  StealthSessionUdpProxySet(aHost, aPort, aUser, aPass);
+  SendSessionProxyToSocketProcess();
+  // The content processes learn that UDP is routed, nothing more.
+  Preferences::SetBool("zoom.stealth.udp_proxy.armed",
+                       !aHost.IsEmpty() && aPort > 0 && aPort <= 65535,
+                       PrefValueKind::Default);
+}
+
+void StealthSessionUdpProxyResend() {
+  MOZ_ASSERT(XRE_IsParentProcess() && NS_IsMainThread());
+  SendSessionProxyToSocketProcess();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvStealthSessionUdpProxy(
+    const nsACString& aHost, const int32_t& aPort, const nsACString& aUser,
+    const nsACString& aPass) {
+  StealthSessionUdpProxySet(aHost, aPort, aUser, aPass);
+  return IPC_OK();
+}
+
+nsresult nsSOCKSUDPIOLayerAttachSession(PRFileDesc* aFd) {
+  nsAutoCString host, user, pass;
+  int32_t port = 0;
+  if (!StealthSessionUdpProxy(host, port, user, pass)) {
+    return NS_OK;
+  }
+  nsresult rv = nsSOCKSUDPIOLayerAddToSocket(aFd, host.get(), port, user.get(),
+                                             pass.get());
+  if (NS_FAILED(rv)) {
+    LOGE(("SOCKS UDP layer refused (%" PRIx32 "): the socket is not usable",
+          static_cast<uint32_t>(rv)));
+  } else {
+    LOG(("SOCKS UDP layer attached (proxy %s:%d)", host.get(), port));
+  }
+  return rv;
+}
+
+bool nsSOCKSUDPIOLayerIsOn(PRFileDesc* aFd) {
+  return aFd && gIdentity != PR_INVALID_IO_LAYER &&
+         PR_GetIdentitiesLayer(aFd, gIdentity) != nullptr;
 }
 
 // Stealthfox: also accept SOCKS5 when our SOCKS5-UDP-ASSOCIATE layer
@@ -427,15 +632,14 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, const char* aProxyHost,
 // never creates a UDP socket, and our nsSOCKSUDPIOLayer hook never
 // fires.
 bool StealthHttp3ProxyAllowed(nsProxyInfo* aProxyInfo) {
-  bool socksUdpEnabled =
-      Preferences::GetBool("network.proxy.socks_remote_udp", false);
+  bool socksUdpEnabled = StealthSocksUdpEnabled();
   return aProxyInfo ? (aProxyInfo->IsDirect() || aProxyInfo->IsHttp3Proxy() ||
                        (socksUdpEnabled && aProxyInfo->IsSOCKS()))
                     : true;
 }
 
 bool StealthSocksUdpEnabled() {
-  return Preferences::GetBool("network.proxy.socks_remote_udp", false);
+  return StaticPrefs::network_proxy_socks_remote_udp();
 }
 
 // Stealthfox: when our SOCKS5 UDP-ASSOCIATE layer is enabled, treat

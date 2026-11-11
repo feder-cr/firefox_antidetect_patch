@@ -77,7 +77,7 @@ DEFAULT_GTEST_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:"
                         "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:"
                         "StealthScaleDeclaration.*:StealthWindowGeometry.*:"
                         "StealthGLMultisample.*:StealthFrameCrash.*:"
-                        "StealthJugglerEventId.*")
+                        "StealthJugglerEventId.*:StealthSessionUdpProxy.*")
 DEFAULT_REF = "main"
 
 

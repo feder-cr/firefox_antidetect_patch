@@ -1,13 +1,12 @@
 diff --git a/netwerk/base/moz.build b/netwerk/base/moz.build
-index dde0f0da60377e61b8987663f87304ebd63b4958..c98ffb2e7e2692c98ca685ab76ee25782ec1a759 100644
+index dde0f0da60377e61b8987663f87304ebd63b4958..0c164a481fe5e86dec187c4647ff659dc620cfd8 100644
 --- a/netwerk/base/moz.build
 +++ b/netwerk/base/moz.build
-@@ -257,6 +257,8 @@ UNIFIED_SOURCES += [
+@@ -257,6 +257,7 @@ UNIFIED_SOURCES += [
      "TLSServerSocket.cpp",
      "TRRLoadInfo.cpp",
  ]
 +UNIFIED_SOURCES += ["StealthSocksCredentials.cpp"]  # STEALTH-HOOK(network/socks)
-+UNIFIED_SOURCES += ["StealthSocksUdp.cpp"]  # STEALTH-HOOK(network/proxy-udp)
  
  if CONFIG["FUZZING"]:
      SOURCES += [

@@ -41,7 +41,13 @@ extern "C" {
 /* Copia il valore di STEALTHFOX_WEBRTC_PUBLIC_IP in `buf` (terminato da NUL).
  * Torna i byte scritti escluso il NUL, 0 se la variabile e' assente o vuota.
  * `buf_len` deve essere >= 1. Zero significa "non dichiarato": il chiamante
- * non emette il candidato sintetico, e nessun valore viene inventato. */
+ * non emette il candidato sintetico, e nessun valore viene inventato.
+ *
+ * Torna 0 anche quando l'UDP della sessione passa dal proxy (la stessa
+ * decisione di tutto il resto: StealthSocksUdpRouted). In quel caso il srflx
+ * VERO nasce con l'uscita del proxy, quindi il sintetico non si inietta, il
+ * vero non si sopprime e il suo indirizzo non si riscrive: la variabile
+ * d'ambiente non conta piu'. */
 size_t nr_stealth_get_webrtc_public_ip(char* buf, size_t buf_len);
 
 /* Torna 1 se i candidati host IPv6 vanno tolti dall'ICE gathering, 0 altrimenti.

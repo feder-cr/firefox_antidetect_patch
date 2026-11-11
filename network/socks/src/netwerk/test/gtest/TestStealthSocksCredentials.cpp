@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <atomic>
+#include <cstring>
+#include <thread>
+
 #include "../../base/StealthSocksCredentials.h"
 #include "gtest/gtest.h"
 #include "mozilla/Preferences.h"
@@ -17,8 +21,19 @@
 #include "nsIProtocolProxyService.h"
 #include "nsIProxyInfo.h"
 #include "nsNetUtil.h"
+#include "nsSOCKSUDPIOLayer.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
+#include "prio.h"
+#include "prnetdb.h"
+#include "private/pprio.h"
+
+#ifdef XP_WIN
+#  include <winsock2.h>
+#else
+#  include <errno.h>
+#  include <fcntl.h>
+#endif
 
 namespace mozilla::net {
 
@@ -162,4 +177,274 @@ TEST(TestStealthSocksCredentials, ReachResolvedProxyInfo)
   EXPECT_TRUE(user.EqualsLiteral("alice"));
 }
 
+// ---------------------------------------------------------------------------
+// The SOCKS5 UDP layer (network/proxy-udp) takes the proxy of the SESSION and
+// the core's verdict network.proxy.socks_remote_udp, not network.proxy.*, which
+// a Juggler session never writes. A fake SOCKS5 server on the loopback stands
+// for the proxy. They live in this file because it is already listed in
+// netwerk/test/gtest/moz.build as ours: a second file would be a second line
+// in a Mozilla build file.
+
+namespace {
+
+constexpr char kVerdict[] = "network.proxy.socks_remote_udp";
+constexpr char kArmed[] = "zoom.stealth.udp_proxy.armed";
+
+// The proxy of the session as the parent or the socket process hold it, and the
+// core's verdict. Put back whatever a test did.
+class UdpSession {
+ public:
+  ~UdpSession() {
+    StealthSessionUdpProxySet(""_ns, 0, ""_ns, ""_ns);
+    Preferences::ClearUser(kVerdict);
+    Preferences::ClearUser(kArmed);
+  }
+  void Arm(const char* aHost, int32_t aPort, const char* aUser = "",
+           const char* aPass = "") {
+    StealthSessionUdpProxySet(nsDependentCString(aHost), aPort,
+                              nsDependentCString(aUser),
+                              nsDependentCString(aPass));
+    Preferences::SetBool(kVerdict, true);
+  }
+};
+
+bool NativeSocketIsOpen(PROsfd aFd) {
+#ifdef XP_WIN
+  int type = 0;
+  int len = sizeof(type);
+  return getsockopt(static_cast<SOCKET>(aFd), SOL_SOCKET, SO_TYPE,
+                    reinterpret_cast<char*>(&type), &len) == 0;
+#else
+  return fcntl(static_cast<int>(aFd), F_GETFD) != -1 || errno != EBADF;
+#endif
+}
+
+PRNetAddr Loopback(uint16_t aPort) {
+  PRNetAddr addr;
+  PR_InitializeNetAddr(PR_IpAddrLoopback, aPort, &addr);
+  return addr;
+}
+
+// A SOCKS5 server for one client: greets with no authentication, answers UDP
+// ASSOCIATE with a loopback UDP socket as the relay, and remembers the first
+// datagram that reaches the relay.
+class FakeSocks {
+ public:
+  FakeSocks() {
+    mListener = PR_NewTCPSocket();
+    mRelay = PR_NewUDPSocket();
+    PRNetAddr addr = Loopback(0);
+    PR_Bind(mListener, &addr);
+    PR_Listen(mListener, 1);
+    PR_GetSockName(mListener, &addr);
+    mPort = PR_ntohs(addr.inet.port);
+    PRNetAddr relay = Loopback(0);
+    PR_Bind(mRelay, &relay);
+    PR_GetSockName(mRelay, &relay);
+    mRelayPort = relay.inet.port;
+    mThread = std::thread([this] { Serve(); });
+  }
+
+  ~FakeSocks() {
+    mStop = true;
+    if (mThread.joinable()) {
+      mThread.join();  // PR_Accept gives up on its own after a few seconds
+    }
+    PR_Close(mListener);
+    PR_Close(mRelay);
+  }
+
+  uint16_t Port() const { return mPort; }
+  bool AssociateSeen() const { return mAssociated; }
+
+  // The first datagram the relay received, or the empty string.
+  nsCString FirstDatagram() {
+    char buf[256];
+    PRNetAddr from;
+    int32_t n = PR_RecvFrom(mRelay, buf, sizeof(buf), 0, &from,
+                            PR_SecondsToInterval(3));
+    return n > 0 ? nsCString(buf, n) : nsCString();
+  }
+
+ private:
+  bool ReadAll(PRFileDesc* aFd, uint8_t* aBuf, size_t aLen) {
+    size_t got = 0;
+    while (got < aLen) {
+      int32_t n = PR_Recv(aFd, aBuf + got, aLen - got, 0,
+                          PR_SecondsToInterval(4));
+      if (n <= 0) return false;
+      got += n;
+    }
+    return true;
+  }
+
+  void Serve() {
+    PRNetAddr peer;
+    PRFileDesc* client =
+        PR_Accept(mListener, &peer, PR_SecondsToInterval(5));
+    if (!client) return;
+    uint8_t greeting[3];
+    const uint8_t noAuth[2] = {0x05, 0x00};
+    uint8_t associate[10];
+    if (ReadAll(client, greeting, sizeof(greeting)) &&
+        PR_Send(client, noAuth, 2, 0, PR_INTERVAL_NO_TIMEOUT) == 2 &&
+        ReadAll(client, associate, sizeof(associate))) {
+      uint8_t reply[10] = {0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0, 0};
+      std::memcpy(reply + 8, &mRelayPort, 2);  // already network order
+      mAssociated = associate[1] == 0x03;
+      PR_Send(client, reply, sizeof(reply), 0, PR_INTERVAL_NO_TIMEOUT);
+      // The control connection stays open for as long as the test needs.
+      while (!mStop) {
+        PR_Sleep(PR_MillisecondsToInterval(20));
+      }
+    }
+    PR_Close(client);
+  }
+
+  PRFileDesc* mListener = nullptr;
+  PRFileDesc* mRelay = nullptr;
+  uint16_t mPort = 0;
+  uint16_t mRelayPort = 0;
+  std::thread mThread;
+  std::atomic<bool> mStop{false};
+  std::atomic<bool> mAssociated{false};
+};
+
+}  // namespace
+
+TEST(StealthSessionUdpProxy, ArmedNeedsTheVerdictAndTheProxyOfTheSession)
+{
+  UdpSession prefs;
+  nsAutoCString host, user, pass;
+  int32_t port = 0;
+
+  // The proxy alone is not the verdict.
+  StealthSessionUdpProxySet("127.0.0.1"_ns, 1080, ""_ns, ""_ns);
+  EXPECT_FALSE(StealthSocksUdpRouted());
+
+  // The verdict alone is not a proxy, and neither is network.proxy.*, nor the
+  // bool a content process reads: this process holds none.
+  StealthSessionUdpProxySet(""_ns, 0, ""_ns, ""_ns);
+  Preferences::SetBool(kVerdict, true);
+  Preferences::SetCString("network.proxy.socks", "10.0.0.1");
+  Preferences::SetInt("network.proxy.socks_port", 1080);
+  Preferences::SetBool(kArmed, true);
+  EXPECT_FALSE(StealthSocksUdpRouted());
+  Preferences::ClearUser("network.proxy.socks");
+  Preferences::ClearUser("network.proxy.socks_port");
+
+  // A bad endpoint clears what was held.
+  prefs.Arm("203.0.113.7", 1080, "alice", "s3cret");
+  ASSERT_TRUE(StealthSocksUdpRouted());
+  StealthSessionUdpProxySet("203.0.113.7"_ns, 0, ""_ns, ""_ns);
+  EXPECT_FALSE(StealthSocksUdpRouted());
+
+  prefs.Arm("203.0.113.7", 1080, "alice", "s3cret");
+  EXPECT_TRUE(StealthSocksUdpRouted());
+  ASSERT_TRUE(StealthSessionUdpProxy(host, port, user, pass));
+  EXPECT_TRUE(host.EqualsLiteral("203.0.113.7"));
+  EXPECT_EQ(port, 1080);
+  EXPECT_TRUE(user.EqualsLiteral("alice"));
+  EXPECT_TRUE(pass.EqualsLiteral("s3cret"));
+
+  Preferences::SetBool(kVerdict, false);
+  EXPECT_FALSE(StealthSocksUdpRouted());
+}
+
+TEST(StealthSessionUdpProxy, ASessionThatIsNotArmedLeavesTheSocketPlain)
+{
+  UdpSession prefs;
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  EXPECT_FALSE(nsSOCKSUDPIOLayerIsOn(fd));
+  PR_Close(fd);
+}
+
+TEST(StealthSessionUdpProxy, TheLayerConnectsToTheProxyOfTheSession)
+{
+  UdpSession prefs;
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  EXPECT_TRUE(nsSOCKSUDPIOLayerIsOn(fd));
+  EXPECT_TRUE(proxy.AssociateSeen());
+
+  // A datagram to the STUN server goes to the relay, wrapped for it.
+  PRNetAddr stun;
+  PR_InitializeNetAddr(PR_IpAddrNull, 19302, &stun);
+  stun.inet.ip = PR_htonl(0xC6336405);  // 198.51.100.5 (TEST-NET-2)
+  const char ping[] = "ping";
+  EXPECT_EQ(4, PR_SendTo(fd, ping, 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  nsCString got = proxy.FirstDatagram();
+  ASSERT_EQ(got.Length(), 10u + 4u);
+  EXPECT_EQ(0, std::memcmp(got.get(), "\x00\x00\x00\x01\x4A\x7D\xFA\x81\x4B\x66", 10));
+  EXPECT_EQ(0, std::memcmp(got.get() + 10, "ping", 4));
+  PR_Close(fd);
+}
+
+TEST(StealthSessionUdpProxy, ClosingASocketWithTheLayerClosesTheSocketUnderIt)
+{
+  UdpSession prefs;
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  PROsfd native = PR_FileDesc2NativeHandle(fd);
+  ASSERT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(fd));
+  ASSERT_TRUE(nsSOCKSUDPIOLayerIsOn(fd));
+  ASSERT_TRUE(NativeSocketIsOpen(native));
+  ASSERT_EQ(PR_SUCCESS, PR_Close(fd));
+  EXPECT_FALSE(NativeSocketIsOpen(native))
+      << "the layer freed itself and left the UDP socket open";
+}
+
+TEST(StealthSessionUdpProxy, AnArmedSessionWhoseProxyRefusesFailsTheSocket)
+{
+  UdpSession prefs;
+  // A port nobody listens on: bind one, learn its number, close it.
+  PRFileDesc* probe = PR_NewTCPSocket();
+  PRNetAddr addr = Loopback(0);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(probe, &addr));
+  PR_GetSockName(probe, &addr);
+  uint16_t dead = PR_ntohs(addr.inet.port);
+  PR_Close(probe);
+
+  prefs.Arm("127.0.0.1", dead);
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  EXPECT_TRUE(NS_FAILED(nsSOCKSUDPIOLayerAttachSession(fd)))
+      << "an armed session must not go on with a plain, direct socket";
+  EXPECT_FALSE(nsSOCKSUDPIOLayerIsOn(fd));
+  PR_Close(fd);
+}
+
+TEST(StealthSessionUdpProxy, TheFailureOfOneProxyDoesNotHoldBackAnother)
+{
+  UdpSession prefs;
+  PRFileDesc* probe = PR_NewTCPSocket();
+  PRNetAddr addr = Loopback(0);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(probe, &addr));
+  PR_GetSockName(probe, &addr);
+  uint16_t dead = PR_ntohs(addr.inet.port);
+  PR_Close(probe);
+
+  prefs.Arm("127.0.0.1", dead);
+  PRFileDesc* first = PR_NewUDPSocket();
+  EXPECT_TRUE(NS_FAILED(nsSOCKSUDPIOLayerAttachSession(first)));
+  PR_Close(first);
+
+  // The Juggler swaps the proxy. The old failure was a flag for the whole
+  // process, and the new proxy was refused without being asked.
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+  PRFileDesc* second = PR_NewUDPSocket();
+  EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAttachSession(second));
+  EXPECT_TRUE(nsSOCKSUDPIOLayerIsOn(second));
+  PR_Close(second);
+}
 }  // namespace mozilla::net

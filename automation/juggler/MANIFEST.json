@@ -112,6 +112,7 @@
   "juggler/tests/screenshot_releases_its_canvas.test.mjs": "100644",
   "juggler/tests/screenshot_retry_is_bounded.test.mjs": "100644",
   "juggler/tests/scroll_into_view_if_needed_works.test.mjs": "100644",
+  "juggler/tests/session_udp_proxy_reaches_the_engine.test.mjs": "100644",
   "juggler/tests/shared_cookies_leave_with_their_owner.test.mjs": "100644",
   "juggler/tests/simple_channel.test.mjs": "100644",
   "juggler/tests/websocket_listener_follows_the_idl.test.mjs": "100644",
@@ -119,7 +120,12 @@
   "juggler/tests/worker_debugger_manager_is_a_service.test.mjs": "100644",
   "juggler/tests/worker_ends_with_its_frame.test.mjs": "100644",
   "juggler/tests/worker_follows_the_document_in_the_cache.test.mjs": "100644",
-  "juggler/tests/worker_keeps_its_id_through_the_cache.test.mjs": "100644"
+  "juggler/tests/worker_keeps_its_id_through_the_cache.test.mjs": "100644",
+  "juggler/udp/StealthSessionUdpProxyService.cpp": "100644",
+  "juggler/udp/StealthSessionUdpProxyService.h": "100644",
+  "juggler/udp/components.conf": "100644",
+  "juggler/udp/moz.build": "100644",
+  "juggler/udp/nsIStealthSessionUdpProxy.idl": "100644"
  },
  "inventory": [
   {

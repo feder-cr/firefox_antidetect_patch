@@ -1698,23 +1698,22 @@
   "prefs": [
    "zoom.stealth.webrtc.no_direct_udp"
   ],
-  "added": 77,
+  "added": 4,
   "removed": 0,
   "hunks": 4,
-  "inline_logic_lines": 43,
-  "hookable": "movable",
-  "anchor": "new static StealthUscitaUdpDirettaVietata (before NrSocket::sendto); hooks in NrSocket::sendto and NrUdpSocketIpc::sendto",
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_proxy_udp.h; NrSocket::create (UDP: the SOCKS UDP layer, or no socket); NrSocket::sendto and NrUdpSocketIpc::sendto (the filter of a direct UDP send)",
   "evidence": [
-   "+static bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {",
-   "+  if (StealthUscitaUdpDirettaVietata(to)) {",
-   "+    ABORT(R_REJECTED);"
+   "+#include \"nr_stealth_proxy_udp.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+      if (StealthSocksUdpAttachRefused(fd_)) ABORT(R_INTERNAL);  // STEALTH-HOOK(network/proxy-udp)",
+   "+  if (StealthUscitaUdpDirettaVietataLog(to, fd_)) ABORT(R_REJECTED);  // STEALTH-HOOK(network/proxy-udp)",
+   "+  if (StealthUscitaUdpDirettaVietataIpc(to)) return R_REJECTED;  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "About 36 lines of address-range decision logic sit inside the Mozilla file, plus two 3-4 line hooks. The function can move to nr_stealth_bridge.cpp behind one call. Pref zoom.stealth.webrtc.no_direct_udp defined at StaticPrefList.yaml:21539. IPv4 0.0.0.0 passes (if (a == 0) return false), but IPv6 unspecified '::' is refused: all-zero bytes leave loopback=true, b[15]!=1, so the function returns true (CONFIRMED from the diff logic); real-world impact unverified. NrUdpSocketIpc::sendto returns R_REJECTED with no log line, unlike the NrSocket path. Merge note: upstream's comment '// This should be called on the STS thread.' now sits above the new block comment/function instead of above NrSocket::sendto.",
+  "notes": "Four one-line hooks calling nr_stealth_proxy_udp.h (our file): the ICE sockets get the session's SOCKS UDP layer, and a direct UDP send to a public address is refused unless its socket has the layer. All decision logic moved out of the Mozilla file.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Verified IPv6 :: logic from the diff; added the displaced upstream comment as a merge note."
+   "changed": [],
+   "why": "Hooks calling our own code; counts and evidence taken from the diff against the Mozilla tag (4 and 3 lines)."
   }
  },
  {
@@ -3846,6 +3845,24 @@
   }
  },
  {
+  "file": "netwerk/base/nsIOService.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "include of nsSOCKSUDPIOLayer.h; call in nsIOService::OnProcessLaunchComplete after the launch succeeded",
+  "evidence": [],
+  "notes": "Hook calling our own code: StealthSessionUdpProxyResend() sends the session proxy to a (re)launched socket process.",
+  "verifier": {
+   "changed": [],
+   "why": "Hook calling our own code (netwerk/socket/nsSOCKSUDPIOLayer.cpp): the session's SOCKS5 proxy reaches the socket process by IPC."
+  }
+ },
+ {
   "file": "netwerk/base/nsProtocolProxyService.cpp",
   "category": "other",
   "feature": "socks-credentials",
@@ -3896,32 +3913,21 @@
   "file": "netwerk/base/nsUDPSocket.cpp",
   "category": "other",
   "feature": "proxy-udp-egress",
-  "prefs": [
-   "network.proxy.socks_remote_udp",
-   "network.proxy.type",
-   "network.proxy.socks_version",
-   "network.proxy.socks",
-   "network.proxy.socks_port",
-   "network.proxy.socks_username",
-   "network.proxy.socks_password"
-  ],
-  "added": 39,
+  "prefs": [],
+  "added": 3,
   "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 26,
-  "hookable": "movable",
-  "anchor": "nsUDPSocket::InitWithAddress (block before the FUZZING check)",
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "include of nsSOCKSUDPIOLayer.h; nsUDPSocket::InitWithAddress after PR_OpenUDPSocket",
   "evidence": [
-   "+  if (mozilla::Preferences::GetBool(\"network.proxy.socks_remote_udp\", false)) {",
-   "+        nsresult sr = mozilla::net::nsSOCKSUDPIOLayerAddToSocket(",
-   "+            mFD, host.get(), port, user.get(), pass.get());"
+   "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+  if (NS_FAILED(nsSOCKSUDPIOLayerAttachSession(mFD))) goto fail;"
   ],
-  "notes": "With SOCKS5 and network.proxy.socks_remote_udp set, pushes the SOCKS UDP layer (netwerk/socket/nsSOCKSUDPIOLayer.h:50, implemented at nsSOCKSUDPIOLayer.cpp:351) onto the new fd so QUIC/HTTP3 traffic goes through the proxy. network.proxy.socks_remote_udp is not defined in modules/libpref/init (read by string with default false). RISK CONFIRMED (from diff): if the layer attach fails the code logs 'falling back to direct UDP' and continues with direct UDP, and the block runs for every nsUDPSocket::InitWithAddress call with no check of the destination or purpose; whether callers avoid that path is unverified. The two Stealthfox comment blocks repeat each other. The block (about 26 logic lines) can move behind one call.",
+  "notes": "One call into our own code: pushes the SOCKS UDP layer of the session's proxy on the socket when the session arms it; the socket does not open if the layer cannot be attached.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Added confirmed facts: pref not predefined, hook applies to every UDP socket; fallback behaviour confirmed from the diff."
+   "changed": [],
+   "why": "Hooks calling our own code; counts and evidence taken from the diff against the Mozilla tag (4 and 3 lines)."
   }
  },
  {
@@ -3984,6 +3990,42 @@
   "verifier": {
    "changed": [],
    "why": "All fields and cited facts checked against the diff and source; no change."
+  }
+ },
+ {
+  "file": "netwerk/ipc/PSocketProcess.ipdl",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "child: block, message StealthSessionUdpProxy",
+  "evidence": [],
+  "notes": "Hook declaring our IPC message: the session's SOCKS5 proxy for the UDP layer, parent to socket process.",
+  "verifier": {
+   "changed": [],
+   "why": "Hook calling our own code (netwerk/socket/nsSOCKSUDPIOLayer.cpp): the session's SOCKS5 proxy reaches the socket process by IPC."
+  }
+ },
+ {
+  "file": "netwerk/ipc/SocketProcessChild.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "declaration of RecvStealthSessionUdpProxy in SocketProcessChild",
+  "evidence": [],
+  "notes": "Hook declaring the receiver of our IPC message; the body lives in nsSOCKSUDPIOLayer.cpp.",
+  "verifier": {
+   "changed": [],
+   "why": "Hook calling our own code (netwerk/socket/nsSOCKSUDPIOLayer.cpp): the session's SOCKS5 proxy reaches the socket process by IPC."
   }
  },
  {

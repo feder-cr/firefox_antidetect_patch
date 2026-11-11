@@ -39,10 +39,10 @@ import linker_shim  # noqa: E402
 
 ROOT = HERE.parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
-# The filter of run 41402916724, from its log.
+# The filter of run 41402916724, from its log, with the suites added to the default since (StealthSessionUdpProxy).
 GREEN_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
                 "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:"
-                "StealthFrameCrash.*:StealthJugglerEventId.*")
+                "StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.
 CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure", "browser/moz.configure", "build/moz.configure/*.configure")

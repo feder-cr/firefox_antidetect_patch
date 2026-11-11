@@ -30,8 +30,9 @@
 #ifndef nsSOCKSUDPIOLayer_h__
 #define nsSOCKSUDPIOLayer_h__
 
-#include "prio.h"
+#include "nsString.h"
 #include "nscore.h"
+#include "prio.h"
 
 namespace mozilla {
 namespace net {
@@ -56,6 +57,51 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd,
                                       const char* aProxyPassword);
 
 /*
+ * The proxy the session leaves by, for UDP, and the one decision about it.
+ *
+ * Armed means: the core's verdict network.proxy.socks_remote_udp is true AND
+ * this process holds a SOCKS5 session proxy. Only the parent and the socket
+ * process hold one, with its credentials (see nsSOCKSUDPIOLayer.cpp for how
+ * they get there). On true, the four out-parameters hold the proxy. On false
+ * they are untouched. Any thread. Never true in a content process.
+ */
+bool StealthSessionUdpProxy(nsACString& aHost, int32_t& aPort,
+                            nsACString& aUser, nsACString& aPass);
+
+// Armed, without copying the credentials out. Any thread. In a content process
+// it asks the bool pref zoom.stealth.udp_proxy.armed: it has no proxy to ask.
+bool StealthSocksUdpRouted();
+
+// What this process holds: an empty host or a bad port clears it. Any thread.
+void StealthSessionUdpProxySet(const nsACString& aHost, int32_t aPort,
+                               const nsACString& aUser,
+                               const nsACString& aPass);
+
+// Parent process, main thread: hold the proxy, send it to the socket process
+// and tell the content processes that UDP is routed (or not). An empty host
+// clears. Called by the Juggler's service (juggler/udp).
+void StealthSessionUdpProxyPublish(const nsACString& aHost, int32_t aPort,
+                                   const nsACString& aUser,
+                                   const nsACString& aPass);
+
+// Parent process, main thread: send the held proxy again. A socket process
+// that has just launched (or relaunched after a crash) has none.
+void StealthSessionUdpProxyResend();
+
+/*
+ * Push the layer for the session proxy onto aFd. NS_OK and no layer when the
+ * session is not armed (a plain direct socket is then what is wanted). When it
+ * IS armed and the layer cannot be pushed (the proxy refuses UDP ASSOCIATE,
+ * does not answer, a wrong password) it returns the error and leaves aFd as it
+ * was: the caller must fail the socket, because a socket that goes on as a
+ * plain one would send direct, around a proxy that was declared to carry it.
+ */
+nsresult nsSOCKSUDPIOLayerAttachSession(PRFileDesc* aFd);
+
+// True when the SOCKS5 UDP layer is on aFd.
+bool nsSOCKSUDPIOLayerIsOn(PRFileDesc* aFd);
+
+/*
  * Proxy gate for HTTP/3 in AltSvcCache::UpdateAltServiceMapping.
  * Returns true when there is no proxy, or the proxy is direct or an HTTP/3
  * proxy, or (network.proxy.socks_remote_udp is true and the proxy is SOCKS).
@@ -67,7 +113,7 @@ bool StealthHttp3ProxyAllowed(nsProxyInfo* aProxyInfo);
  * All of them depend on the pref network.proxy.socks_remote_udp.
  */
 
-// True when network.proxy.socks_remote_udp is set (read on every call).
+// True when network.proxy.socks_remote_udp is set. Any thread (static pref).
 bool StealthSocksUdpEnabled();
 
 // Value for DnsAndConnectSocket::mIsHttp3 of a connection that goes through a

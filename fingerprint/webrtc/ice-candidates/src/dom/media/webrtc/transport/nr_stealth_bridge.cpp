@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "mozilla/Assertions.h"
+#include "nsSOCKSUDPIOLayer.h"
 
 // nICEr includes
 // clang-format off
@@ -100,6 +101,17 @@ bool IsWildcardIp(const nr_transport_addr* aAddr) {
 }  // namespace
 
 extern "C" size_t nr_stealth_get_webrtc_public_ip(char* buf, size_t buf_len) {
+  /* Dichiarare un srflx ha senso solo se l'UDP vero NON esce dal proxy. Se ci
+   * passa (la decisione unica, vedi nsSOCKSUDPIOLayer.h) il srflx vero nasce
+   * gia' con l'uscita giusta: niente sintetico, niente soppressione del vero,
+   * niente riscrittura dell'IP. Tre comportamenti che dipendevano da questa
+   * variabile seguono ora la stessa decisione e non una dichiarazione a parte. */
+  if (mozilla::net::StealthSocksUdpRouted()) {
+    if (buf && buf_len) {
+      buf[0] = '\0';
+    }
+    return 0;
+  }
   return CopyEnvTo("STEALTHFOX_WEBRTC_PUBLIC_IP", buf, buf_len);
 }
 

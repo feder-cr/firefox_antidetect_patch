@@ -199,7 +199,6 @@ OWN_FILES = [
     (r"^dom/base/StealthJugglerEventId\.", "automation/input"),
     (r"^dom/base/StealthFrameCrash\.", "automation/juggler"),
     (r"^dom/base/StealthInputEventBirth\.", "fingerprint/input/event-birth"),
-    (r"^netwerk/base/StealthSocksUdp\.", "network/proxy-udp"),
     (r"^uriloader/exthandler/StealthDownloadInterceptor\.", "automation/downloads"),
     (r"^uriloader/exthandler/StealthDownloadIntercept\.", "automation/downloads"),
     (r"^toolkit/components/windowwatcher/StealthWindowPlacement\.", "fingerprint/screen-window/popup-position"),
