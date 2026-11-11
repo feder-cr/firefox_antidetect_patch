@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# theta-sweeper.yml — the protection against a forgotten build node.
+# latitude-sweeper.yml — the protection against a forgotten build node.
 #
 # stop-node in release.yml deletes the node of its run. This is for what stop-node
 # cannot see or leaves on purpose: a job killed outright, a create that answered after
@@ -10,7 +10,7 @@
 # the default branch only: on any other branch this does not exist yet. A node made by hand has another
 # name and is never touched. Rules and cases: scripts/ci/latitude_node.py, sweep().
 # ─────────────────────────────────────────────────────────────────────────────
-name: theta-sweeper
+name: latitude-sweeper
 
 on:
   schedule:
@@ -24,7 +24,7 @@ permissions:
 jobs:
   sweep:
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 10
     steps:
       - name: The series (this repository, this commit)

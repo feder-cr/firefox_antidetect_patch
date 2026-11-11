@@ -44,7 +44,7 @@ def test_no_pull_request_reaches_a_runner_of_ours():
         events = {on} if isinstance(on, str) else set(on)
         for name, job in doc["jobs"].items():
             where = json.dumps(job.get("runs-on", ""))
-            assert "self-hosted" not in where and "latitude-" not in where and "theta-" not in where, "%s: %s" % (wf.name, name)
+            assert "self-hosted" not in where and "latitude-" not in where, "%s: %s" % (wf.name, name)
             if events & pr_events:
                 assert "uses" not in job and hosted.match(str(job.get("runs-on", ""))), "%s: %s" % (wf.name, name)
 

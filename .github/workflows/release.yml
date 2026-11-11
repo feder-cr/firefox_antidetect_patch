@@ -197,7 +197,7 @@ jobs:
     # A rerun of failed jobs has no watch and no label to run on: nothing to turn on for it.
     if: needs.plan.outputs.attempt == github.run_attempt
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 45
     permissions: { actions: read, contents: read }
     steps:
@@ -1163,7 +1163,7 @@ jobs:
     needs: [plan, node]
     if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.plan.outputs.attempt == github.run_attempt
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 345
     permissions: { actions: write, contents: read }
     outputs:
@@ -1197,7 +1197,7 @@ jobs:
     needs: [plan, node, watch-1]
     if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.plan.outputs.attempt == github.run_attempt && !contains(fromJSON('["done","lost","failed"]'), needs.watch-1.outputs.verdict)
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 345
     permissions: { actions: write, contents: read }
     outputs:
@@ -1236,7 +1236,7 @@ jobs:
     needs: [plan, node, watch-1, watch-2]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 15
     permissions: { actions: read, contents: read }
     steps:

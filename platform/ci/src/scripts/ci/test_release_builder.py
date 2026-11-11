@@ -39,7 +39,7 @@ WORKFLOWS = HERE.parent.parent / ".github" / "workflows"
 WORKFLOW = WORKFLOWS / "release.yml"
 RUNS_ON = ("${{ matrix.runner || (needs.plan.outputs.attempt == github.run_attempt && "
            "format('{0}-{1}', needs.plan.outputs.node_label, matrix.leg)) || '' }}")
-ENVIRONMENT = "theta-builder"
+ENVIRONMENT = "latitude-builder"
 # Everything a job on GitHub's runners may name. What a job with an expression names is
 # looked at by hand below: only `build` and the gate's matrix have one.
 HOSTED = re.compile(r"^(ubuntu-[\w.-]+|windows-[\w.-]+|macos-[\w.-]+)$")
@@ -296,7 +296,7 @@ def group_secrets_and_labels(doc, jobs, build, steps) -> list:
     out.append(("secrets: each of those jobs declares the environment that limits them to its branches",
                 all(jobs[n].get("environment") == ENVIRONMENT for n in secret_jobs)))
     out.append(("secrets: on the steps that use them, not on the job", all("secrets." not in json.dumps(jobs[n].get("env", {})) for n in secret_jobs)))
-    sweeper = load((WORKFLOWS / "theta-sweeper.yml").read_text(encoding="utf-8"))
+    sweeper = load((WORKFLOWS / "latitude-sweeper.yml").read_text(encoding="utf-8"))
     out.append(("secrets: the sweeper's job too", sweeper["jobs"]["sweep"].get("environment") == ENVIRONMENT))
     out.append(("secrets: and no job hands them on to another workflow", "secrets: inherit" not in WORKFLOW.read_text(encoding="utf-8")))
     out.append(("token: the workflow's default reads, the build job's reads, no job on the node can do more",
@@ -342,7 +342,7 @@ def group_pull_requests(doc, jobs, build, steps) -> list:
                 jobs_of_pull_requests({"x.yml": {"on": ["pull_request"], "jobs": {"j": {"runs-on": "latitude-5-1-a"}}}}) == ["x.yml:j:latitude-5-1-a"]))
     out.append(("pull requests: release.yml starts by hand, on a push to main or by schedule (a candidate that keeps the cache warm); the sweeper and the workflows they call by hand or by schedule only",
                 triggers(doc) == {"workflow_dispatch", "push", "schedule"} and doc[True]["push"] == {"branches": ["main"], "paths-ignore": ["**.md"]}
-                and triggers(live["theta-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
+                and triggers(live["latitude-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
                 and triggers(live["gate.yml"]) <= {"workflow_call", "workflow_dispatch"} and triggers(live["publish.yml"]) == {"workflow_call"}))
     with_label = []
     for name, wf in live.items():
@@ -473,7 +473,7 @@ def group_node_steps(doc, jobs, build, steps) -> list:
                 "recurse_gtest" in gtests.get("run", "") and "mach gtest" not in gtests.get("run", "")
                 and jobs.get("gtest-linux", {}).get("runs-on") == "ubuntu-24.04"
                 and any(s.get("with", {}).get("name") == "gtest-bin-linux-x86_64" for s in jobs.get("gtest-linux", {}).get("steps", []))))
-    sweeper = load((WORKFLOWS / "theta-sweeper.yml").read_text(encoding="utf-8"))
+    sweeper = load((WORKFLOWS / "latitude-sweeper.yml").read_text(encoding="utf-8"))
     out.append(("sweeper: scheduled, and only the sweep", "schedule" in sweeper[True]
                 and "latitude_node.py sweep" in sweeper["jobs"]["sweep"]["steps"][-1]["run"]))
     publish = (WORKFLOWS / "publish.yml").read_text(encoding="utf-8")
