@@ -44,6 +44,7 @@ FEATURES = {
     "pingsender-session-route": "stillborn/telemetry",
     "api-keys-declared": "stillborn/api-keys",
     # network
+    "ipv6-literal-connect": "network/ipv6-literal",
     "proxy-udp-egress": "network/proxy-udp",
     "socks-credentials": "network/socks",
     "doh-trr-context": "network/doh",
@@ -180,8 +181,16 @@ OWN_FILES = [
     (r"^juggler/tests/(dns_has_no_gate_of_ours|doh_|proxy_info_leaves_name_resolution_to_the_browser|"
      r"trr_connection_info_is_not_cached_in_this_build|etc_hosts_exclusion_is_off|"
      r"http_proxy_credentials_are_sent_preemptively_for_doh|parental_controls_are_declared_off|"
-     r"no_channel_leaves_before_the_|no_ping_leaves_before_the_session_proxy_is_decided)",
+     r"no_channel_leaves_before_the_|no_ping_leaves_before_the_session_proxy_is_decided|"
+     r"no_lookup_asks_for_the_system_resolver|trr_follows_the_proxies_present|"
+     r"warnings_reach_a_sink_that_is_not_gated)",
      "network/doh"),
+    (r"^juggler/TrrPrefs\.js$", "network/doh"),
+    (r"^juggler/tests/system_proxy_is_off_by_default\.", "network/proxy"),
+    (r"^juggler/tests/ipv6_literal_fails_like_a_host_with_no_ipv6_route\.", "network/ipv6-literal"),
+    (r"^netwerk/base/StealthIPv6Literal\.", "network/ipv6-literal"),
+    (r"^netwerk/test/gtest/TestStealthIPv6Literal\.cpp$", "network/ipv6-literal"),
+    (r"^juggler/tests/ipv6_is_one_fact_of_the_declared_network\.", "fingerprint/webrtc/declared-network"),
     (r"^js/src/debugger/StealthDebugger\.", "fingerprint/js-surface/debugger"),
     (r"^gfx/thebes/StealthDesignMetrics\.", "fingerprint/fonts/metrics"),
     (r"^gfx/thebes/StealthTextMeasuring\.", "fingerprint/fonts/metrics"),

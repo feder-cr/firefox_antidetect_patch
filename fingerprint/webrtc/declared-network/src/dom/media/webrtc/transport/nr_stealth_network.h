@@ -20,6 +20,11 @@
  * Without a declaration, or with one that does not parse, there is no interface: no host candidate, and an error in
  * the log. Never a fallback to the host.
  *
+ * IPv6 is one fact for the whole browser. The same declaration decides network.dns.disableIPv6 in the parent
+ * (StealthApplyDeclaredIPFamily, called once from nsIOService::Init): no IPv6 interface declared (v6=0, or v6=1 without
+ * a prefix) means no AAAA lookup in any process, so a page is never loaded over an IPv6 address while ICE says there is
+ * none. The answer is the parser's own (nr_stealth_declared_has_ipv6), never a second reading of the string.
+ *
  * The declared address is the identity of this machine (R3, nr_socket_prsock.cpp): a host socket is bound to the
  * wildcard of its family on a port of the connection and reports the declared address with that port, and a datagram
  * between two of this browser's sockets travels on the kernel's loopback while each end sees the other's declared
@@ -43,6 +48,11 @@ struct nr_transport_addr_;
 int nr_stealth_parse_network(const char* decl, const uint8_t iid[8], struct nr_local_addr_* addrs, int maxaddrs,
                              int* count);
 
+/* The IPv6 fact of a declaration, from the parser's own answer: 0 and *has = 1 when nr_stealth_parse_network accepts
+ * `decl` and returns an IPv6 interface, *has = 0 when it accepts it and returns none; an error and *has = 0 for a
+ * missing or malformed one. Quiet: it writes no log (the interface list is the one that reports a bad declaration). */
+int nr_stealth_declared_has_ipv6(const char* decl, int* has);
+
 /* R1: the interface list, from STEALTHFOX_WEBRTC_NETWORK, with this process's temporary identifier. */
 int nr_stealth_declared_addrs(struct nr_local_addr_* addrs, int maxaddrs, int* count);
 
@@ -50,6 +60,11 @@ int nr_stealth_declared_addrs(struct nr_local_addr_* addrs, int maxaddrs, int* c
  * the declaration has none (the machine has no route in that family). No socket. */
 int nr_stealth_default_local_address(int ip_version, struct nr_local_addr_* addrs, int addr_ct,
                                      struct nr_local_addr_* out);
+
+/* The family of the default address to look for, given the family of the page's server: the target's family when the
+ * list has an address of it, else the other one (a declared machine without IPv6 reaching a page over IPv6 asks for the
+ * family it has); the target's family when the list has neither. */
+int nr_stealth_default_family(int target_ip_version, struct nr_local_addr_* addrs, int addr_ct);
 
 /* The interfaces the parent's mDNS responder joins the group on and speaks through: the loopback, "127.0.0.1;"
  * (lib.rs takes a ';'-separated list). The declared address is not the host's: a join on it fails. */
@@ -65,6 +80,15 @@ int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
 #  include <set>
 
 namespace mozilla {
+
+/* Parent process, once, before any lookup: sets network.dns.disableIPv6 from the IPv6 fact of `aDecl` (the value of
+ * STEALTHFOX_WEBRTC_NETWORK). As a DEFAULT value (never written to the profile) and the user value is cleared, so the
+ * declaration is the only source. Returns true when it applied; false, and nothing touched, when there is no
+ * declaration or it does not parse (a build run by hand keeps Firefox's behaviour). */
+bool StealthApplyDeclaredIPFamily(const char* aDecl);
+
+/* The same, for the declaration of this process's environment (STEALTHFOX_WEBRTC_NETWORK). */
+bool StealthApplyDeclaredIPFamilyFromEnvironment();
 
 /* R3: the host UDP ports of ONE connection (one ICE context), as Windows hands them out: consecutive in the order the
  * sockets are made (the IPv4 host N, the IPv6 host N+1), from a base drawn at random in the dynamic range 49152-65535,
@@ -84,6 +108,20 @@ class StealthHostPorts final {
     uint32_t port = mNext;
     mNext = port == kLast ? kFirst : port + 1;
     return static_cast<uint16_t>(port);
+  }
+
+  /* The first port from here on for which `aTry(port)` is true (the bind worked, or any other reason to keep it), or 0 when
+   * none of the 16384 is. The kernel hands out only ports it can bind: Windows keeps ranges of the dynamic range
+   * (Hyper-V, WSL, Docker: about one port in ten on a developer PC) for the system, and a bind to one fails with
+   * "access denied"; a port another socket holds fails as "in use". Either way the next port is tried, as the kernel
+   * would have given another. */
+  template <typename F>
+  uint16_t NextAvailable(F aTry) {
+    for (uint32_t n = 0; n <= kLast - kFirst; ++n) {
+      uint16_t port = Next();
+      if (aTry(port)) return port;
+    }
+    return 0;
   }
 
  private:

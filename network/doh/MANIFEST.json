@@ -1,8 +1,11 @@
 {
  "modified": [
+  "browser/components/tabbrowser/Tabbrowser.sys.mjs",
+  "netwerk/base/NetworkConnectivityService.cpp",
   "netwerk/dns/TRR.cpp",
   "netwerk/protocol/http/TRRServiceChannel.cpp",
   "netwerk/protocol/http/nsHttpChannel.cpp",
+  "toolkit/components/captivedetect/CaptiveDetect.sys.mjs",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceCocoa.mm",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
@@ -10,6 +13,7 @@
  ],
  "added": {
   "juggler/EarlyProxyHold.js": "100644",
+  "juggler/TrrPrefs.js": "100644",
   "juggler/tests/dns_has_no_gate_of_ours.test.mjs": "100644",
   "juggler/tests/doh_never_goes_direct_when_its_proxy_is_lost.test.mjs": "100644",
   "juggler/tests/doh_request_carries_the_context_of_its_lookup.test.mjs": "100644",
@@ -19,16 +23,63 @@
   "juggler/tests/http_proxy_credentials_are_sent_preemptively_for_doh.test.mjs": "100644",
   "juggler/tests/no_channel_leaves_before_the_network_observer_exists.test.mjs": "100644",
   "juggler/tests/no_channel_leaves_before_the_session_proxy_is_decided.test.mjs": "100644",
+  "juggler/tests/no_lookup_asks_for_the_system_resolver.test.mjs": "100644",
   "juggler/tests/no_ping_leaves_before_the_session_proxy_is_decided.test.mjs": "100644",
   "juggler/tests/parental_controls_are_declared_off_where_the_os_is_read.test.mjs": "100644",
   "juggler/tests/proxy_info_leaves_name_resolution_to_the_browser.test.mjs": "100644",
   "juggler/tests/trr_connection_info_is_not_cached_in_this_build.test.mjs": "100644",
+  "juggler/tests/trr_follows_the_proxies_present.test.mjs": "100644",
+  "juggler/tests/warnings_reach_a_sink_that_is_not_gated.test.mjs": "100644",
   "netwerk/ipc/StealthTRRContext.cpp": "100644",
   "netwerk/ipc/StealthTRRContext.h": "100644",
   "netwerk/test/gtest/TestStealthTRRContext.cpp": "100644",
   "toolkit/components/parentalcontrols/StealthParentalControls.h": "100644"
  },
  "inventory": [
+  {
+   "file": "browser/components/tabbrowser/Tabbrowser.sys.mjs",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 4,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "the load flags of the captive portal tab (LOAD_FLAGS_DISABLE_TRR)",
+   "evidence": [
+    "+      // STEALTH-HOOK(network/doh): the captive portal tab loads with the",
+    "-      if (isCaptivePortalTab) {",
+    "-        loadFlags |= LOAD_FLAGS_DISABLE_TRR;"
+   ],
+   "notes": "The captive portal tab loads with the session resolver: upstream asks for the system one here (LOAD_FLAGS_DISABLE_TRR), which would make the name leave through the host resolver. The flag and its import are removed; a comment with the hook sits in the place of the `if`.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/NetworkConnectivityService.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 12,
+   "removed": 14,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "RecheckDNS (four lookups); SetupIPCheckChannel (SetTRRMode)",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/doh): the four lookups follow the session resolver",
+    "-                                   nsIDNSService::RESOLVE_TRR_DISABLED_MODE,",
+    "-  rv = channel->SetTRRMode(nsIRequest::TRR_DISABLED_MODE);"
+   ],
+   "notes": "The four DNS lookups and the IP check channel of the connectivity service follow the session resolver: upstream asks for the system one with RESOLVE_TRR_DISABLED_MODE and SetTRRMode(TRR_DISABLED_MODE). The flag is dropped from each call (the arguments stay Mozilla's) and the hook comments say why.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
   {
    "file": "netwerk/dns/TRR.cpp",
    "category": "other",
@@ -90,6 +141,28 @@
     "+    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
    ],
    "notes": "A DoH request that runs as an nsHttpChannel (the main thread) fails closed like the TRRServiceChannel: when its proxy lookup fails or cannot start, the channel ends with StealthTRRProxyFailure instead of failing over to DIRECT (StealthFailClosedOnProxyFailure decides: a TRR channel, not cancelled, with a failed status). Other channels are untouched.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/captivedetect/CaptiveDetect.sys.mjs",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 2,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "URLFetcher: the TRR mode of the check channel",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/doh): the check follows the session resolver",
+    "-  // Use the system's resolver for this check",
+    "-  xhr.channel.setTRRMode(Ci.nsIRequest.TRR_DISABLED_MODE);"
+   ],
+   "notes": "The captive portal check follows the session resolver: upstream sets TRR_DISABLED_MODE on the channel to use the system resolver, which no lookup of ours may ask for.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."

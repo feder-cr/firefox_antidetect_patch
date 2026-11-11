@@ -79,6 +79,9 @@ void nsSOCKSUDPIOLayerWarm(nsIProxyInfo* aProxy);
  */
 nsresult StealthPutSocksUdpLayer(PRFileDesc* aFd, nsIProxyInfo* aProxyInfo);
 
+// Test only: the associations are started as if the socket transport service were gone (a browser that is shutting down).
+void nsSOCKSUDPIOLayerNoSocketThreadForTests(bool aMissing);
+
 // True when the SOCKS5 UDP layer is on aFd.
 bool nsSOCKSUDPIOLayerIsOn(PRFileDesc* aFd);
 

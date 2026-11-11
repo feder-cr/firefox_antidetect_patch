@@ -106,7 +106,7 @@ index 98369755834cfc31e3f3df454879a1d6df64cbf6..d5b1cfc5b8919762298b011529b450c9
  LICENSED_UNDER["libjingle"].paths = [
      "sigslot.h",
 diff --git a/dom/media/webrtc/transport/nricectx.cpp b/dom/media/webrtc/transport/nricectx.cpp
-index 9a3aa1311a1841f8f849e9925c606a76115c2c77..19b3923fc054bfca16da4d571220866f9ef52003 100644
+index 9a3aa1311a1841f8f849e9925c606a76115c2c77..d85f948a3a5cd061dfa02dcb1f5d8a91861a33a0 100644
 --- a/dom/media/webrtc/transport/nricectx.cpp
 +++ b/dom/media/webrtc/transport/nricectx.cpp
 @@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
@@ -127,7 +127,7 @@ index 9a3aa1311a1841f8f849e9925c606a76115c2c77..19b3923fc054bfca16da4d571220866f
  
  /* static */
  RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& aName) {
-@@ -1217,7 +1219,22 @@ int nr_socket_local_create(void* obj, nr_transport_addr* addr,
+@@ -1217,7 +1219,25 @@ int nr_socket_local_create(void* obj, nr_transport_addr* addr,
      config = static_cast<NrIceCtx*>(obj)->GetProxyConfig();
    }
  
@@ -138,13 +138,16 @@ index 9a3aa1311a1841f8f849e9925c606a76115c2c77..19b3923fc054bfca16da4d571220866f
 +      !nr_transport_addr_is_loopback(addr)) {
 +    nr_transport_addr chosen;
 +    r = R_ALREADY;
-+    for (int attempt = 0; attempt < 64 && r == R_ALREADY; ++attempt) {
-+      if (nr_transport_addr_copy(&chosen, addr) ||
-+          nr_transport_addr_set_port(&chosen, static_cast<NrIceCtx*>(obj)->TakeHostPort())) {
-+        ABORT(R_INTERNAL);
++    bool internal_error = false;
++    static_cast<NrIceCtx*>(obj)->TakeHostPort([&](uint16_t port) {
++      if (nr_transport_addr_copy(&chosen, addr) || nr_transport_addr_set_port(&chosen, port)) {
++        internal_error = true;
++        return true;
 +      }
 +      r = NrSocketBase::CreateSocket(&chosen, &sock, config);
-+    }
++      return r != R_ALREADY;
++    });
++    if (internal_error) ABORT(R_INTERNAL);
 +  } else {
 +    r = NrSocketBase::CreateSocket(addr, &sock, config);
 +  }
@@ -152,7 +155,7 @@ index 9a3aa1311a1841f8f849e9925c606a76115c2c77..19b3923fc054bfca16da4d571220866f
      ABORT(r);
    }
 diff --git a/dom/media/webrtc/transport/nricectx.h b/dom/media/webrtc/transport/nricectx.h
-index cfd44904c9349e8e2d59d2662a336212331d7978..29dedaeecf88a081a56bd62652317d1cf4ae12f5 100644
+index cfd44904c9349e8e2d59d2662a336212331d7978..b8318d7c478a768a1744e572a94c69ce7ec2b483 100644
 --- a/dom/media/webrtc/transport/nricectx.h
 +++ b/dom/media/webrtc/transport/nricectx.h
 @@ -59,6 +59,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
@@ -163,18 +166,21 @@ index cfd44904c9349e8e2d59d2662a336212331d7978..29dedaeecf88a081a56bd62652317d1c
  #include "nsIEventTarget.h"
  #include "nsTArray.h"
  #include "sigslot.h"
-@@ -231,6 +232,10 @@ class NrIceCtx {
+@@ -231,6 +232,13 @@ class NrIceCtx {
      return proxy_config_;
    }
  
 +  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the next host UDP port of this connection (R3,
 +  // nr_stealth_network.h StealthHostPorts).
-+  uint16_t TakeHostPort() { return host_ports_.Next(); }
++  template <typename F>
++  uint16_t TakeHostPort(F aTry) {
++    return host_ports_.NextAvailable(aTry);
++  }
 +
    void SetCtxFlags(bool default_route_only);
  
    // Start ICE gathering
-@@ -316,6 +321,7 @@ class NrIceCtx {
+@@ -316,6 +324,7 @@ class NrIceCtx {
    RefPtr<TestNat> nat_;
    std::shared_ptr<NrSocketProxyConfig> proxy_config_;
    std::map<std::string, std::string> obfuscated_host_addresses_;
@@ -247,7 +253,7 @@ index 4bfd7d62d1f5695638102a22129407cd7a66b4b7..f6ca10a7ba18dfb5115173da8242de7b
                  "./src/stun/nr_socket_turn.h",
                  "./src/stun/nr_socket_buffered_stun.cpp",
 diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
-index 04c91642dc06ae1d0f2551bb0fd305e802c3e745..e3e4ad31987dd7cf73dc18e2432eb2d524e92b6d 100644
+index 04c91642dc06ae1d0f2551bb0fd305e802c3e745..393ec06231d39ed23ec6b7bd45f04624b9752adf 100644
 --- a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
 +++ b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
 @@ -52,6 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
@@ -361,17 +367,21 @@ index 04c91642dc06ae1d0f2551bb0fd305e802c3e745..e3e4ad31987dd7cf73dc18e2432eb2d5
    }
  
  /* if handed a IPv4 default_local_addr, looks for IPv6 address on same interface
-@@ -781,10 +700,6 @@ int nr_ice_set_local_addresses(nr_ice_ctx *ctx,
-           ++default_addr_ct;
-         }
-       }
--      if (!default_addr_ct) {
--        r_log(LOG_ICE,LOG_ERR,"ICE(%s): failed to find default addresses",ctx->label);
--        ABORT(R_FAILED);
--      }
-       addrs = default_addrs;
-       addr_ct = default_addr_ct;
-     }
+@@ -751,8 +670,13 @@ int nr_ice_set_local_addresses(nr_ice_ctx *ctx,
+     if ((!addr_ct) || (ctx->flags & NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS)) {
+       if (ctx->target_for_default_local_address_lookup) {
+         /* Get just the default IPv4 or IPv6 addr */
++        /* STEALTH-HOOK(fingerprint/webrtc/declared-network): the family of the page's server is a property of the real
++           network path, which the declared machine hides. A machine declared without IPv6 whose page was reached over
++           IPv6 asks for the family it has: with no default address of the target's family the gathering found no
++           address at all (measured on the firefox-63 candidate, Windows, direct: zero candidates). */
+         if(!nr_ice_get_default_local_address(
+-               ctx, ctx->target_for_default_local_address_lookup->ip_version,
++               ctx, nr_stealth_default_family(ctx->target_for_default_local_address_lookup->ip_version,
++                                              local_addrs, addr_ct),
+                local_addrs, addr_ct, &default_addrs[default_addr_ct])) {
+           nr_local_addr *new_addr = &default_addrs[default_addr_ct];
+ 
 diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp
 deleted file mode 100644
 index ec2d084445bef2dedd7fe801ea38b475bf06eb55..0000000000000000000000000000000000000000
@@ -1114,3 +1124,29 @@ index 9449432365c9b0371c1f13ebf20f50cd18ed1dbe..56fc41adb0c984298bdd8f84f09df66f
  
      for (i = 0; i < *count; ++i) {
        nr_local_addr_fmt_info_string(addrs+i,typestr,sizeof(typestr));
+diff --git a/netwerk/base/nsIOService.cpp b/netwerk/base/nsIOService.cpp
+index 31b794135b1e02e35dab6dc6714402ee699f1d69..997797d6fc192b9cab241d42f6e4a3a6941588f7 100644
+--- a/netwerk/base/nsIOService.cpp
++++ b/netwerk/base/nsIOService.cpp
+@@ -66,6 +66,9 @@
+ #include "nsURLHelper.h"
+ #include "nsXPCOM.h"
+ #include "nsXULAppAPI.h"
++#ifdef MOZ_WEBRTC
++#  include "transport/nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
++#endif
+ #include "nscore.h"
+ #include "prprf.h"
+ #include "ssl.h"
+@@ -286,6 +289,11 @@ static const char* gCallbackSecurityPrefs[] = {
+ };
+ 
+ nsresult nsIOService::Init() {
++#ifdef MOZ_WEBRTC
++  // STEALTH-HOOK(fingerprint/webrtc/declared-network): IPv6 is one fact, the declared network's (nr_stealth_network.h).
++  if (XRE_IsParentProcess()) mozilla::StealthApplyDeclaredIPFamilyFromEnvironment();
++#endif
++
+   SSLTokensCache::Init();
+ 
+   InitializeCaptivePortalService();

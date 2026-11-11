@@ -1,6 +1,7 @@
 {
  "modified": [],
  "added": {
+  ".github/workflows/gate-only.yml": "100644",
   ".github/workflows/gate.yml": "100644",
   ".github/workflows/latitude-sweeper.yml": "100644",
   ".github/workflows/publish.yml": "100644",

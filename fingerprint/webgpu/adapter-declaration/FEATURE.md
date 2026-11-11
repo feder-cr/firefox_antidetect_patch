@@ -71,3 +71,5 @@ off Windows and macOS, and with the pref on gfxPlatform::InitWebGPUConfig force-
 ("not supported on this Operating System"). The pref takes Windows' value on its own line in
 StaticPrefList.yaml, and the force-disable is compiled out (one rewritten line each, in
 removed-budget.json); off Windows the import runs on the generic shared-memory buffer path.
+The same file carries a second hook, of network/proxy: `network.proxy.type` defaults to 0 on Mozilla's own line (a file has one owner, so
+the hunk is carried here; its feature, folder and test are network/proxy).

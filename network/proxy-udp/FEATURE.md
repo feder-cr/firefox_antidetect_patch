@@ -26,7 +26,14 @@ socket asks for it. TURN over TCP and the HTTP tunnel build their lookup channel
 (`StealthNewChannelOfLoadInfo`, netwerk/ipc/StealthDocumentChannel).
 
 HTTP/3 through SOCKS5: the h3 Alt-Svc is kept, the host name is resolved (QUIC needs the address) and the socket carries the
-proxy; through a proxy that carries no UDP the handshake never completes and Firefox falls back to h2 by itself.
+proxy; through a proxy that carries no UDP the handshake never completes and Firefox falls back to h2 by itself. neqo's own I/O
+writes on the OS handle and would never reach the layer, so a SOCKS5 connection uses Firefox's own NSPR path
+(`Http3Session::Init`, `mUseNSPRForIO`) and `nsUDPSocket::GetFileDescriptor` gives -1 for a socket that has the layer: nothing can
+write on its handle by another road. An IPv6 destination goes through an IPv4 relay (the family that counts is the socket's; RFC 1928
+allows a destination of any family), and a plain socket asked whether the layer failed answers no. An association that cannot
+start (no socket transport service) is not a refusal of the proxy: it does not tell the pool, which would take the lock the caller
+holds. The proxy of a PeerConnection is the context's, not the page address's: the lookup asks about a public https address with the
+document's load info, so a page on the loopback, a `file:`, a `data:` or a document with no address follows the context's proxy.
 
 ## Hooks in Mozilla files
 
@@ -39,8 +46,9 @@ proxy; through a proxy that carries no UDP the handshake never completes and Fir
 - `netwerk/ipc/ProxyConfigLookup*.{h,cpp}`, `PSocketProcess.ipdl`, `SocketProcessParent.{h,cpp}`: the optional load info of the
   document goes with the lookup. The same files carry the hooks of network/doh (the origin attributes of the DoH context go with
   the load info; tagged with that feature).
-- `netwerk/base/nsIUDPSocket.idl`, `nsUDPSocket.{h,cpp}`, `nsProxyInfo.{h,cpp}`: `setSocksProxy` and the SOCKS5 test.
+- `netwerk/base/nsIUDPSocket.idl`, `nsUDPSocket.{h,cpp}`, `nsProxyInfo.{h,cpp}`: `setSocksProxy`, the SOCKS5 test, and no OS handle for a socket with the layer.
 - `netwerk/protocol/http/{AlternateServices,DnsAndConnectSocket,HttpBaseChannel,HttpConnectionUDP}.cpp`: the HTTP/3 gates.
+- `netwerk/protocol/http/Http3Session.cpp`: `mUseNSPRForIO` also for a SOCKS5 connection (3 lines).
 - `netwerk/protocol/http/Http3ConnectUDPStream.cpp`: `setSocksProxy` answers not implemented (the CONNECT-UDP stream has its own proxy).
 - `netwerk/socket/nsSOCKSIOLayer.cpp`: one call that warms the pool.
 - `moz.build` of netwerk/ipc, netwerk/socket (and netwerk/protocol/http, for another folder's file): our sources.

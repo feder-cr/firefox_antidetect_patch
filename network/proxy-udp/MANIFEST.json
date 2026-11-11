@@ -23,6 +23,7 @@
   "netwerk/protocol/http/AlternateServices.cpp",
   "netwerk/protocol/http/DnsAndConnectSocket.cpp",
   "netwerk/protocol/http/Http3ConnectUDPStream.cpp",
+  "netwerk/protocol/http/Http3Session.cpp",
   "netwerk/protocol/http/HttpBaseChannel.cpp",
   "netwerk/protocol/http/HttpConnectionUDP.cpp",
   "netwerk/protocol/http/moz.build",
@@ -110,9 +111,9 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 59,
+   "added": 62,
    "removed": 4,
-   "hunks": 13,
+   "hunks": 10,
    "inline_logic_lines": 35,
    "hookable": "movable",
    "anchor": "include of nr_stealth_proxy_udp.h; NrSocket::create (UDP: the proxy layer); NrSocketBase::CreateSocket (the config to NrSocket; no UDP socket of a PeerConnection in a content process)",
@@ -218,7 +219,7 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 14,
+   "added": 18,
    "removed": 0,
    "hunks": 4,
    "inline_logic_lines": 7,
@@ -229,7 +230,7 @@
     "+#include \"nsIProxyInfo.h\"  // STEALTH-HOOK(network/proxy-udp)",
     "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)"
    ],
-   "notes": "Puts the SOCKS5 UDP layer of the connection's proxy on the socket when it opens it (StealthPutSocksUdpLayer), the same layer and associations as the ICE sockets.",
+   "notes": "Puts the SOCKS5 UDP layer of the connection's proxy on the socket when it opens it (StealthPutSocksUdpLayer), the same layer and associations as the ICE sockets. Also GetFileDescriptor: a socket with the SOCKS UDP layer gives no OS handle (-1), so nothing writes on it direct.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
@@ -542,12 +543,33 @@
    }
   },
   {
-   "file": "netwerk/protocol/http/HttpBaseChannel.cpp",
+   "file": "netwerk/protocol/http/Http3Session.cpp",
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
    "added": 3,
    "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "Http3Session::Init (mUseNSPRForIO)",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/proxy-udp): neqo's own I/O writes on the OS handle and never reaches the SOCKS UDP layer on the socket.",
+    "+  const bool socksUdp = aConnInfo->ProxyInfo() && aConnInfo->ProxyInfo()->IsSOCKS5();"
+   ],
+   "notes": "A connection through a SOCKS5 proxy does neqo's I/O through NSPR (mUseNSPRForIO), so its datagrams go through the SOCKS UDP layer on the socket and never on the OS handle. One const bool and one operand of an existing condition.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/HttpBaseChannel.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 5,
+   "removed": 17,
    "hunks": 2,
    "inline_logic_lines": 2,
    "hookable": "already-hook",
@@ -557,7 +579,7 @@
     "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy() ||",
     "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS5())"
    ],
-   "notes": "A SOCKS5 proxy does not forbid h3.",
+   "notes": "A SOCKS5 proxy does not forbid h3. Also (feature doh-trr-context, network/doh): GetTRRMode of an OCSP channel follows the session resolver like any other channel (upstream asks for the system one when the mode is 3); the block is removed.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
@@ -631,9 +653,9 @@
    "category": "other",
    "feature": "proxy-udp-egress",
    "prefs": [],
-   "added": 2,
-   "removed": 0,
-   "hunks": 2,
+   "added": 4,
+   "removed": 1,
+   "hunks": 3,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "nsSOCKSIOLayerAddToSocket after Init",
@@ -641,7 +663,7 @@
     "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/socks)",
     "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/socks)"
    ],
-   "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it).",
+   "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it). Also (network/ipv6-literal): the connect to the proxy goes through StealthIPv6Connect (one line replaced).",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."

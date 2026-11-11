@@ -1,11 +1,12 @@
 diff --git a/netwerk/base/moz.build b/netwerk/base/moz.build
-index dde0f0da60377e61b8987663f87304ebd63b4958..0c164a481fe5e86dec187c4647ff659dc620cfd8 100644
+index dde0f0da60377e61b8987663f87304ebd63b4958..55fd5a35e3ca508fe805649f39f2cea47239fa6a 100644
 --- a/netwerk/base/moz.build
 +++ b/netwerk/base/moz.build
-@@ -257,6 +257,7 @@ UNIFIED_SOURCES += [
+@@ -257,6 +257,8 @@ UNIFIED_SOURCES += [
      "TLSServerSocket.cpp",
      "TRRLoadInfo.cpp",
  ]
++UNIFIED_SOURCES += ["StealthIPv6Literal.cpp"]  # STEALTH-HOOK(network/ipv6-literal)
 +UNIFIED_SOURCES += ["StealthSocksCredentials.cpp"]  # STEALTH-HOOK(network/socks)
  
  if CONFIG["FUZZING"]:
@@ -60,13 +61,14 @@ index 104a1a6a88e6b34de77c15866bf715f23658f663..6ad5a9d516e1176aa60e55b5014f7ce3
    bool mSOCKS5ProxyRemoteDNS{false};
    bool mProxyOverTLS{true};
 diff --git a/netwerk/test/gtest/moz.build b/netwerk/test/gtest/moz.build
-index 9673b9265a2de02a81839676e9eb91b1e12e0c44..2b417e67d8bd64d33be7ec037a7eac8a797f4ef8 100644
+index 9673b9265a2de02a81839676e9eb91b1e12e0c44..c85da4130ff2c125efb8c179989ebba196d09603 100644
 --- a/netwerk/test/gtest/moz.build
 +++ b/netwerk/test/gtest/moz.build
-@@ -63,6 +63,8 @@ SOURCES += [
+@@ -63,6 +63,9 @@ SOURCES += [
      "TestHappyEyeballsConnectionAttempt.cpp",
      "TestHappyEyeballsNetAddrArray.cpp",
  ]
++SOURCES += ["TestStealthIPv6Literal.cpp"]  # STEALTH-HOOK(network/ipv6-literal)
 +SOURCES += ["TestStealthSocksCredentials.cpp"]  # STEALTH-HOOK(network/socks)
 +SOURCES += ["TestStealthTRRContext.cpp"]  # STEALTH-HOOK(network/doh)
  

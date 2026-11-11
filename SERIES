@@ -15,6 +15,8 @@ stillborn/api-keys
 stillborn/telemetry
 stillborn/updater
 network/doh
+network/ipv6-literal
+network/proxy
 network/proxy-udp
 network/socks
 automation/bypass-csp

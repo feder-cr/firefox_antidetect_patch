@@ -7,6 +7,7 @@ const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sy
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
 const {ContentMux} = ChromeUtils.importESModule('resource://gre/modules/juggler/ContentMux.js');
 const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
+const {syncTrrPrefs} = ChromeUtils.importESModule('resource://gre/modules/juggler/TrrPrefs.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs");
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
@@ -448,15 +449,44 @@ export class TargetRegistry {
     // proxy" from "my proxy was refused", and cannot tell either from a
     // session that quietly goes out in the clear.
     newProxyInfoFor(proxy);
+    const previous = this._browserProxy;
     this._browserProxy = proxy;
+    try {
+      // Before the hold is lifted: no channel leaves with a proxy and without DoH.
+      this._syncTrrPrefs();
+    } catch (e) {
+      this._browserProxy = previous;
+      throw e;
+    }
     this._decideBrowserProxy();
   }
 
   // The session goes out with no proxy: an explicit decision, so that the
   // filter answers the channels that waited with the default road.
   setNoBrowserProxy() {
+    const previous = this._browserProxy;
     this._browserProxy = null;
+    try {
+      // DoH stays on while a context still has a proxy; otherwise it goes off
+      // before the held channels are answered with the default road.
+      this._syncTrrPrefs();
+    } catch (e) {
+      this._browserProxy = previous;
+      throw e;
+    }
     this._decideBrowserProxy();
+  }
+
+  // The proxy records present: the browser-wide one and those of every live
+  // context. The DoH prefs follow this set (see TrrPrefs.js).
+  _proxiesPresent() {
+    const proxies = [...this._browserContextIdToBrowserContext.values()].map(bc => bc._proxy);
+    proxies.push(this._browserProxy);
+    return proxies.filter(Boolean);
+  }
+
+  _syncTrrPrefs() {
+    syncTrrPrefs(this._proxiesPresent());
   }
 
   get browserProxyDecided() {
@@ -1413,6 +1443,8 @@ class BrowserContext {
       Services.ppmm.sharedData.flush();
     }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
+    // The proxy of this context leaves the set; the last one out turns DoH off.
+    this._registry._syncTrrPrefs();
     await this.setServiceWorkersBlocked(false);
   }
 
@@ -1475,7 +1507,17 @@ class BrowserContext {
     newProxyInfoFor(proxy);
     // Clear AuthCache.
     Services.obs.notifyObservers(null, "net:clear-active-logins");
+    const previous = this._proxy;
     this._proxy = proxy;
+    try {
+      // In the same turn as the store: no channel is filtered between the two.
+      // The names of this proxy are excluded from DoH, the other names go over it.
+      this._registry._syncTrrPrefs();
+    } catch (e) {
+      // A proxy with no DoH behind it would leak the names to the host's resolver.
+      this._proxy = previous;
+      throw e;
+    }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
   }
 

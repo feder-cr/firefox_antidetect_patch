@@ -6,6 +6,7 @@
 
 const Cc = Components.classes;
 const Ci = Components.interfaces;
+const { say } = ChromeUtils.importESModule('resource://gre/modules/juggler/Say.js');
 
 /**
  * The proxy filter of a driven browser, from the first point where Juggler
@@ -40,7 +41,7 @@ export const EarlyProxyHold = {
     if (this._waitingSaid)
       return;
     this._waitingSaid = true;
-    dump('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
+    say('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
   },
 
   // The (channel, callback) pairs waiting for the decision.

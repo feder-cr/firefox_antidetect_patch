@@ -1,3 +1,90 @@
+diff --git a/browser/components/tabbrowser/Tabbrowser.sys.mjs b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+index 430e1137a15f0aa8c5f39fd76127f825b2751c69..c288a807919a56e66b5bd18959716744138919a0 100644
+--- a/browser/components/tabbrowser/Tabbrowser.sys.mjs
++++ b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+@@ -105,7 +105,6 @@ const {
+   LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP,
+   LOAD_FLAGS_FIXUP_SCHEME_TYPOS,
+   LOAD_FLAGS_FORCE_ALLOW_DATA_URI,
+-  LOAD_FLAGS_DISABLE_TRR,
+ } = Ci.nsIWebNavigation;
+ 
+ const DIRECTION_FORWARD = 1;
+@@ -5019,9 +5018,8 @@ export class Tabbrowser {
+       if (!allowInheritPrincipal) {
+         loadFlags |= LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
+       }
+-      if (isCaptivePortalTab) {
+-        loadFlags |= LOAD_FLAGS_DISABLE_TRR;
+-      }
++      // STEALTH-HOOK(network/doh): the captive portal tab loads with the
++      // session resolver (upstream asks for the system one here).
+       if (forceAllowDataURI) {
+         loadFlags |= LOAD_FLAGS_FORCE_ALLOW_DATA_URI;
+       }
+diff --git a/netwerk/base/NetworkConnectivityService.cpp b/netwerk/base/NetworkConnectivityService.cpp
+index 1a69dcbce76ef825db7d197971478401440e204b..c725aeeb8f8f8810c95d5be8028ae7bc8f433d83 100644
+--- a/netwerk/base/NetworkConnectivityService.cpp
++++ b/netwerk/base/NetworkConnectivityService.cpp
+@@ -372,26 +372,26 @@ NetworkConnectivityService::RecheckDNS() {
+   nsAutoCString host;
+   Preferences::GetCString("network.connectivity-service.DNSv4.domain", host);
+ 
++  // STEALTH-HOOK(network/doh): the four lookups follow the session resolver
++  // (upstream asks for the system one with a TRR-disabling flag).
+   rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+-                               nsIDNSService::RESOLVE_DISABLE_IPV6 |
+-                                   nsIDNSService::RESOLVE_TRR_DISABLED_MODE,
+-                               nullptr, this, NS_GetCurrentThread(), attrs,
++                               nsIDNSService::RESOLVE_DISABLE_IPV6, nullptr,
++                               this, NS_GetCurrentThread(), attrs,
+                                getter_AddRefs(mDNSv4Request));
+   NS_ENSURE_SUCCESS(rv, rv);
+ 
+   Preferences::GetCString("network.connectivity-service.DNSv6.domain", host);
+   rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_DEFAULT,
+-                               nsIDNSService::RESOLVE_DISABLE_IPV4 |
+-                                   nsIDNSService::RESOLVE_TRR_DISABLED_MODE,
+-                               nullptr, this, NS_GetCurrentThread(), attrs,
++                               nsIDNSService::RESOLVE_DISABLE_IPV4, nullptr,
++                               this, NS_GetCurrentThread(), attrs,
+                                getter_AddRefs(mDNSv6Request));
+   NS_ENSURE_SUCCESS(rv, rv);
+ 
+   Preferences::GetCString("network.connectivity-service.DNS_HTTPS.domain",
+                           host);
+   rv = dns->AsyncResolveNative(host, nsIDNSService::RESOLVE_TYPE_HTTPSSVC,
+-                               nsIDNSService::RESOLVE_TRR_DISABLED_MODE,
+-                               nullptr, this, NS_GetCurrentThread(), attrs,
++                               nsIDNSService::RESOLVE_DEFAULT_FLAGS, nullptr,
++                               this, NS_GetCurrentThread(), attrs,
+                                getter_AddRefs(mDNS_HTTPSRequest));
+   if (NS_FAILED(rv)) {
+     mDNS_HTTPSRequest = nullptr;
+@@ -400,9 +400,8 @@ NetworkConnectivityService::RecheckDNS() {
+   if (StaticPrefs::network_connectivity_service_nat64_check()) {
+     rv = dns->AsyncResolveNative("ipv4only.arpa"_ns,
+                                  nsIDNSService::RESOLVE_TYPE_DEFAULT,
+-                                 nsIDNSService::RESOLVE_DISABLE_IPV4 |
+-                                     nsIDNSService::RESOLVE_TRR_DISABLED_MODE,
+-                                 nullptr, this, NS_GetCurrentThread(), attrs,
++                                 nsIDNSService::RESOLVE_DISABLE_IPV4, nullptr,
++                                 this, NS_GetCurrentThread(), attrs,
+                                  getter_AddRefs(mNAT64Request));
+     NS_ENSURE_SUCCESS(rv, rv);
+   }
+@@ -520,9 +519,8 @@ already_AddRefed<nsIChannel> NetworkConnectivityService::SetupIPCheckChannel(
+     }
+   }
+ 
+-  rv = channel->SetTRRMode(nsIRequest::TRR_DISABLED_MODE);
+-  NS_ENSURE_SUCCESS(rv, nullptr);
+-
++  // STEALTH-HOOK(network/doh): the IP check follows the session resolver
++  // (upstream asks for the system one on this channel).
+   if (nsCOMPtr<nsIHttpChannelInternal> internalChan =
+           do_QueryInterface(channel)) {
+     if (ipv4) {
 diff --git a/netwerk/dns/TRR.cpp b/netwerk/dns/TRR.cpp
 index a960b375a00d55f8dc4baee1049b4af6859ff360..1f679729efb265d63ebdeaa62e73f367e1d851fc 100644
 --- a/netwerk/dns/TRR.cpp
@@ -177,6 +264,21 @@ index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..4ea20197926ea37ae5076387c48615b9
    if (NS_SUCCEEDED(status)) {
      mProxyInfo = pi;
  
+diff --git a/toolkit/components/captivedetect/CaptiveDetect.sys.mjs b/toolkit/components/captivedetect/CaptiveDetect.sys.mjs
+index 557ae94ad09d564e6067328d43579f4c5704cc66..2092a7591d1963590fcde333315b887b17a9018b 100644
+--- a/toolkit/components/captivedetect/CaptiveDetect.sys.mjs
++++ b/toolkit/components/captivedetect/CaptiveDetect.sys.mjs
+@@ -44,8 +44,8 @@ function URLFetcher(url, timeout) {
+   xhr.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
+   // Prevent privacy leaks
+   xhr.channel.loadFlags |= Ci.nsIRequest.LOAD_ANONYMOUS;
+-  // Use the system's resolver for this check
+-  xhr.channel.setTRRMode(Ci.nsIRequest.TRR_DISABLED_MODE);
++  // STEALTH-HOOK(network/doh): the check follows the session resolver
++  // (upstream asks for the system one on this channel).
+   // We except this from being classified
+   xhr.channel.loadFlags |= Ci.nsIChannel.LOAD_BYPASS_URL_CLASSIFIER;
+   // Prevent HTTPS-Only Mode from upgrading the request.
 diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp
 index f8c239dfc25946f434ecd59c105762ac6af00c0e..04a6172791fdfb633e702d60e4748244f4cd64ba 100644
 --- a/toolkit/components/parentalcontrols/nsParentalControlsServiceAndroid.cpp

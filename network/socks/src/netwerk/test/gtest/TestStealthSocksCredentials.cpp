@@ -9,8 +9,16 @@
 
 #include "../../base/StealthSocksCredentials.h"
 #include "gtest/gtest.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/net/NeckoChannelParams.h"
+#include "nsIPrincipal.h"
+#include "nsIEventTarget.h"
+#include "nsISocketTransportService.h"
+#include "nsThreadUtils.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
@@ -921,6 +929,9 @@ TEST(StealthSessionUdpProxy, TheMachineItselfIsReachedDirectAndTheRestByTheRelay
   // and back: the machine answers direct, the layer hands it over unframed
   PRNetAddr mine;
   PR_GetSockName(fd, &mine);
+  // The socket is bound to the wildcard address by its first send: Linux sends to 0.0.0.0 as to this machine, Windows refuses
+  // it, so the answer is addressed to the loopback the socket was reached by.
+  mine.inet.ip = PR_htonl(0x7F000001);
   ASSERT_EQ(2, PR_SendTo(receiver, "ok", 2, 0, &mine, PR_INTERVAL_NO_WAIT));
   nsCString got;
   EXPECT_TRUE(WaitFor(
@@ -1201,6 +1212,34 @@ TEST(StealthSocksUdpPool, AnAssociationWhoseControlConnectionWasClosedIsNotHande
   PR_Close(fd);
 }
 
+// The pool starts associations with its lock held; a start that cannot be made (no socket transport service: a browser that is
+// shutting down) used to take the same lock again to tell the pool that the proxy had refused: a thread that waits for itself.
+TEST(StealthSocksUdpPool, AStartThatCannotBeMadeDoesNotTakeThePoolLockTwice)
+{
+  PoolSocks proxy;
+  nsSOCKSUDPIOLayerNoSocketThreadForTests(true);
+  struct Restore {
+    ~Restore() { nsSOCKSUDPIOLayerNoSocketThreadForTests(false); }
+  } restore;
+  std::atomic<bool> done{false};
+  std::thread worker([&] {
+    Warm(proxy.Port());                         // PoolFill starts two associations under the lock
+    PRFileDesc* fd = PR_NewUDPSocket();         // Take starts one under the lock
+    EXPECT_EQ(NS_OK, nsSOCKSUDPIOLayerAddToSocket(fd, Socks5(proxy.Port()).get()));
+    EXPECT_TRUE(WaitFor([&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 2000)) << "the socket of an association that cannot start fails";
+    PR_Close(fd);
+    done = true;
+  });
+  bool finished = WaitFor([&] { return done.load(); }, 5000);
+  if (!finished) {
+    worker.detach();  // it is waiting for a lock it holds: the test cannot join it
+  } else {
+    worker.join();
+  }
+  EXPECT_TRUE(finished) << "the pool lock was taken twice by one thread";
+  EXPECT_EQ(0u, proxy.Associates());
+}
+
 TEST(StealthSocksUdpPool, SixSocketsAtOnceEachGetAnAssociation)
 {
   PoolSocks proxy;
@@ -1297,5 +1336,138 @@ TEST(StealthSessionUdpProxy, AnHttp3SocketBehindAProxyThatRefusesSendsNothing)
       << "a datagram of an HTTP/3 socket arrived without the proxy";
   socket->Close();
   PR_Close(receiver);
+}
+// The proxy of a PeerConnection is what Firefox answers for the browser context, not for the page's own address. A page on
+// the loopback, a file:, or a sandboxed document (null principal) has none of its own, and "no proxy for this address" must not
+// become "this PeerConnection has none" while the session has a SOCKS5 proxy: its STUN and TURN would leave direct.
+TEST(StealthSessionUdpProxy, ADocumentThatHasNoAddressOfItsOwnFollowsTheSessionProxy)
+{
+  ProxyPrefsReset reset;
+  ASSERT_EQ(Preferences::SetInt("network.proxy.type", 1), NS_OK);
+  ASSERT_EQ(Preferences::SetCString("network.proxy.socks", "192.0.2.7"), NS_OK);
+  ASSERT_EQ(Preferences::SetInt("network.proxy.socks_port", 1080), NS_OK);
+  ASSERT_EQ(Preferences::SetInt("network.proxy.socks_version", 5), NS_OK);
+  nsTArray<nsCOMPtr<nsIPrincipal>> principals;
+  for (const char* spec : {"http://127.0.0.1:8080/", "http://localhost/", "file:///tmp/page.html", "https://example.com/"}) {
+    nsCOMPtr<nsIURI> uri;
+    ASSERT_EQ(NS_OK, NS_NewURI(getter_AddRefs(uri), nsDependentCString(spec)));
+    principals.AppendElement(BasePrincipal::CreateContentPrincipal(uri, OriginAttributes()));
+  }
+  principals.AppendElement(NullPrincipal::CreateWithoutOriginAttributes());
+  for (nsIPrincipal* principal : principals) {
+    ASSERT_TRUE(principal);
+    nsAutoCString origin;
+    principal->GetOrigin(origin);
+    nsCOMPtr<nsIURI> uri;
+    ASSERT_EQ(NS_OK, NS_NewURI(getter_AddRefs(uri), "https://example.net/"_ns));
+    nsCOMPtr<nsIChannel> channel;
+    ASSERT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, principal,
+                                   nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));
+    Maybe<LoadInfoArgs> args;
+    ASSERT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(channel->LoadInfo(), &args));
+    ASSERT_TRUE(args.isSome());
+    RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(*args);
+    ASSERT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
+                                   [&] { return proxy->GetKind() != PcUdpProxy::Kind::Resolving; }));
+    PcUdpProxy::Socks5Info info;
+    EXPECT_EQ(PcUdpProxy::Kind::Socks5, proxy->GetKind(&info))
+        << "the PeerConnection of a document at " << origin.get() << " has no proxy while the session has a SOCKS5 one";
+    EXPECT_TRUE(info.mHost.EqualsLiteral("192.0.2.7")) << origin.get();
+    EXPECT_EQ(1080, info.mPort) << origin.get();
+  }
+}
+
+// The OS handle of a socket with the SOCKS UDP layer is not given: what writes on it (neqo's own I/O) would go direct.
+TEST(StealthSessionUdpProxy, ASocketWithTheLayerGivesNoOsHandle)
+{
+  nsCOMPtr<nsIProxyInfo> info = Socks5ProxyInfo("127.0.0.1", DeadPort());
+  ASSERT_TRUE(info);
+  nsCOMPtr<nsIUDPSocket> socket = do_CreateInstance("@mozilla.org/network/udp-socket;1");
+  ASSERT_EQ(NS_OK, socket->SetSocksProxy(info));
+  NetAddr local;
+  local.raw.family = AF_INET;
+  ASSERT_EQ(NS_OK, socket->InitWithAddress(&local, nullptr, false, 1));
+  nsCOMPtr<nsIEventTarget> sts = do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+  ASSERT_TRUE(sts);
+  std::atomic<bool> done{false};
+  std::atomic<int64_t> handle{0};
+  ASSERT_EQ(NS_OK, sts->Dispatch(NS_NewRunnableFunction("GetFileDescriptor", [&] {
+              handle = socket->GetFileDescriptor();
+              done = true;
+            })));
+  ASSERT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns, [&] { return done.load(); }));
+  EXPECT_EQ(-1, handle.load()) << "a socket with the SOCKS UDP layer gave its OS handle";
+  socket->Close();
+}
+// RFC 1928 section 7: the destination of a datagram may be IPv6 whatever the family of the relay. An IPv6 socket sends an
+// IPv6 destination through an IPv4 relay: the frame says ATYP 4, the datagram reaches the relay by its IPv4-mapped address.
+TEST(StealthSessionUdpProxy, AnIpv6DestinationGoesThroughAnIpv4Relay)
+{
+  UdpSession prefs;
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+  PRFileDesc* fd = PR_OpenUDPSocket(PR_AF_INET6);
+  if (!fd) {
+    GTEST_SKIP() << "no IPv6 socket on this host";
+  }
+  PRNetAddr any;
+  PR_SetNetAddr(PR_IpAddrAny, PR_AF_INET6, 0, &any);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(fd, &any));
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
+  PRNetAddr to;
+  ASSERT_EQ(PR_SUCCESS, PR_StringToNetAddr("2001:db8::1", &to));
+  to.ipv6.port = PR_htons(3478);
+  ASSERT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &to, PR_INTERVAL_NO_WAIT));
+  nsCString got = proxy.FirstDatagram();
+  ASSERT_EQ(got.Length(), 4u + 16u + 2u + 4u) << "the datagram of an IPv6 destination did not reach the IPv4 relay";
+  EXPECT_EQ(0x04, static_cast<uint8_t>(got[3])) << "ATYP of an IPv6 destination";
+  EXPECT_EQ(0, std::memcmp(got.get() + 22, "", 2)) << "port 3478";
+  EXPECT_EQ(0, std::memcmp(got.get() + 24, "ping", 4));
+  PR_Close(fd);
+}
+
+// A socket without the layer is no business of the layer: asking whether it has failed is an answer, not a crash.
+TEST(StealthSessionUdpProxy, AskingAPlainSocketIfItHasFailedIsFalse)
+{
+  PRFileDesc* fd = PR_NewUDPSocket();
+  ASSERT_TRUE(fd);
+  EXPECT_FALSE(nsSOCKSUDPIOLayerHasFailed(fd));
+  EXPECT_FALSE(nsSOCKSUDPIOLayerHasFailed(nullptr));
+  PR_Close(fd);
+}
+// What the lookup says for each kind of proxy of the session: no proxy is direct; SOCKS5 carries UDP; every other kind (HTTP,
+// SOCKS4) carries none, so the UDP of the PeerConnection goes nowhere (a router that drops it), never direct.
+TEST(StealthSessionUdpProxy, TheKindOfProxyDecidesWhereTheUdpGoes)
+{
+  ProxyPrefsReset reset;
+  auto KindOf = [&]() {
+    nsCOMPtr<nsIURI> uri;
+    EXPECT_EQ(NS_OK, NS_NewURI(getter_AddRefs(uri), "https://example.net/"_ns));
+    nsCOMPtr<nsIChannel> channel;
+    EXPECT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, nsContentUtils::GetSystemPrincipal(),
+                                   nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));
+    Maybe<LoadInfoArgs> args;
+    EXPECT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(channel->LoadInfo(), &args));
+    RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(*args);
+    EXPECT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
+                                   [&] { return proxy->GetKind() != PcUdpProxy::Kind::Resolving; }));
+    return proxy->GetKind();
+  };
+  ASSERT_EQ(Preferences::SetInt("network.proxy.type", 0), NS_OK);
+  EXPECT_EQ(PcUdpProxy::Kind::Direct, KindOf()) << "no proxy";
+
+  ASSERT_EQ(Preferences::SetInt("network.proxy.type", 1), NS_OK);
+  ASSERT_EQ(Preferences::SetCString("network.proxy.socks", "192.0.2.7"), NS_OK);
+  ASSERT_EQ(Preferences::SetInt("network.proxy.socks_port", 1080), NS_OK);
+  ASSERT_EQ(Preferences::SetInt("network.proxy.socks_version", 5), NS_OK);
+  EXPECT_EQ(PcUdpProxy::Kind::Socks5, KindOf()) << "SOCKS5";
+
+  ASSERT_EQ(Preferences::SetInt("network.proxy.socks_version", 4), NS_OK);
+  EXPECT_EQ(PcUdpProxy::Kind::Blocked, KindOf()) << "SOCKS4 carries no UDP";
+
+  ASSERT_EQ(Preferences::SetCString("network.proxy.socks", ""), NS_OK);
+  ASSERT_EQ(Preferences::SetCString("network.proxy.http", "192.0.2.8"), NS_OK);
+  ASSERT_EQ(Preferences::SetInt("network.proxy.http_port", 8080), NS_OK);
+  EXPECT_EQ(PcUdpProxy::Kind::Blocked, KindOf()) << "an HTTP proxy carries no UDP";
 }
 }  // namespace mozilla::net

@@ -57,7 +57,7 @@ const newProxyInfoFor = proxy => {
 const proxyForHost = (record, host) =>
   !record || record.bypass.some(suffix => host.endsWith(suffix)) ? null : record;
 
-const modules = { Helper, newProxyInfoFor, proxyForHost };
+const modules = { Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {} };
 
 const { TargetRegistry } = load('TargetRegistry.js', {
   Ci, Cc: {}, Components: { results: Cr },
@@ -80,6 +80,9 @@ function session() {
   return { registry };
 }
 
+// What the warnings write (say() is not the global dump, which is off in an official build).
+const said = [];
+
 // NetworkObserver reads the proxy service from its own Cc.
 function observe(registry) {
   let registered = null;
@@ -93,6 +96,7 @@ function observe(registry) {
         ...modules,
         ChannelEventSinkFactory: { getService: () => ({ registerCollector() {} }) },
         NetUtil: {},
+        say: text => said.push(text),
       }),
       generateQI: () => () => {},
     },
@@ -180,8 +184,11 @@ test('every waiting channel is answered even when one answer throws', () => {
   const channel = { URI: { host: 'a.example' }, loadInfo: { originAttributes: { userContextId: 0 } } };
   filter.applyFilter(channel, DEFAULT, { onProxyFilterResult() { throw new Error('gone'); } });
   filter.applyFilter(channel, DEFAULT, { onProxyFilterResult: info => answers.push(info) });
+  said.length = 0;
   registry.setNoBrowserProxy();
   assert.deepEqual(answers, [DEFAULT]);
+  // The failed answer is told through say(), not a dump that is off in an official build.
+  assert.equal(said.filter(t => /a proxy answer failed: gone/.test(t)).length, 1);
 });
 
 test('the registry starts undecided, and the protocol has the command', () => {

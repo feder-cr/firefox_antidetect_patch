@@ -18,13 +18,15 @@
   "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h",
   "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp",
   "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h",
-  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp"
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp",
+  "netwerk/base/nsIOService.cpp"
  ],
  "added": {
   "dom/media/webrtc/transport/nr_stealth_network.cpp": "100644",
   "dom/media/webrtc/transport/nr_stealth_network.h": "100644",
   "dom/media/webrtc/transport/test/gtest/TestStealthDeclaredNetwork.cpp": "100644",
   "dom/media/webrtc/transport/test/gtest/moz.build": "100644",
+  "juggler/tests/ipv6_is_one_fact_of_the_declared_network.test.mjs": "100644",
   "third_party/libwebrtc/api/location.h": "100644"
  },
  "inventory": [
@@ -138,7 +140,7 @@
    "category": "spoof",
    "feature": "webrtc-declared-network",
    "prefs": [],
-   "added": 19,
+   "added": 22,
    "removed": 2,
    "hunks": 3,
    "inline_logic_lines": 15,
@@ -160,7 +162,7 @@
    "category": "spoof",
    "feature": "webrtc-declared-network",
    "prefs": [],
-   "added": 6,
+   "added": 9,
    "removed": 0,
    "hunks": 3,
    "inline_logic_lines": 1,
@@ -248,9 +250,9 @@
    "category": "spoof",
    "feature": "webrtc-declared-network",
    "prefs": [],
-   "added": 7,
-   "removed": 92,
-   "hunks": 4,
+   "added": 13,
+   "removed": 89,
+   "hunks": 3,
    "inline_logic_lines": 5,
    "hookable": "movable",
    "anchor": "include of nr_stealth_network.h; nr_ice_get_default_local_address; nr_ice_set_local_addresses (no default address)",
@@ -436,6 +438,27 @@
     "+    _status = nr_stealth_declared_addrs(addrs, maxaddrs, count);"
    ],
    "notes": "The interfaces are the declared adapter (nr_stealth_declared_addrs), never the host's: the includes of the OS enumerators are gone and nr_stun_get_addrs returns the declaration.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsIOService.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "include of nr_stealth_network.h; nsIOService::Init (first statement)",
+   "evidence": [
+    "+#  include \"transport/nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): IPv6 is one fact, the declared network's (nr_stealth_network.h)."
+   ],
+   "notes": "IPv6 is one fact, the declared network's: the parent process applies the declared IP family (StealthApplyDeclaredIPFamilyFromEnvironment) before the service reads its own prefs, so the DNS, the sockets and the ICE agree.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."

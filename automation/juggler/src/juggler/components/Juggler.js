@@ -11,6 +11,7 @@ const {BrowserHandler} = ChromeUtils.importESModule("resource://gre/modules/jugg
 const {NetworkObserver} = ChromeUtils.importESModule("resource://gre/modules/juggler/NetworkObserver.js");
 const {TargetRegistry} = ChromeUtils.importESModule("resource://gre/modules/juggler/TargetRegistry.js");
 const {EarlyProxyHold} = ChromeUtils.importESModule("resource://gre/modules/juggler/EarlyProxyHold.js");
+const {say} = ChromeUtils.importESModule("resource://gre/modules/juggler/Say.js");
 const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
 const {ActorManagerParent} = ChromeUtils.importESModule('resource://gre/modules/ActorManagerParent.sys.mjs');
 const helper = new Helper();
@@ -92,7 +93,7 @@ export class Juggler {
           this._earlyHold = EarlyProxyHold.register();
         } catch (e) {
           this._earlyHold = null;
-          dump('Juggler: early proxy hold not registered: ' + (e && e.message) + '\n');
+          say('Juggler: early proxy hold not registered: ' + (e && e.message) + '\n');
         }
 
         this._silent = cmdLine.findFlag('silent', false) >= 0;

@@ -6,13 +6,11 @@
 
 #include "mozilla/net/ProxyConfigLookup.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/dom/RemoteType.h"
-#include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "nsIPrincipal.h"
 #include "nsIProtocolProxyService.h"
 #include "nsIProxyInfo.h"
 #include "nsIURI.h"
+#include "nsNetUtil.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::net {
@@ -36,17 +34,14 @@ already_AddRefed<PcUdpProxy> PcUdpProxy::Lookup(const LoadInfoArgs& aLoadInfo) {
 
 void PcUdpProxy::DoLookup(const LoadInfoArgs& aLoadInfo) {
   MOZ_ASSERT(NS_IsMainThread());
-  nsCOMPtr<nsILoadInfo> loadInfo;
+  // The question is "which proxy does this browser context use for the internet?", not "for the address of this page": the
+  // UDP of a PeerConnection goes to STUN and TURN servers on the internet whatever the page is. A page on the loopback, a
+  // file:, a data: or a sandboxed srcdoc has no proxy of its own address (Necko answers "none" for them, or runs no filter),
+  // and that answer must not become "this PeerConnection has no proxy" while the context has one. So the lookup asks about a
+  // public https address, with the load info of the document: the proxy filters then see the context of the page.
   nsCOMPtr<nsIURI> uri;
-  // As WebrtcTCPSocket: the remote type of the sender is not used for a security decision.
-  nsresult rv = ipc::LoadInfoArgsToLoadInfo(aLoadInfo, dom::RemoteType::NotRemote(), getter_AddRefs(loadInfo));
-  if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsIPrincipal> principal = loadInfo->GetLoadingPrincipal();
-    rv = principal ? principal->GetURI(getter_AddRefs(uri)) : NS_ERROR_FAILURE;
-  }
-  if (NS_FAILED(rv) || !uri) {
-    // The document has no address to ask a filter about (a null principal). Not knowing the proxy is not knowing there is
-    // none: nothing of this PeerConnection's UDP goes out (as behind a router that drops it), never direct by default.
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), "https://stun.invalid/"_ns);
+  if (NS_FAILED(rv)) {
     Resolved(Kind::Blocked, Socks5Info());
     return;
   }

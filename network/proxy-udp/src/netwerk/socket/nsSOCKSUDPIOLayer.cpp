@@ -55,6 +55,9 @@ static LazyLogModule gSocksUdpLog("SOCKS-UDP");
 namespace {
 
 PRDescIdentity gIdentity = PR_INVALID_IO_LAYER;
+
+// Test only: the socket transport service is taken as missing (a browser that is shutting down), see Start().
+Atomic<bool> sNoSocketThreadForTests{false};
 PRIOMethods gMethods;
 
 // ── The association ─────────────────────────────────────────────────────────
@@ -86,6 +89,11 @@ struct HeldDatagram {
 };
 
 size_t BuildFrame(const PRNetAddr* aTo, const void* aBuf, PRInt32 aAmount, uint8_t* aOut);
+
+// The relay as this socket reaches it: the datagrams go to the relay, so the family that counts is the socket's (the
+// destination of a datagram may be IPv6 or IPv4 whatever the relay, RFC 1928 section 7). An AF_INET6 socket reaches an IPv4
+// relay by its IPv4-mapped address; an AF_INET socket does not reach an IPv6 relay (false).
+bool RelayForSocket(const PRNetAddr& aRelay, PRUint16 aSocketFamily, PRNetAddr* aOut);
 
 class SocksUdpAssociation;
 
@@ -127,11 +135,19 @@ class SocksUdpShared final {
       return;
     }
     mRelay = aRelay;
+    PRNetAddr relayForSocket;
+    if (!RelayForSocket(aRelay, SocketFamilyLocked(), &relayForSocket)) {
+      // An AF_INET socket cannot send to an IPv6 relay: this association is no road for it (what is sent goes nowhere).
+      LOGE(("SOCKS UDP: an IPv6 relay for an IPv4 socket"));
+      mState = State::Failed;
+      mHeld.Clear();
+      return;
+    }
     for (const HeldDatagram& held : mHeld) {
       uint8_t frame[kHeaderMax + kPayloadMax];
       size_t hlen = BuildFrame(&held.mTo, held.mData.Elements(), held.mData.Length(), frame);
       // UDP: one that cannot be sent is lost, as any datagram can be.
-      if (!hlen || mLayer->lower->methods->sendto(mLayer->lower, frame, hlen + held.mData.Length(), 0, &mRelay,
+      if (!hlen || mLayer->lower->methods->sendto(mLayer->lower, frame, hlen + held.mData.Length(), 0, &relayForSocket,
                                                   PR_INTERVAL_NO_WAIT) < 0) {
         LOGE(("SOCKS UDP: a held datagram was not sent (%d)", PR_GetError()));
       }
@@ -173,9 +189,24 @@ class SocksUdpShared final {
   // The association the pool gave this socket. False when the socket is already closed: the caller keeps it.
   bool SetAssociation(SocksUdpAssociation* aAssociation);
 
+  // The family of the socket under the layer, asked once the socket is bound (an unbound socket has no name on Windows);
+  // 0 until it can be told. The mutex is held by the caller.
+  PRUint16 SocketFamilyLocked() {
+    if (!mSocketFamily && mLayer && mLayer->lower) {
+      PRNetAddr name;
+      memset(&name, 0, sizeof(name));
+      if (PR_GetSockName(mLayer->lower, &name) == PR_SUCCESS &&
+          (name.raw.family == PR_AF_INET || name.raw.family == PR_AF_INET6)) {
+        mSocketFamily = name.raw.family;
+      }
+    }
+    return mSocketFamily;
+  }
+
   Mutex mMutex{"SocksUdpShared"};
   State mState = State::Pending;
   PRNetAddr mRelay;
+  PRUint16 mSocketFamily = 0;  // PR_AF_INET or PR_AF_INET6: the family of the socket the layer is on (0 = not known yet)
   PRFileDesc* mLayer = nullptr;  // the layer's fd; null once the socket closes
   nsTArray<HeldDatagram> mHeld;
   RefPtr<SocksUdpAssociation> mAssociation;  // the one this socket was given, to let go of it when the socket closes
@@ -220,14 +251,17 @@ class SocksUdpAssociation final : public nsASocketHandler,
   }
 
   // Any thread: begin, on the socket thread.
+  //
+  // The pool calls this with its lock held: a start that cannot be made fails the association WITHOUT telling the pool
+  // (Failed(false)): the proxy refused nothing, there is no socket thread, and the pool's lock is not recursive.
   void Start() {
     nsCOMPtr<nsIEventTarget> sts =
-        do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
+        sNoSocketThreadForTests ? nullptr : do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
     nsCOMPtr<nsIRunnable> begin = NewRunnableMethod(
         "SocksUdpAssociation::Begin", this, &SocksUdpAssociation::Begin);
     if (!sts || NS_FAILED(sts->Dispatch(begin.forget(), NS_DISPATCH_NORMAL))) {
       LOGE(("SOCKS UDP association: no socket thread"));
-      Failed();
+      Failed(false);
     }
   }
 
@@ -646,7 +680,8 @@ class SocksUdpAssociation final : public nsASocketHandler,
   // The association is made (any thread of the socket service): the socket it was given to, if there is one, is ready.
   void Ready(const PRNetAddr& aRelay);
   // The association is over, made or not (see the pool for what a refusal means).
-  void Failed();
+  // aProxyRefused: the proxy did not make it (told to the pool); false when it was never asked.
+  void Failed(bool aProxyRefused = true);
 
   const ProxyKey mKey;
   Mutex mMutex{"SocksUdpAssociation"};
@@ -724,7 +759,7 @@ void SocksUdpAssociation::Ready(const PRNetAddr& aRelay) {
   }
 }
 
-void SocksUdpAssociation::Failed() {
+void SocksUdpAssociation::Failed(bool aProxyRefused) {
   RefPtr<SocksUdpShared> shared;
   State before;
   {
@@ -738,7 +773,7 @@ void SocksUdpAssociation::Failed() {
   }
   // A proxy that did not make the association (refused, did not answer, wrong password) is told to the pool; one that
   // ended an association it had made, or a socket that let go of it, is not a refusal.
-  if (before == State::Pending && !mCancelled) {
+  if (aProxyRefused && before == State::Pending && !mCancelled) {
     SocksUdpPool::Refused(mKey);
   }
 }
@@ -943,6 +978,9 @@ struct SocksUdpLayerData {
 };
 
 SocksUdpShared* SharedOf(PRFileDesc* fd) {
+  if (!fd) {
+    return nullptr;  // no layer on the socket (PR_GetIdentitiesLayer found none)
+  }
   auto* data = reinterpret_cast<SocksUdpLayerData*>(fd->secret);
   return data ? data->mShared.get() : nullptr;
 }
@@ -965,8 +1003,28 @@ bool FromTheRelay(const PRNetAddr& aRelay, const PRNetAddr& aSource) {
   if (aRelay.raw.family == PR_AF_INET && aSource.raw.family == PR_AF_INET) {
     return aRelay.inet.ip == aSource.inet.ip && aRelay.inet.port == aSource.inet.port;
   }
+  if (aRelay.raw.family == PR_AF_INET && aSource.raw.family == PR_AF_INET6) {
+    // An AF_INET6 socket sees an IPv4 relay by its IPv4-mapped address.
+    return PR_IsNetAddrType(&aSource, PR_IpAddrV4Mapped) && !memcmp(aSource.ipv6.ip.pr_s6_addr + 12, &aRelay.inet.ip, 4) &&
+           aSource.ipv6.port == aRelay.inet.port;
+  }
   if (aRelay.raw.family == PR_AF_INET6 && aSource.raw.family == PR_AF_INET6) {
     return !memcmp(&aRelay.ipv6.ip, &aSource.ipv6.ip, 16) && aRelay.ipv6.port == aSource.ipv6.port;
+  }
+  return false;
+}
+
+bool RelayForSocket(const PRNetAddr& aRelay, PRUint16 aSocketFamily, PRNetAddr* aOut) {
+  *aOut = aRelay;
+  if (!aSocketFamily || aSocketFamily == aRelay.raw.family) {
+    return true;
+  }
+  if (aSocketFamily == PR_AF_INET6 && aRelay.raw.family == PR_AF_INET) {
+    memset(aOut, 0, sizeof(*aOut));
+    aOut->ipv6.family = PR_AF_INET6;
+    aOut->ipv6.port = aRelay.inet.port;
+    PR_ConvertIPv4AddrToIPv6(aRelay.inet.ip, &aOut->ipv6.ip);
+    return true;
   }
   return false;
 }
@@ -1045,6 +1103,7 @@ PRInt32 PR_CALLBACK SocksUdpSendTo(PRFileDesc* fd, const void* buf,
   uint8_t frame[kHeaderMax + kPayloadMax];
   size_t hlen = 0;
   PRNetAddr relay;
+  PRUint16 socketFamily = 0;
   {
     MutexAutoLock lock(shared->mMutex);
     if (shared->mState == State::Failed) {
@@ -1063,13 +1122,16 @@ PRInt32 PR_CALLBACK SocksUdpSendTo(PRFileDesc* fd, const void* buf,
       return (fd->lower->methods->sendto)(fd->lower, buf, amount, flags, addr, timeout);
     }
     relay = shared->mRelay;
+    socketFamily = shared->SocketFamilyLocked();
   }
   hlen = BuildFrame(addr, buf, amount, frame);
   if (!hlen) {
     return -1;
   }
-  if (addr->raw.family == PR_AF_INET6 && relay.raw.family == PR_AF_INET) {
-    PR_SetError(PR_ADDRESS_NOT_SUPPORTED_ERROR, 0);  // no conversion: an IPv4 relay does not reach IPv6
+  // The destination may be IPv6 behind an IPv4 relay (RFC 1928 section 7): the frame says so (ATYP 4) and the datagram
+  // goes to the relay in the family of the socket.
+  if (!RelayForSocket(relay, socketFamily, &relay)) {
+    PR_SetError(PR_ADDRESS_NOT_SUPPORTED_ERROR, 0);
     return -1;
   }
   PRInt32 sent = (fd->lower->methods->sendto)(
@@ -1318,6 +1380,8 @@ nsresult StealthPutSocksUdpLayer(PRFileDesc* aFd, nsIProxyInfo* aProxyInfo) {
   RefPtr<PcUdpProxy> proxy = PcUdpProxy::Known(PcUdpProxy::Kind::Socks5, info);
   return nsSOCKSUDPIOLayerAddToSocket(aFd, proxy);
 }
+
+void nsSOCKSUDPIOLayerNoSocketThreadForTests(bool aMissing) { sNoSocketThreadForTests = aMissing; }
 
 bool nsSOCKSUDPIOLayerHasFailed(PRFileDesc* aFd) {
   SocksUdpShared* shared = aFd ? SharedOf(PR_GetIdentitiesLayer(aFd, gIdentity)) : nullptr;

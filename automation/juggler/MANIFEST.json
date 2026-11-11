@@ -13,6 +13,7 @@
   "juggler/JugglerFrameParent.jsm": "100644",
   "juggler/JugglerFrameParent.sys.mjs": "100644",
   "juggler/NetworkObserver.js": "100644",
+  "juggler/Say.js": "100644",
   "juggler/SessionRoute.js": "100644",
   "juggler/SimpleChannel.js": "100644",
   "juggler/StealthCursor.js": "100644",

@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
 
 // nICEr is C++: its headers are not wrapped in extern "C".
@@ -83,8 +84,11 @@ bool PrefixOf(const char* aP6, uint8_t aOut[8]) {
   return true;
 }
 
-int Fail(const char* aDecl, const char* aWhy, int* aCount) {
+int Fail(bool aLog, const char* aDecl, const char* aWhy, int* aCount) {
   *aCount = 0;
+  if (!aLog) {
+    return R_NOT_FOUND;
+  }
   r_log(NR_LOG_STUN, LOG_ERR,
         "Stealth: no declared network (%s): STEALTHFOX_WEBRTC_NETWORK %s; no interface, no host candidate", aWhy,
         aDecl ? "does not parse" : "is not set");
@@ -130,47 +134,65 @@ const uint8_t* ProcessIid() {
 
 }  // namespace
 
-extern "C" int nr_stealth_parse_network(const char* aDecl, const uint8_t aIid[8], nr_local_addr* aAddrs,
-                                        int aMaxAddrs, int* aCount) {
+/* The one parser. `aLog`: the interface list reports a bad declaration; the IPv6 fact asks quietly. */
+static int ParseNetwork(const char* aDecl, const uint8_t aIid[8], nr_local_addr* aAddrs, int aMaxAddrs, int* aCount,
+                        bool aLog) {
   *aCount = 0;
   if (!aDecl || !*aDecl) {
-    return Fail(nullptr, "missing", aCount);
+    return Fail(aLog, nullptr, "missing", aCount);
   }
   int fields = 1;
   for (const char* p = aDecl; *p; ++p) fields += *p == ';';
   char v4[64], v6[8], p6[64];
   if (fields != 3 || !Field(aDecl, "v4", v4, sizeof(v4)) || !Field(aDecl, "v6", v6, sizeof(v6)) ||
       !Field(aDecl, "p6", p6, sizeof(p6)) || (strcmp(v6, "0") && strcmp(v6, "1"))) {
-    return Fail(aDecl, "malformed", aCount);
+    return Fail(aLog, aDecl, "malformed", aCount);
   }
   nr_local_addr entries[kMaxDeclared];
   if (Fill(v4, 0, &entries[0]) || !IsPlausiblePrivateV4(entries[0].addr)) {
-    return Fail(aDecl, "not a private IPv4 address of a LAN", aCount);
+    return Fail(aLog, aDecl, "not a private IPv4 address of a LAN", aCount);
   }
   int n = 1;
   if (!strcmp(v6, "1") && *p6) {
     uint8_t prefix[8];
     if (!PrefixOf(p6, prefix)) {
-      return Fail(aDecl, "p6 is not the /64 prefix of a global IPv6 address", aCount);
+      return Fail(aLog, aDecl, "p6 is not the /64 prefix of a global IPv6 address", aCount);
     }
     char ip6[64];
     snprintf(ip6, sizeof(ip6), "%x:%x:%x:%x:%x:%x:%x:%x", (prefix[0] << 8) | prefix[1], (prefix[2] << 8) | prefix[3],
              (prefix[4] << 8) | prefix[5], (prefix[6] << 8) | prefix[7], (aIid[0] << 8) | aIid[1],
              (aIid[2] << 8) | aIid[3], (aIid[4] << 8) | aIid[5], (aIid[6] << 8) | aIid[7]);
     if (Fill(ip6, NR_ADDR_FLAG_TEMPORARY, &entries[1])) {
-      return Fail(aDecl, "IPv6 address", aCount);
+      return Fail(aLog, aDecl, "IPv6 address", aCount);
     }
     n = 2;
   }
   if (aMaxAddrs < n) {
-    return Fail(aDecl, "no room", aCount);
+    return Fail(aLog, aDecl, "no room", aCount);
   }
   for (int i = 0; i < n; ++i) {
     if (nr_local_addr_copy(&aAddrs[i], &entries[i])) {
-      return Fail(aDecl, "copy", aCount);
+      return Fail(aLog, aDecl, "copy", aCount);
     }
   }
   *aCount = n;
+  return 0;
+}
+
+extern "C" int nr_stealth_parse_network(const char* aDecl, const uint8_t aIid[8], nr_local_addr* aAddrs,
+                                        int aMaxAddrs, int* aCount) {
+  return ParseNetwork(aDecl, aIid, aAddrs, aMaxAddrs, aCount, true);
+}
+
+extern "C" int nr_stealth_declared_has_ipv6(const char* aDecl, int* aHas) {
+  static const uint8_t kIid[8] = {0x1c, 0x5a, 0x37, 0x90, 0xe2, 0x4b, 0x08, 0xd1};  // any: only the count is read
+  nr_local_addr addrs[kMaxDeclared];
+  int count = 0;
+  *aHas = 0;
+  if (ParseNetwork(aDecl, kIid, addrs, kMaxDeclared, &count, false)) {
+    return R_NOT_FOUND;
+  }
+  *aHas = count == 2;  // the IPv4 entry and the IPv6 one
   return 0;
 }
 
@@ -186,6 +208,17 @@ extern "C" int nr_stealth_default_local_address(int aIpVersion, nr_local_addr* a
     }
   }
   return R_NOT_FOUND;
+}
+
+extern "C" int nr_stealth_default_family(int aTargetIpVersion, nr_local_addr* aAddrs, int aAddrCt) {
+  bool has4 = false, has6 = false;
+  for (int i = 0; i < aAddrCt; ++i) {
+    has4 = has4 || aAddrs[i].addr.ip_version == NR_IPV4;
+    has6 = has6 || aAddrs[i].addr.ip_version == NR_IPV6;
+  }
+  if (aTargetIpVersion == NR_IPV6 && !has6 && has4) return NR_IPV4;
+  if (aTargetIpVersion == NR_IPV4 && !has4 && has6) return NR_IPV6;
+  return aTargetIpVersion;
 }
 
 extern "C" const char* nr_stealth_mdns_interfaces(void) { return "127.0.0.1;"; }
@@ -245,3 +278,24 @@ int nr_stealth_own_peer_from_kernel(const nr_transport_addr* aSelf, const mozill
   }
   return WithAddress(self, aAddr);
 }
+
+namespace mozilla {
+
+bool StealthApplyDeclaredIPFamily(const char* aDecl) {
+  static const char kPref[] = "network.dns.disableIPv6";
+  int has = 0;
+  if (nr_stealth_declared_has_ipv6(aDecl, &has)) {
+    return false;
+  }
+  // A default value: nothing is written to the profile, so a later launch without a declaration is retail again.
+  // The user value is cleared so that no other source can contradict the declaration.
+  Preferences::SetBool(kPref, !has, PrefValueKind::Default);
+  Preferences::ClearUser(kPref);
+  return true;
+}
+
+bool StealthApplyDeclaredIPFamilyFromEnvironment() {
+  return StealthApplyDeclaredIPFamily(getenv("STEALTHFOX_WEBRTC_NETWORK"));
+}
+
+}  // namespace mozilla

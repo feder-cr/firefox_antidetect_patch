@@ -30,10 +30,12 @@ FINAL_TARGET_FILES.modules.juggler += [
     "JugglerFrameParent.jsm",
     "JugglerFrameParent.sys.mjs",
     "NetworkObserver.js",
+    "Say.js",
     "SessionRoute.js",
     "SimpleChannel.js",
     "StealthCursor.js",
     "TargetRegistry.js",
+    "TrrPrefs.js",
 ]
 FINAL_TARGET_FILES.modules.juggler.components += ["components/Juggler.js"]
 FINAL_TARGET_FILES.modules.juggler.content += [

@@ -1,4 +1,4 @@
-// The /etc/hosts file: the core declares network.trr.exclude-etc-hosts=false, and
+// The /etc/hosts file: the engine declares network.trr.exclude-etc-hosts=false (juggler/TrrPrefs.js), and
 // then Mozilla's own guard reads nothing.
 //
 // Run: node --test juggler/tests/*.test.mjs

@@ -1650,9 +1650,9 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 59,
+  "added": 62,
   "removed": 4,
-  "hunks": 13,
+  "hunks": 10,
   "inline_logic_lines": 35,
   "hookable": "movable",
   "anchor": "include of nr_stealth_proxy_udp.h; NrSocket::create (UDP: the proxy layer); NrSocketBase::CreateSocket (the config to NrSocket; no UDP socket of a PeerConnection in a content process)",
@@ -1694,9 +1694,9 @@
   "category": "spoof",
   "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 7,
-  "removed": 92,
-  "hunks": 4,
+  "added": 13,
+  "removed": 89,
+  "hunks": 3,
   "inline_logic_lines": 5,
   "hookable": "movable",
   "anchor": "include of nr_stealth_network.h; nr_ice_get_default_local_address; nr_ice_set_local_addresses (no default address)",
@@ -3670,7 +3670,7 @@
   "hookable": "already-hook",
   "anchor": "hook added by the 2026-10-29 move to our files",
   "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "notes": "Hook registering or calling our own code. Also the source line of network/ipv6-literal (StealthIPv6Literal.cpp).",
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
@@ -3773,7 +3773,7 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 14,
+  "added": 18,
   "removed": 0,
   "hunks": 4,
   "inline_logic_lines": 7,
@@ -3784,7 +3784,7 @@
    "+#include \"nsIProxyInfo.h\"  // STEALTH-HOOK(network/proxy-udp)",
    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "Puts the SOCKS5 UDP layer of the connection's proxy on the socket when it opens it (StealthPutSocksUdpLayer), the same layer and associations as the ICE sockets.",
+  "notes": "Puts the SOCKS5 UDP layer of the connection's proxy on the socket when it opens it (StealthPutSocksUdpLayer), the same layer and associations as the ICE sockets. Also GetFileDescriptor: a socket with the SOCKS UDP layer gives no OS handle (-1), so nothing writes on it direct.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -3881,8 +3881,8 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 3,
-  "removed": 1,
+  "added": 5,
+  "removed": 17,
   "hunks": 2,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
@@ -3892,7 +3892,7 @@
    "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy() ||",
    "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS5())"
   ],
-  "notes": "A SOCKS5 proxy does not forbid h3.",
+  "notes": "A SOCKS5 proxy does not forbid h3. Also (feature doh-trr-context, network/doh): GetTRRMode of an OCSP channel follows the session resolver like any other channel (upstream asks for the system one when the mode is 3); the block is removed.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -4078,7 +4078,7 @@
   "category": "build",
   "feature": "socks-credentials",
   "prefs": [],
-  "added": 2,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4088,7 +4088,7 @@
    "+SOURCES += [\"TestStealthSocksCredentials.cpp\"]  # STEALTH-HOOK(network/socks)",
    "+SOURCES += [\"TestStealthTRRContext.cpp\"]  # STEALTH-HOOK(network/doh)"
   ],
-  "notes": "Hook registering or calling our own code. Also registers TestStealthTRRContext.cpp (network/doh).",
+  "notes": "Hook registering or calling our own code. Also registers TestStealthTRRContext.cpp (network/doh). Also registers TestStealthIPv6Literal.cpp (network/ipv6-literal).",
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
@@ -5158,16 +5158,16 @@
   "prefs": [
    "dom.webgpu.external-texture.enabled"
   ],
-  "added": 1,
-  "removed": 1,
-  "hunks": 1,
+  "added": 2,
+  "removed": 2,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
   "evidence": [
    "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
   ],
-  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
+  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else. Also (the hook of network/proxy, which owns only the test: a file has one owner): network.proxy.type defaults to 0 (direct) on Mozilla's own line, so the engine never creates the object that reads the host's proxy settings (STEALTH-HOOK(network/proxy)); test juggler/tests/system_proxy_is_off_by_default.test.mjs."
  },
  {
   "file": "Cargo.lock",
@@ -6714,9 +6714,9 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 2,
-  "removed": 0,
-  "hunks": 2,
+  "added": 4,
+  "removed": 1,
+  "hunks": 3,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "nsSOCKSIOLayerAddToSocket after Init",
@@ -6724,7 +6724,7 @@
    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/socks)",
    "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/socks)"
   ],
-  "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it).",
+  "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it). Also (network/ipv6-literal): the connect to the proxy goes through StealthIPv6Connect (one line replaced).",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6820,7 +6820,7 @@
   "category": "spoof",
   "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 6,
+  "added": 9,
   "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 1,
@@ -6842,7 +6842,7 @@
   "category": "spoof",
   "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 19,
+  "added": 22,
   "removed": 2,
   "hunks": 3,
   "inline_logic_lines": 15,
@@ -7228,6 +7228,136 @@
    "+    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
   ],
   "notes": "A DoH request that runs as an nsHttpChannel (the main thread) fails closed like the TRRServiceChannel: when its proxy lookup fails or cannot start, the channel ends with StealthTRRProxyFailure instead of failing over to DIRECT (StealthFailClosedOnProxyFailure decides: a TRR channel, not cancelled, with a failed status). Other channels are untouched.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "browser/components/tabbrowser/Tabbrowser.sys.mjs",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 4,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "the load flags of the captive portal tab (LOAD_FLAGS_DISABLE_TRR)",
+  "evidence": [
+   "+      // STEALTH-HOOK(network/doh): the captive portal tab loads with the",
+   "-      if (isCaptivePortalTab) {",
+   "-        loadFlags |= LOAD_FLAGS_DISABLE_TRR;"
+  ],
+  "notes": "The captive portal tab loads with the session resolver: upstream asks for the system one here (LOAD_FLAGS_DISABLE_TRR), which would make the name leave through the host resolver. The flag and its import are removed; a comment with the hook sits in the place of the `if`.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/NetworkConnectivityService.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 12,
+  "removed": 14,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "RecheckDNS (four lookups); SetupIPCheckChannel (SetTRRMode)",
+  "evidence": [
+   "+  // STEALTH-HOOK(network/doh): the four lookups follow the session resolver",
+   "-                                   nsIDNSService::RESOLVE_TRR_DISABLED_MODE,",
+   "-  rv = channel->SetTRRMode(nsIRequest::TRR_DISABLED_MODE);"
+  ],
+  "notes": "The four DNS lookups and the IP check channel of the connectivity service follow the session resolver: upstream asks for the system one with RESOLVE_TRR_DISABLED_MODE and SetTRRMode(TRR_DISABLED_MODE). The flag is dropped from each call (the arguments stay Mozilla's) and the hook comments say why.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsIOService.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_network.h; nsIOService::Init (first statement)",
+  "evidence": [
+   "+#  include \"transport/nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): IPv6 is one fact, the declared network's (nr_stealth_network.h)."
+  ],
+  "notes": "IPv6 is one fact, the declared network's: the parent process applies the declared IP family (StealthApplyDeclaredIPFamilyFromEnvironment) before the service reads its own prefs, so the DNS, the sockets and the ICE agree.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/Http3Session.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 3,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "Http3Session::Init (mUseNSPRForIO)",
+  "evidence": [
+   "+  // STEALTH-HOOK(network/proxy-udp): neqo's own I/O writes on the OS handle and never reaches the SOCKS UDP layer on the socket.",
+   "+  const bool socksUdp = aConnInfo->ProxyInfo() && aConnInfo->ProxyInfo()->IsSOCKS5();"
+  ],
+  "notes": "A connection through a SOCKS5 proxy does neqo's I/O through NSPR (mUseNSPRForIO), so its datagrams go through the SOCKS UDP layer on the socket and never on the OS handle. One const bool and one operand of an existing condition.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/captivedetect/CaptiveDetect.sys.mjs",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 2,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "URLFetcher: the TRR mode of the check channel",
+  "evidence": [
+   "+  // STEALTH-HOOK(network/doh): the check follows the session resolver",
+   "-  // Use the system's resolver for this check",
+   "-  xhr.channel.setTRRMode(Ci.nsIRequest.TRR_DISABLED_MODE);"
+  ],
+  "notes": "The captive portal check follows the session resolver: upstream sets TRR_DISABLED_MODE on the channel to use the system resolver, which no lookup of ours may ask for.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsSocketTransport2.cpp",
+  "category": "other",
+  "feature": "ipv6-literal-connect",
+  "prefs": [],
+  "added": 3,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of StealthIPv6Literal.h; nsSocketTransport::InitiateSocket (the connect)",
+  "evidence": [
+   "+#include \"StealthIPv6Literal.h\"  // STEALTH-HOOK(network/ipv6-literal)",
+   "+  // Behind a SOCKS proxy mNetAddr is the destination, which the proxy reaches.",
+   "-  status = PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT);"
+  ],
+  "notes": "Every direct TCP connection passes InitiateSocket: PR_Connect becomes StealthIPv6Connect, which, with IPv6 declared off, fails a routable IPv6 destination like a host with no IPv6 route (network unreachable, nothing sent). A destination behind a SOCKS proxy is left alone: the proxy reaches it, not this host. One line of Mozilla replaced.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."

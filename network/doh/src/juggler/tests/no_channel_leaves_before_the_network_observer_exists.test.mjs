@@ -102,11 +102,15 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
   };
   const dumped = [];
   const dump = text => dumped.push(text);
+  // The warnings go through say(), whose sink is not gated by a pref; the
+  // global dump is a no-op here, as it is in an official build.
+  const say = text => dumped.push(text);
+  const noDump = () => {};
 
   const { TargetRegistry: RealRegistry } = load('TargetRegistry.js', {
     Ci, Cc: {}, Components: { results: Cr },
-    ChromeUtils: { importESModule: () => ({ Helper, newProxyInfoFor, proxyForHost }) },
-    Services: {}, NetUtil: {}, dump,
+    ChromeUtils: { importESModule: () => ({ Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {} }) },
+    Services: {}, NetUtil: {}, dump: noDump,
   }, ['TargetRegistry']);
   // The registry as the constructor leaves it (the constructor is checked in
   // no_channel_leaves_before_the_session_proxy_is_decided.test.mjs).
@@ -132,16 +136,17 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
         ...observerModules,
         ChannelEventSinkFactory: { getService: () => ({ registerCollector() {} }) },
         NetUtil: {},
+        say,
       }),
       generateQI: () => () => {},
     },
-    Services: services, dump,
+    Services: services, dump: noDump,
   }, ['NetworkObserver']);
 
   const { EarlyProxyHold } = load('EarlyProxyHold.js', {
     Components: components,
-    ChromeUtils: { generateQI: () => () => {} },
-    Services: services, dump,
+    ChromeUtils: { generateQI: () => () => {}, importESModule: () => ({ say }) },
+    Services: services, dump: noDump,
   }, ['EarlyProxyHold']);
 
   class Dispatcher {
@@ -155,6 +160,7 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
     'TargetRegistry.js': { TargetRegistry },
     'EarlyProxyHold.js': { EarlyProxyHold },
     'Helper.js': { Helper },
+    'Say.js': { say },
     'ActorManagerParent.sys.mjs': { ActorManagerParent: { addJSWindowActors() {} } },
   };
   const { Juggler } = load('components/Juggler.js', {
@@ -315,7 +321,9 @@ test('source: the hold file is ours, listed in moz.build, and asks only for what
   // Only the proxy service (needs prefs and the observer service) is used.
   const services = Array.from(hold.matchAll(/Cc\[['"]([^'"]+)['"]\]/g), m => m[1]);
   assert.deepEqual(services, ['@mozilla.org/network/protocol-proxy-service;1']);
-  assert.doesNotMatch(hold, /TargetRegistry|importESModule/);
+  // The only module it imports is the one-function helper that writes the warning.
+  assert.doesNotMatch(hold, /TargetRegistry/);
+  assert.deepEqual(Array.from(hold.matchAll(/importESModule\('([^']+)'\)/g), m => m[1]), ['resource://gre/modules/juggler/Say.js']);
 });
 
 // A driver that sends neither Browser.setBrowserProxy nor

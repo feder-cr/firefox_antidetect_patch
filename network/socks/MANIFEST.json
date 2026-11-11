@@ -23,7 +23,7 @@
    "hookable": "already-hook",
    "anchor": "hook added by the 2026-10-29 move to our files",
    "evidence": [],
-   "notes": "Hook registering or calling our own code.",
+   "notes": "Hook registering or calling our own code. Also the source line of network/ipv6-literal (StealthIPv6Literal.cpp).",
    "verifier": {
     "changed": [],
     "why": "Added with the 2026-10-29 hook move."
@@ -81,7 +81,7 @@
    "category": "build",
    "feature": "socks-credentials",
    "prefs": [],
-   "added": 2,
+   "added": 3,
    "removed": 0,
    "hunks": 1,
    "inline_logic_lines": 0,
@@ -91,7 +91,7 @@
     "+SOURCES += [\"TestStealthSocksCredentials.cpp\"]  # STEALTH-HOOK(network/socks)",
     "+SOURCES += [\"TestStealthTRRContext.cpp\"]  # STEALTH-HOOK(network/doh)"
    ],
-   "notes": "Hook registering or calling our own code. Also registers TestStealthTRRContext.cpp (network/doh).",
+   "notes": "Hook registering or calling our own code. Also registers TestStealthTRRContext.cpp (network/doh). Also registers TestStealthIPv6Literal.cpp (network/ipv6-literal).",
    "verifier": {
     "changed": [],
     "why": "Added with the 2026-10-29 hook move."

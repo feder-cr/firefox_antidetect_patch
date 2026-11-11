@@ -165,7 +165,7 @@ index 47332372f34482172ce0801dd8e16520d365e64d..d7954045e92de94dc1f8fe09dcffd50d
    // dom::ProxyConfig includes stuff that conflicts with nICEr includes.
    // Make it possible to include this header file without tripping over this
 diff --git a/dom/media/webrtc/transport/nr_socket_prsock.cpp b/dom/media/webrtc/transport/nr_socket_prsock.cpp
-index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c94d404be7 100644
+index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f211511844 100644
 --- a/dom/media/webrtc/transport/nr_socket_prsock.cpp
 +++ b/dom/media/webrtc/transport/nr_socket_prsock.cpp
 @@ -155,6 +155,8 @@ nrappkit copyright:
@@ -199,7 +199,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c9
        break;
      case IPPROTO_TCP:
        // TODO: Rewrite this to use WebrtcTcpSocket.
-@@ -625,8 +635,23 @@ int NrSocket::create(nr_transport_addr* addr) {
+@@ -625,8 +635,24 @@ int NrSocket::create(nr_transport_addr* addr) {
        ABORT(R_INTERNAL);
    }
  
@@ -219,12 +219,13 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c9
 +    status = PR_Bind(fd_, &bindaddr);
 +  }
    if (status != PR_SUCCESS) {
-+    // A port of the connection that another socket holds: the caller takes the next one (nr_socket_local_create).
-+    if (PR_GetError() == PR_ADDRESS_IN_USE_ERROR) ABORT(R_ALREADY);
++    // A port that is not available: another socket holds it, or the system keeps it (Windows reserves ranges of the dynamic
++    // range and answers "access denied"). The caller takes the next one (nr_socket_local_create), as the kernel would.
++    if (PR_GetError() == PR_ADDRESS_IN_USE_ERROR || PR_GetError() == PR_NO_ACCESS_RIGHTS_ERROR) ABORT(R_ALREADY);
      r_log(LOG_GENERIC, LOG_CRIT, "Couldn't bind socket to address %s",
            addr->as_string);
      ABORT(R_INTERNAL);
-@@ -644,8 +669,20 @@ int NrSocket::create(nr_transport_addr* addr) {
+@@ -644,8 +670,13 @@ int NrSocket::create(nr_transport_addr* addr) {
        ABORT(R_INTERNAL);
      }
  
@@ -236,17 +237,26 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c9
 +      // STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared address keeps, the kernel's port is taken.
        ABORT(r);
 +    }
-+  }
-+
-+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): a declared UDP host socket is one of ours (R3).
+   }
+ 
+   // Set nonblocking
+@@ -670,6 +701,15 @@ int NrSocket::create(nr_transport_addr* addr) {
+     ABORT(R_INTERNAL);
+   }
+ 
++  // STEALTH-HOOK(fingerprint/webrtc/declared-network): a declared UDP host socket is one of ours (R3). Registered as the last
++  // step: a create() that aborts above leaves nothing in the set (the destructor of a socket that was never closed does not
++  // remove it).
 +  if (addr->protocol == IPPROTO_UDP && !nr_stealth_addr_is_wildcard_ip(&my_addr_) &&
 +      !nr_transport_addr_is_loopback(&my_addr_) &&
 +      !nr_transport_addr_get_port(&my_addr_, &stealth_own_port_)) {
 +    StealthOwnPortsOfThisProcess().Add(my_addr_.ip_version, stealth_own_port_);
-   }
++  }
++
+   _status = 0;
  
-   // Set nonblocking
-@@ -736,6 +773,14 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
+ abort:
+@@ -736,6 +776,14 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
    PRNetAddr naddr;
    int32_t status;
  
@@ -261,7 +271,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c9
    if ((r = nr_transport_addr_to_praddr(to, &naddr))) ABORT(r);
  
    if (fd_ == nullptr) ABORT(R_EOD);
-@@ -788,6 +833,9 @@ int NrSocket::recvfrom(void* buf, size_t maxlen, size_t* len, int flags,
+@@ -788,6 +836,9 @@ int NrSocket::recvfrom(void* buf, size_t maxlen, size_t* len, int flags,
  
    if ((r = nr_praddr_to_transport_addr(&nfrom, from, my_addr_.protocol, 0)))
      ABORT(r);
@@ -271,7 +281,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c9
  
    // r_log(LOG_GENERIC,LOG_DEBUG,"Read %d bytes from %s",*len,addr->as_string);
    mozilla::profiler_count_bandwidth_read_bytes(status);
-@@ -805,6 +853,10 @@ int NrSocket::getaddr(nr_transport_addr* addrp) {
+@@ -805,6 +856,10 @@ int NrSocket::getaddr(nr_transport_addr* addrp) {
  // Close the socket so that the STS will detach and then kill it
  void NrSocket::close() {
    ASSERT_ON_THREAD(ststhread_);
@@ -282,7 +292,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..904871e472b032a9f8293c9f472fd8c9
    mCondition = NS_BASE_STREAM_CLOSED;
    cancel(NR_ASYNC_WAIT_READ);
    cancel(NR_ASYNC_WAIT_WRITE);
-@@ -1599,17 +1651,20 @@ int NrSocketBase::CreateSocket(
+@@ -1599,17 +1654,20 @@ int NrSocketBase::CreateSocket(
    // create IPC bridge for content process
    if (XRE_IsParentProcess()) {
      // TODO: Make NrTcpSocket work on the parent process
@@ -384,7 +394,7 @@ index 70621a068d6bdf361e962460e3e9cb3bc26a831e..7c120f755ae27bdf9961d05923e3d0aa
  
    static void SerializeProxyInfo(nsProxyInfo* aProxyInfo,
 diff --git a/netwerk/base/nsUDPSocket.cpp b/netwerk/base/nsUDPSocket.cpp
-index f052d8afa22e136bb85ce10d02de6c732dd26cc8..ad30f2a617478726c28683b792439b28e428c3b2 100644
+index f052d8afa22e136bb85ce10d02de6c732dd26cc8..e7d169168f6beed011bc662ba0542eed114e0f41 100644
 --- a/netwerk/base/nsUDPSocket.cpp
 +++ b/netwerk/base/nsUDPSocket.cpp
 @@ -13,7 +13,10 @@
@@ -423,6 +433,17 @@ index f052d8afa22e136bb85ce10d02de6c732dd26cc8..ad30f2a617478726c28683b792439b28
  NS_IMETHODIMP
  nsUDPSocket::Connect(const NetAddr* aAddr) {
    UDPSOCKET_LOG(("nsUDPSocket::Connect [this=%p]\n", this));
+@@ -1263,6 +1277,10 @@ nsUDPSocket::SendWithAddress(const NetAddr* aAddr, const uint8_t* aData,
+ 
+ int64_t nsUDPSocket::GetFileDescriptor() {
+   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
++  // STEALTH-HOOK(network/proxy-udp): a socket with the SOCKS UDP layer gives no OS handle: what writes on it would go direct.
++  if (nsSOCKSUDPIOLayerIsOn(mFD)) {
++    return -1;
++  }
+   return PR_FileDesc2NativeHandle(mFD);
+ }
+ 
 diff --git a/netwerk/base/nsUDPSocket.h b/netwerk/base/nsUDPSocket.h
 index 33deecc4b4c4d8e46c2bedf1261aeafd6541b47b..e9b0f9aafa86c911aeec05189bf0a5836430c9ab 100644
 --- a/netwerk/base/nsUDPSocket.h
@@ -817,11 +838,52 @@ index 6ee636c69c521b5ec79c8adf40fabd84390e5d4f..96fd67e06a0e8105a341235676e37c89
  NS_IMETHODIMP Http3ConnectUDPStream::GetRecvBufferSize(
      int32_t* aRecvBufferSize) {
    return NS_ERROR_NOT_IMPLEMENTED;
+diff --git a/netwerk/protocol/http/Http3Session.cpp b/netwerk/protocol/http/Http3Session.cpp
+index 6c3d72d113cba2ea2aa81b47cecfa19b76cc743a..46a1a111893bf1bff22c74502fc8614f9af6771a 100644
+--- a/netwerk/protocol/http/Http3Session.cpp
++++ b/netwerk/protocol/http/Http3Session.cpp
+@@ -156,8 +156,10 @@ nsresult Http3Session::Init(nsHttpConnectionInfo* aConnInfo,
+     ExtState(ExtendedConnectKind::ConnectUDP).mStatus = NEGOTIATING;
+   }
+ 
++  // STEALTH-HOOK(network/proxy-udp): neqo's own I/O writes on the OS handle and never reaches the SOCKS UDP layer on the socket.
++  const bool socksUdp = aConnInfo->ProxyInfo() && aConnInfo->ProxyInfo()->IsSOCKS5();
+   mUseNSPRForIO =
+-      StaticPrefs::network_http_http3_use_nspr_for_io() || aIsTunnel;
++      StaticPrefs::network_http_http3_use_nspr_for_io() || aIsTunnel || socksUdp;
+ 
+   uint32_t idleTimeout = StaticPrefs::network_http_http3_idle_timeout();
+ 
 diff --git a/netwerk/protocol/http/HttpBaseChannel.cpp b/netwerk/protocol/http/HttpBaseChannel.cpp
-index 2d53f5deee9d2dbaf55f6e4fbf4ba4ff2f97f1b8..35afc9adef126255176e69aaec608528b8e34fd1 100644
+index 2d53f5deee9d2dbaf55f6e4fbf4ba4ff2f97f1b8..56709d14e1a511ca0d9b6f46fe5f7cde3d5a04f1 100644
 --- a/netwerk/protocol/http/HttpBaseChannel.cpp
 +++ b/netwerk/protocol/http/HttpBaseChannel.cpp
-@@ -6748,9 +6748,11 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
+@@ -509,22 +509,8 @@ HttpBaseChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
+ 
+ NS_IMETHODIMP
+ HttpBaseChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+-  if (!LoadIsOCSP()) {
+-    return GetTRRModeImpl(aTRRMode);
+-  }
+-
+-  nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
+-  nsIDNSService::ResolverMode trrMode = nsIDNSService::MODE_NATIVEONLY;
+-  // If this is an OCSP channel, and the global TRR mode is TRR_ONLY (3)
+-  // then we set the mode for this channel as TRR_DISABLED_MODE.
+-  // We do this to prevent a TRR service channel's OCSP validation from
+-  // blocking DNS resolution completely.
+-  if (dns && NS_SUCCEEDED(dns->GetCurrentTrrMode(&trrMode)) &&
+-      trrMode == nsIDNSService::MODE_TRRONLY) {
+-    *aTRRMode = nsIRequest::TRR_DISABLED_MODE;
+-    return NS_OK;
+-  }
+-
++  // STEALTH-HOOK(network/doh): an OCSP channel follows the session resolver
++  // like any other (upstream asks for the system one when the mode is 3).
+   return GetTRRModeImpl(aTRRMode);
+ }
+ 
+@@ -6748,9 +6734,11 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
  void HttpBaseChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
  
  bool HttpBaseChannel::Http3Allowed() const {
@@ -883,18 +945,28 @@ index 97b6d04e2c3d3e689b32daa848b9a7774106f885..e3ac0a2e87ad6dc3b859e02bf6c37b5b
  if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
      XPIDL_SOURCES += [
 diff --git a/netwerk/socket/nsSOCKSIOLayer.cpp b/netwerk/socket/nsSOCKSIOLayer.cpp
-index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..75474703ae63f4159246642163cf0a58271309b3 100644
+index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..104fcdd301885b7f8967991e942ff9197106311d 100644
 --- a/netwerk/socket/nsSOCKSIOLayer.cpp
 +++ b/netwerk/socket/nsSOCKSIOLayer.cpp
-@@ -17,6 +17,7 @@
+@@ -17,6 +17,8 @@
  #include "nsISocketProvider.h"
  #include "nsNamedPipeIOLayer.h"
  #include "nsNetCID.h"
++#include "StealthIPv6Literal.h"  // STEALTH-HOOK(network/ipv6-literal)
 +#include "nsSOCKSUDPIOLayer.h"  // STEALTH-HOOK(network/socks)
  #include "nsString.h"
  #include "nsThreadUtils.h"
  #include "nspr.h"
-@@ -1434,6 +1435,7 @@ nsresult nsSOCKSIOLayerAddToSocket(int32_t family, const char* host,
+@@ -500,7 +502,7 @@ PRStatus nsSOCKSSocketInfo::ConnectToProxy(PRFileDesc* fd) {
+     FixupAddressFamily(fd, &proxy);
+     PRNetAddr prProxy;
+     NetAddrToPRNetAddr(&proxy, &prProxy);
+-    status = fd->lower->methods->connect(fd->lower, &prProxy, mTimeout);
++    status = StealthIPv6Connect(fd->lower, proxy, false, &prProxy, mTimeout);  // STEALTH-HOOK(network/ipv6-literal)
+     if (status != PR_SUCCESS) {
+       PRErrorCode c = PR_GetError();
+ 
+@@ -1434,6 +1436,7 @@ nsresult nsSOCKSIOLayerAddToSocket(int32_t family, const char* host,
  
    NS_ADDREF(infoObject);
    infoObject->Init(socksVersion, family, proxy, host, flags, tlsFlags);

@@ -7,6 +7,7 @@
 const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Helper.js');
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
 const { ChannelEventSinkFactory } = ChromeUtils.importESModule("resource://gre/modules/juggler/ChannelEventSink.sys.mjs");
+const { say } = ChromeUtils.importESModule('resource://gre/modules/juggler/Say.js');
 const { newProxyInfoFor } = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 
 
@@ -742,7 +743,7 @@ export class NetworkObserver {
     if (this._waitingSaid)
       return;
     this._waitingSaid = true;
-    dump('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
+    say('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
   }
 
   // The answer of the filter for one channel, once the session's road is decided.
@@ -780,7 +781,7 @@ export class NetworkObserver {
       try {
         this._answerProxyFilter(channel, defaultProxyInfo, proxyFilter);
       } catch (e) {
-        dump('Juggler: a proxy answer failed: ' + (e && e.message) + '\n');
+        say('Juggler: a proxy answer failed: ' + (e && e.message) + '\n');
       }
     }
   }

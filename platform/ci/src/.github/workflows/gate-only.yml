@@ -1,0 +1,46 @@
+# ──────────────────────────────────────────────────────────────────
+# gate-only.yml — run ONLY the gate (the drive gate, the hidden-desktop and WebGL guards, the host gate and the wrapper's
+# required e2e suites, gate.yml) on the archives of a build that already exists, with another wrapper and another core.
+#
+# A candidate's build takes an hour on the build node; the tests that follow it are written ahead of the engine and the first
+# time they meet the binary some of them fail for a fault of the TEST. Fixing the test and building the engine again for it
+# would pay the node twice for nothing. This workflow takes the `asset-*` artifacts of the run that built (within the 7 days
+# artifacts are kept), installs the wrapper at wrapper_ref and the core at core_ref, and runs gate.yml: the same gate a build
+# runs, with nothing published (republish.yml, which publishes, is for a release).
+#
+# Inputs:
+#   build_run_id : the run whose `asset-*` artifacts to gate (a candidate's, e.g. the one that compiled).
+#   seal_tag     : the tag the binary was sealed under in that run (a candidate: firefox-NN-candidate).
+#   wrapper_ref  : invisible_playwright ref (branch, tag or sha) the gate drives and tests with.
+#   core_ref     : invisible_core ref (branch, tag or sha) the gate installs.
+#
+#   gh workflow run gate-only.yml --ref <series branch> -f build_run_id=<run> -f seal_tag=firefox-63-candidate \
+#       -f wrapper_ref=<branch> -f core_ref=<branch>
+# ──────────────────────────────────────────────────────────────────
+name: gate-only
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'run whose built artifacts (asset-*) to gate, no rebuild'
+        required: true
+      seal_tag:
+        description: 'tag the binary was sealed under in that run (a candidate: firefox-NN-candidate)'
+        required: true
+      wrapper_ref:
+        description: 'invisible_playwright ref the gate drives and tests with'
+        default: 'main'
+      core_ref:
+        description: 'invisible_core ref the gate installs'
+        default: 'main'
+
+jobs:
+  gate:
+    permissions: { actions: read, contents: read }
+    uses: ./.github/workflows/gate.yml
+    with:
+      build_run_id: ${{ inputs.build_run_id }}
+      seal_tag: ${{ inputs.seal_tag }}
+      wrapper_ref: ${{ inputs.wrapper_ref }}
+      core_ref: ${{ inputs.core_ref }}

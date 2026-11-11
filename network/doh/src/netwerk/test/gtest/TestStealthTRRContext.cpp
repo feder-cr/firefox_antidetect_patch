@@ -15,6 +15,7 @@
 #include "mozilla/net/ProxyConfigLookup.h"
 #include "mozilla/net/StealthTRRContext.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
