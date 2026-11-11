@@ -44,6 +44,12 @@ export class FrameNavigations {
     return pending ? pending.navigationId : undefined;
   }
 
+  // The frame's first navigation is in flight: no document of its own told yet, and its first load not refused. In the
+  // page, the `load` of a document above it comes after this frame's first document (PageHandler holds it till then).
+  waitsForItsFirstDocument(frameId) {
+    return this._pending.has(frameId) && !this._initialDone.has(frameId);
+  }
+
   lastCommittedNavigationId(frameId) {
     return this._committed.has(frameId) ? this._committed.get(frameId) : null;
   }

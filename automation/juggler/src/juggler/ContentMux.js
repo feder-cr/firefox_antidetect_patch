@@ -393,7 +393,9 @@ export class ContentMux {
         const result = await this._sendToRoot(connector, rootId, method, args, used);
         if (method === 'armLanding' && result && result.token) {
           const muxToken = ++this._nextToken;
-          this._armed.set(muxToken, {rootId, rootToken: result.token});
+          // The process of the root travels with the landing: the acks of one event come from every root of the process
+          // that handled it, and the page handler tells the ack of the owner from that of a root next to it by the process.
+          this._armed.set(muxToken, result.pid === undefined ? {rootId, rootToken: result.token} : {rootId, rootToken: result.token, pid: result.pid});
           return {...result, token: muxToken};
         }
         return result;

@@ -72,6 +72,8 @@ export class PageAgent {
     // Elements pointer events are meant for, resolved BEFORE the events are
     // sent and read when the page has handled them (`_armLanding`). [B230]
     this._armedLandings = new Map();
+    // The events of each type that had reached this tree when the landing was armed: a landing counts only if one came after.
+    this._armedSeen = new Map();
     this._lastLandingToken = 0;
 
     const docShell = frameTree.mainFrame().docShell();
@@ -139,6 +141,9 @@ export class PageAgent {
         // aggregates the acks of every root and reads the verdict of the root that owns the landing.
         if (inputEvent.jugglerEventId)
           inputEvent.verdicts = this._landingVerdictsFor();
+        // The ack is heard by every root of the process that handled the event, not by the one it reached: the page
+        // handler tells the root of the landing from the others by the process.
+        inputEvent.pid = Services.appinfo.processID;
         this._browserPage.emit('pageInputEvent', inputEvent);
         if (inputEvent.type === 'dragstart') {
           // After the dragStart event is dispatched and handled by Web,
@@ -1017,10 +1022,16 @@ export class PageAgent {
     this._pruneArmedLandings();
     const token = ++this._lastLandingToken;
     this._armedLandings.set(token, node);
+    const seenOf = type => this._frameTree.pointerLanding(type)?.seen || 0;
+    this._armedSeen.set(token, {mousemove: seenOf('mousemove'), mousedown: seenOf('mousedown'), mouseup: seenOf('mouseup')});
     // An armed landing that no ack ever reads (the event went to another document) does not stay for good.
-    if (this._armedLandings.size > 8)
-      this._armedLandings.delete(this._armedLandings.keys().next().value);
-    return { token };
+    if (this._armedLandings.size > 8) {
+      const oldest = this._armedLandings.keys().next().value;
+      this._armedLandings.delete(oldest);
+      this._armedSeen.delete(oldest);
+    }
+    // The process of this root: the acks of an event come from all the roots of the process that handled it.
+    return { token, pid: Services.appinfo.processID };
   }
 
   /**
@@ -1050,11 +1061,16 @@ export class PageAgent {
   _landingVerdictsFor() {
     this._pruneArmedLandings();
     const verdicts = {};
+    for (const token of [...this._armedSeen.keys()]) {
+      if (!this._armedLandings.has(token))
+        this._armedSeen.delete(token);
+    }
     for (const [rootToken, node] of this._armedLandings) {
+      const since = this._armedSeen.get(rootToken) || {};
       verdicts[rootToken] = {
-        mousemove: this._landingOn(node, 'mousemove'),
-        mousedown: this._landingOn(node, 'mousedown'),
-        mouseup: this._landingOn(node, 'mouseup'),
+        mousemove: this._landingOn(node, 'mousemove', since.mousemove),
+        mousedown: this._landingOn(node, 'mousedown', since.mousedown),
+        mouseup: this._landingOn(node, 'mouseup', since.mouseup),
       };
     }
     return verdicts;
@@ -1072,7 +1088,7 @@ export class PageAgent {
    * which is also how the DOM `click` composes from `mousedown` and `mouseup`.
    * [B217]
    */
-  _landingOn(node, type) {
+  _landingOn(node, type, since = 0) {
     const describe = (t) => {
       if (!t)
         return 'nothing';
@@ -1087,6 +1103,11 @@ export class PageAgent {
     const landing = this._frameTree.pointerLanding(type);
     if (!landing)
       return { type, landed: false, seen: 0, on: 'no ' + type + ' has reached the page' };
+    // An ack is heard by every root of the process, so this tree may be answering an event that went to a root next to
+    // it: the last pointer event of the type it holds is then an older one (the click before), and it is not the event's.
+    if (landing.seen <= since)
+      return { type, landed: false, seen: landing.seen,
+               on: 'no ' + type + ' has reached this document since the landing was armed' };
     if (landing.document !== node.ownerDocument)
       return { type, landed: false, seen: landing.seen,
                on: 'a previous document; none has reached this one' };

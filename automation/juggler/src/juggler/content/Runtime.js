@@ -161,8 +161,10 @@ class Runtime {
       throw new Error('Failed to find execution context with id = ' + executionContextId);
     const exceptionDetails = {};
     let result = await executionContext.evaluateScript(expression, exceptionDetails);
-    if (!result)
+    if (!result) {
+      executionContext.throwIfItsWindowLeft();
       return {exceptionDetails};
+    }
     if (returnByValue)
       result = executionContext.ensureSerializedToValue(result);
     return {result};
@@ -174,8 +176,10 @@ class Runtime {
       throw new Error('Failed to find execution context with id = ' + executionContextId);
     const exceptionDetails = {};
     let result = await executionContext.evaluateFunction(functionDeclaration, args, exceptionDetails);
-    if (!result)
+    if (!result) {
+      executionContext.throwIfItsWindowLeft();
       return {exceptionDetails};
+    }
     if (returnByValue)
       result = executionContext.ensureSerializedToValue(result);
     return {result};
@@ -534,6 +538,30 @@ class ExecutionContext {
 
   _isIsolatedWorldContext() {
     return !!this._auxData.name;
+  }
+
+  // An evaluation that raised in a world whose window has since left (the iframe was removed, or went to another
+  // process) did not raise in the page: the engine's own read of the window found a cross-origin proxy or a closed
+  // window ("Permission denied to access property "document" on cross-origin object", the first thing the injected
+  // script reads of its window). That is not an exception of the page, to be returned as one: it is the context being
+  // destroyed, the answer of every other command aimed at a context that went. The check runs only after an
+  // exception, so a successful evaluation costs nothing and the page sees nothing of it.
+  throwIfItsWindowLeft() {
+    if (this._windowLeft())
+      throw new Error('Execution context was destroyed!');
+  }
+
+  _windowLeft() {
+    const window = this._domWindow;
+    if (!window)
+      return false;
+    try {
+      if (Cu.isRemoteProxy(window) || Cu.isDeadWrapper(window) || window.closed)
+        return true;
+      return !window.document;
+    } catch (e) {
+      return true;
+    }
   }
 
   async evaluateScript(script, exceptionDetails = {}) {

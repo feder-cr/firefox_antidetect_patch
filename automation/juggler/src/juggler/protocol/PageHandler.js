@@ -265,6 +265,9 @@ export class PageHandler {
     // process handled the event, by an observer of the whole process, and a process holds the documents of more than
     // one page: the acks of another page's events (ids come from one counter) are not this page's.
     this._ownEventIds = new Set();
+    // The own events that have been acked, and the processes that acked each: the ack is notified in every root of the
+    // process that handled the event, so the roots that did not get it ack it too, and the owner's ack can come after.
+    this._ackedEvents = new Map();
     this._hitWaiters = new Set();
     this._landingVerdicts = new Map();   // rootId + ':' + rootToken -> {id, perType}
     this._eventListeners = [
@@ -359,6 +362,7 @@ export class PageHandler {
     this._contentPage.dispose();
     this._hitWaiters.clear();
     this._landingVerdicts.clear();
+    this._ackedEvents?.clear();
     for (const watcher of this._pendingEventWatchers)
       watcher.dispose();
     helper.removeListeners(this._eventListeners);
@@ -444,6 +448,13 @@ export class PageHandler {
       afterName.push([protocolEventName, payload]);
       return;
     }
+    // An event of this frame is already held behind the commit of a frame below it (its `load`): what the frame says
+    // after it waits there too, in order.
+    const holder = this._nameQueueHolding(frameId);
+    if (holder) {
+      holder.push([protocolEventName, payload, frameId]);
+      return;
+    }
     // The end of the load of a frame is told after the commit of every frame below it: the client reads the frames
     // when `load` comes, and the commit of a frame in another process is told when the name of its <iframe> has been
     // asked of the embedder, which is the process that says this `load`.
@@ -453,6 +464,22 @@ export class PageHandler {
         this._eventsAfterName.get(below).push([protocolEventName, payload, frameId]);
         return;
       }
+    }
+    // The `load` of a frame is told when every frame below it that is loading has its first document (or was refused
+    // it, or is gone). The document of an iframe in another process is relayed by that process, the `load` of this frame
+    // by this frame's: the two channels are not ordered, and the client reads the frames when `load` comes. In the page
+    // the `load` follows the first document of each iframe that loads, and the parent sees the request of that document
+    // before any `load` above it, so the wait ends when the relay comes. What the frame says after its `load` waits
+    // behind it.
+    const behind = this._loadsBehindFirstDocuments().get(frameId);
+    if (behind) {
+      behind.push([protocolEventName, payload]);
+      return;
+    }
+    if (protocolEventName === 'Page.eventFired' && payload && payload.name === 'load' &&
+        this._frameBelowWithoutItsFirstDocument(frameId) !== undefined) {
+      this._loadsBehindFirstDocuments().set(frameId, [[protocolEventName, payload]]);
+      return;
     }
     if (frameId === undefined || this._reportedFrameIds.has(frameId))
       return this._session.emitEvent(protocolEventName, payload);
@@ -470,6 +497,15 @@ export class PageHandler {
     queue.push({protocolEventName, payload});
   }
 
+  // The queue behind a commit that waits for a name, if it holds an event of `frameId` (a frame above that commit).
+  _nameQueueHolding(frameId) {
+    for (const queue of this._eventsAfterName.values()) {
+      if (queue.some(event => event[2] === frameId))
+        return queue;
+    }
+    return undefined;
+  }
+
   // A frame below `frameId` whose commit waits for the name of its <iframe>, if there is one.
   _frameWaitingForNameBelow(frameId) {
     for (const waiting of this._eventsAfterName.keys()) {
@@ -479,6 +515,40 @@ export class PageHandler {
       }
     }
     return undefined;
+  }
+
+  // A frame below `frameId` (announced, or held back) whose first navigation is in flight with no document yet.
+  _frameBelowWithoutItsFirstDocument(frameId) {
+    for (const id of this._liveFrameIds) {
+      if (id !== frameId && this._isBelow(this._parentOfFrame.get(id), frameId) &&
+          this._frameNavigations.waitsForItsFirstDocument(id))
+        return id;
+    }
+    for (const [id, held] of this._heldBackFrames) {
+      if (id !== frameId && this._isBelow(held.parentFrameId, frameId) && this._frameNavigations.waitsForItsFirstDocument(id))
+        return id;
+    }
+    return undefined;
+  }
+
+  // frameId -> [[protocolEventName, payload]]: the `load` of a frame waiting for the first document of a frame below it,
+  // and what the frame said after it. Made on first use.
+  _loadsBehindFirstDocuments() {
+    if (!this._behindFirstDocuments)
+      this._behindFirstDocuments = new Map();
+    return this._behindFirstDocuments;
+  }
+
+  // The `load`s that no frame below holds any more go, each with what its frame said after it, in order. Called when a
+  // frame gets its first document, is refused it, or goes.
+  _releaseLoadsBehindFirstDocuments() {
+    for (const [frameId, queue] of [...this._loadsBehindFirstDocuments()]) {
+      if (this._frameBelowWithoutItsFirstDocument(frameId) !== undefined)
+        continue;
+      this._loadsBehindFirstDocuments().delete(frameId);
+      for (const [protocolEventName, payload] of queue)
+        this._emitFrameKeyed(protocolEventName, payload, frameId);
+    }
   }
 
   // A browsing context of this page that went without the client ever hearing of it: nothing waits for it.
@@ -565,6 +635,8 @@ export class PageHandler {
           this._emitFrameKeyed('Page.eventFired', {frameId, name: eventName}, frameId);
         break;
     }
+    if (this._behindFirstDocuments?.size)
+      this._releaseLoadsBehindFirstDocuments();
   }
 
   _onNavigationCommitted(params) {
@@ -646,6 +718,9 @@ export class PageHandler {
         this._reannounceAfterRestore(params.frameId);
       } else
         this._announceHeldBackFramesBelow(params.frameId);
+      // The first document of a frame below a `load` that waits for it (a commit that waited for its name ends here).
+      if (this._behindFirstDocuments?.size)
+        this._releaseLoadsBehindFirstDocuments();
     }
   }
 
@@ -669,6 +744,8 @@ export class PageHandler {
       // ours to release now: the detach of the frame that comes later finds the frame not live any more.
       this._releaseFrame(id, {tellClient: false});
     }
+    if (below.length && this._behindFirstDocuments?.size)
+      this._releaseLoadsBehindFirstDocuments();
   }
 
   // What the handler keeps for a frame that ended: its workers end (the process that held them may be gone, or
@@ -774,6 +851,10 @@ export class PageHandler {
     this._releaseFrame(frameId, {tellClient: live});
     if (live)
       this._session.emitEvent('Page.frameDetached', {frameId});
+    // A frame that goes holds no `load` above it any more; nor does a frame whose own `load` waited.
+    this._behindFirstDocuments?.delete(frameId);
+    if (this._behindFirstDocuments?.size)
+      this._releaseLoadsBehindFirstDocuments();
   }
 
   // The frames below `frameId`, as the handler holds them (announced or held back), ended with it.
@@ -1411,12 +1492,21 @@ export class PageHandler {
    */
   _onPageInputEvent(event, {rootId}) {
     // An ack counts for this page when the event it names is one this page sent (a mouse event with no id is no ack).
-    if (event.jugglerEventId && this._ownEventIds.has(event.jugglerEventId)) {
+    // The acks of one event come from EVERY root of the process that handled it, not from the one root it reached
+    // (the notification is the process's, and each root hears it): a page with several iframes of one site has them
+    // all in one process. The first ack to arrive is the first root's to answer, not the owner's, so the id stays
+    // the page's, with the processes that acked it, for the acks still to come.
+    this._ackedEvents = this._ackedEvents || new Map();
+    if (event.jugglerEventId && (this._ownEventIds.has(event.jugglerEventId) || this._ackedEvents.has(event.jugglerEventId))) {
       if (event.jugglerEventId > this._lastHitEventId)
         this._lastHitEventId = event.jugglerEventId;
-      // The id is the page's own until the root that handled it has answered: the ack of a higher id from another
-      // root says nothing of it, and its own ack (with the verdict of its landing) still has to be recognised.
       this._ownEventIds.delete(event.jugglerEventId);
+      let processes = this._ackedEvents.get(event.jugglerEventId);
+      if (!processes)
+        this._ackedEvents.set(event.jugglerEventId, processes = new Set());
+      processes.add(event.pid);
+      if (this._ackedEvents.size > 256)        // the same bound as the ids sent
+        this._ackedEvents.delete(this._ackedEvents.keys().next().value);
       // What each root has answered: a root answers in the order it got the events, so its ack of a later id says it
       // is past the earlier ones (the event that has no ack of its own went to another root, or was folded into a later one).
       this._lastHitByRoot = this._lastHitByRoot || new Map();
@@ -1427,7 +1517,7 @@ export class PageHandler {
           this._landingVerdicts.delete(this._landingVerdicts.keys().next().value);
       }
       for (const waiter of [...this._hitWaiters]) {
-        if (this._ackEndsWait(waiter, event.jugglerEventId, rootId)) {
+        if (this._ackEndsWait(waiter, event.jugglerEventId, rootId, event.pid)) {
           this._hitWaiters.delete(waiter);
           waiter.resolve();
         }
@@ -1451,14 +1541,20 @@ export class PageHandler {
     return id;
   }
 
-  // Does the ack `ackedId` of the root `rootId` end the wait for the event `waiter.id`? The event itself acked, by any
-  // root (the root that got it may not be the one the landing was armed in: then there is no verdict, and the answer is
-  // that it did not land). A later id counts for the event only from the root the wait is for: the ack of a higher id
-  // from another root, which can come first, says nothing of whether this root has handled it. A wait that is for no
-  // root (no landing was armed) is ended by any later id.
-  _ackEndsWait(waiter, ackedId, rootId) {
-    if (ackedId === waiter.id)
-      return true;
+  // Does the ack `ackedId` of the root `rootId` (in the process `pid`) end the wait for the event `waiter.id`? The event
+  // itself acked by the root the wait is for, or by a root of ANOTHER PROCESS (the event was handled there, the root of
+  // the landing is not in that process and will not answer: there is no verdict, and the answer is that it did not
+  // land). An ack of the event by another root of the owner's own process says nothing: every root of the process acks
+  // it, and the owner's own ack, with the verdict of its landing, may still come. A later id counts for the event only
+  // from the root the wait is for: the ack of a higher id from another root, which can come first, says nothing of
+  // whether this root has handled it. A wait that is for no root (no landing was armed) is ended by any later id.
+  // (Where the process of the root or of the ack is not known, any ack of the event ends it.)
+  _ackEndsWait(waiter, ackedId, rootId, pid) {
+    if (ackedId === waiter.id) {
+      if (waiter.rootId === undefined || rootId === waiter.rootId)
+        return true;
+      return waiter.pid === undefined || pid === undefined || pid !== waiter.pid;
+    }
     if (ackedId < waiter.id)
       return false;
     if (waiter.rootId === undefined)
@@ -1466,22 +1562,30 @@ export class PageHandler {
     return rootId === waiter.rootId || (waiter.rootIsMain && rootId === this._contentChannel.mainRootId());
   }
 
-  // Has the root `rootId` answered the event `id`, or one after it? Or has the event been acked by someone (a root
-  // that is not the owner: then there is no verdict)?
-  _ownerIsPast(rootId, id) {
-    if (this._lastHitEventId >= id && !this._ownEventIds.has(id))
-      return true;
+  // Has the root `owner.rootId` answered the event `id`, or one after it? Or has the event been acked from another
+  // process than the owner's (then the owner will not answer: there is no verdict)?
+  _ownerIsPast(owner, id) {
+    const processes = this._ackedEvents && this._ackedEvents.get(id);
+    if (processes) {
+      if (owner.pid === undefined)
+        return true;
+      for (const pid of processes) {
+        if (pid === undefined || pid !== owner.pid)
+          return true;
+      }
+    }
     const last = this._lastHitByRoot;
-    return !!last && (last.get(rootId) || 0) >= id;
+    return !!last && (last.get(owner.rootId) || 0) >= id;
   }
 
   // Until the event `id` has been handled. `owner`: the armed landing it is for ({rootId}), if there is one.
   _whenInputHit(id, owner) {
-    if (owner === undefined ? this._lastHitEventId >= id : this._ownerIsPast(owner.rootId, id))
+    if (owner === undefined ? this._lastHitEventId >= id : this._ownerIsPast(owner, id))
       return Promise.resolve();
     const waiter = {id, resolve: null};
     if (owner !== undefined) {
       waiter.rootId = owner.rootId;
+      waiter.pid = owner.pid;
       waiter.rootIsMain = owner.rootId === this._contentChannel.mainRootId();
     }
     return new Promise(resolve => {
