@@ -669,7 +669,6 @@ TEST(StealthSessionUdpProxy, AnArmedSessionWhoseProxyRefusesFailsTheSocket)
   // proxy said no is dropped, as behind a router that blocks UDP. It is never sent direct.
   EXPECT_EQ(NS_OK, prefs.Attach(fd));
   EXPECT_TRUE(nsSOCKSUDPIOLayerIsOn(fd));
-  PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
       [&] { return nsSOCKSUDPIOLayerHasFailed(fd); },
       3000))
@@ -746,7 +745,6 @@ TEST(StealthSessionUdpProxy, AWrongPasswordFailsTheSocketAndSendsNothing)
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
   ASSERT_EQ(NS_OK, prefs.Attach(fd));
-  PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
       [&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 3000));
   PR_Close(fd);
@@ -803,7 +801,6 @@ TEST(StealthSessionUdpProxy, AProxyThatDoesNotAnswerFailsTheSocketAtTheTimeOfACo
   PRFileDesc* fd = PR_NewUDPSocket();
   ASSERT_TRUE(fd);
   ASSERT_EQ(NS_OK, prefs.Attach(fd));
-  PRNetAddr stun = StunServer();
   EXPECT_TRUE(WaitFor(
       [&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 4000))
       << "a proxy that never answers kept the socket waiting";
@@ -830,7 +827,6 @@ TEST(StealthSessionUdpProxy, ASocketReadsNothingBeforeTheAssociationAndFailsAfte
   PRFileDesc* fd = NonBlockingUdpSocket();
   ASSERT_TRUE(fd);
   ASSERT_EQ(NS_OK, prefs.Attach(fd));
-  PRNetAddr stun = StunServer();
   ASSERT_TRUE(WaitFor(
       [&] { return nsSOCKSUDPIOLayerHasFailed(fd); }, 3000));
   char buf[64];
@@ -947,7 +943,7 @@ TEST(StealthSessionUdpProxy, TheMachineItselfIsReachedDirectAndTheRestByTheRelay
   PR_Close(receiver);
 }
 
-// ── The pool of associations (appended to TestStealthSocksCredentials.cpp) ──────────────────────────────────────────
+// -- The pool of associations (appended to TestStealthSocksCredentials.cpp) ------------------------------------------
 //
 // Necko opens a SOCKS5 connection for a context: that is where the proxy is learned, and the associations the ICE
 // sockets of the context will need are made then (two of them, as many as a gather's first sockets), so a socket takes
@@ -1363,10 +1359,11 @@ TEST(StealthSessionUdpProxy, ADocumentThatHasNoAddressOfItsOwnFollowsTheSessionP
     nsCOMPtr<nsIChannel> channel;
     ASSERT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, principal,
                                    nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));
-    Maybe<LoadInfoArgs> args;
-    ASSERT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(nsCOMPtr<nsILoadInfo>(channel->LoadInfo()), &args));
+    LoadInfoArgs args;
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+    ASSERT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(loadInfo, &args));
     ASSERT_TRUE(args.isSome());
-    RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(*args);
+    RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(args);
     ASSERT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
                                    [&] { return proxy->GetKind() != PcUdpProxy::Kind::Resolving; }));
     PcUdpProxy::Socks5Info info;
@@ -1446,9 +1443,10 @@ TEST(StealthSessionUdpProxy, TheKindOfProxyDecidesWhereTheUdpGoes)
     nsCOMPtr<nsIChannel> channel;
     EXPECT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, nsContentUtils::GetSystemPrincipal(),
                                    nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));
-    Maybe<LoadInfoArgs> args;
-    EXPECT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(nsCOMPtr<nsILoadInfo>(channel->LoadInfo()), &args));
-    RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(*args);
+    LoadInfoArgs args;
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+    EXPECT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(loadInfo, &args));
+    RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(args);
     EXPECT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
                                    [&] { return proxy->GetKind() != PcUdpProxy::Kind::Resolving; }));
     return proxy->GetKind();
