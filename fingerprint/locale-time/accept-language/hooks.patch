@@ -1,8 +1,29 @@
 diff --git a/netwerk/protocol/http/nsHttpHandler.cpp b/netwerk/protocol/http/nsHttpHandler.cpp
-index c35867b90d600ce2259456663894b640453591e0..dd65bca2318a5d2d72b7328f63c9f193db76af2a 100644
+index c35867b90d600ce2259456663894b640453591e0..ea84411bfa3b9c47bb9e1429ec69414727470c24 100644
 --- a/netwerk/protocol/http/nsHttpHandler.cpp
 +++ b/netwerk/protocol/http/nsHttpHandler.cpp
-@@ -746,6 +746,9 @@ nsresult nsHttpHandler::AddAcceptAndDictionaryHeaders(
+@@ -13,6 +13,7 @@
+ #include "HttpLog.h"
+ #include "LoadContextInfo.h"
+ #include "SerializedLoadContext.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "TRRServiceChannel.h"
+ #include "Tickler.h"
+ #include "mozilla/AntiTrackingRedirectHeuristic.h"
+@@ -548,6 +549,12 @@ void nsHttpHandler::UpdateParentalControlsEnabled(bool waitForCompletion) {
+     return;
+   }
+ 
++  // STEALTH-HOOK(network/doh): declared, the OS is never asked.
++  sParentalControlsEnabled = StealthParentalControlsEnabled();
++  if (!sParentalControlsEnabled) {
++    return;
++  }
++
+   auto getParentalControlsTask = []() {
+     nsCOMPtr<nsIParentalControlsService> pc =
+         do_CreateInstance("@mozilla.org/parental-controls-service;1");
+@@ -746,6 +753,9 @@ nsresult nsHttpHandler::AddAcceptAndDictionaryHeaders(
    return rv;
  }
  
@@ -12,7 +33,7 @@ index c35867b90d600ce2259456663894b640453591e0..dd65bca2318a5d2d72b7328f63c9f193
  nsresult nsHttpHandler::AddStandardRequestHeaders(
      nsHttpRequestHead* request, nsIURI* aURI, bool aIsHTTPS,
      ExtContentPolicyType aContentPolicyType, bool aShouldResistFingerprinting,
-@@ -784,11 +787,16 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
+@@ -784,11 +794,16 @@ nsresult nsHttpHandler::AddStandardRequestHeaders(
    if (NS_FAILED(rv)) return rv;
  
    if (!aLanguageOverride.IsEmpty()) {

@@ -4,7 +4,7 @@ The layout is one folder per feature, grouped by what the feature does:
 
     platform/     the build, the branding, the repo's own tooling
     stillborn/    Firefox services we kill at birth (updater, telemetry, ...)
-    network/      proxies, SOCKS, DNS
+    network/      proxies, SOCKS, DoH
     automation/   what the Juggler protocol needs from Gecko
     fingerprint/  what a page can observe, one folder per surface
     port/         fixes tied to one Firefox version, each with its reason to expire
@@ -46,7 +46,7 @@ FEATURES = {
     # network
     "proxy-udp-egress": "network/proxy-udp",
     "socks-credentials": "network/socks",
-    "dns-no-local-resolution": "network/dns",
+    "doh-trr-context": "network/doh",
     # automation
     "juggler-build": "automation/juggler",
     "juggler-prefs": "automation/juggler",
@@ -114,8 +114,7 @@ FEATURES = {
     "webgpu-adapter-declaration": "fingerprint/webgpu/adapter-declaration",
     "webgpu-external-texture-vulkan": "fingerprint/webgpu/external-texture-vulkan",
     # fingerprint: webrtc
-    "webrtc-ice-candidates": "fingerprint/webrtc/ice-candidates",
-    "webrtc-stealth-bridge": "fingerprint/webrtc/ice-candidates",
+    "webrtc-declared-network": "fingerprint/webrtc/declared-network",
     # fingerprint: screen and window
     "screen-metrics": "fingerprint/screen-window/screen",
     "window-geometry": "fingerprint/screen-window/geometry",
@@ -174,7 +173,12 @@ OWN_FILES = [
     (r"^juggler/tests/updater_refuses_what_follows_the_check\.test\.", "stillborn/updater"),
     (r"^third_party/libwebrtc/modules/desktop_capture/win/StealthWindowInputDesktop\.", "platform/hidden-desktop"),
     (r"^netwerk/protocol/http/StealthInterception\.", "automation/network-interception"),
-    (r"^netwerk/dns/StealthDNSDeclaration\.", "network/dns"),
+    (r"^netwerk/dns/StealthParentalControls\.", "network/doh"),
+    (r"^netwerk/ipc/StealthTRRContext\.", "network/doh"),
+    (r"^netwerk/test/gtest/TestStealthTRRContext\.", "network/doh"),
+    (r"^juggler/tests/(dns_has_no_gate_of_ours|doh_|proxy_info_leaves_name_resolution_to_the_browser|"
+     r"resolver_never_asks_the_os_for_parental_controls|trr_connection_info_is_not_cached_in_this_build)",
+     "network/doh"),
     (r"^js/src/debugger/StealthDebugger\.", "fingerprint/js-surface/debugger"),
     (r"^gfx/thebes/StealthDesignMetrics\.", "fingerprint/fonts/metrics"),
     (r"^gfx/thebes/StealthTextMeasuring\.", "fingerprint/fonts/metrics"),
@@ -183,7 +187,6 @@ OWN_FILES = [
     (r"^dom/serviceworkers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
     (r"^dom/security/StealthBypassCSP\.", "automation/bypass-csp"),
     (r"^dom/media/webrtc/transport/nr_stealth_proxy_udp\.", "network/proxy-udp"),
-    (r"^dom/media/webrtc/jsapi/StealthIceGathering\.", "fingerprint/webrtc/ice-candidates"),
     (r"^docshell/base/StealthNavigation\.", "automation/navigation"),
     (r"^docshell/base/StealthDocShellAttrs\.", "automation/docshell-attrs"),
     (r"^dom/canvas/StealthCanvasTextMetrics\.", "fingerprint/canvas/text-metrics"),
@@ -265,8 +268,9 @@ OWN_FILES = [
     (r"^widget/tests/gtest/TestStealthFullscreen\.cpp$", "fingerprint/screen-window/geometry"),
     (r"^dom/events/StealthScreenCoords\.", "fingerprint/screen-window/geometry"),
     (r"^dom/media/StealthMediaDeclaration\.", "fingerprint/media/decode-declaration"),
-    (r"^dom/media/webrtc/transport/nr_stealth_bridge\.", "fingerprint/webrtc/ice-candidates"),
-    (r"^third_party/libwebrtc/api/location\.h$", "fingerprint/webrtc/ice-candidates"),
+    (r"^dom/media/webrtc/transport/nr_stealth_network\.", "fingerprint/webrtc/declared-network"),
+    (r"^dom/media/webrtc/transport/test/gtest/(moz\.build|TestStealthDeclaredNetwork\.cpp)$", "fingerprint/webrtc/declared-network"),
+    (r"^third_party/libwebrtc/api/location\.h$", "fingerprint/webrtc/declared-network"),
     (r"^netwerk/protocol/res/StealthBranding\.", "fingerprint/js-surface/branding"),
     (r"^netwerk/socket/nsSOCKSUDPIOLayer\.", "network/proxy-udp"),
     (r"^netwerk/socket/StealthPcUdpProxy\.", "network/proxy-udp"),

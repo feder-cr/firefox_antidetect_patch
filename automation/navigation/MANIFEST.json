@@ -106,17 +106,18 @@
    "category": "juggler",
    "feature": "juggler-load-identifier",
    "prefs": [],
-   "added": 10,
-   "removed": 0,
-   "hunks": 1,
-   "inline_logic_lines": 2,
-   "hookable": "already-hook",
+   "added": 14,
+   "removed": 1,
+   "hunks": 3,
+   "inline_logic_lines": 9,
+   "hookable": "movable",
    "anchor": "TRRLoadInfo::GetJugglerLoadIdentifier / TRRLoadInfo::SetJugglerLoadIdentifier (end of file)",
    "evidence": [
-    "+TRRLoadInfo::GetJugglerLoadIdentifier(uint64_t* aResult) {",
-    "+  return NS_ERROR_NOT_IMPLEMENTED;"
+    "+  static_cast<TRRLoadInfo*>(loadInfo.get())->mOriginAttributes =",
+    "+      mOriginAttributes;  // STEALTH-HOOK(network/doh)",
+    "+  mOriginAttributes = aOriginAttributes;  // STEALTH-HOOK(network/doh)"
    ],
-   "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern.",
+   "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern. Also (feature doh-trr-context, network/doh): the TRR load info keeps the origin attributes of the lookup's context, also in its clone, so the proxy filters see the context.",
    "verifier": {
     "changed": [
      "notes"

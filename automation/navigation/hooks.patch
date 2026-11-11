@@ -149,10 +149,29 @@ index a6a44ac715a637ddf1cc5c23ff0dd8440dd45eaf..1fbbf4dd7341f56fcecadf8a6c04de7b
  // This is exposed solely for testing purposes and should not be used outside of
  // LoadInfo
 diff --git a/netwerk/base/TRRLoadInfo.cpp b/netwerk/base/TRRLoadInfo.cpp
-index 0cba54550072adc8a0ad11b1c9a502ff97a7bd7e..d4d68b981a4f9e7e448f56f60983a0a6e0db9de1 100644
+index 0cba54550072adc8a0ad11b1c9a502ff97a7bd7e..6dc184c0f348eabb063b58c447d0833bcf297726 100644
 --- a/netwerk/base/TRRLoadInfo.cpp
 +++ b/netwerk/base/TRRLoadInfo.cpp
-@@ -571,5 +571,15 @@ TRRLoadInfo::GetFetchDestination(nsACString& aDestination) {
+@@ -26,6 +26,8 @@ TRRLoadInfo::TRRLoadInfo(nsIURI* aResultPrincipalURI,
+ already_AddRefed<nsILoadInfo> TRRLoadInfo::Clone() const {
+   nsCOMPtr<nsILoadInfo> loadInfo =
+       new TRRLoadInfo(mResultPrincipalURI, mInternalContentPolicyType);
++  static_cast<TRRLoadInfo*>(loadInfo.get())->mOriginAttributes =
++      mOriginAttributes;  // STEALTH-HOOK(network/doh)
+ 
+   return loadInfo.forget();
+ }
+@@ -302,7 +304,8 @@ nsresult TRRLoadInfo::GetOriginAttributes(
+ 
+ nsresult TRRLoadInfo::SetOriginAttributes(
+     const mozilla::OriginAttributes& aOriginAttributes) {
+-  return NS_ERROR_NOT_IMPLEMENTED;
++  mOriginAttributes = aOriginAttributes;  // STEALTH-HOOK(network/doh)
++  return NS_OK;  // STEALTH-HOOK(network/doh)
+ }
+ 
+ NS_IMETHODIMP
+@@ -571,5 +574,15 @@ TRRLoadInfo::GetFetchDestination(nsACString& aDestination) {
    return NS_ERROR_NOT_IMPLEMENTED;
  }
  

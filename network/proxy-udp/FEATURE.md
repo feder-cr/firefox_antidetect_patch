@@ -31,14 +31,17 @@ proxy; through a proxy that carries no UDP the handshake never completes and Fir
 ## Hooks in Mozilla files
 
 - `dom/media/webrtc/transport/nr_socket_prsock.{h,cpp}`: the NrSocket takes the proxy config of its PeerConnection; one hook
-  in `create` (nr_stealth_proxy_udp.h) and the refusal in a content process.
+  in `create` (nr_stealth_proxy_udp.h) and the refusal in a content process. The file also carries the hooks of
+  fingerprint/webrtc/declared-network (bind, own ports; tagged with that feature).
 - `dom/media/webrtc/transport/nr_socket_proxy_config.{h,cpp}`: `UdpProxy()`, the lookup started with the config.
 - `dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp`: the lookup channel and the tunnel channel come from
   StealthNewChannelOfLoadInfo (Mozilla's own channel-building code is gone from here).
 - `netwerk/ipc/ProxyConfigLookup*.{h,cpp}`, `PSocketProcess.ipdl`, `SocketProcessParent.{h,cpp}`: the optional load info of the
-  document goes with the lookup.
+  document goes with the lookup. The same files carry the hooks of network/doh (the origin attributes of the DoH context go with
+  the load info; tagged with that feature).
 - `netwerk/base/nsIUDPSocket.idl`, `nsUDPSocket.{h,cpp}`, `nsProxyInfo.{h,cpp}`: `setSocksProxy` and the SOCKS5 test.
 - `netwerk/protocol/http/{AlternateServices,DnsAndConnectSocket,HttpBaseChannel,HttpConnectionUDP}.cpp`: the HTTP/3 gates.
+- `netwerk/protocol/http/Http3ConnectUDPStream.cpp`: `setSocksProxy` answers not implemented (the CONNECT-UDP stream has its own proxy).
 - `netwerk/socket/nsSOCKSIOLayer.cpp`: one call that warms the pool.
 - `moz.build` of netwerk/ipc, netwerk/socket (and netwerk/protocol/http, for another folder's file): our sources.
 

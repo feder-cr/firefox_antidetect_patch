@@ -103,34 +103,6 @@
   value: -1
   mirror: always
 
-# "C'e' un proxy: non risolvere niente in locale." Il core lo sa e lo dichiara;
-# il motore da solo non puo' saperlo, ed e' esattamente questo il punto.
-#
-# `DNSForbiddenByActiveProxy` blocca la risoluzione lato client solo se
-# `network.proxy.type` e' MANUAL E c'e' una versione SOCKS con la sua
-# `remote_dns`. Con un endpoint HTTP il wrapper non scrive nessuna
-# `network.proxy.*` - instrada Playwright, per canale, perche' e' l'unico che
-# sappia rispondere al 407 - quindi `type` resta 5 e il cancello non e' armato
-# affatto. Upstream lo sa: il TODO del bug 1890542 accanto a quel controllo dice
-# di usare `nsIProxyInfo` invece delle prefs.
-#
-# I canali stanno bene comunque (il filtro di Juggler mette
-# TRANSPARENT_PROXY_RESOLVES_HOST), ma tre superfici NON sono canali e chiamano
-# `AsyncResolveNative` diretto: `NetworkConnectivityService`, le sonde
-# dell'euristica DoH, e il resolver ICE. Misurato il 2026-08-25 dietro un proxy
-# HTTP, due giri identici: `example.org` 28, `ipv4only.arpa` 12,
-# il nome di un resolver DoH pubblico 6 e - la peggiore - `stunprobe.invalid` 6, che e' un nome
-# scelto DALLA PAGINA via `iceServers`, quindi il server autoritativo del sito
-# vede il resolver di casa mentre l'HTTP esce dal proxy. Dietro SOCKS gli stessi
-# nomi fanno 0 e ne restano 3 in tutto.
-#
-# `false` di default: una build lanciata senza invisible_core si comporta
-# esattamente come prima.
-- name: zoom.stealth.dns.no_local_resolution
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
 - name: zoom.stealth.max_touch_points
   type: RelaxedAtomicInt32
   value: -1
@@ -595,13 +567,4 @@
 # proxy la pref. Adesso la fonte e' una sola, l'ambiente, scritta sempre da
 # entrambi i percorsi di lancio di invisible_core. Non vanno reintrodotte: un
 # valore che il motore puo' leggere da due posti puo' divergere fra i due.
-
-# Optional fake LAN host IP for the synthetic host candidate base.
-# Empty = leave host gathering to native code (mDNS *.local obfuscation).
-# QUESTA RESTA: la legge StealthIceGathering.cpp, che non passa dal ponte, e
-# invisible_core la dichiara (derivata dal seed). Una fonte, un lettore.
-- name: zoom.stealth.webrtc.host_ip
-  type: DataMutexString
-  value: ""
-  mirror: always
 

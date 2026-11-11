@@ -14,7 +14,7 @@ platform/webrender-memory
 stillborn/api-keys
 stillborn/telemetry
 stillborn/updater
-network/dns
+network/doh
 network/proxy-udp
 network/socks
 automation/bypass-csp
@@ -71,4 +71,4 @@ fingerprint/webgl/parameters
 fingerprint/webgl/shader-language
 fingerprint/webgpu/adapter-declaration
 fingerprint/webgpu/external-texture-vulkan
-fingerprint/webrtc/ice-candidates
+fingerprint/webrtc/declared-network

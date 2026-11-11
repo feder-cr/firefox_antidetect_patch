@@ -1,0 +1,121 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ *
+ * The network WebRTC gathers on is declared by the core, never read from the host.
+ *
+ * The declaration is the environment variable STEALTHFOX_WEBRTC_NETWORK, read where the interfaces are enumerated
+ * (the parent: StunAddrsRequestParent::RecvGetStunAddrs -> nr_stun_get_addrs):
+ *
+ *     v4=<private IPv4>;v6=<0|1>;p6=<the /64 prefix of the exit, empty without IPv6>
+ *
+ * One adapter, as the modal Windows PC has: one private IPv4 address (RFC 1918), and when the machine has IPv6 the
+ * temporary global IPv6 address of that adapter: the exit's /64 prefix and a temporary interface identifier drawn at
+ * random (RFC 4941, as Windows does). v6=1 without a prefix is no IPv6, never a fallback. Under the default (no camera
+ * or microphone permission) a page sees only the number of host names and their ranks; the addresses are
+ * <uuid>.local names. Nothing of the host's adapters is read: the OS enumerators are not built.
+ *
+ * Without a declaration, or with one that does not parse, there is no interface: no host candidate, and an error in
+ * the log. Never a fallback to the host.
+ *
+ * The declared address is the identity of this machine (R3, nr_socket_prsock.cpp): a host socket is bound to the
+ * wildcard of its family on a port of the connection and reports the declared address with that port, and a datagram
+ * between two of this browser's sockets travels on the kernel's loopback while each end sees the other's declared
+ * address, as two sockets of one machine see its LAN address.
+ */
+
+#ifndef nr_stealth_network_h__
+#define nr_stealth_network_h__
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct nr_local_addr_;
+struct nr_transport_addr_;
+
+/* Parses a declaration into at most `maxaddrs` entries; `iid` is the temporary interface identifier of the IPv6
+ * address (8 bytes). 0 and *count = 1 or 2 on success; an error and *count = 0 for a missing or malformed one. */
+int nr_stealth_parse_network(const char* decl, const uint8_t iid[8], struct nr_local_addr_* addrs, int maxaddrs,
+                             int* count);
+
+/* R1: the interface list, from STEALTHFOX_WEBRTC_NETWORK, with this process's temporary identifier. */
+int nr_stealth_declared_addrs(struct nr_local_addr_* addrs, int maxaddrs, int* count);
+
+/* R2: the default address of `ip_version` is the first declared entry of that family among `addrs`; R_NOT_FOUND when
+ * the declaration has none (the machine has no route in that family). No socket. */
+int nr_stealth_default_local_address(int ip_version, struct nr_local_addr_* addrs, int addr_ct,
+                                     struct nr_local_addr_* out);
+
+/* The interfaces the parent's mDNS responder joins the group on and speaks through: the loopback, "127.0.0.1;"
+ * (lib.rs takes a ';'-separated list). The declared address is not the host's: a join on it fails. */
+const char* nr_stealth_mdns_interfaces(void);
+
+/* 1 when the ADDRESS of `addr` is the wildcard (0.0.0.0 or ::), whatever the port; 0 otherwise.
+ * (nr_transport_addr_is_wildcard also calls port 0 a wildcard.) */
+int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
+
+#ifdef __cplusplus
+}  // extern "C"
+
+#  include <set>
+
+namespace mozilla {
+
+/* R3: the host UDP ports of ONE connection (one ICE context), as Windows hands them out: consecutive in the order the
+ * sockets are made (the IPv4 host N, the IPv6 host N+1), from a base drawn at random in the dynamic range 49152-65535,
+ * anew for each connection. Not the kernel's ports and not derived from the seed: two visits of one seed must not
+ * share them (retail: captures/retail/firefox-159.0-win/two-pc-port-sequence of invisible_WebRTC, each connection its
+ * own pair, unrelated to the last). A busy port is skipped, as the kernel skips it; after 65535 it wraps to 49152. */
+class StealthHostPorts final {
+ public:
+  static constexpr uint32_t kFirst = 49152;
+  static constexpr uint32_t kLast = 65535;
+
+  /* `aRandom`: a random number from the caller's generator (mozilla::RandomUint64). */
+  explicit StealthHostPorts(uint64_t aRandom)
+      : mNext(kFirst + static_cast<uint32_t>(aRandom % (kLast - kFirst + 1))) {}
+
+  uint16_t Next() {
+    uint32_t port = mNext;
+    mNext = port == kLast ? kFirst : port + 1;
+    return static_cast<uint16_t>(port);
+  }
+
+ private:
+  uint32_t mNext;
+};
+
+/* R3: the ports this process's declared host sockets are bound to, per family. A datagram TO our declared address and
+ * one of these ports goes to the loopback of the family (the declared address is not the host's; the kernel would
+ * route it away); one FROM the loopback and one of these ports is reported as coming from our declared address.
+ * Nothing else is touched: a server on localhost (a page's STUN server on 127.0.0.1) keeps its address. */
+class StealthOwnPorts final {
+ public:
+  void Add(int aIpVersion, uint16_t aPort) { mPorts.insert(Key(aIpVersion, aPort)); }
+  void Remove(int aIpVersion, uint16_t aPort) { mPorts.erase(Key(aIpVersion, aPort)); }
+  bool Has(int aIpVersion, uint16_t aPort) const { return mPorts.count(Key(aIpVersion, aPort)) != 0; }
+
+ private:
+  static uint32_t Key(int aIpVersion, uint16_t aPort) {
+    return (static_cast<uint32_t>(aIpVersion) << 16) | aPort;
+  }
+  std::set<uint32_t> mPorts;
+};
+
+}  // namespace mozilla
+
+/* For a socket whose identity is `self` (the declared address and its bound port): the peer of a datagram as the
+ * kernel needs it (to) and as ICE must see it (from). Each returns 1 when it rewrote `addr`, 0 when it left it. */
+int nr_stealth_own_peer_to_kernel(const struct nr_transport_addr_* self, const mozilla::StealthOwnPorts& own,
+                                  struct nr_transport_addr_* addr);
+int nr_stealth_own_peer_from_kernel(const struct nr_transport_addr_* self, const mozilla::StealthOwnPorts& own,
+                                    struct nr_transport_addr_* addr);
+
+#endif  // __cplusplus
+
+#endif  // nr_stealth_network_h__

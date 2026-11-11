@@ -1626,69 +1626,23 @@
   }
  },
  {
-  "file": "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp",
-  "category": "spoof",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [
-   "zoom.stealth.webrtc.host_ip"
-  ],
-  "added": 12,
-  "removed": 3,
-  "hunks": 2,
-  "inline_logic_lines": 6,
-  "hookable": "movable",
-  "anchor": "PeerConnectionImpl::EnsureIceGathering",
-  "evidence": [
-   "+    auto stealthHostIp = mozilla::StaticPrefs::zoom_stealth_webrtc_host_ip();",
-   "+    if ((*stealthHostIp).IsEmpty()) {",
-   "-    return;"
-  ],
-  "notes": "Content-process gathering proceeds without parent STUN addresses when zoom.stealth.webrtc.host_ip is set (the pref is only tested for empty). Pref defined at modules/libpref/init/StaticPrefList.yaml:21977. The added comment says nICEr injects synthetic candidates 'from public_ip pref'; CONFIRMED stale: that pref was removed (StaticPrefList.yaml:21964-21972) and the public IP now comes from env STEALTHFOX_WEBRTC_PUBLIC_IP (nr_stealth_bridge.cpp:65-67). The other half of the gate (addr_ct==0 fallback in nr_ice_component_initialize) is not in this diff. Of the 6 logic lines, 3 are the old CSFLogInfo/return re-indented inside the new if.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Pref cite was wrong (StaticPrefList.yaml:47 is a header comment); stale-comment claim confirmed."
-  }
- },
- {
-  "file": "dom/media/webrtc/jsapi/moz.build",
-  "category": "build",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
   "file": "dom/media/webrtc/transport/common.build",
   "category": "build",
-  "feature": "webrtc-stealth-bridge",
+  "feature": "webrtc-declared-network",
   "prefs": [],
   "added": 1,
   "removed": 0,
   "hunks": 1,
-  "inline_logic_lines": 0,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "transport_lcppsrcs (source list)",
   "evidence": [
-   "+    \"nr_stealth_bridge.cpp\","
+   "+    \"nr_stealth_network.cpp\","
   ],
-  "notes": "Registers our own file dom/media/webrtc/transport/nr_stealth_bridge.cpp (present in C:/ff/source). The bridge functions used by the ICE and socket files read environment variables only, not prefs (nr_stealth_bridge.cpp:65-67 and 69-75).",
+  "notes": "Registers our file nr_stealth_network.cpp (the declared network of WebRTC).",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Wrong line cite for the bridge (env reads are at nr_stealth_bridge.cpp:65-75, not 18-29)."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -1696,18 +1650,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 7,
-  "removed": 2,
-  "hunks": 5,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
+  "added": 59,
+  "removed": 4,
+  "hunks": 13,
+  "inline_logic_lines": 35,
+  "hookable": "movable",
   "anchor": "include of nr_stealth_proxy_udp.h; NrSocket::create (UDP: the proxy layer); NrSocketBase::CreateSocket (the config to NrSocket; no UDP socket of a PeerConnection in a content process)",
   "evidence": [
+   "+#include \"nr_stealth_network.h\"    // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
    "+#include \"nr_stealth_proxy_udp.h\"  // STEALTH-HOOK(network/proxy-udp)",
-   "+      if (StealthUdpProxyAttachRefused(fd_, mProxyConfig)) ABORT(R_INTERNAL);  // STEALTH-HOOK(network/proxy-udp)",
-   "+    *sock = new NrSocket(config);  // STEALTH-HOOK(network/proxy-udp)"
+   "+// STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared host sockets of this process (R3). Every NrSocket"
   ],
-  "notes": "The rule of the UDP of a PeerConnection, made where its socket is born: no proxy = a plain socket, SOCKS5 = the SOCKS5 UDP layer, a proxy without UDP = a socket whose datagrams go nowhere. In a content process the UDP sockets of a PeerConnection are refused (they would go out direct).",
+  "notes": "The rule of the UDP of a PeerConnection, made where its socket is born: no proxy = a plain socket, SOCKS5 = the SOCKS5 UDP layer, a proxy without UDP = a socket whose datagrams go nowhere. In a content process the UDP sockets of a PeerConnection are refused (they would go out direct). Also (feature webrtc-declared-network, fingerprint/webrtc/declared-network): a host UDP socket of a declared address binds the wildcard of its family on the port of its connection and reports the declared address with that port; a datagram between two sockets of this process goes on the kernel's loopback while each end sees the other's declared address (StealthOwnPorts).",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -1716,71 +1670,67 @@
  {
   "file": "dom/media/webrtc/transport/third_party/nICEr/nicer.gyp",
   "category": "build",
-  "feature": "webrtc-stealth-bridge",
+  "feature": "webrtc-declared-network",
   "prefs": [],
   "added": 3,
-  "removed": 0,
-  "hunks": 1,
+  "removed": 7,
+  "hunks": 2,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "include_dirs of the nICEr target (target name not in the hunk header)",
+  "anchor": "include_dirs of the nICEr target; the stun source list",
   "evidence": [
-   "+              '../..',"
+   "+              # transport dir — for nr_stealth_network.h",
+   "+              '../..',",
+   "+"
   ],
-  "notes": "Adds the transport directory so nICEr sources can include nr_stealth_bridge.h. The relative path resolves to dom/media/webrtc/transport. nicer.gyp is live: dom/media/webrtc/transport/third_party/moz.build:24 builds nICEr from it via GYP_DIRS. Of the 3 added lines, one is a comment and one is blank.",
+  "notes": "Adds the transport directory so nICEr sources can include nr_stealth_network.h, and drops the OS enumerators (addrs-bsd, addrs-netlink, addrs-netlink-wireless, addrs-win32) from the sources.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Added proof that nicer.gyp is live (GYP_DIRS), so the include dir is needed."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp",
   "category": "spoof",
-  "feature": "webrtc-ice-candidates",
+  "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 73,
-  "removed": 4,
-  "hunks": 3,
-  "inline_logic_lines": 33,
+  "added": 7,
+  "removed": 92,
+  "hunks": 4,
+  "inline_logic_lines": 5,
   "hookable": "movable",
-  "anchor": "new static nr_transport_addr_is_wildcard_ip (before nr_ice_get_default_address); wildcard refusal in nr_ice_get_default_address; fallback in nr_ice_set_local_addresses",
+  "anchor": "include of nr_stealth_network.h; nr_ice_get_default_local_address; nr_ice_set_local_addresses (no default address)",
   "evidence": [
-   "+static int nr_transport_addr_is_wildcard_ip(const nr_transport_addr *addr)",
-   "+    if (nr_transport_addr_is_wildcard_ip(remote_addr)) {",
-   "-        r_log(LOG_ICE,LOG_ERR,\"ICE(%s): failed to find default addresses\",ctx->label);"
+   "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+/* STEALTH-HOOK(fingerprint/webrtc/declared-network): the default address of a family is the declared",
+   "+   address of that family (nr_stealth_network.h), found in the list the parent sent, which is the"
   ],
-  "notes": "Two behaviour changes: a wildcard remote is refused before the default-route probe, and when the probe yields no default address ICE falls back to the filtered local addresses instead of failing. The fallback block (about 12 logic lines) can move behind one call. addr_ct holds the filtered survivor count at the fallback: CONFIRMED (ice_ctx.cpp:770-791 filter/force-interface, used at 843-848). The Linux 127.0.0.1 observation in the comment (measured 2026-10-02 on firefox-34) is not checked here. Merge note: the new static nr_transport_addr_is_wildcard_ip is inserted between upstream's comment block for nr_ice_get_default_address and the function itself. No prefs.",
+  "notes": "The default address of a family is the declared entry of that family (nr_stealth_default_local_address): the route probe (a UDP socket connected to the page's server or a public address, then getsockname) is gone, with it the wildcard refusal and the fallback to every filtered address. A family the declaration does not have has no default address, as a machine with no route in that family. Mozilla's probing function is replaced by one call.",
   "verifier": {
-   "changed": [
-    "feature",
-    "notes"
-   ],
-   "why": "Feature belongs to ICE candidate gathering behind SOCKS, not UDP egress; unverified claim about addr_ct confirmed."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp",
   "category": "spoof",
-  "feature": "webrtc-ice-candidates",
+  "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 9,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 4,
+  "added": 3,
+  "removed": 9,
+  "hunks": 3,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "nr_stun_filter_addrs_for_ifname (else-if chain)",
+  "anchor": "includes; nr_stun_get_addrs",
   "evidence": [
-   "+    else if (nr_stealth_webrtc_disable_ipv6() &&",
-   "+        r_log(NR_LOG_STUN, LOG_WARNING, \"Stealth: dropping IPv6 host candidate\");"
+   "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared adapter, never the host's.",
+   "+    _status = nr_stealth_declared_addrs(addrs, maxaddrs, count);"
   ],
-  "notes": "Drops IPv6 host addresses when nr_stealth_webrtc_disable_ipv6() is true. That reads env STEALTHFOX_WEBRTC_DISABLE_IPV6 (nr_stealth_bridge.cpp:69-75), not a pref. The comment says the upstream pref media.peerconnection.ice.disableIPv6 is dead in FF150: CONFIRMED for dom/media (no reader other than our own comments) and modules/libpref/init (not defined). That IPv6 srflx derived from the host is also stopped is unverified.",
+  "notes": "The interfaces are the declared adapter (nr_stealth_declared_addrs), never the host's: the includes of the OS enumerators are gone and nr_stun_get_addrs returns the declaration.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Wrong line cite for the bridge; upstream pref claim partly confirmed."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -3689,17 +3639,18 @@
   "category": "juggler",
   "feature": "juggler-load-identifier",
   "prefs": [],
-  "added": 10,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 2,
-  "hookable": "already-hook",
+  "added": 14,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 9,
+  "hookable": "movable",
   "anchor": "TRRLoadInfo::GetJugglerLoadIdentifier / TRRLoadInfo::SetJugglerLoadIdentifier (end of file)",
   "evidence": [
-   "+TRRLoadInfo::GetJugglerLoadIdentifier(uint64_t* aResult) {",
-   "+  return NS_ERROR_NOT_IMPLEMENTED;"
+   "+  static_cast<TRRLoadInfo*>(loadInfo.get())->mOriginAttributes =",
+   "+      mOriginAttributes;  // STEALTH-HOOK(network/doh)",
+   "+  mOriginAttributes = aOriginAttributes;  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern.",
+  "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern. Also (feature doh-trr-context, network/doh): the TRR load info keeps the origin attributes of the lookup's context, also in its clone, so the proxy filters see the context.",
   "verifier": {
    "changed": [
     "notes"
@@ -3840,45 +3791,23 @@
   }
  },
  {
-  "file": "netwerk/dns/DNSServiceBase.cpp",
-  "category": "spoof",
-  "feature": "dns-no-local-resolution",
-  "prefs": [
-   "zoom.stealth.dns.no_local_resolution"
-  ],
-  "added": 27,
-  "removed": 6,
-  "hunks": 2,
-  "inline_logic_lines": 9,
-  "hookable": "movable",
-  "anchor": "DNSServiceBase::DNSForbiddenByActiveProxy",
-  "evidence": [
-   "+  const bool proxyDeclaredByLauncher =",
-   "+      StaticPrefs::zoom_stealth_dns_no_local_resolution();",
-   "+  if (proxyDeclaredByLauncher ||"
-  ],
-  "notes": "Adds an OR to the existing proxy guard: when the launcher declares a proxy, DNS for non-IP hostnames is refused. Pref name confirmed at StaticPrefList.yaml:21529 as zoom.stealth.dns.no_local_resolution (accessor zoom_stealth_dns_no_local_resolution). Of the 9 added logic lines, 7 are the old condition re-indented. The comment names the ICE resolver as a caller that bypasses channels; unverified. Can become one call into our own function.",
-  "verifier": {
-   "changed": [],
-   "why": "All fields and cited facts checked against the diff and source; no change."
-  }
- },
- {
   "file": "netwerk/dns/moz.build",
   "category": "build",
-  "feature": "dns-no-local-resolution",
+  "feature": "doh-trr-context",
   "prefs": [],
   "added": 1,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "anchor": "after the UNIFIED_SOURCES list",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthParentalControls.cpp\"]  # STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Registers our StealthParentalControls.cpp.",
   "verifier": {
    "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -3906,7 +3835,7 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 2,
+  "added": 3,
   "removed": 1,
   "hunks": 1,
   "inline_logic_lines": 1,
@@ -3914,10 +3843,10 @@
   "anchor": "parent: block, PProxyConfigLookup constructor",
   "evidence": [
    "+                           bool aIsTRRServiceChannel,",
-   "+                           LoadInfoArgs? aLoadInfo);  // STEALTH-HOOK(network/proxy-udp)",
-   "-                           bool aIsTRRServiceChannel);"
+   "+                           LoadInfoArgs? aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+                           OriginAttributes? aOriginAttributes);  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "The constructor of PProxyConfigLookup takes an optional LoadInfoArgs.",
+  "notes": "The constructor of PProxyConfigLookup takes an optional LoadInfoArgs. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -4062,18 +3991,18 @@
   "category": "spoof",
   "feature": "accept-language-override-list",
   "prefs": [],
-  "added": 20,
+  "added": 18,
   "removed": 3,
-  "hunks": 2,
-  "inline_logic_lines": 5,
-  "hookable": "already-hook",
+  "hunks": 6,
+  "inline_logic_lines": 12,
+  "hookable": "movable",
   "anchor": "nsHttpHandler::AddStandardRequestHeaders",
   "evidence": [
-   "+    rv = PrepareAcceptLanguages(aLanguageOverride.get(), acceptLanguage);",
-   "+      rv = request->SetHeader(nsHttp::Accept_Language, acceptLanguage, false,",
-   "-    acceptLanguage.Assign(aLanguageOverride.get());"
+   "+#include \"StealthParentalControls.h\"  // STEALTH-HOOK(network/doh)",
+   "+  // STEALTH-HOOK(network/doh): declared, the OS is never asked.",
+   "+  sParentalControlsEnabled = StealthParentalControlsEnabled();"
   ],
-  "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner.",
+  "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner. Also (feature doh-trr-context, network/doh): UpdateParentalControlsEnabled takes the declared value (StealthParentalControlsEnabled) and returns before the OS parental controls service is created, so TRR is not skipped by a host setting.",
   "verifier": {
    "changed": [],
    "why": "all fields checked against the diff; no change"
@@ -4137,8 +4066,8 @@
   "hookable": "already-hook",
   "anchor": "EXPORTS and UNIFIED_SOURCES lists",
   "evidence": [
-   "+EXPORTS += [\"nsSOCKSUDPIOLayer.h\", \"StealthPcUdpProxy.h\"]  # STEALTH-HOOK(network/proxy-udp)",
-   "+UNIFIED_SOURCES += [\"nsSOCKSUDPIOLayer.cpp\", \"StealthPcUdpProxy.cpp\"]  # STEALTH-HOOK(network/proxy-udp)"
+   "+EXPORTS += [\"nsSOCKSUDPIOLayer.h\", \"StealthPcUdpProxy.h\"]  # STEALTH-HOOK(network/socks-udp-h3)",
+   "+UNIFIED_SOURCES += [\"nsSOCKSUDPIOLayer.cpp\", \"StealthPcUdpProxy.cpp\"]  # STEALTH-HOOK(network/socks-udp-h3)"
   ],
   "notes": "Registers our SOCKS5 UDP layer and PcUdpProxy.",
   "verifier": {
@@ -4169,14 +4098,17 @@
   "category": "build",
   "feature": "socks-credentials",
   "prefs": [],
-  "added": 1,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "evidence": [
+   "+SOURCES += [\"TestStealthSocksCredentials.cpp\"]  # STEALTH-HOOK(network/socks)",
+   "+SOURCES += [\"TestStealthTRRContext.cpp\"]  # STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Hook registering or calling our own code. Also registers TestStealthTRRContext.cpp (network/doh).",
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
@@ -6476,10 +6408,10 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 3,
+  "added": 5,
   "removed": 1,
   "hunks": 2,
-  "inline_logic_lines": 0,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "class NrSocket: constructor and mProxyConfig",
   "evidence": [
@@ -6487,7 +6419,7 @@
    "+      : fd_(nullptr), mProxyConfig(aProxyConfig) {}  // STEALTH-HOOK(network/proxy-udp)",
    "+  std::shared_ptr<NrSocketProxyConfig> mProxyConfig;  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "A NrSocket takes the proxy config of its PeerConnection, so create() can put the proxy's layer on it.",
+  "notes": "A NrSocket takes the proxy config of its PeerConnection, so create() can put the proxy's layer on it. Also (feature webrtc-declared-network): the port the socket registered as one of ours.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6582,7 +6514,7 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 7,
+  "added": 11,
   "removed": 2,
   "hunks": 4,
   "inline_logic_lines": 2,
@@ -6590,10 +6522,10 @@
   "anchor": "ProxyConfigLookup::Create, mLoadInfo",
   "evidence": [
    "+#include \"mozilla/Maybe.h\"  // STEALTH-HOOK(network/proxy-udp)",
-   "+#include \"mozilla/net/NeckoChannelParams.h\"  // STEALTH-HOOK(network/proxy-udp)",
-   "+      nsICancelable** aLookupCancellable = nullptr,"
+   "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+   "+#include \"mozilla/net/NeckoChannelParams.h\"  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "The lookup can be made for a document: an optional LoadInfoArgs.",
+  "notes": "The lookup can be made for a document: an optional LoadInfoArgs. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6604,18 +6536,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 13,
+  "added": 26,
   "removed": 6,
-  "hunks": 7,
-  "inline_logic_lines": 6,
+  "hunks": 8,
+  "inline_logic_lines": 10,
   "hookable": "movable",
   "anchor": "ProxyConfigLookup::Create, constructor, DoProxyResolve",
   "evidence": [
    "+#include \"mozilla/net/StealthDocumentChannel.h\"  // STEALTH-HOOK(network/proxy-udp)",
-   "+    nsICancelable** aLookupCancellable,",
-   "+    const Maybe<LoadInfoArgs>& aLoadInfo) {  // STEALTH-HOOK(network/proxy-udp)"
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+    nsICancelable** aLookupCancellable,"
   ],
-  "notes": "The lookup uses a channel built from the document's load info when it has one (StealthNewChannelOfLoadInfo), so the proxy filters see its context.",
+  "notes": "The lookup uses a channel built from the document's load info when it has one (StealthNewChannelOfLoadInfo), so the proxy filters see its context. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6626,18 +6558,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 2,
+  "added": 4,
   "removed": 1,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "ProxyConfigLookupChild::Create",
   "evidence": [
+   "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
    "+                     std::function<void(nsIProxyInfo*, nsresult)>&& aCallback,",
-   "+                     const Maybe<LoadInfoArgs>& aLoadInfo = Nothing());  // STEALTH-HOOK(network/proxy-udp)",
-   "-                     std::function<void(nsIProxyInfo*, nsresult)>&& aCallback);"
+   "+                     const Maybe<LoadInfoArgs>& aLoadInfo = Nothing(),  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "Carries the optional LoadInfoArgs to the parent.",
+  "notes": "Carries the optional LoadInfoArgs to the parent. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6648,18 +6580,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 3,
+  "added": 6,
   "removed": 2,
   "hunks": 2,
-  "inline_logic_lines": 1,
+  "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "ProxyConfigLookupChild::Create",
   "evidence": [
    "+    std::function<void(nsIProxyInfo*, nsresult)>&& aCallback,",
-   "+    const Maybe<LoadInfoArgs>& aLoadInfo) {  // STEALTH-HOOK(network/proxy-udp)",
-   "+      child, aURI, aProxyResolveFlags, aIsTRRServiceChannel, aLoadInfo);  // STEALTH-HOOK(network/proxy-udp)"
+   "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+    const Maybe<OriginAttributes>& aOriginAttributes) {  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "Sends the optional LoadInfoArgs with the PProxyConfigLookup constructor.",
+  "notes": "Sends the optional LoadInfoArgs with the PProxyConfigLookup constructor. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6670,18 +6602,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 3,
+  "added": 6,
   "removed": 1,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "ProxyConfigLookupParent constructor, mLoadInfo",
   "evidence": [
+   "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
    "+                          bool aIsTRRServiceChannel,",
-   "+                          const Maybe<LoadInfoArgs>& aLoadInfo);  // STEALTH-HOOK(network/proxy-udp)",
-   "+  Maybe<LoadInfoArgs> mLoadInfo;  // STEALTH-HOOK(network/proxy-udp)"
+   "+                          const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "Holds the optional LoadInfoArgs of the lookup.",
+  "notes": "Holds the optional LoadInfoArgs of the lookup. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6692,18 +6624,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 6,
+  "added": 10,
   "removed": 5,
   "hunks": 3,
-  "inline_logic_lines": 3,
+  "inline_logic_lines": 4,
   "hookable": "movable",
   "anchor": "ProxyConfigLookupParent constructor and DoProxyLookup",
   "evidence": [
    "+ProxyConfigLookupParent::ProxyConfigLookupParent(",
    "+    nsIURI* aURI, uint32_t aProxyResolveFlags, bool aIsTRRServiceChannel,",
-   "+    const Maybe<LoadInfoArgs>& aLoadInfo)  // STEALTH-HOOK(network/proxy-udp)"
+   "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "Gives the LoadInfoArgs on to ProxyConfigLookup::Create.",
+  "notes": "Gives the LoadInfoArgs on to ProxyConfigLookup::Create. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6714,7 +6646,7 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 4,
+  "added": 6,
   "removed": 3,
   "hunks": 2,
   "inline_logic_lines": 2,
@@ -6722,10 +6654,10 @@
   "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
   "evidence": [
    "+      const bool& aIsTRRServiceChannel,",
-   "+      const Maybe<LoadInfoArgs>& aLoadInfo);  // STEALTH-HOOK(network/proxy-udp)",
-   "+      const uint32_t& aProxyResolveFlags, const bool& aIsTRRServiceChannel,"
+   "+      const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+      const Maybe<OriginAttributes>& aOriginAttributes);  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "Declarations follow the new constructor arguments.",
+  "notes": "Declarations follow the new constructor arguments. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6736,18 +6668,18 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 5,
+  "added": 9,
   "removed": 3,
   "hunks": 3,
-  "inline_logic_lines": 2,
-  "hookable": "already-hook",
+  "inline_logic_lines": 3,
+  "hookable": "movable",
   "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
   "evidence": [
    "+    const bool& aIsTRRServiceChannel,",
-   "+    const Maybe<LoadInfoArgs>& aLoadInfo) {  // STEALTH-HOOK(network/proxy-udp)",
-   "+      aURI, aProxyResolveFlags, aIsTRRServiceChannel, aLoadInfo);  // STEALTH-HOOK(network/proxy-udp)"
+   "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+    const Maybe<OriginAttributes>& aOriginAttributes) {  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "Gives the optional LoadInfoArgs to the lookup actor.",
+  "notes": "Gives the optional LoadInfoArgs to the lookup actor. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6758,7 +6690,7 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 2,
+  "added": 4,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 0,
@@ -6766,9 +6698,10 @@
   "anchor": "EXPORTS.mozilla.net and UNIFIED_SOURCES lists",
   "evidence": [
    "+    \"StealthDocumentChannel.h\",  # STEALTH-HOOK(network/proxy-udp)",
+   "+    \"StealthTRRContext.h\",  # STEALTH-HOOK(network/doh)",
    "+    \"StealthDocumentChannel.cpp\",  # STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "Registers our StealthDocumentChannel header and source.",
+  "notes": "Registers our StealthDocumentChannel header and source. Also registers StealthTRRContext (network/doh).",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
@@ -6812,6 +6745,399 @@
    "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/socks)"
   ],
   "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/build/moz.build",
+  "category": "build",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "EXPORTS.transport list",
+  "evidence": [
+   "+    \"../nr_stealth_network.h\",  # STEALTH-HOOK(fingerprint/webrtc/declared-network)"
+  ],
+  "notes": "Exports our header nr_stealth_network.h next to the other transport headers.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/moz.build",
+  "category": "build",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the FUZZING_INTERFACES block",
+  "evidence": [
+   "+TEST_DIRS += [\"test/gtest\"]  # STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+"
+  ],
+  "notes": "Builds the gtests of the transport directory (test/gtest), where the declared-network tests live.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 6,
+  "removed": 15,
+  "hunks": 3,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_network.h; StunAddrsRequestParent::SendStunAddrs (the start of the mDNS responder)",
+  "evidence": [
+   "+#include \"transport/nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the responder joins the mDNS group on the loopback and",
+   "+  // speaks through it, not on the adapters of the list: the list is the declaration, whose address the OS does"
+  ],
+  "notes": "The parent's mDNS responder joins the group on the loopback (nr_stealth_mdns_interfaces) instead of on the host's adapters: the declared address is not the host's, a join on it fails, and the responder would never hear its own query. The loop over the adapters of the list is gone.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/mdns_service/src/lib.rs",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 11,
+  "removed": 2,
+  "hunks": 2,
+  "inline_logic_lines": 7,
+  "hookable": "movable",
+  "anchor": "MDNSService::new, after the join_multicast_v4 loop",
+  "evidence": [
+   "+        for addr in &addrs {",
+   "+            if let Err(err) = socket.join_multicast_v4(&mdns_addr, addr) {",
+   "+        // STEALTH-HOOK(fingerprint/webrtc/declared-network): the parent gives the loopback"
+  ],
+  "notes": "The responder sets the multicast interface to the address it joined on, or a query would leave on the default multicast route and never come back to its socket (on Linux a join on the loopback hears nothing without it). The loop iterates by reference so the first address stays available.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nricectx.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 6,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_network.h; NrIceCtx::TakeHostPort; member host_ports_",
+  "evidence": [
+   "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the next host UDP port of this connection (R3,",
+   "+  // nr_stealth_network.h StealthHostPorts)."
+  ],
+  "notes": "Each ICE context owns the counter of its host UDP ports (StealthHostPorts): consecutive from a random base in the dynamic range, as Windows hands them out.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nricectx.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 19,
+  "removed": 2,
+  "hunks": 3,
+  "inline_logic_lines": 15,
+  "hookable": "movable",
+  "anchor": "include of RandomNum.h; NrIceCtx constructor (host_ports_); nr_socket_local_create",
+  "evidence": [
+   "+#include \"mozilla/RandomNum.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+      proxy_config_(nullptr),",
+   "+      host_ports_(mozilla::RandomUint64OrDie()) {}  // STEALTH-HOOK(fingerprint/webrtc/declared-network)"
+  ],
+  "notes": "A host UDP socket of a declared address takes the next port of its connection; a busy port (R_ALREADY from NrSocket::create) is skipped, as the kernel skips it. Loopback and wildcard addresses go the plain way. The loop of 64 tries is the one piece of logic here; it could move behind one call.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/test/gtest_utils.h",
+  "category": "other",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 5,
+  "hookable": "movable",
+  "anchor": "MtransportTest::SetUp, before the env vars of the tests",
+  "evidence": [
+   "+    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the interfaces are declared, never read from the host",
+   "+    // (nr_stealth_network.h). These tests gather on the declared adapter, as the browser does.",
+   "+    std::string declared;"
+  ],
+  "notes": "The mtransport unit tests gather on a declared adapter (STEALTHFOX_WEBRTC_NETWORK is set when the environment has none), as the browser does.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/moz.yaml",
+  "category": "build",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 6,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "vendoring: exclude list",
+  "evidence": [
+   "-    - src/stun/addrs-bsd.c",
+   "-    - src/stun/addrs-bsd.h",
+   "-    - src/stun/addrs-netlink.c"
+  ],
+  "notes": "The OS enumerators of the interfaces (addrs-bsd, addrs-netlink, addrs-win32) are no longer in the files we keep.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/dns/TRR.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 11,
+  "removed": 1,
+  "hunks": 4,
+  "inline_logic_lines": 5,
+  "hookable": "movable",
+  "anchor": "include of StealthTRRContext.h; TRR::SendHTTPRequest (the channel's load info; the cached connection info)",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  // STEALTH-HOOK(network/doh): the request leaves by the proxy of the context",
+   "+  // of the lookup that caused it."
+  ],
+  "notes": "The DoH request leaves by the proxy of the context of the lookup that caused it: the channel's load info carries that context, and the cached default connection info (network.trr.async_connInfo, off in a release) is not used for another context.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/TRRServiceChannel.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 18,
+  "removed": 2,
+  "hunks": 5,
+  "inline_logic_lines": 8,
+  "hookable": "movable",
+  "anchor": "include of StealthTRRContext.h; MaybeResolveProxyAndBeginConnect; ResolveProxy; OnProxyAvailable",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)",
+   "+      NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The proxy lookup of a DoH request is made for the context of its load info, and fails closed: a lookup that fails or cannot start ends the request (StealthTRRProxyFailure) instead of going DIRECT, which would send the name from the host's own address.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/Http3ConnectUDPStream.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 6,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "Http3ConnectUDPStream::SetSocksProxy",
+  "evidence": [
+   "+// STEALTH-HOOK(network/proxy-udp): nsIUDPSocket.setSocksProxy is for the sockets that leave by a SOCKS5 proxy; this stream",
+   "+// goes by its own HTTP proxy (CONNECT-UDP).",
+   "+NS_IMETHODIMP Http3ConnectUDPStream::SetSocksProxy(nsIProxyInfo* aProxyInfo) {"
+  ],
+  "notes": "nsIUDPSocket.setSocksProxy is for the sockets that leave by a SOCKS5 proxy; the CONNECT-UDP stream goes by its own HTTP proxy, so it answers not implemented.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 110,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 13,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 65,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */",
+   "-/* vim: set ts=2 et sw=2 tw=80: */",
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 282,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/*",
+   "-Copyright (c) 2011, The WebRTC project authors. All rights reserved.",
+   "-"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 45,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/*",
+   "-Copyright (c) 2011, The WebRTC project authors. All rights reserved.",
+   "-"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 139,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 13,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."

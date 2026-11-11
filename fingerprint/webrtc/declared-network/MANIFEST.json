@@ -1,0 +1,445 @@
+{
+ "modified": [
+  "dom/media/webrtc/transport/build/moz.build",
+  "dom/media/webrtc/transport/common.build",
+  "dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp",
+  "dom/media/webrtc/transport/mdns_service/src/lib.rs",
+  "dom/media/webrtc/transport/moz.build",
+  "dom/media/webrtc/transport/nricectx.cpp",
+  "dom/media/webrtc/transport/nricectx.h",
+  "dom/media/webrtc/transport/test/gtest_utils.h",
+  "dom/media/webrtc/transport/third_party/nICEr/moz.yaml",
+  "dom/media/webrtc/transport/third_party/nICEr/nicer.gyp",
+  "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h",
+  "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp"
+ ],
+ "added": {
+  "dom/media/webrtc/transport/nr_stealth_network.cpp": "100644",
+  "dom/media/webrtc/transport/nr_stealth_network.h": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthDeclaredNetwork.cpp": "100644",
+  "dom/media/webrtc/transport/test/gtest/moz.build": "100644",
+  "third_party/libwebrtc/api/location.h": "100644"
+ },
+ "inventory": [
+  {
+   "file": "dom/media/webrtc/transport/build/moz.build",
+   "category": "build",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS.transport list",
+   "evidence": [
+    "+    \"../nr_stealth_network.h\",  # STEALTH-HOOK(fingerprint/webrtc/declared-network)"
+   ],
+   "notes": "Exports our header nr_stealth_network.h next to the other transport headers.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/common.build",
+   "category": "build",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "transport_lcppsrcs (source list)",
+   "evidence": [
+    "+    \"nr_stealth_network.cpp\","
+   ],
+   "notes": "Registers our file nr_stealth_network.cpp (the declared network of WebRTC).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 6,
+   "removed": 15,
+   "hunks": 3,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "include of nr_stealth_network.h; StunAddrsRequestParent::SendStunAddrs (the start of the mDNS responder)",
+   "evidence": [
+    "+#include \"transport/nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the responder joins the mDNS group on the loopback and",
+    "+  // speaks through it, not on the adapters of the list: the list is the declaration, whose address the OS does"
+   ],
+   "notes": "The parent's mDNS responder joins the group on the loopback (nr_stealth_mdns_interfaces) instead of on the host's adapters: the declared address is not the host's, a join on it fails, and the responder would never hear its own query. The loop over the adapters of the list is gone.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/mdns_service/src/lib.rs",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 11,
+   "removed": 2,
+   "hunks": 2,
+   "inline_logic_lines": 7,
+   "hookable": "movable",
+   "anchor": "MDNSService::new, after the join_multicast_v4 loop",
+   "evidence": [
+    "+        for addr in &addrs {",
+    "+            if let Err(err) = socket.join_multicast_v4(&mdns_addr, addr) {",
+    "+        // STEALTH-HOOK(fingerprint/webrtc/declared-network): the parent gives the loopback"
+   ],
+   "notes": "The responder sets the multicast interface to the address it joined on, or a query would leave on the default multicast route and never come back to its socket (on Linux a join on the loopback hears nothing without it). The loop iterates by reference so the first address stays available.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/moz.build",
+   "category": "build",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "after the FUZZING_INTERFACES block",
+   "evidence": [
+    "+TEST_DIRS += [\"test/gtest\"]  # STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+"
+   ],
+   "notes": "Builds the gtests of the transport directory (test/gtest), where the declared-network tests live.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nricectx.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 19,
+   "removed": 2,
+   "hunks": 3,
+   "inline_logic_lines": 15,
+   "hookable": "movable",
+   "anchor": "include of RandomNum.h; NrIceCtx constructor (host_ports_); nr_socket_local_create",
+   "evidence": [
+    "+#include \"mozilla/RandomNum.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+      proxy_config_(nullptr),",
+    "+      host_ports_(mozilla::RandomUint64OrDie()) {}  // STEALTH-HOOK(fingerprint/webrtc/declared-network)"
+   ],
+   "notes": "A host UDP socket of a declared address takes the next port of its connection; a busy port (R_ALREADY from NrSocket::create) is skipped, as the kernel skips it. Loopback and wildcard addresses go the plain way. The loop of 64 tries is the one piece of logic here; it could move behind one call.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nricectx.h",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "include of nr_stealth_network.h; NrIceCtx::TakeHostPort; member host_ports_",
+   "evidence": [
+    "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the next host UDP port of this connection (R3,",
+    "+  // nr_stealth_network.h StealthHostPorts)."
+   ],
+   "notes": "Each ICE context owns the counter of its host UDP ports (StealthHostPorts): consecutive from a random base in the dynamic range, as Windows hands them out.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/test/gtest_utils.h",
+   "category": "other",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 5,
+   "hookable": "movable",
+   "anchor": "MtransportTest::SetUp, before the env vars of the tests",
+   "evidence": [
+    "+    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the interfaces are declared, never read from the host",
+    "+    // (nr_stealth_network.h). These tests gather on the declared adapter, as the browser does.",
+    "+    std::string declared;"
+   ],
+   "notes": "The mtransport unit tests gather on a declared adapter (STEALTHFOX_WEBRTC_NETWORK is set when the environment has none), as the browser does.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/moz.yaml",
+   "category": "build",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 6,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "vendoring: exclude list",
+   "evidence": [
+    "-    - src/stun/addrs-bsd.c",
+    "-    - src/stun/addrs-bsd.h",
+    "-    - src/stun/addrs-netlink.c"
+   ],
+   "notes": "The OS enumerators of the interfaces (addrs-bsd, addrs-netlink, addrs-win32) are no longer in the files we keep.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/nicer.gyp",
+   "category": "build",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 3,
+   "removed": 7,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "include_dirs of the nICEr target; the stun source list",
+   "evidence": [
+    "+              # transport dir — for nr_stealth_network.h",
+    "+              '../..',",
+    "+"
+   ],
+   "notes": "Adds the transport directory so nICEr sources can include nr_stealth_network.h, and drops the OS enumerators (addrs-bsd, addrs-netlink, addrs-netlink-wireless, addrs-win32) from the sources.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 7,
+   "removed": 92,
+   "hunks": 4,
+   "inline_logic_lines": 5,
+   "hookable": "movable",
+   "anchor": "include of nr_stealth_network.h; nr_ice_get_default_local_address; nr_ice_set_local_addresses (no default address)",
+   "evidence": [
+    "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+/* STEALTH-HOOK(fingerprint/webrtc/declared-network): the default address of a family is the declared",
+    "+   address of that family (nr_stealth_network.h), found in the list the parent sent, which is the"
+   ],
+   "notes": "The default address of a family is the declared entry of that family (nr_stealth_default_local_address): the route probe (a UDP socket connected to the page's server or a public address, then getsockname) is gone, with it the wildcard refusal and the fallback to every filtered address. A family the declaration does not have has no default address, as a machine with no route in that family. Mozilla's probing function is replaced by one call.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 110,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+    "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+    "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 13,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+    "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+    "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 65,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */",
+    "-/* vim: set ts=2 et sw=2 tw=80: */",
+    "-/* This Source Code Form is subject to the terms of the Mozilla Public"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 282,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/*",
+    "-Copyright (c) 2011, The WebRTC project authors. All rights reserved.",
+    "-"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 45,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/*",
+    "-Copyright (c) 2011, The WebRTC project authors. All rights reserved.",
+    "-"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 139,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+    "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+    "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 0,
+   "removed": 13,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "whole file (deleted)",
+   "evidence": [
+    "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+    "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+    "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+   ],
+   "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp",
+   "category": "spoof",
+   "feature": "webrtc-declared-network",
+   "prefs": [],
+   "added": 3,
+   "removed": 9,
+   "hunks": 3,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "includes; nr_stun_get_addrs",
+   "evidence": [
+    "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared adapter, never the host's.",
+    "+    _status = nr_stealth_declared_addrs(addrs, maxaddrs, count);"
+   ],
+   "notes": "The interfaces are the declared adapter (nr_stealth_declared_addrs), never the host's: the includes of the OS enumerators are gone and nr_stun_get_addrs returns the declaration.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  }
+ ]
+}

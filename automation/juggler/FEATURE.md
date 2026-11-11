@@ -8,6 +8,13 @@ Test: TODO
 
 TODO: one paragraph, from the notes below.
 
+## The proxy of the session (juggler/SessionRoute.js)
+
+`newProxyInfoFor` builds the nsIProxyInfo of a proxy record once, when the proxy is set (that call throws for a record that cannot be
+expressed), and the channel filter gives the same object on every request: a filter that threw would end the request DIRECT, because
+necko skips a filter that throws. The info does not tell the proxy to resolve the host: the browser resolves names itself (DoH,
+network/doh) and connects to the IP.
+
 ## Hooks in Mozilla files
 
 - `modules/libpref/moz.build` (pref_groups list, already-hook): Registers the 'juggler' pref group, so the juggler.* entries in StaticPrefList.yaml are built into the generated StaticPrefs headers. Pure registration.

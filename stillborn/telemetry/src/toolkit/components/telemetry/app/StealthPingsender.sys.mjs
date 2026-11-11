@@ -90,7 +90,7 @@ export function runAsync(process, params, observer) {
  *   holds it (`Browser.setBrowserProxy`, `BrowserContext.setProxy`); when this
  *   browser is not driven by Juggler there is none, and the record is null.
  * - `prefs`: this profile's prefs.js, so the task reads the network prefs the
- *   session was declared with (`network.proxy.*`, `zoom.stealth.dns.*`) rather
+ *   session was declared with (`network.proxy.*`, `network.trr.*`) rather
  *   than the defaults of its own empty profile. Saved at profile-before-change,
  *   before the shutdown pings are flushed.
  */

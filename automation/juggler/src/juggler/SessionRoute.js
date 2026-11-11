@@ -51,6 +51,9 @@ const PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS = new Set(['socks', 'socks4']
 
 const UINT32_MAX = Math.pow(2, 32) - 1;
 
+// The nsIProxyInfo of each record, built once (see newProxyInfoFor).
+const proxyInfoOfRecord = new WeakMap();
+
 /**
  * ONE expression of how a stored proxy record becomes an nsIProxyInfo.
  *
@@ -68,6 +71,20 @@ const UINT32_MAX = Math.pow(2, 32) - 1;
  * silent leak one navigation later.
  */
 export function newProxyInfoFor(proxy) {
+  // Built once, when the proxy is SET (that call throws for a record that cannot
+  // be expressed). The channel filter asks again for every request and gets the
+  // same object: a filter that threw would end the request DIRECT, because
+  // necko skips a filter that throws, and no request of a session behind a
+  // proxy may take that road.
+  let info = proxyInfoOfRecord.get(proxy);
+  if (!info) {
+    info = buildProxyInfo(proxy);
+    proxyInfoOfRecord.set(proxy, info);
+  }
+  return info;
+}
+
+function buildProxyInfo(proxy) {
   const carriesOwnCredentials = PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type);
   const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
   return protocolProxyService.newProxyInfoWithAuth(
@@ -78,7 +95,7 @@ export function newProxyInfoFor(proxy) {
       carriesOwnCredentials ? (proxy.password || '') : '',
       '', /* aProxyAuthorizationHeader */
       '', /* aConnectionIsolationKey */
-      Ci.nsIProxyInfo.TRANSPARENT_PROXY_RESOLVES_HOST, /* aFlags */
+      0, /* aFlags: the browser resolves names itself (DoH) and connects to the IP */
       UINT32_MAX, /* aFailoverTimeout */
       null, /* failover proxy */
   );
