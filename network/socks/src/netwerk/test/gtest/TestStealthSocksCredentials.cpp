@@ -1364,7 +1364,7 @@ TEST(StealthSessionUdpProxy, ADocumentThatHasNoAddressOfItsOwnFollowsTheSessionP
     ASSERT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, principal,
                                    nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));
     Maybe<LoadInfoArgs> args;
-    ASSERT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(channel->LoadInfo(), &args));
+    ASSERT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(nsCOMPtr<nsILoadInfo>(channel->LoadInfo()), &args));
     ASSERT_TRUE(args.isSome());
     RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(*args);
     ASSERT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
@@ -1447,7 +1447,7 @@ TEST(StealthSessionUdpProxy, TheKindOfProxyDecidesWhereTheUdpGoes)
     EXPECT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, nsContentUtils::GetSystemPrincipal(),
                                    nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));
     Maybe<LoadInfoArgs> args;
-    EXPECT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(channel->LoadInfo(), &args));
+    EXPECT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(nsCOMPtr<nsILoadInfo>(channel->LoadInfo()), &args));
     RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(*args);
     EXPECT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
                                    [&] { return proxy->GetKind() != PcUdpProxy::Kind::Resolving; }));
