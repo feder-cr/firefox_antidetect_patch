@@ -464,7 +464,12 @@ export class FrameTree {
     // (the navigation may have begun in another process, and then the parent knows its id).
     this.emit(FrameTree.Events.DocumentInserted, frame, navigationId || undefined);
 
-    if (this._isPageMain(frame)) {
+    // The listeners that record where a pointer event landed are on the chrome event handler of the ROOT of this
+    // tree: the page's main frame, or the root of a fragment in another process (an <iframe> of another site).
+    // The pointer event of a click on such an iframe lands in the process that owns it, and its landing is told
+    // from there; with the listeners only on the page's main frame, that root recorded nothing and every click
+    // on it was told not to have reached the page.
+    if (frame === this._mainFrame) {
       this._installMainFrameInputListeners(docShell);
     }
   }

@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { settle, until } from './_turns.mjs';
 
 const SOURCE = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'SimpleChannel.js'), 'utf8');
@@ -39,7 +40,7 @@ function loadIntoProcess() {
   return scope.SimpleChannel;
 }
 
-const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
 
 // The browser's wiring, not a symmetric link: each content end keeps the
 // transport of its own actor for the life of its document, and the parent end

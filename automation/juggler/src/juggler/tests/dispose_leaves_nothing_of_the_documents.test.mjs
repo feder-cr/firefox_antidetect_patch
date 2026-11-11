@@ -51,10 +51,11 @@ class FakeDebugger {
   }
   addDebuggee(global) {
     this.debuggees.add(global);
-    return {};
+    return { referent: global };
   }
-  removeDebuggee(global) {
-    this.debuggees.delete(global);
+  removeDebuggee(object) {
+    // A Debugger.Object or a global, as the real one takes both.
+    this.debuggees.delete(object && object.referent ? object.referent : object);
   }
   removeAllDebuggees() {
     this.debuggees.clear();
@@ -81,7 +82,7 @@ function runtimeWithContexts(contexts, order = []) {
     const context = { _id: id, _domWindow: window, _contextGlobal: { id }, _serializationGlobal: null };
     runtime._executionContexts.set(id, context);
     runtime._windowToExecutionContext.set(window, context);
-    runtime._debugger.addDebuggee(context._contextGlobal);
+    context._debuggee = runtime._debugger.addDebuggee(context._contextGlobal);
   }
   return runtime;
 }

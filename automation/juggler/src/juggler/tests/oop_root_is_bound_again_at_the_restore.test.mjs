@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { until, connected, quiet } from './_turns.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -29,7 +30,7 @@ function load(file, scope, names) {
   return scope.__names;
 }
 const plain = x => JSON.parse(JSON.stringify(x));
-const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
 
 const channelScope = () => ({ dump: () => {}, ChromeUtils: { importESModule: () => ({ setTimeout }) } });
 
@@ -67,17 +68,20 @@ function root() {
   });
   const contentActor = { actorName: 'content::1/5/1', receiveMessage() { throw new Error('the original receiveMessage'); } };
   // the browser delivers what an actor sends to the receiveMessage the other actor has AT THAT MOMENT
-  contentActor.sendAsyncMessage = (name, data) => setImmediate(() => parentActor.receiveMessage({ name, data: plain(data) }));
-  parentActor.sendAsyncMessage = (name, data) => setImmediate(() => contentActor.receiveMessage({ name, data: plain(data) }));
+  // what is on its way, to know when the ends are quiet (a count, not a time)
+  let inFlight = 0;
+  const carry = (deliver) => { inFlight++; setImmediate(() => { try { deliver(); } finally { inFlight--; } }); };
+  contentActor.sendAsyncMessage = (name, data) => carry(() => parentActor.receiveMessage({ name, data: plain(data) }));
+  parentActor.sendAsyncMessage = (name, data) => carry(() => contentActor.receiveMessage({ name, data: plain(data) }));
 
   parentEnd.bindToActor(parentActor);
   contentEnd.bindToActor(contentActor);
-  return { parentEnd, contentEnd, parentActor, contentActor, registry, seen, reattached: () => reattached };
+  return { parentEnd, contentEnd, parentActor, contentActor, registry, seen, reattached: () => reattached, inFlight: () => inFlight };
 }
 
 test('an out-of-process root whose actor stayed bound is bound again when its document asks, and is reattached', async () => {
   const r = root();
-  await settle();
+  await connected(r);
   assert.equal(r.contentEnd.isReady(), true);
 
   // pagehide with `persisted`: the content end stops sending, the parent end stays bound to the actor
@@ -86,7 +90,7 @@ test('an out-of-process root whose actor stayed bound is bound again when its do
 
   // pageshow: the document asks to be bound again
   r.contentActor.sendAsyncMessage('juggler:became-current', {});
-  await settle();
+  await until('the root is reattached', () => r.reattached() === 1 && r.contentEnd.isReady());
 
   assert.equal(r.registry.bound.length, 1, 'the registry bound the root again');
   assert.equal(r.reattached(), 1, 'the reattachment hook ran once');
@@ -95,35 +99,35 @@ test('an out-of-process root whose actor stayed bound is bound again when its do
 
 test('what the restored root says after the reattachment reaches the parent', async () => {
   const r = root();
-  await settle();
+  await connected(r);
   r.contentEnd.detachFromPeer();
   // said while detached: waits
   r.contentEnd.connect('page').emit('event', 'from the cache');
-  await settle();
+  await quiet(r);
   assert.deepEqual(r.seen, []);
   r.contentActor.sendAsyncMessage('juggler:became-current', {});
-  await settle();
+  await until('what was said while detached arrives', () => r.seen.length === 1);
   assert.deepEqual(plain(r.seen), ['from the cache']);
 });
 
 test('the top, whose actor was unbound by the document that replaced it, is bound again as before', async () => {
   const r = root();
-  await settle();
+  await connected(r);
   r.contentEnd.detachFromPeer();
   // the next document's actor takes the channel: the old actor is unbound and its receiveMessage is its own again
   const next = { actorName: 'browser::page[1]/1/6/2', sendAsyncMessage() {} };
   r.parentEnd.bindToActor(next);
   assert.equal(r.parentActor.receiveMessage, Object.getPrototypeOf(r.parentActor).receiveMessage);
   r.contentActor.sendAsyncMessage('juggler:became-current', {});
-  await settle();
+  await until('the root is reattached', () => r.reattached() === 1);
   assert.equal(r.registry.bound.length, 1);
   assert.equal(r.reattached(), 1);
 });
 
 test('a message of the channel still reaches the channel of a bound actor', async () => {
   const r = root();
-  await settle();
+  await connected(r);
   r.contentEnd.connect('page').emit('event', 'hello');
-  await settle();
+  await until('the message arrives', () => r.seen.length === 1);
   assert.deepEqual(plain(r.seen), ['hello']);
 });

@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { settle, until } from './_turns.mjs';
 
 const SOURCE = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'SimpleChannel.js'), 'utf8');
@@ -48,7 +49,7 @@ function link(a, b, lose = () => false) {
   b.setTransport({ sendMessage: deliver(b, a), dispose: () => {} });
 }
 
-const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
 
 function parentEnd() {
   const Parent = loadIntoProcess();

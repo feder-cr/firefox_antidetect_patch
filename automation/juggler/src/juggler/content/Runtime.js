@@ -420,7 +420,14 @@ class Runtime {
         this._pendingPromises.delete(promiseID);
       }
     }
-    this._debugger.removeDebuggee(destroyedContext._contextGlobal);
+    // The debuggee is removed by the Debugger.Object that addDebuggee gave, not by the global it was given. The
+    // global of the page's own world is its WindowProxy, and a WindowProxy follows the frame: once the frame has
+    // gone to another process (an iframe of another site) the proxy here is a remote one, no longer a global object,
+    // and `removeDebuggee(proxy)` throws "argument is not a global object" while the debuggee stays registered. The
+    // throw stopped everything that destroyed the frame's contexts: the commit of the document that replaces the
+    // page the frame was in (the navigation to the same address, whose document stays in this process, then never
+    // told its document: it neither committed nor aborted) and the detach of the frame.
+    this._debugger.removeDebuggee(destroyedContext._debuggee);
     if (destroyedContext._serializationGlobal)
       this._debugger.removeDebuggee(destroyedContext._serializationGlobal);
     this._executionContexts.delete(destroyedContext._id);

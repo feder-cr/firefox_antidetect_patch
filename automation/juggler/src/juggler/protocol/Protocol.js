@@ -931,6 +931,19 @@ const Page = {
         quads: t.Array(pageTypes.DOMQuad),
       },
     },
+    // Stealthfox [F6]: where the viewport of a frame starts, in the CSS pixels of the main document (the viewport
+    // of the top as origin). window.mozInnerScreenX/Y say it only inside one process: a frame in another process
+    // has its own widget, which sits at the origin of the window like the top's, so the difference of the two
+    // origins is zero for it and a point of the main document would be asked of it as it is.
+    'getFrameOrigin': {
+      params: {
+        frameId: t.String,
+      },
+      returns: {
+        x: t.Number,
+        y: t.Number,
+      },
+    },
     'dispatchKeyEvent': {
       params: {
         type: t.String,

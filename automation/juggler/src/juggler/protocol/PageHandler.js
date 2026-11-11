@@ -444,6 +444,16 @@ export class PageHandler {
       afterName.push([protocolEventName, payload]);
       return;
     }
+    // The end of the load of a frame is told after the commit of every frame below it: the client reads the frames
+    // when `load` comes, and the commit of a frame in another process is told when the name of its <iframe> has been
+    // asked of the embedder, which is the process that says this `load`.
+    if (protocolEventName === 'Page.eventFired' && payload && (payload.name === 'load' || payload.name === 'DOMContentLoaded')) {
+      const below = this._frameWaitingForNameBelow(frameId);
+      if (below !== undefined) {
+        this._eventsAfterName.get(below).push([protocolEventName, payload, frameId]);
+        return;
+      }
+    }
     if (frameId === undefined || this._reportedFrameIds.has(frameId))
       return this._session.emitEvent(protocolEventName, payload);
     if (this._droppedFrameIds.has(frameId))
@@ -458,6 +468,17 @@ export class PageHandler {
       return;
     }
     queue.push({protocolEventName, payload});
+  }
+
+  // A frame below `frameId` whose commit waits for the name of its <iframe>, if there is one.
+  _frameWaitingForNameBelow(frameId) {
+    for (const waiting of this._eventsAfterName.keys()) {
+      for (let parent = this._parentOfFrame.get(waiting); parent !== undefined; parent = this._parentOfFrame.get(parent)) {
+        if (parent === frameId)
+          return waiting;
+      }
+    }
+    return undefined;
   }
 
   // A browsing context of this page that went without the client ever hearing of it: nothing waits for it.
@@ -589,9 +610,10 @@ export class PageHandler {
   // then goes behind it.
   _flushAfterName(frameId, queue) {
     for (let i = 0; i < queue.length; i++) {
-      const [protocolEventName, payload] = queue[i];
+      const [protocolEventName, payload, owner] = queue[i];
       if (protocolEventName !== COMMIT_BEHIND) {
-        this._emitFrameKeyed(protocolEventName, payload, frameId);
+        // An event of a frame above this one (its `load`, held behind this commit) goes out as that frame's.
+        this._emitFrameKeyed(protocolEventName, payload, owner === undefined ? frameId : owner);
         continue;
       }
       this._onNavigationCommitted(payload);
@@ -943,6 +965,30 @@ export class PageHandler {
         viewport = await this._contentPage.send('frameViewport', {frameId: rootFrameId});
     }
     return {quads};
+  }
+
+  // Where the viewport of a frame starts, in the CSS pixels of the main document (the viewport of the top as
+  // origin, scroll applied: what getBoundingClientRect of the top would say of a box that starts there). The
+  // origin of the frame's viewport is carried up one <iframe> at a time, by the content box of the <iframe>
+  // measured where the <iframe> is, the way Page.getContentQuads carries a node: a step inside one process
+  // and a step across a process boundary are the same call. The client turns a point of the main document into
+  // the point of the frame by taking this from it; window.mozInnerScreenX/Y of the frame cannot say it, they
+  // are the same in every process of the window.
+  async ['Page.getFrameOrigin']({frameId}) {
+    const mux = this._contentChannel;
+    let point = {x: 0, y: 0};
+    let current = frameId;
+    while (this._rootIdOf(current) !== mux.mainRootId() || this._rootFrameIdOf(current) !== current) {
+      const viewport = await this._contentPage.send('frameViewport', {frameId: current});
+      const transform = await this._contentPage.send('frameBoxTransform', {childFrameId: current});
+      if (transform.empty)
+        throw new Error('Frame ' + current + ' has no box');
+      if (transform.parentRootFrameId === current)
+        throw new Error('Frame ' + current + ' is its own parent');
+      point = mapPoint(transform, viewport, point);
+      current = transform.parentRootFrameId;
+    }
+    return point;
   }
 
   // The root (the id of its browsing context) a frame belongs to. The mux does not know it for a frame in
