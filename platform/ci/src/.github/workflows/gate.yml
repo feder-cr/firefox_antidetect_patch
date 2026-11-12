@@ -330,6 +330,10 @@ jobs:
           # of reference (there the trap does not run: the one assertion it makes is the only one not made)
           - { suite: wrapper.e2e.doh, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
           - { suite: wrapper.e2e.doh, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the realness check without a real proxy (six declared exits, the values a page reads): like the DoH suite, Linux as root
+          # without xdist (the resolver trap), Windows without the trap
+          - { suite: wrapper.e2e.realness, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
+          - { suite: wrapper.e2e.realness, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
           # the page and popup suites (a page is handed over on Page.ready; a popup reaches the client as Playwright's does)
           - { suite: wrapper.e2e.page, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.e2e.page, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
