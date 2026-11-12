@@ -844,6 +844,23 @@ def group_gate_workflow(doc) -> list:
     return out
 
 
+def group_sources(doc) -> list:
+    """Sources that broke a build leg before, read as text (the compiler is the judge, but only after a node and 2 minutes)."""
+    # run 43143685921, build-win: <in6addr.h> defines `_S6_un` as `u`, so `pr_s6_addr` (= _S6_un._S6_u8) names a member of
+    # PRIPv6Addr that does not exist once winsock is included; the bytes of an address are read through a cast.
+    out = []
+    for relative in (("netwerk", "socket", "nsSOCKSUDPIOLayer.cpp"),
+                     ("dom", "media", "webrtc", "transport", "test", "gtest", "TestStealthDeclaredNetwork.cpp")):
+        text = ROOT.joinpath(*relative).read_text(encoding="utf-8")
+        code = [line for line in text.splitlines() if not line.lstrip().startswith("//")]
+        out.append(("sources: %s reads the bytes of an IPv6 address without the pr_s6_addr macros (winsock redefines _S6_un)"
+                    % relative[-1], not any("pr_s6_addr" in line for line in code)))
+    layer = ROOT.joinpath("netwerk", "socket", "nsSOCKSUDPIOLayer.cpp").read_text(encoding="utf-8")
+    out.append(("sources: nsSOCKSUDPIOLayer.cpp does not include <ws2tcpip.h> (it pulls <in6addr.h> and its macros over the unified file)",
+                "#  include <ws2tcpip.h>" not in layer and "#include <ws2tcpip.h>" not in layer))
+    return out
+
+
 def cases() -> list:
     try:
         import yaml
@@ -852,7 +869,7 @@ def cases() -> list:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     out = []
     for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
-                        (group_stage_package, (doc,)), (group_gate_workflow, (doc,))):
+                        (group_stage_package, (doc,)), (group_gate_workflow, (doc,)), (group_sources, (doc,))):
         try:
             out += group(*args)
         except Exception as exc:

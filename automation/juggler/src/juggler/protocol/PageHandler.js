@@ -1259,6 +1259,10 @@ export class PageHandler {
     return await this._pageTarget.setInitScripts(scripts);
   }
 
+  async ['Page.addBinding']({ worldName, name, script }) {
+    return await this._pageTarget.addBinding(worldName, name, script);
+  }
+
   // THE KEYBOARD AND THE MOUSE TOOK DIFFERENT ROADS, AND THE PAGE COULD SEE
   // THE DIFFERENCE.
   //

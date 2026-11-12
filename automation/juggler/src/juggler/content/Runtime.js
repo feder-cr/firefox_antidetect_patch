@@ -640,10 +640,17 @@ class ExecutionContext {
 
   addBinding(name, script) {
     Cu.exportFunction((...args) => {
+      let payload = args[0];
+      // A FUNCTION IS NOT A MESSAGE: it is the page-side end of the binding, which the script of the binding hands over so
+      // that the client can answer a call later without a name on the page's window. It is kept as an object of this
+      // context (the client calls it with Runtime.callFunction and the objectId) and the event carries only its id.
+      // Anything else is the message, as before.
+      if (typeof payload === 'function')
+        payload = { bindingEnd: this.rawValueToRemoteObject(payload).objectId };
       emitEvent(this._runtime.events.onBindingCalled, {
         executionContextId: this._id,
         name,
-        payload: args[0],
+        payload,
       });
     }, this._contextGlobal, {
       defineAs: name,

@@ -14,7 +14,11 @@
 
 #ifdef XP_WIN
 #  include <winsock2.h>
-#  include <ws2tcpip.h>
+// <ws2tcpip.h> is not included: it pulls <in6addr.h>, which defines _S6_un, s6_addr... as macros over this whole translation unit
+// (and over the files unified with it). IPV6_V6ONLY is the only thing the file needs from it, and its value is fixed.
+#  ifndef IPV6_V6ONLY
+#    define IPV6_V6ONLY 27
+#  endif
 #else
 #  include <netinet/in.h>
 #  include <sys/socket.h>
@@ -1105,6 +1109,11 @@ SocksUdpShared* SharedOf(PRFileDesc* fd) {
   return data ? data->mShared.get() : nullptr;
 }
 
+// The 16 bytes of an IPv6 address. NOT through pr_s6_addr: it expands to `_S6_un._S6_u8`, and once <in6addr.h> is included
+// (the dual-stack code needs winsock) Windows defines `_S6_un` as `u`, so the macro names a member PRIPv6Addr does not
+// have (clang-cl: "no member named 'u' in 'PRIPv6Addr'", run 43143685921).
+const uint8_t* Ipv6Bytes(const PRNetAddr& aAddr) { return reinterpret_cast<const uint8_t*>(&aAddr.ipv6.ip); }
+
 // True for 127.0.0.0/8 and ::1 (also as an IPv4-mapped address): a destination that does not leave the machine. Firefox sends
 // to localhost direct whatever the proxy; the layer does the same, so two PeerConnections of one page reach each other.
 bool IsLoopbackAddr(const PRNetAddr& aAddr) {
@@ -1113,7 +1122,7 @@ bool IsLoopbackAddr(const PRNetAddr& aAddr) {
   }
   if (aAddr.raw.family == PR_AF_INET6) {
     return PR_IsNetAddrType(&aAddr, PR_IpAddrLoopback) ||
-           (PR_IsNetAddrType(&aAddr, PR_IpAddrV4Mapped) && (aAddr.ipv6.ip.pr_s6_addr[12] == 127));
+           (PR_IsNetAddrType(&aAddr, PR_IpAddrV4Mapped) && (Ipv6Bytes(aAddr)[12] == 127));
   }
   return false;
 }
@@ -1125,7 +1134,7 @@ bool FromTheRelay(const PRNetAddr& aRelay, const PRNetAddr& aSource) {
   }
   if (aRelay.raw.family == PR_AF_INET && aSource.raw.family == PR_AF_INET6) {
     // An AF_INET6 socket sees an IPv4 relay by its IPv4-mapped address.
-    return PR_IsNetAddrType(&aSource, PR_IpAddrV4Mapped) && !memcmp(aSource.ipv6.ip.pr_s6_addr + 12, &aRelay.inet.ip, 4) &&
+    return PR_IsNetAddrType(&aSource, PR_IpAddrV4Mapped) && !memcmp(Ipv6Bytes(aSource) + 12, &aRelay.inet.ip, 4) &&
            aSource.ipv6.port == aRelay.inet.port;
   }
   if (aRelay.raw.family == PR_AF_INET6 && aSource.raw.family == PR_AF_INET6) {

@@ -875,6 +875,15 @@ const Page = {
         scripts: t.Array(pageTypes.InitScript)
       }
     },
+    // Stealthfox: the same as Browser.addBinding, for this page only (a page's own exposed function). The page keeps it
+    // for the processes its frames move to, as it keeps its init scripts.
+    'addBinding': {
+      params: {
+        worldName: t.Optional(t.String),
+        name: t.String,
+        script: t.String,
+      }
+    },
     'navigate': {
       params: {
         frameId: t.String,

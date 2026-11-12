@@ -54,6 +54,7 @@
   "juggler/tests/a_resumed_request_whose_channel_is_cancelled_ends.test.mjs": "100644",
   "juggler/tests/bfcache_for_each_root.test.mjs": "100644",
   "juggler/tests/bfcache_reattach.test.mjs": "100644",
+  "juggler/tests/binding_hands_over_its_end.test.mjs": "100644",
   "juggler/tests/caller_world.test.mjs": "100644",
   "juggler/tests/content_mux.test.mjs": "100644",
   "juggler/tests/content_mux_frame_routes.test.mjs": "100644",

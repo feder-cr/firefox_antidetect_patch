@@ -267,7 +267,9 @@ TEST(StealthDeclaredNetwork, ATcpSocketToATurnServerBindsTheWildcardOfTheDeclare
   ASSERT_TRUE(mozilla::StealthTcpBindAddress("2001:db8:1:2:3:4:5:6", 51234, &b));
   EXPECT_EQ(b.raw.family, PR_AF_INET6);
   EXPECT_EQ(b.ipv6.port, 0);
-  for (unsigned char byte : b.ipv6.ip.pr_s6_addr) EXPECT_EQ(byte, 0);
+  // The 16 bytes through a cast, not pr_s6_addr: with <ws2tcpip.h> in the unit the macro names a member PRIPv6Addr does not have.
+  const unsigned char* bytes = reinterpret_cast<const unsigned char*>(&b.ipv6.ip);
+  for (size_t i = 0; i < 16; ++i) EXPECT_EQ(bytes[i], 0);
 }
 
 TEST(StealthDeclaredNetwork, ATcpBindAddressNeedsAnAddress)
