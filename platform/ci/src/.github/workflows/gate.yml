@@ -313,13 +313,16 @@ jobs:
   wrapper-e2e:
     name: ${{ matrix.suite }}-${{ matrix.leg }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         include:
           - { suite: wrapper.e2e.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.e2e.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the routes and HTTP/3 e2e, split from the suite above (500 s of tests on Linux, 14 minutes and more on Windows)
+          - { suite: wrapper.e2e.web, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.e2e.web, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
           # the unit tests of the line, on both OSes, with the same core and wrapper as the e2e
           - { suite: wrapper.unit.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.unit.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
@@ -425,6 +428,15 @@ jobs:
           export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
           export INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" STEALTHFOX_E2E_BINARY="$FF_EXE"
           mkdir -p result
+          # The log of a job that is cancelled is what pytest had written: unbuffered, so that it says how far the suite got.
+          export PYTHONUNBUFFERED=1
+          # The engine's log of the UDP layer, a file per process, kept with the result: what the browser said is the only way
+          # to tell a product that was slow from a test that was wrong (the e2e of run 43164943499 could not be told apart).
+          case "${{ matrix.suite }}" in
+            *e2e*)
+              LOGDIR="$(python -c "import os; os.makedirs('result/moz-logs', exist_ok=True); print(os.path.abspath('result/moz-logs'))")"
+              export MOZ_LOG="sync,SOCKS-UDP:5" MOZ_LOG_FILE="$LOGDIR/moz-%PID.log";;
+          esac
           JUDGE=scripts/ci_verdict.py
           [ -f wrapper-main/scripts/ci_verdict.py ] && JUDGE=wrapper-main/scripts/ci_verdict.py
           echo "JUDGE=$JUDGE" >> "$GITHUB_ENV"
@@ -434,15 +446,16 @@ jobs:
           # in the xunit2 family (the judge reads the class of every test from it)
           PYTEST=(python -m pytest "${SELECT[@]}" -o addopts='' -o junit_family=xunit2 -q -p no:cacheprovider -p no:rerunfailures -rs --junitxml="result/${{ matrix.suite }}.${{ matrix.os }}.xml")
           if [ "${{ matrix.root }}" = "true" ]; then
-            # The trap listens on port 53 of a loopback address and points /etc/resolv.conf at it. The runner's own stub
-            # (systemd-resolved: 127.0.0.53 and 127.0.0.54) is stopped first, so that nothing holds the port; the job needs no
-            # name of the internet from here on. Who still holds port 53 is said before the trap tries to bind it (run
-            # 43146661635: "no port it could bind"); the trap itself takes the first of 127.0.0.1... it can bind.
-            sudo systemctl stop systemd-resolved 2>/dev/null || true
-            (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | grep -E '[:.]53 ' || echo "nothing listens on port 53"
-            # -H: the browser must not see the runner's home as another user's. The trap must run: a test that cannot make it
-            # fails instead of going on without its assertion.
-            sudo -H -E env -u PYTEST_ADDOPTS INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
+            # The trap listens on port 53 of a loopback address and points /etc/resolv.conf at it (it takes the first of
+            # 127.0.0.1... it can bind). The runner's own stub resolver is NOT stopped: stopping it took the DNS of the runner
+            # with it, and the result of the job could not be uploaded (run 43164943499: EAI_AGAIN). What listens is said
+            # whole, before the suite, so that a port the trap cannot bind has its holder in the log.
+            (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) || echo "no ss or netstat on this runner"
+            # -H: the browser must not see the runner's home as another user's. -u XDG_RUNTIME_DIR: Firefox refuses to run as
+            # root when that directory belongs to the runner's user ("Running Nightly as root in a regular user's session is
+            # not supported", run 43164943499). The trap must run: a test that cannot make it fails instead of going on
+            # without its assertion.
+            sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
           else
             env -u PYTEST_ADDOPTS "${PYTEST[@]}" || true
           fi
