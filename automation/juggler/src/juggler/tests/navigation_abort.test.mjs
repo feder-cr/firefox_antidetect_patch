@@ -80,6 +80,8 @@ function setup() {
     emit: (event, frame, ...args) => emitted.push([event, frame === main ? 'main' : 'child', ...args]),
     forcePageReady: () => emitted.push(['pageReady']),
     _detachFrame() {},
+    _frameNavigationCommitted: FrameTree.prototype._frameNavigationCommitted,
+    _commit: FrameTree.prototype._commit,
     _installMainFrameInputListeners() {},
   };
   return { t, main, child, mainShell, childShell, emitted };
@@ -163,4 +165,58 @@ test('the abort of an iframe that is in the cache by the end of the task is not 
   childShell.browsingContext.isInBFCache = true;
   runQueue();
   assert.deepEqual(emitted, []);
+});
+
+// ── the abort held back as a swap's, and the document that is not the navigation's ───────────────────────────────────────────
+//
+// Measured on firefox-62 (4 browsers loading, the client's goto sent right after a page's own location.replace): the client's
+// navigation (nav-221) started, the page's navigation (load 15032385539) was cancelled by it and RESTARTED under the same load
+// identifier, the client's was cancelled in turn and its abort held back as a swap's (the old document was in the cache by the
+// end of the task); the document that appeared was the page's, so no commit and no abort was ever told for nav-221 and the
+// client waited 15 s ("started and has neither committed nor been aborted"), 3 times in 200.
+
+test('an abort held back as a swap\'s is reported when the document that appears is another navigation\'s', () => {
+  const { t, main, mainShell, emitted } = setup();
+  stop(t, mainShell, Cr.NS_BINDING_ABORTED);
+  mainShell.browsingContext.isInBFCache = true;
+  runQueue();
+  assert.deepEqual(emitted, []);                      // held: not yet known to be the swap's
+  main._pendingNavigationId = 'nav-page';             // the page's own navigation, restarted under its own load identifier
+  docElementInserted(t, mainShell);
+  assert.deepEqual(emitted.map(e => e[0]), [ABORTED, COMMITTED, 'pageReady', 'documentinserted'],
+                   'the abort of the held navigation, then the commit and the document of the other one');
+  assert.deepEqual(emitted[0], [ABORTED, 'main', 'nav-1', 'NS_BINDING_ABORTED']);
+  assert.equal(main._suppressedAbort, null);
+});
+
+test('an abort held back as a swap\'s stays silent when the navigation\'s own document appears', () => {
+  const { t, main, mainShell, emitted } = setup();
+  stop(t, mainShell, Cr.NS_BINDING_ABORTED);
+  mainShell.browsingContext.isInBFCache = true;
+  runQueue();
+  main._pendingNavigationId = 'nav-1';                // the same navigation, carried to the new document
+  docElementInserted(t, mainShell);
+  assert.equal(emitted.filter(e => e[0] === ABORTED).length, 0);
+  assert.deepEqual(emitted.map(e => e[0]), [COMMITTED, 'pageReady', 'documentinserted']);
+});
+
+test('an abort held back as a swap\'s is dropped by the next document, once', () => {
+  const { t, main, mainShell, emitted } = setup();
+  stop(t, mainShell, Cr.NS_BINDING_ABORTED);
+  mainShell.browsingContext.isInBFCache = true;
+  runQueue();
+  main._pendingNavigationId = 'nav-page';
+  docElementInserted(t, mainShell);
+  docElementInserted(t, mainShell);                   // a later document must not repeat it
+  assert.equal(emitted.filter(e => e[0] === ABORTED).length, 1);
+});
+
+test("an abort held back as a swap's stays silent when the document that appears carries no navigation id", () => {
+  const { t, main, mainShell, emitted } = setup();
+  stop(t, mainShell, Cr.NS_BINDING_ABORTED);
+  mainShell.browsingContext.isInBFCache = true;
+  runQueue();
+  assert.equal(main._pendingNavigationId, null);      // the swap cleared it and nothing restarted it
+  docElementInserted(t, mainShell);
+  assert.equal(emitted.filter(e => e[0] === ABORTED).length, 0, "it may be this navigation's own document: not ours to end");
 });

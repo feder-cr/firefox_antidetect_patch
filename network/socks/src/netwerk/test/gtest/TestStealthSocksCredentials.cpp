@@ -39,6 +39,7 @@
 #include "nsNetUtil.h"
 #include "StealthPcUdpProxy.h"
 #include "nsSOCKSUDPIOLayer.h"
+#include "nsIDNSService.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "prenv.h"
@@ -742,6 +743,11 @@ TEST(StealthSessionUdpProxy, TheFailureOfOneProxyDoesNotHoldBackAnother)
 // and 127.0.0.1; the fake proxy listens on the second).
 TEST(StealthSessionUdpProxy, AProxyNamedByHostIsFoundByTheResolver)
 {
+  // The browser creates the DNS service at startup, on the main thread (nsIOService); the layer asks for it on the socket
+  // thread. In this process nothing has created it yet, and on Windows the first request from the socket thread answers
+  // null ("SOCKS UDP association failed: no resolver", the log of run 43146661635): so it is created here, as the browser does.
+  nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
+  ASSERT_TRUE(dns);
   UdpSession prefs;
   FakeSocks proxy;
   prefs.Arm("localhost", proxy.Port());

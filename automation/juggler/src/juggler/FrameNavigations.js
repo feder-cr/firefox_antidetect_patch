@@ -109,7 +109,11 @@ export class FrameNavigations {
     const pending = this._pending.get(frameId);
     if (navigationId && (!pending || pending.navigationId !== navigationId)) {
       const replaced = this._replaced.get(frameId);
-      if (replaced && replaced.delete(navigationId)) {
+      // A navigation that was told aborted and whose document appeared all the same (the page's own location.replace,
+      // cancelled by the client's navigation and restarted by the engine under the same load identifier): the frame HAS
+      // this document, and the client is told so, or it waits for ever for a document no navigation of its own made.
+      const returned = this._hasEnded(frameId, navigationId) && this._committed.get(frameId) !== navigationId;
+      if ((replaced && replaced.delete(navigationId)) || returned) {
         this._committed.set(frameId, navigationId);
         this._initialDone.add(frameId);
         this._tellCommit(frameId, navigationId, url, name);

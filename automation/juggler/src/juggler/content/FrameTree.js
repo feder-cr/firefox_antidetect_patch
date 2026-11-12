@@ -455,6 +455,13 @@ export class FrameTree {
       return;
     }
     const navigationId = frame._pendingNavigationId;
+    // An abort held back as a process swap's (onStateChange) is the swap's only if THIS navigation's document is the one that
+    // appears. Another navigation's document means the held one was cancelled for good: it is reported now, before the
+    // document, so the client hears that its navigation is over and then which document the frame has.
+    const heldAbort = frame._suppressedAbort;
+    frame._suppressedAbort = null;
+    if (heldAbort && navigationId && heldAbort.navigationId !== navigationId)
+      this.emit(FrameTree.Events.NavigationAborted, frame, heldAbort.navigationId, heldAbort.errorText);
     if (navigationId) {
       docShell.QueryInterface(Ci.nsIWebNavigation);
       this._frameNavigationCommitted(frame, docShell.currentURI.spec);
@@ -542,8 +549,15 @@ export class FrameTree {
           } catch (e) {
             swapped = true;   // the docShell is gone: the swap's way
           }
-          if (!swapped)
+          if (!swapped) {
             this.emit(FrameTree.Events.NavigationAborted, frame, navigationId, errorText);
+            return;
+          }
+          // Not reported now: if this navigation's own document follows, the abort was the swap's. But a document
+          // that is not this navigation's can follow instead (the page's own location.replace, restarted under its
+          // own load identifier while this navigation was cancelled): then this navigation is over, and nothing
+          // else would say so. The next document inserted in the frame decides (onWindowEvent).
+          frame._suppressedAbort = { navigationId, errorText };
         });
         return;
       }

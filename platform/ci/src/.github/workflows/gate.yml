@@ -434,6 +434,12 @@ jobs:
           # in the xunit2 family (the judge reads the class of every test from it)
           PYTEST=(python -m pytest "${SELECT[@]}" -o addopts='' -o junit_family=xunit2 -q -p no:cacheprovider -p no:rerunfailures -rs --junitxml="result/${{ matrix.suite }}.${{ matrix.os }}.xml")
           if [ "${{ matrix.root }}" = "true" ]; then
+            # The trap listens on port 53 of a loopback address and points /etc/resolv.conf at it. The runner's own stub
+            # (systemd-resolved: 127.0.0.53 and 127.0.0.54) is stopped first, so that nothing holds the port; the job needs no
+            # name of the internet from here on. Who still holds port 53 is said before the trap tries to bind it (run
+            # 43146661635: "no port it could bind"); the trap itself takes the first of 127.0.0.1... it can bind.
+            sudo systemctl stop systemd-resolved 2>/dev/null || true
+            (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) | grep -E '[:.]53 ' || echo "nothing listens on port 53"
             # -H: the browser must not see the runner's home as another user's. The trap must run: a test that cannot make it
             # fails instead of going on without its assertion.
             sudo -H -E env -u PYTEST_ADDOPTS INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
