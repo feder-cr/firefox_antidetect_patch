@@ -7,6 +7,7 @@ const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sy
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
 const {ContentMux} = ChromeUtils.importESModule('resource://gre/modules/juggler/ContentMux.js');
 const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
+const {syncTrrPrefs} = ChromeUtils.importESModule('resource://gre/modules/juggler/TrrPrefs.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
 const {ContextualIdentityService} = ChromeUtils.importESModule("moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs");
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
@@ -168,6 +169,29 @@ export class TargetRegistry {
     return TargetRegistry._instance || null;
   }
 
+  // The browser was started with the Juggler pipe: its session has a proxy to
+  // be decided by a command, even before the registry exists (it is built at
+  // final-ui-startup).
+  static markDriven() {
+    TargetRegistry._driven = true;
+  }
+
+  /**
+   * The road of the requests that have no page (the pingsender at exit), as
+   * `{decided, proxy}`. `proxy` is null for the default road. A driven session
+   * whose proxy no command has decided is `{decided: false}`: the caller must
+   * send nothing, because null would mean DIRECT. A browser Juggler does not
+   * drive has nothing to wait for, and its road is the default one.
+   */
+  static roadOfSession(userContextId) {
+    const registry = TargetRegistry._instance;
+    if (!registry)
+      return TargetRegistry._driven ? { decided: false } : { decided: true, proxy: null };
+    if (!registry.browserProxyDecided)
+      return { decided: false };
+    return { decided: true, proxy: registry.proxyRecordFor(userContextId) };
+  }
+
   /**
    * @param {{survivesLastWindow: boolean}} options
    *   survivesLastWindow: the browser was started with -silent, so Juggler
@@ -204,6 +228,10 @@ export class TargetRegistry {
 
     this._proxiesWithClashingAuthCacheKeys = new Set();
     this._browserProxy = null;
+    // Whether the first command has decided the road of the session (a proxy,
+    // or none): until then the channel filter holds every channel unanswered.
+    this._browserProxyDecided = false;
+    this._browserProxyListeners = [];
 
     // Cleanup containers from previous runs (if any)
     for (const identity of ContextualIdentityService.getPublicIdentities()) {
@@ -421,8 +449,65 @@ export class TargetRegistry {
     // proxy" from "my proxy was refused", and cannot tell either from a
     // session that quietly goes out in the clear.
     newProxyInfoFor(proxy);
+    const previous = this._browserProxy;
     this._browserProxy = proxy;
+    try {
+      // Before the hold is lifted: no channel leaves with a proxy and without DoH.
+      this._syncTrrPrefs();
+    } catch (e) {
+      this._browserProxy = previous;
+      throw e;
+    }
+    this._decideBrowserProxy();
+  }
+
+  // The session goes out with no proxy: an explicit decision, so that the
+  // filter answers the channels that waited with the default road.
+  setNoBrowserProxy() {
+    const previous = this._browserProxy;
+    this._browserProxy = null;
+    try {
+      // DoH stays on while a context still has a proxy; otherwise it goes off
+      // before the held channels are answered with the default road.
+      this._syncTrrPrefs();
+    } catch (e) {
+      this._browserProxy = previous;
+      throw e;
+    }
+    this._decideBrowserProxy();
+  }
+
+  // The proxy records present: the browser-wide one and those of every live
+  // context, each with its userContextId. The DoH prefs, and the list of the
+  // contexts that have a proxy, follow this set (see TrrPrefs.js). It is the
+  // same registry that proxyRecordFor() answers the channel filter from.
+  _proxiesPresent() {
+    return {
+      browserProxy: this._browserProxy,
+      contexts: [...this._browserContextIdToBrowserContext.values()]
+          .map(bc => ({ userContextId: bc.userContextId, proxy: bc._proxy })),
+    };
+  }
+
+  _syncTrrPrefs() {
+    const {browserProxy, contexts} = this._proxiesPresent();
+    syncTrrPrefs(browserProxy, contexts);
+  }
+
+  get browserProxyDecided() {
+    return this._browserProxyDecided;
+  }
+
+  // `callback` runs every time the browser proxy is decided or changed.
+  onBrowserProxyDecided(callback) {
+    this._browserProxyListeners.push(callback);
+  }
+
+  _decideBrowserProxy() {
     this._updateProxiesWithSameAuthCacheAndDifferentCredentials();
+    this._browserProxyDecided = true;
+    for (const callback of this._browserProxyListeners)
+      callback();
   }
 
   getProxyInfo(channel) {
@@ -1363,6 +1448,8 @@ class BrowserContext {
       Services.ppmm.sharedData.flush();
     }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
+    // The proxy of this context leaves the set; the last one out turns DoH off.
+    this._registry._syncTrrPrefs();
     await this.setServiceWorkersBlocked(false);
   }
 
@@ -1425,7 +1512,17 @@ class BrowserContext {
     newProxyInfoFor(proxy);
     // Clear AuthCache.
     Services.obs.notifyObservers(null, "net:clear-active-logins");
+    const previous = this._proxy;
     this._proxy = proxy;
+    try {
+      // In the same turn as the store: no channel is filtered between the two.
+      // The names of this proxy are excluded from DoH, the other names go over it.
+      this._registry._syncTrrPrefs();
+    } catch (e) {
+      // A proxy with no DoH behind it would leak the names to the host's resolver.
+      this._proxy = previous;
+      throw e;
+    }
     this._registry._updateProxiesWithSameAuthCacheAndDifferentCredentials();
   }
 

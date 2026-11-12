@@ -11,9 +11,9 @@
    "prefs": [
     "zoom.stealth.widget.occlusion_tracking.enabled"
    ],
-   "added": 8,
+   "added": 4,
    "removed": 1,
-   "hunks": 2,
+   "hunks": 3,
    "inline_logic_lines": 2,
    "hookable": "already-hook",
    "anchor": "nsWindow::OnVisibilityNotifyEvent (the occlusion hunk; another adds the StaticPrefs include) and the head of nsWindow::MakeFullScreen (one line of fingerprint/screen-window/geometry: fullscreen without a window manager, nsWindow::StealthMakeFullScreenWithoutWM in widget/gtk/StealthFullscreenGtk.cpp)",

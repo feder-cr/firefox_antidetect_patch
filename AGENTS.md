@@ -142,7 +142,7 @@ di rete e difetti noti con il lavoro che li chiude.
   (compila le due gambe, Linux e Windows x86_64, LTO+PGO, con la cache; non pubblica nulla).
   Una candidata con i gtest parte anche da sola a ogni push su `main` e il lunedì alle 03:00 UTC.
   Le gambe compilano solo su un server Latitude.sh (`scripts/ci/latitude_node.py`): i suoi segreti stanno
-  nell'environment `theta-builder`, limitato a `main` e `theta/*`, quindi il ramo di una
+  nell'environment `latitude-builder`, limitato a `main` e `latitude/*`, quindi il ramo di una
   build di prova deve essere uno di questi. Una release si lancia solo da `main`, mai da un
   tag: `release_plan.py` rifiuta il resto.
 - **La cache di compilazione appartiene a un ramo.** GitHub dà a una build solo le

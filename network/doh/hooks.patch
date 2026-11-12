@@ -1,0 +1,279 @@
+diff --git a/dom/media/webrtc/jsapi/MediaTransportHandler.cpp b/dom/media/webrtc/jsapi/MediaTransportHandler.cpp
+index b22712ae96c69a44a335d9909c01b008660302a2..6c762aa33db42bb2025423e2ec442635c45369db 100644
+--- a/dom/media/webrtc/jsapi/MediaTransportHandler.cpp
++++ b/dom/media/webrtc/jsapi/MediaTransportHandler.cpp
+@@ -9,6 +9,7 @@
+ #include "transport/dtlsidentity.h"
+ #include "transport/nricemediastream.h"
+ #include "transport/nriceresolver.h"
++#include "transport/StealthIceResolverContext.h"  // STEALTH-HOOK(network/doh)
+ #include "transport/sigslot.h"
+ #include "transport/transportflow.h"
+ #include "transport/transportlayerdtls.h"
+@@ -945,6 +946,7 @@ void MediaTransportImplNicer::SetProxyConfig(
+     return;  // Probably due to XPCOM shutdown
+   }
+ 
++  mDNSResolver->SetOriginAttributes(StealthIceResolverAttributes(aProxyConfig));  // STEALTH-HOOK(network/doh)
+   mIceCtx->SetProxyConfig(std::move(aProxyConfig));
+ }
+ 
+diff --git a/dom/media/webrtc/transport/nriceresolver.cpp b/dom/media/webrtc/transport/nriceresolver.cpp
+index 4e233cf5399813517cd06fd3e0c29b858d998929..57719ad1b6a74531ca07d87681e1be512111e9f3 100644
+--- a/dom/media/webrtc/transport/nriceresolver.cpp
++++ b/dom/media/webrtc/transport/nriceresolver.cpp
+@@ -145,7 +145,7 @@ int NrIceResolver::resolve(nr_resolver_resource* resource,
+   ASSERT_ON_THREAD(sts_thread_);
+   RefPtr<PendingResolution> pr;
+   nsIDNSService::DNSFlags resolve_flags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
+-  OriginAttributes attrs;
++  OriginAttributes attrs = mAttrs;  // STEALTH-HOOK(network/doh)
+ 
+   if (resource->transport_protocol != IPPROTO_UDP &&
+       resource->transport_protocol != IPPROTO_TCP) {
+diff --git a/dom/media/webrtc/transport/nriceresolver.h b/dom/media/webrtc/transport/nriceresolver.h
+index 744ed1808b299c2c166177c2580b6cfb51c3f5b1..c70e89250bd03e1143d4b3b7f27f65559868369b 100644
+--- a/dom/media/webrtc/transport/nriceresolver.h
++++ b/dom/media/webrtc/transport/nriceresolver.h
+@@ -46,6 +46,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "nsIDNSListener.h"
+ #include "nsIDNSService.h"
+ 
++#include "StealthIceResolverContext.h"  // STEALTH-HOOK(network/doh)
++
+ typedef struct nr_resolver_ nr_resolver;
+ typedef struct nr_resolver_vtbl_ nr_resolver_vtbl;
+ typedef struct nr_transport_addr_ nr_transport_addr;
+@@ -64,6 +66,8 @@ class NrIceResolver {
+   nr_resolver* AllocateResolver();
+   void DestroyResolver();
+   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(NrIceResolver)
++  void SetOriginAttributes(const OriginAttributes& aAttrs) { mAttrs = aAttrs; }  // STEALTH-HOOK(network/doh)
++  const OriginAttributes& GetOriginAttributes() const { return mAttrs; }  // STEALTH-HOOK(network/doh)
+ 
+   int resolve(nr_resolver_resource* resource,
+               int (*cb)(void* cb_arg, nr_transport_addr* addr), void* cb_arg,
+@@ -105,6 +109,7 @@ class NrIceResolver {
+     void* cb_arg_;
+   };
+ 
++  OriginAttributes mAttrs;  // STEALTH-HOOK(network/doh)
+   nr_resolver_vtbl* vtbl_;
+   nsCOMPtr<nsIEventTarget> sts_thread_;
+   nsCOMPtr<nsIDNSService> dns_;
+diff --git a/netwerk/dns/TRR.cpp b/netwerk/dns/TRR.cpp
+index a960b375a00d55f8dc4baee1049b4af6859ff360..0a383765a7522de18087814bf4f5dfea15eb3c20 100644
+--- a/netwerk/dns/TRR.cpp
++++ b/netwerk/dns/TRR.cpp
+@@ -19,6 +19,7 @@
+ #include "mozilla/Tokenizer.h"
+ #include "mozilla/UniquePtr.h"
+ #include "mozilla/glean/NetwerkDnsMetrics.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "nsCharSeparatedTokenizer.h"
+ #include "nsContentUtils.h"
+ #include "nsHostResolver.h"
+@@ -304,6 +305,8 @@ nsresult TRR::SendHTTPRequest() {
+     LOG(("TRR:SendHTTPRequest: NewChannel failed!\n"));
+     return rv;
+   }
++  rv = StealthApplyTRRContextToChannel(channel, StealthTRRContextOfSuffix(mOriginSuffix));  // STEALTH-HOOK(network/doh)
++  NS_ENSURE_SUCCESS(rv, rv);  // STEALTH-HOOK(network/doh)
+ 
+   auto loadFlags = nsIRequest::LOAD_ANONYMOUS | nsIRequest::INHIBIT_CACHING |
+                    nsIRequest::LOAD_BYPASS_CACHE |
+@@ -353,7 +356,7 @@ nsresult TRR::SendHTTPRequest() {
+   // When using OHTTP, the we can't use cached connection info, since we
+   // need to connect to the relay, not the TRR server.
+   if (UseDefaultServer() && !useOHTTP &&
+-      StaticPrefs::network_trr_async_connInfo()) {
++      StaticPrefs::network_trr_async_connInfo() && StealthTRRContextOfSuffix(mOriginSuffix).isNothing()) {  // STEALTH-HOOK(network/doh)
+     RefPtr<nsHttpConnectionInfo> trrConnInfo =
+         TRRService::Get()->TRRConnectionInfo();
+     if (trrConnInfo) {
+diff --git a/netwerk/dns/moz.build b/netwerk/dns/moz.build
+index 513f9476b1db6a19fd3b4a5163e91af2e55e36fe..c7e003832b6cc8af5af548b9d0acd9faf5dc1e88 100644
+--- a/netwerk/dns/moz.build
++++ b/netwerk/dns/moz.build
+@@ -91,6 +91,7 @@ UNIFIED_SOURCES += [
+     "TRRServiceChild.cpp",
+     "TRRServiceParent.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthSessionResolver.cpp"]  # STEALTH-HOOK(network/doh)
+ 
+ IPDL_SOURCES = [
+     "PDNSRequest.ipdl",
+diff --git a/netwerk/dns/nsHostResolver.cpp b/netwerk/dns/nsHostResolver.cpp
+index 6ce08c2b016e757f30402b325dd615c332abd76f..322af4faa744068cefc1bd9f9c8e1e9fa74eef6a 100644
+--- a/netwerk/dns/nsHostResolver.cpp
++++ b/netwerk/dns/nsHostResolver.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include "GetAddrInfo.h"
+ #include "PLDHashTable.h"
++#include "StealthSessionResolver.h"  // STEALTH-HOOK(network/doh)
+ #include "TRR.h"
+ #include "TRRQuery.h"
+ #include "TRRService.h"
+@@ -448,6 +449,8 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost,
+                                      const OriginAttributes& aOriginAttributes,
+                                      nsIDNSService::DNSFlags flags, uint16_t af,
+                                      nsResolveHostCallback* aCallback) {
++  // STEALTH-HOOK(network/doh): the lookup resolves by the proxy of its context.
++  flags = StealthFlagsFollowSession(aHost, aOriginAttributes, flags);
+   nsAutoCString host(aHost);
+   NS_ENSURE_TRUE(!host.IsEmpty(), NS_ERROR_UNEXPECTED);
+ 
+@@ -888,6 +891,8 @@ void nsHostResolver::DetachCallback(
+     const nsACString& host, const nsACString& aTrrServer, uint16_t aType,
+     const OriginAttributes& aOriginAttributes, nsIDNSService::DNSFlags flags,
+     uint16_t af, nsResolveHostCallback* aCallback, nsresult status) {
++  flags = StealthFlagsFollowSession(host, aOriginAttributes,
++                                    flags);  // STEALTH-HOOK(network/doh)
+   RefPtr<nsHostRecord> rec;
+   RefPtr<nsResolveHostCallback> callback(aCallback);
+ 
+diff --git a/netwerk/protocol/http/TRRServiceChannel.cpp b/netwerk/protocol/http/TRRServiceChannel.cpp
+index 376ae9120226120b8a0f7c2335b9207e2b985a97..c985f474e72c602270298a39c9445311a811d5e8 100644
+--- a/netwerk/protocol/http/TRRServiceChannel.cpp
++++ b/netwerk/protocol/http/TRRServiceChannel.cpp
+@@ -15,6 +15,7 @@
+ #include "mozilla/StaticPrefs_network.h"
+ #include "mozilla/glean/NetwerkMetrics.h"
+ #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "nsDNSPrefetch.h"
+ #include "nsEscape.h"
+ #include "nsHttpConnectionMgr.h"
+@@ -246,12 +247,14 @@ nsresult TRRServiceChannel::MaybeResolveProxyAndBeginConnect() {
+   // settings if we are never going to make a network connection.
+   // If mConnectionInfo is already supplied, we don't need to do proxy
+   // resolution again.
++  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)
+   if (!mProxyInfo && !mConnectionInfo &&
+       !(mLoadFlags & (nsICachingChannel::LOAD_ONLY_FROM_CACHE |
+                       nsICachingChannel::LOAD_NO_NETWORK_IO)) &&
+-      NS_SUCCEEDED(ResolveProxy())) {
++      NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)
+     return NS_OK;
+   }
++  if (StealthTRRServiceFailClosed(this, proxyRv, false)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
+ 
+   rv = BeginConnect();
+   if (NS_FAILED(rv)) {
+@@ -280,7 +283,7 @@ nsresult TRRServiceChannel::ResolveProxy() {
+         self->OnProxyAvailable(nullptr, nullptr, aProxyInfo, aStatus);
+       },
+       mURI, mProxyResolveFlags, LoadIsTRRServiceChannel(),
+-      getter_AddRefs(proxyRequest));
++      getter_AddRefs(proxyRequest), Nothing(), StealthTRRContextOfLoadInfo(mLoadInfo));  // STEALTH-HOOK(network/doh)
+ 
+   if (NS_FAILED(rv)) {
+     if (!mCurrentEventTarget->IsOnCurrentThread()) {
+@@ -344,6 +347,7 @@ TRRServiceChannel::OnProxyAvailable(nsICancelable* request, nsIChannel* channel,
+   // proxy info.  That is a non-fatal error assuming it wasn't because the
+   // request was canceled.  We just failover to DIRECT when proxy resolution
+   // fails (failure can mean that the PAC URL could not be loaded).
++  if (StealthTRRServiceFailClosed(this, status, mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
+ 
+   if (NS_SUCCEEDED(status)) mProxyInfo = pi;
+ 
+@@ -405,8 +409,9 @@ nsresult TRRServiceChannel::BeginConnect() {
+   gHttpHandler->MaybeAddAltSvcForTesting(mURI, mUsername, mPrivateBrowsing,
+                                          mCallbacks, OriginAttributes());
+ 
++  OriginAttributes stealthAttrs = StealthTRRContextOfLoadInfo(mLoadInfo).valueOr(OriginAttributes());  // STEALTH-HOOK(network/doh)
+   RefPtr<nsHttpConnectionInfo> connInfo = new nsHttpConnectionInfo(
+-      host, port, ""_ns, mUsername, proxyInfo, OriginAttributes(), isHttps);
++      host, port, ""_ns, mUsername, proxyInfo, stealthAttrs, isHttps);  // STEALTH-HOOK(network/doh)
+   // TODO: Bug 1622778 for using AltService in socket process.
+   StoreAllowAltSvc(XRE_IsParentProcess() && LoadAllowAltSvc());
+   bool http2Allowed = !gHttpHandler->IsHttp2Excluded(connInfo);
+@@ -446,7 +451,7 @@ nsresult TRRServiceChannel::BeginConnect() {
+     LOG(("TRRServiceChannel %p Using connection info from altsvc mapping",
+          this));
+     mapping->GetConnectionInfo(getter_AddRefs(mConnectionInfo), proxyInfo,
+-                               OriginAttributes());
++                               stealthAttrs);  // STEALTH-HOOK(network/doh)
+     glean::http::transaction_use_altsvc
+         .EnumGet(glean::http::TransactionUseAltsvcLabel::eTrue)
+         .Add();
+diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
+index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..4def86f61e29ae36bd3b74c6995896df13dbe6e9 100644
+--- a/netwerk/protocol/http/nsHttpChannel.cpp
++++ b/netwerk/protocol/http/nsHttpChannel.cpp
+@@ -71,6 +71,7 @@
+ #include "mozilla/net/OpaqueResponseUtils.h"
+ #include "mozilla/net/SFVService.h"
+ #include "mozilla/net/SocketProcessParent.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "mozilla/net/TRRService.h"
+ #include "mozilla/net/URLPatternGlue.h"
+ #include "mozilla/net/urlpattern_glue.h"
+@@ -8048,6 +8049,7 @@ void nsHttpChannel::AsyncOpenFinal(TimeStamp aTimeStamp) {
+ 
+ void nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
+   nsresult rv;
++  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)
+ 
+   // The common case for HTTP channels is to begin proxy resolution and return
+   // at this point. The only time we know mProxyInfo already is if we're
+@@ -8062,10 +8064,11 @@ void nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
+     if (pps2 && pps2->IsEffectivelyDirect()) {
+       mozilla::glean::networking::proxy_fast_path_used.Add(1);
+       MaybeStartDNSPrefetch();
+-    } else if (NS_SUCCEEDED(ResolveProxy())) {
++    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)
+       return;
+     }
+   }
++  if (StealthTRRFailClosed(this, proxyRv, LoadIsTRRServiceChannel(), mCanceled)) { return; }  // STEALTH-HOOK(network/doh)
+ 
+   if (!gHttpHandler->Active()) {
+     LOG(
+@@ -8835,6 +8838,7 @@ nsHttpChannel::OnProxyAvailable(nsICancelable* request, nsIChannel* channel,
+   // proxy info.  That is a non-fatal error assuming it wasn't because the
+   // request was canceled.  We just failover to DIRECT when proxy resolution
+   // fails (failure can mean that the PAC URL could not be loaded).
++  if (StealthTRRFailClosed(this, status, LoadIsTRRServiceChannel(), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
+ 
+   if (NS_SUCCEEDED(status)) {
+     mProxyInfo = pi;
+diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
+index 1f42525b3ea45282c0ea1de2fcc73e7c81ed578b..8df7edde5136b13b5da975d8c79a370942eae661 100644
+--- a/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
++++ b/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
+@@ -3,11 +3,13 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsParentalControlsService.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "nsIFile.h"
+ 
+ NS_IMPL_ISUPPORTS(nsParentalControlsService, nsIParentalControlsService)
+ 
+ nsParentalControlsService::nsParentalControlsService() : mEnabled(false) {
++  if (StealthParentalControlsDeclared(&mEnabled)) { return; }  // STEALTH-HOOK(network/doh)
+   (void)mEnabled;
+ }
+ 
+diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp
+index 118b630a5bfaece654861830b86fbdf15d076e8b..4d416191dcc6ca291a94728c125e62a02d21afef 100644
+--- a/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp
++++ b/toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "nsParentalControlsService.h"
++#include "StealthParentalControls.h"  // STEALTH-HOOK(network/doh)
+ #include "nsComponentManagerUtils.h"
+ #include "nsString.h"
+ #include "nsIArray.h"
+@@ -59,6 +60,7 @@ static nsAutoString GetUserSid() {
+ 
+ nsParentalControlsService::nsParentalControlsService()
+     : mEnabled(false), mProvider(0), mPC(nullptr) {
++  if (StealthParentalControlsDeclared(&mEnabled)) { return; }  // STEALTH-HOOK(network/doh)
+   // On at least some builds of Windows 10, the old parental controls API no
+   // longer exists, so we have to pull the info we need out of the registry.
+   nsAutoString regKeyName;

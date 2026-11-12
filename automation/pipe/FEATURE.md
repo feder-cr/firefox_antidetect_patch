@@ -6,7 +6,11 @@ Test: TODO
 
 ## What it does
 
-TODO: one paragraph, from the notes below.
+The browser is driven over a pipe: the client starts it with `--juggler-pipe` and the two ends of the pipe inherited (on Windows the launcher hands them to the browser in `PW_PIPE_READ` and `PW_PIPE_WRITE`), and speaks Juggler on it.
+
+The first command must be `Browser.setBrowserProxy` or `Browser.setNoBrowserProxy`. Until one of them arrives the road of the session is undecided and no request leaves the browser: every channel that asks for a proxy is held, and none is ever released on a timer.
+
+A client that sends neither (a stock automation client started on this binary) therefore seems to hang. When a request has waited more than 5 s the browser writes one line on stderr, once: `juggler: a request has been held for more than 5 s: no request leaves until Browser.setBrowserProxy or Browser.setNoBrowserProxy is received`. A client that decides in time writes nothing.
 
 ## Hooks in Mozilla files
 

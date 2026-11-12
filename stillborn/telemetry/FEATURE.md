@@ -8,6 +8,12 @@ Test: TODO
 
 TODO: one paragraph, from the notes below.
 
+## Exit ping and the session proxy
+
+The pingsender at exit does not start while the session's proxy is undecided (a null proxy record means DIRECT, so a session no command
+had decided would send its shutdown pings from the host's own address): the parent asks `TargetRegistry.roadOfSession` and, undecided,
+does not start the background task (the observer gets process-failed, the ping stays on disk). Why and tests: network/doh.
+
 ## Hooks in Mozilla files
 
 - `toolkit/components/telemetry/app/TelemetrySend.sys.mjs` (sendStandalonePing (module-level, hunk 2); TelemetrySendImpl.runPingSender (hunks 3 and 4); new module-level function sessionRoute() at end of file, movable): Category is stillborn because it reroutes Firefox's own telemetry pings (rule: reroute or silence of phone-home traffic). The standalone pingsender executable path and the Nimbus gate are removed, so the firefox --backgroundtask path is always used. Pings now carry the session proxy from Juggler's TargetRegistry and the profile prefs.js path, passed through an environment variable set around runAs

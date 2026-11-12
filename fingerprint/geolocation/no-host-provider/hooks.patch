@@ -1,0 +1,1575 @@
+diff --git a/dom/geolocation/GeolocationSystemWin.cpp b/dom/geolocation/GeolocationSystemWin.cpp
+index 1dd8b1dc74a81474fccf842c4be76d21b64b4f61..7eed5609f5bdbe0e3978bc72d524b09055f327f3 100644
+--- a/dom/geolocation/GeolocationSystemWin.cpp
++++ b/dom/geolocation/GeolocationSystemWin.cpp
+@@ -9,6 +9,7 @@
+ #include "GeolocationSystem.h"
+ #include "mozilla/Components.h"
+ #include "mozilla/ScopeExit.h"
++#include "mozilla/StealthGeolocation.h"  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
+ #include "mozilla/dom/BrowsingContext.h"
+ #include "nsIGeolocationUIUtils.h"
+ #include "nsIWifiListener.h"
+@@ -333,6 +334,10 @@ NS_IMPL_ISUPPORTS(LocationPermissionWifiScanListener, nsIWifiListener)
+ //-----------------------------------------------------------------------------
+ 
+ SystemGeolocationPermissionBehavior GetGeolocationPermissionBehavior() {
++  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider): the OS location switch is declared on; the OS is not asked.
++  if (StealthSystemLocationDeclaredOn()) {
++    return SystemGeolocationPermissionBehavior::NoPrompt;
++  }
+   auto locationAccess = GetLocationAccess();
+   if (SystemWillPromptForPermissionHint(locationAccess)) {
+     return SystemGeolocationPermissionBehavior::SystemWillPromptUser;
+diff --git a/dom/permission/PermissionObserver.cpp b/dom/permission/PermissionObserver.cpp
+index ba044dac59c9f61c4c8dd833428f9dba9fb3d859..412605c4cd99156087f71e02010bd66dddb4338c 100644
+--- a/dom/permission/PermissionObserver.cpp
++++ b/dom/permission/PermissionObserver.cpp
+@@ -9,6 +9,7 @@
+ #include "mozilla/Array.h"
+ #include "mozilla/Services.h"
+ #include "mozilla/StaticPtr.h"
++#include "mozilla/StealthGeolocation.h"  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
+ #include "mozilla/dom/BrowsingContext.h"
+ #include "mozilla/dom/ContentParent.h"
+ #include "mozilla/dom/Geolocation.h"
+@@ -218,6 +219,10 @@ void PermissionObserver::RemoveSink(PermissionStatusSink* aSink) {
+ /* static */
+ void PermissionObserver::EnsureMonitoringInParent(PermissionName aName) {
+   MOZ_ASSERT(XRE_IsParentProcess());
++  if (aName == PermissionName::Geolocation &&
++      StealthSystemLocationDeclaredOn()) {  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider): declared on, never changes
++    return;
++  }
+   EnsureOSMonitoring(aName);
+ }
+ 
+diff --git a/dom/system/windows/PWindowsUtils.ipdl b/dom/system/windows/PWindowsUtils.ipdl
+index f487bb5af2f4ec237626443d67a40a79401e9bad..6950140ede235f2fef9b6173686d0414bf23452f 100644
+--- a/dom/system/windows/PWindowsUtils.ipdl
++++ b/dom/system/windows/PWindowsUtils.ipdl
+@@ -2,19 +2,12 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+-include protocol PWindowsLocation;
+-
+ namespace mozilla {
+ namespace dom {
+ 
+ // Manager of utility actors that run in the windows utility process.
+ [ChildProc=Utility]
+ protocol PWindowsUtils {
+-  manages PWindowsLocation;
+-
+-child:
+-  // Proxies the ILocation COM API for geolocation
+-  async PWindowsLocation();
+ };
+ 
+ }  // namespace dom
+diff --git a/dom/system/windows/WindowsUtilsChild.cpp b/dom/system/windows/WindowsUtilsChild.cpp
+index 18041f95b8dde2d7bd591b4ba7d8d46f5a8faf7f..0c121931c4f3fcf24d59fa1f8cafbadf3f6b1b5a 100644
+--- a/dom/system/windows/WindowsUtilsChild.cpp
++++ b/dom/system/windows/WindowsUtilsChild.cpp
+@@ -4,27 +4,4 @@
+ 
+ #include "WindowsUtilsChild.h"
+ 
+-#include "WindowsLegacyLocationChild.h"
+-#include "mozilla/StaticPrefs_geo.h"
+-#include "mozilla/dom/PWindowsUtilsChild.h"
+-#include "mozilla/dom/WindowsLocationChild.h"
+-
+-#if !defined(__MINGW32__)
+-#  include "WindowsRuntimeLocationChild.h"
+-#endif
+-
+-namespace mozilla::dom {
+-
+-already_AddRefed<PWindowsLocationChild>
+-WindowsUtilsChild::AllocPWindowsLocationChild() {
+-  // MinGW has windows.devices.geolocation.h header, but it lacks some
+-  // Geolocation classes/structures such as BasicGeoposition.
+-#if !defined(__MINGW32__)
+-  if (StaticPrefs::geo_provider_use_winrt()) {
+-    return MakeAndAddRef<WindowsRuntimeLocationChild>();
+-  }
+-#endif
+-  return MakeAndAddRef<WindowsLegacyLocationChild>();
+-}
+-
+-}  // namespace mozilla::dom
++namespace mozilla::dom {}  // namespace mozilla::dom
+diff --git a/dom/system/windows/WindowsUtilsChild.h b/dom/system/windows/WindowsUtilsChild.h
+index daff6f85342aa55c04569ad8990bef75314ae3c3..757ad86b11cc50a4352acc63878c473bcae25aa9 100644
+--- a/dom/system/windows/WindowsUtilsChild.h
++++ b/dom/system/windows/WindowsUtilsChild.h
+@@ -6,7 +6,6 @@
+ #define mozilla_dom_WindowsUtilsChild_h_
+ 
+ #include "mozilla/dom/PWindowsUtilsChild.h"
+-#include "mozilla/dom/WindowsLocationChild.h"
+ 
+ namespace mozilla::dom {
+ 
+@@ -14,9 +13,6 @@ namespace mozilla::dom {
+ class WindowsUtilsChild final : public PWindowsUtilsChild {
+   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WindowsUtilsChild, override);
+ 
+- public:
+-  already_AddRefed<PWindowsLocationChild> AllocPWindowsLocationChild();
+-
+  protected:
+   ~WindowsUtilsChild() = default;
+ };
+diff --git a/dom/system/windows/location/PWindowsLocation.ipdl b/dom/system/windows/location/PWindowsLocation.ipdl
+deleted file mode 100644
+index 4811afc04a75f8af0fbfe1af13b97befc77367e1..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/PWindowsLocation.ipdl
++++ /dev/null
+@@ -1,36 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-include protocol PWindowsUtils;
+-
+-[RefCounted] using class nsIDOMGeoPosition from "nsGeoPositionIPCSerialiser.h";
+-
+-namespace mozilla {
+-namespace dom {
+-
+-// Proxies geolocation functions to a utility process so that we
+-// can safely handle crashes in the ILocation API.  Messages to the child
+-// are proxies for the ILocation COM object.  Messages to the parent
+-// are proxied nsIGeolocationUpdate callbacks.
+-protocol PWindowsLocation {
+-    manager PWindowsUtils;
+-
+-child:
+-  async Startup();
+-  async RegisterForReport();
+-  async UnregisterForReport();
+-  async SetHighAccuracy(bool aEnable);
+-
+-  async __delete__();
+-
+-parent:
+-  // Update geolocation with new position information.
+-  async Update(nullable nsIDOMGeoPosition aPosition);
+-
+-  // The geolocation API has reported an error.
+-  async Failed(uint16_t aError);
+-};
+-
+-}  // namespace dom
+-}  // namespace mozilla
+diff --git a/dom/system/windows/location/WindowsLegacyLocationChild.cpp b/dom/system/windows/location/WindowsLegacyLocationChild.cpp
+deleted file mode 100644
+index a6aa46ba7d3d2377884a02c5e350196334406b68..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLegacyLocationChild.cpp
++++ /dev/null
+@@ -1,289 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-#include "WindowsLegacyLocationChild.h"
+-
+-#include <locationapi.h>
+-
+-#include "WindowsLocationProvider.h"
+-#include "mozilla/dom/GeolocationPosition.h"
+-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
+-#include "mozilla/glean/DomGeolocationMetrics.h"
+-#include "nsCOMPtr.h"
+-#include "nsIGeolocationProvider.h"
+-#include "prtime.h"
+-
+-namespace mozilla::dom {
+-
+-extern LazyLogModule gWindowsLocationProviderLog;
+-#define LOGD(...) \
+-  MOZ_LOG(gWindowsLocationProviderLog, LogLevel::Debug, (__VA_ARGS__))
+-#define LOGI(...) \
+-  MOZ_LOG(gWindowsLocationProviderLog, LogLevel::Info, (__VA_ARGS__))
+-
+-// Use string lookup since dual_labeled_counter does not yet support enums.
+-static void AddFailureTelemetry(const nsACString& aReason) {
+-  glean::geolocation::windows_failure.Get("legacy"_ns, aReason).Add();
+-}
+-
+-class LocationEvent final : public ILocationEvents {
+- public:
+-  explicit LocationEvent(WindowsLocationChild* aActor)
+-      : mActor(aActor), mRefCnt(0) {}
+-
+-  // IUnknown interface
+-  STDMETHODIMP_(ULONG) AddRef() override;
+-  STDMETHODIMP_(ULONG) Release() override;
+-  STDMETHODIMP QueryInterface(REFIID iid, void** ppv) override;
+-
+-  // ILocationEvents interface
+-  STDMETHODIMP OnStatusChanged(REFIID aReportType,
+-                               LOCATION_REPORT_STATUS aStatus) override;
+-  STDMETHODIMP OnLocationChanged(REFIID aReportType,
+-                                 ILocationReport* aReport) override;
+-
+- private:
+-  // Making this a WeakPtr breaks the following cycle of strong references:
+-  // WindowsLocationChild -> ILocation -> ILocationEvents (this)
+-  //   -> WindowsLocationChild.
+-  WeakPtr<WindowsLocationChild> mActor;
+-
+-  ULONG mRefCnt;
+-};
+-
+-STDMETHODIMP_(ULONG)
+-LocationEvent::AddRef() { return InterlockedIncrement(&mRefCnt); }
+-
+-STDMETHODIMP_(ULONG)
+-LocationEvent::Release() {
+-  ULONG count = InterlockedDecrement(&mRefCnt);
+-  if (!count) {
+-    delete this;
+-    return 0;
+-  }
+-  return count;
+-}
+-
+-STDMETHODIMP
+-LocationEvent::QueryInterface(REFIID iid, void** ppv) {
+-  if (!ppv) {
+-    return E_INVALIDARG;
+-  }
+-
+-  if (iid == IID_IUnknown) {
+-    *ppv = static_cast<IUnknown*>(this);
+-  } else if (iid == IID_ILocationEvents) {
+-    *ppv = static_cast<ILocationEvents*>(this);
+-  } else {
+-    *ppv = nullptr;
+-    return E_NOINTERFACE;
+-  }
+-
+-  AddRef();
+-  return S_OK;
+-}
+-
+-STDMETHODIMP
+-LocationEvent::OnStatusChanged(REFIID aReportType,
+-                               LOCATION_REPORT_STATUS aStatus) {
+-  LOGD("LocationEvent::OnStatusChanged(%p, %p, %s, %04x)", this, mActor.get(),
+-       aReportType == IID_ILatLongReport ? "true" : "false",
+-       static_cast<uint32_t>(aStatus));
+-
+-  if (!mActor || aReportType != IID_ILatLongReport) {
+-    return S_OK;
+-  }
+-
+-  // When registering event, REPORT_INITIALIZING is fired at first.
+-  // Then, when the location is found, REPORT_RUNNING is fired.
+-  // We ignore those messages.
+-  uint16_t err;
+-  switch (aStatus) {
+-    case REPORT_ACCESS_DENIED:
+-      AddFailureTelemetry("permission denied"_ns);
+-      err = GeolocationPositionError_Binding::PERMISSION_DENIED;
+-      break;
+-    case REPORT_NOT_SUPPORTED:
+-    case REPORT_ERROR:
+-      AddFailureTelemetry(aStatus == REPORT_NOT_SUPPORTED
+-                              ? "not supported"_ns
+-                              : "geoservice error"_ns);
+-      err = GeolocationPositionError_Binding::POSITION_UNAVAILABLE;
+-      break;
+-    default:
+-      return S_OK;
+-  }
+-
+-  mActor->SendFailed(err);
+-  return S_OK;
+-}
+-
+-STDMETHODIMP
+-LocationEvent::OnLocationChanged(REFIID aReportType, ILocationReport* aReport) {
+-  LOGD("LocationEvent::OnLocationChanged(%p, %p, %s)", this, mActor.get(),
+-       aReportType == IID_ILatLongReport ? "true" : "false");
+-
+-  if (!mActor || aReportType != IID_ILatLongReport) {
+-    return S_OK;
+-  }
+-
+-  RefPtr<ILatLongReport> latLongReport;
+-  if (FAILED(aReport->QueryInterface(IID_ILatLongReport,
+-                                     getter_AddRefs(latLongReport)))) {
+-    return E_FAIL;
+-  }
+-
+-  DOUBLE latitude = 0.0;
+-  latLongReport->GetLatitude(&latitude);
+-
+-  DOUBLE longitude = 0.0;
+-  latLongReport->GetLongitude(&longitude);
+-
+-  DOUBLE alt = UnspecifiedNaN<double>();
+-  latLongReport->GetAltitude(&alt);
+-
+-  DOUBLE herror = 0.0;
+-  latLongReport->GetErrorRadius(&herror);
+-
+-  DOUBLE verror = UnspecifiedNaN<double>();
+-  latLongReport->GetAltitudeError(&verror);
+-
+-  double heading = UnspecifiedNaN<double>();
+-  double speed = UnspecifiedNaN<double>();
+-
+-  // nsGeoPositionCoords will convert NaNs to null for optional properties of
+-  // the JavaScript Coordinates object.
+-  RefPtr<nsGeoPosition> position =
+-      new nsGeoPosition(latitude, longitude, alt, herror, verror, heading,
+-                        speed, PR_Now() / PR_USEC_PER_MSEC);
+-  mActor->SendUpdate(position);
+-
+-  return S_OK;
+-}
+-
+-WindowsLegacyLocationChild::WindowsLegacyLocationChild() {
+-  LOGD("WindowsLegacyLocationChild::WindowsLegacyLocationChild(%p)", this);
+-}
+-
+-WindowsLegacyLocationChild::~WindowsLegacyLocationChild() {
+-  LOGD("WindowsLegacyLocationChild::~WindowsLegacyLocationChild(%p)", this);
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLegacyLocationChild::Startup() {
+-  LOGD("WindowsLegacyLocationChild::Startup(%p, %p)", this, mLocation.get());
+-  if (mLocation) {
+-    return IPC_OK();
+-  }
+-
+-  RefPtr<ILocation> location;
+-  if (FAILED(::CoCreateInstance(CLSID_Location, nullptr, CLSCTX_INPROC_SERVER,
+-                                IID_ILocation, getter_AddRefs(location)))) {
+-    LOGD("WindowsLegacyLocationChild(%p) failed to create ILocation", this);
+-    // We will use MLS provider
+-    AddFailureTelemetry("creation error"_ns);
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-    return IPC_OK();
+-  }
+-
+-  IID reportTypes[] = {IID_ILatLongReport};
+-  auto hr = location->RequestPermissions(nullptr, reportTypes, 1, FALSE);
+-  if (FAILED(hr)) {
+-    LOGD(
+-        "WindowsLegacyLocationChild(%p) failed to set ILocation permissions. "
+-        "Error: %ld",
+-        this, hr);
+-    // We will use MLS provider.
+-    // The docs for RequestPermissions say that the call returns different
+-    // error codes for sync vs async calls.  We log the sync call errors
+-    // since what async call means here is not explained (or possible).
+-    if (hr == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)) {
+-      AddFailureTelemetry("requestpermissions denied"_ns);
+-    } else if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+-      AddFailureTelemetry("requestpermissions canceled"_ns);
+-    } else {
+-      AddFailureTelemetry("unexpected error"_ns);
+-    }
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-    return IPC_OK();
+-  }
+-
+-  mLocation = location;
+-  return IPC_OK();
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLegacyLocationChild::SetHighAccuracy(
+-    const bool& aEnable) {
+-  LOGD("WindowsLegacyLocationChild::SetHighAccuracy(%p, %p, %s)", this,
+-       mLocation.get(), aEnable ? "true" : "false");
+-
+-  // We sometimes call SetHighAccuracy before Startup, so we save the
+-  // request and set it later, in RegisterForReport.
+-  mHighAccuracy = aEnable;
+-
+-  return IPC_OK();
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLegacyLocationChild::RegisterForReport() {
+-  LOGD("WindowsLegacyLocationChild::RegisterForReport(%p, %p)", this,
+-       mLocation.get());
+-
+-  if (!mLocation) {
+-    AddFailureTelemetry("not registered"_ns);
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-    return IPC_OK();
+-  }
+-
+-  LOCATION_DESIRED_ACCURACY desiredAccuracy;
+-  if (mHighAccuracy) {
+-    desiredAccuracy = LOCATION_DESIRED_ACCURACY_HIGH;
+-  } else {
+-    desiredAccuracy = LOCATION_DESIRED_ACCURACY_DEFAULT;
+-  }
+-
+-  if (NS_WARN_IF(FAILED(mLocation->SetDesiredAccuracy(IID_ILatLongReport,
+-                                                      desiredAccuracy)))) {
+-    AddFailureTelemetry("unexpected error"_ns);
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-    return IPC_OK();
+-  }
+-
+-  auto event = MakeRefPtr<LocationEvent>(this);
+-  if (NS_WARN_IF(
+-          FAILED(mLocation->RegisterForReport(event, IID_ILatLongReport, 0)))) {
+-    AddFailureTelemetry("failed to register"_ns);
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-  }
+-
+-  glean::geolocation::geolocation_service
+-      .EnumGet(glean::geolocation::GeolocationServiceLabel::eSystem)
+-      .Add();
+-  LOGI("WindowsLocationChild::RecvRegisterForReport successfully registered");
+-  return IPC_OK();
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLegacyLocationChild::UnregisterForReport() {
+-  LOGI("WindowsLegacyLocationChild::UnregisterForReport(%p, %p)", this,
+-       mLocation.get());
+-
+-  if (!mLocation) {
+-    return IPC_OK();
+-  }
+-
+-  // This will free the LocationEvent we created in RecvRegisterForReport.
+-  (void)NS_WARN_IF(FAILED(mLocation->UnregisterForReport(IID_ILatLongReport)));
+-
+-  // The ILocation object is not reusable.  Unregistering, restarting and
+-  // re-registering for reports does not work;  the callback is never
+-  // called in that case.  For that reason, we re-create the ILocation
+-  // object with a call to Startup after unregistering if we need it again.
+-  mLocation = nullptr;
+-  return IPC_OK();
+-}
+-
+-void WindowsLegacyLocationChild::ActorDestroy(ActorDestroyReason aWhy) {
+-  LOGD("WindowsLegacyLocationChild::ActorDestroy(%p, %p)", this,
+-       mLocation.get());
+-  mLocation = nullptr;
+-}
+-
+-}  // namespace mozilla::dom
+diff --git a/dom/system/windows/location/WindowsLegacyLocationChild.h b/dom/system/windows/location/WindowsLegacyLocationChild.h
+deleted file mode 100644
+index 1c4127328c34f81b74853384720d9d525dd55ce3..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLegacyLocationChild.h
++++ /dev/null
+@@ -1,42 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef mozilla_dom_WindowsLegacyLocationChild_h_
+-#define mozilla_dom_WindowsLegacyLocationChild_h_
+-
+-#include "mozilla/dom/WindowsLocationChild.h"
+-
+-class ILocation;
+-
+-namespace mozilla::dom {
+-
+-// Geolocation actor in utility process.
+-class WindowsLegacyLocationChild final : public WindowsLocationChild {
+-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WindowsLegacyLocationChild, override);
+-
+- public:
+-  WindowsLegacyLocationChild();
+-
+-  using IPCResult = ::mozilla::ipc::IPCResult;
+-
+-  void ActorDestroy(ActorDestroyReason aWhy) override;
+-
+- protected:
+-  ~WindowsLegacyLocationChild() override;
+-
+-  mozilla::ipc::IPCResult Startup() override;
+-  mozilla::ipc::IPCResult RegisterForReport() override;
+-  mozilla::ipc::IPCResult UnregisterForReport() override;
+-  mozilla::ipc::IPCResult SetHighAccuracy(const bool& aEnable) override;
+-
+- private:
+-  // The COM object the actors are proxying calls for.
+-  RefPtr<ILocation> mLocation;
+-
+-  bool mHighAccuracy = false;
+-};
+-
+-}  // namespace mozilla::dom
+-
+-#endif  // mozilla_dom_WindowsLegacyLocationChild_h_
+diff --git a/dom/system/windows/location/WindowsLocationChild.cpp b/dom/system/windows/location/WindowsLocationChild.cpp
+deleted file mode 100644
+index 65ba5745ccd27ef85f9c37efae0659388202436f..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLocationChild.cpp
++++ /dev/null
+@@ -1,25 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-#include "WindowsLocationChild.h"
+-
+-namespace mozilla::dom {
+-
+-::mozilla::ipc::IPCResult WindowsLocationChild::RecvStartup() {
+-  return Startup();
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLocationChild::RecvSetHighAccuracy(
+-    const bool& aEnable) {
+-  return SetHighAccuracy(aEnable);
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLocationChild::RecvRegisterForReport() {
+-  return RegisterForReport();
+-}
+-
+-::mozilla::ipc::IPCResult WindowsLocationChild::RecvUnregisterForReport() {
+-  return UnregisterForReport();
+-}
+-
+-}  // namespace mozilla::dom
+diff --git a/dom/system/windows/location/WindowsLocationChild.h b/dom/system/windows/location/WindowsLocationChild.h
+deleted file mode 100644
+index 81b34bbdb9df08125b2df2db240c24f8260677f5..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLocationChild.h
++++ /dev/null
+@@ -1,33 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef mozilla_dom_WindowsLocationChild_h_
+-#define mozilla_dom_WindowsLocationChild_h_
+-
+-#include "mozilla/WeakPtr.h"
+-#include "mozilla/dom/PWindowsLocationChild.h"
+-
+-namespace mozilla::dom {
+-
+-// Geolocation actor in utility process.
+-class WindowsLocationChild : public PWindowsLocationChild,
+-                             public SupportsWeakPtr {
+- public:
+-  using IPCResult = ::mozilla::ipc::IPCResult;
+-
+-  IPCResult RecvStartup();
+-  IPCResult RecvRegisterForReport();
+-  IPCResult RecvUnregisterForReport();
+-  IPCResult RecvSetHighAccuracy(const bool& aEnable);
+-
+- protected:
+-  virtual mozilla::ipc::IPCResult Startup() = 0;
+-  virtual mozilla::ipc::IPCResult RegisterForReport() = 0;
+-  virtual mozilla::ipc::IPCResult UnregisterForReport() = 0;
+-  virtual mozilla::ipc::IPCResult SetHighAccuracy(const bool& aEnable) = 0;
+-};
+-
+-}  // namespace mozilla::dom
+-
+-#endif  // mozilla_dom_WindowsLocationChild_h_
+diff --git a/dom/system/windows/location/WindowsLocationParent.cpp b/dom/system/windows/location/WindowsLocationParent.cpp
+deleted file mode 100644
+index 6d898aebc1441d2d44f7e9bf3401ff4ae0f8f859..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLocationParent.cpp
++++ /dev/null
+@@ -1,35 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-#include "WindowsLocationParent.h"
+-
+-#include "WindowsLocationProvider.h"
+-#include "nsIDOMGeoPosition.h"
+-
+-namespace mozilla::dom {
+-
+-::mozilla::ipc::IPCResult WindowsLocationParent::RecvUpdate(
+-    RefPtr<nsIDOMGeoPosition> aGeoPosition) {
+-  if (mProvider) {
+-    mProvider->RecvUpdate(aGeoPosition);
+-  }
+-  return IPC_OK();
+-}
+-
+-// A failure occurred.  This may be translated into a
+-// nsIGeolocationUpdate::NotifyError or may be ignored if the MLS fallback
+-// is available.
+-::mozilla::ipc::IPCResult WindowsLocationParent::RecvFailed(uint16_t err) {
+-  if (mProvider) {
+-    mProvider->RecvFailed(err);
+-  }
+-  return IPC_OK();
+-}
+-
+-void WindowsLocationParent::ActorDestroy(ActorDestroyReason aReason) {
+-  if (mProvider) {
+-    mProvider->ActorStopped();
+-  }
+-}
+-
+-}  // namespace mozilla::dom
+diff --git a/dom/system/windows/location/WindowsLocationParent.h b/dom/system/windows/location/WindowsLocationParent.h
+deleted file mode 100644
+index 3d11df65472a3a0dccfce5fa40eef6149135dfef..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLocationParent.h
++++ /dev/null
+@@ -1,50 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef mozilla_dom_WindowsLocationParent_h_
+-#define mozilla_dom_WindowsLocationParent_h_
+-
+-#include "mozilla/dom/PWindowsLocationParent.h"
+-#include "nsCOMPtr.h"
+-
+-class nsGeoPosition;
+-class nsIGeolocationUpdate;
+-
+-namespace mozilla::dom {
+-
+-class WindowsLocationProvider;
+-
+-// Geolocation actor in main process.
+-// This may receive messages asynchronously, even after it sends Unregister
+-// to the child.
+-class WindowsLocationParent final : public PWindowsLocationParent {
+-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WindowsLocationParent, override);
+-
+-  using IPCResult = ::mozilla::ipc::IPCResult;
+-
+-  explicit WindowsLocationParent(WindowsLocationProvider* aProvider)
+-      : mProvider(aProvider) {}
+-
+-  // Update geolocation with new position information.
+-  IPCResult RecvUpdate(RefPtr<nsIDOMGeoPosition> aGeoPosition);
+-
+-  // A failure occurred.  This may be translated into a
+-  // nsIGeolocationUpdate::NotifyError or may be ignored if the MLS fallback
+-  // is available.
+-  IPCResult RecvFailed(uint16_t err);
+-
+-  void ActorDestroy(ActorDestroyReason aReason) override;
+-
+-  // After this, the actor will simply ignore any incoming messages.
+-  void DetachFromLocationProvider() { mProvider = nullptr; }
+-
+- private:
+-  ~WindowsLocationParent() override = default;
+-
+-  WindowsLocationProvider* mProvider;
+-};
+-
+-}  // namespace mozilla::dom
+-
+-#endif  // mozilla_dom_WindowsLocationParent_h_
+diff --git a/dom/system/windows/location/WindowsLocationProvider.cpp b/dom/system/windows/location/WindowsLocationProvider.cpp
+deleted file mode 100644
+index 8ae485e9be93f40d412a458b00f2f7098085c011..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLocationProvider.cpp
++++ /dev/null
+@@ -1,274 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#include "WindowsLocationProvider.h"
+-
+-#include "GeolocationPosition.h"
+-#include "WindowsLocationParent.h"
+-#include "mozilla/Logging.h"
+-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
+-#include "mozilla/dom/WindowsUtilsParent.h"
+-#include "mozilla/glean/DomGeolocationMetrics.h"
+-#include "mozilla/ipc/UtilityProcessManager.h"
+-#include "mozilla/ipc/UtilityProcessSandboxing.h"
+-#include "nsComponentManagerUtils.h"
+-#include "prtime.h"
+-
+-namespace mozilla::dom {
+-
+-LazyLogModule gWindowsLocationProviderLog("WindowsLocationProvider");
+-#define LOG(...) \
+-  MOZ_LOG(gWindowsLocationProviderLog, LogLevel::Debug, (__VA_ARGS__))
+-
+-NS_IMPL_ISUPPORTS(WindowsLocationProvider, nsIGeolocationProvider)
+-
+-WindowsLocationProvider::WindowsLocationProvider() {
+-  LOG("WindowsLocationProvider::WindowsLocationProvider(%p)", this);
+-  MOZ_ASSERT(XRE_IsParentProcess());
+-  MaybeCreateLocationActor();
+-}
+-
+-WindowsLocationProvider::~WindowsLocationProvider() {
+-  LOG("WindowsLocationProvider::~WindowsLocationProvider(%p,%p,%p)", this,
+-      mActor.get(), mActorPromise.get());
+-  Send__delete__();
+-  ReleaseUtilityProcess();
+-}
+-
+-void WindowsLocationProvider::MaybeCreateLocationActor() {
+-  LOG("WindowsLocationProvider::MaybeCreateLocationActor(%p)", this);
+-  if (mActor || mActorPromise) {
+-    return;
+-  }
+-
+-  auto utilityProc = mozilla::ipc::UtilityProcessManager::GetSingleton();
+-  MOZ_ASSERT(utilityProc);
+-
+-  // Create a PWindowsLocation actor in the Windows utility process.
+-  // This will attempt to launch the process if it doesn't already exist.
+-  RefPtr<WindowsLocationProvider> self = this;
+-  auto wuPromise = utilityProc->GetWindowsUtilsPromise();
+-  mActorPromise = wuPromise->Then(
+-      GetCurrentSerialEventTarget(), __func__,
+-      [self](RefPtr<WindowsUtilsParent> const& wup) {
+-        self->mActorPromise = nullptr;
+-        auto actor = MakeRefPtr<WindowsLocationParent>(self);
+-        if (!wup->SendPWindowsLocationConstructor(actor)) {
+-          LOG("WindowsLocationProvider(%p) SendPWindowsLocationConstructor "
+-              "failed",
+-              self.get());
+-          actor->DetachFromLocationProvider();
+-          self->mActor = nullptr;
+-          return WindowsLocationPromise::CreateAndReject(false, __func__);
+-        }
+-        LOG("WindowsLocationProvider connected to actor (%p,%p,%p)", self.get(),
+-            self->mActor.get(), self->mActorPromise.get());
+-        self->mActor = actor;
+-        return WindowsLocationPromise::CreateAndResolve(self->mActor, __func__);
+-      },
+-      [self](::mozilla::ipc::LaunchError&& err) {
+-        LOG("WindowsLocationProvider failed to connect to actor: [%s, %lX] "
+-            "(%p,%p,%p)",
+-            err.FunctionName().get(), err.ErrorCode(), self.get(),
+-            self->mActor.get(), self->mActorPromise.get());
+-        self->mActorPromise = nullptr;
+-        return WindowsLocationPromise::CreateAndReject(false, __func__);
+-      });
+-
+-  if (mActor) {
+-    // Utility process already existed and mActorPromise was resolved
+-    // immediately.
+-    mActorPromise = nullptr;
+-  }
+-}
+-
+-void WindowsLocationProvider::ReleaseUtilityProcess() {
+-  LOG("WindowsLocationProvider::ReleaseUtilityProcess(%p)", this);
+-  auto utilityProc = mozilla::ipc::UtilityProcessManager::GetIfExists();
+-  if (utilityProc) {
+-    utilityProc->ReleaseWindowsUtils();
+-  }
+-}
+-
+-template <typename Fn>
+-bool WindowsLocationProvider::WhenActorIsReady(Fn&& fn) {
+-  if (mActor) {
+-    return fn(mActor);
+-  }
+-
+-  if (mActorPromise) {
+-    mActorPromise->Then(
+-        GetCurrentSerialEventTarget(), __func__,
+-        [fn](const RefPtr<WindowsLocationParent>& actor) {
+-          (void)fn(actor.get());
+-          return actor;
+-        },
+-        [](bool) { return false; });
+-    return true;
+-  }
+-
+-  // The remote process failed to start.
+-  return false;
+-}
+-
+-bool WindowsLocationProvider::SendStartup() {
+-  LOG("WindowsLocationProvider::SendStartup(%p)", this);
+-  MaybeCreateLocationActor();
+-  return WhenActorIsReady(
+-      [](WindowsLocationParent* actor) { return actor->SendStartup(); });
+-}
+-
+-bool WindowsLocationProvider::SendRegisterForReport(
+-    nsIGeolocationUpdate* aCallback) {
+-  LOG("WindowsLocationProvider::SendRegisterForReport(%p)", this);
+-  RefPtr<WindowsLocationProvider> self = this;
+-  RefPtr<nsIGeolocationUpdate> cb = aCallback;
+-  return WhenActorIsReady([self, cb](WindowsLocationParent* actor) {
+-    MOZ_ASSERT(!self->mCallback);
+-    if (actor->SendRegisterForReport()) {
+-      self->mCallback = cb;
+-      return true;
+-    }
+-    return false;
+-  });
+-}
+-
+-bool WindowsLocationProvider::SendUnregisterForReport() {
+-  LOG("WindowsLocationProvider::SendUnregisterForReport(%p)", this);
+-  RefPtr<WindowsLocationProvider> self = this;
+-  return WhenActorIsReady([self](WindowsLocationParent* actor) {
+-    self->mCallback = nullptr;
+-    if (actor->SendUnregisterForReport()) {
+-      return true;
+-    }
+-    return false;
+-  });
+-}
+-
+-bool WindowsLocationProvider::SendSetHighAccuracy(bool aEnable) {
+-  LOG("WindowsLocationProvider::SendSetHighAccuracy(%p)", this);
+-  return WhenActorIsReady([aEnable](WindowsLocationParent* actor) {
+-    return actor->SendSetHighAccuracy(aEnable);
+-  });
+-}
+-
+-bool WindowsLocationProvider::Send__delete__() {
+-  LOG("WindowsLocationProvider::Send__delete__(%p)", this);
+-  return WhenActorIsReady([self = RefPtr{this}](WindowsLocationParent*) {
+-    if (WindowsLocationParent::Send__delete__(self->mActor)) {
+-      if (self->mActor) {
+-        self->mActor->DetachFromLocationProvider();
+-        self->mActor = nullptr;
+-      }
+-      return true;
+-    }
+-    return false;
+-  });
+-}
+-
+-void WindowsLocationProvider::RecvUpdate(
+-    RefPtr<nsIDOMGeoPosition> aGeoPosition) {
+-  LOG("WindowsLocationProvider::RecvUpdate(%p)", this);
+-  if (!mCallback) {
+-    return;
+-  }
+-
+-  mCallback->Update(aGeoPosition.get());
+-
+-  if (!mEverUpdated) {
+-    mEverUpdated = true;
+-    glean::geolocation::fallback
+-        .EnumGet(glean::geolocation::FallbackLabel::eNone)
+-        .Add();
+-  }
+-}
+-
+-void WindowsLocationProvider::RecvFailed(uint16_t err) {
+-  LOG("WindowsLocationProvider::RecvFailed(%p)", this);
+-  // Cannot get current location at this time.
+-  if (!mCallback) {
+-    return;
+-  }
+-
+-  // We keep strong references to objects that we need to guarantee
+-  // will live past the NotifyError callback.
+-  RefPtr<WindowsLocationProvider> self = this;
+-  nsCOMPtr<nsIGeolocationUpdate> callback = mCallback;
+-  callback->NotifyError(err);
+-}
+-
+-void WindowsLocationProvider::ActorStopped() {
+-  // ActorDestroy has run.  Make sure UtilityProcessHost no longer tries to use
+-  // it.
+-  ReleaseUtilityProcess();
+-
+-  if (mWatching) {
+-    // Treat as remote geolocation error.
+-    mWatching = false;
+-    RecvFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-    return;
+-  }
+-
+-  MOZ_ASSERT(!mActorPromise);
+-  if (mActor) {
+-    mActor->DetachFromLocationProvider();
+-    mActor = nullptr;
+-  }
+-}
+-
+-NS_IMETHODIMP
+-WindowsLocationProvider::Startup() {
+-  LOG("WindowsLocationProvider::Startup(%p, %p, %p)", this, mActor.get(),
+-      mActorPromise.get());
+-  SendStartup();
+-  return NS_OK;
+-}
+-
+-NS_IMETHODIMP
+-WindowsLocationProvider::Watch(nsIGeolocationUpdate* aCallback) {
+-  LOG("WindowsLocationProvider::Watch(%p, %p, %p, %p, %d)", this, mActor.get(),
+-      mActorPromise.get(), aCallback, mWatching);
+-  if (mWatching) {
+-    return NS_OK;
+-  }
+-
+-  if (SendRegisterForReport(aCallback)) {
+-    mWatching = true;
+-    return NS_OK;
+-  }
+-
+-  return NS_ERROR_FAILURE;
+-}
+-
+-NS_IMETHODIMP
+-WindowsLocationProvider::Shutdown() {
+-  LOG("WindowsLocationProvider::Shutdown(%p, %p, %p)", this, mActor.get(),
+-      mActorPromise.get());
+-
+-  if (mWatching) {
+-    SendUnregisterForReport();
+-    mWatching = false;
+-  }
+-
+-  return NS_OK;
+-}
+-
+-NS_IMETHODIMP
+-WindowsLocationProvider::SetHighAccuracy(bool enable) {
+-  LOG("WindowsLocationProvider::SetHighAccuracy(%p, %p, %p, %s)", this,
+-      mActor.get(), mActorPromise.get(), enable ? "true" : "false");
+-
+-  if (!SendSetHighAccuracy(enable)) {
+-    return NS_ERROR_FAILURE;
+-  }
+-
+-  // Since we SendSetHighAccuracy asynchronously, we cannot say for sure
+-  // that it will succeed.  If it does fail then we will get a
+-  // RecvFailed IPC message.
+-  return NS_OK;
+-}
+-
+-#undef LOG
+-
+-}  // namespace mozilla::dom
+diff --git a/dom/system/windows/location/WindowsLocationProvider.h b/dom/system/windows/location/WindowsLocationProvider.h
+deleted file mode 100644
+index 5b198aca70f8d9691450825e9169ee1cae1d0801..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsLocationProvider.h
++++ /dev/null
+@@ -1,69 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef mozilla_dom_WindowsLocationProvider_h_
+-#define mozilla_dom_WindowsLocationProvider_h_
+-
+-#include "mozilla/MozPromise.h"
+-#include "nsCOMPtr.h"
+-#include "nsIGeolocationProvider.h"
+-
+-namespace mozilla::dom {
+-
+-class WindowsLocationParent;
+-
+-// Uses a PWindowsLocation actor to subscribe to geolocation updates from the
+-// Windows utility process.
+-class WindowsLocationProvider final : public nsIGeolocationProvider {
+- public:
+-  NS_DECL_ISUPPORTS
+-  NS_DECL_NSIGEOLOCATIONPROVIDER
+-
+-  WindowsLocationProvider();
+-
+- private:
+-  friend WindowsLocationParent;
+-
+-  ~WindowsLocationProvider();
+-
+-  void MaybeCreateLocationActor();
+-  void ReleaseUtilityProcess();
+-
+-  // These methods either send the message on the existing actor or queue
+-  // the messages to be sent (in order) once the actor exists.
+-  bool SendStartup();
+-  bool SendRegisterForReport(nsIGeolocationUpdate* aCallback);
+-  bool SendUnregisterForReport();
+-  bool SendSetHighAccuracy(bool aEnable);
+-  bool Send__delete__();
+-
+-  void RecvUpdate(RefPtr<nsIDOMGeoPosition> aGeoPosition);
+-  // See bug 1539864 for MOZ_CAN_RUN_SCRIPT_BOUNDARY justification.
+-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void RecvFailed(uint16_t err);
+-
+-  // The utility process actor has ended its connection, either successfully
+-  // or with an error.
+-  void ActorStopped();
+-
+-  // Run fn once actor is ready to send messages, which may be immediately.
+-  template <typename Fn>
+-  bool WhenActorIsReady(Fn&& fn);
+-
+-  nsCOMPtr<nsIGeolocationUpdate> mCallback;
+-
+-  using WindowsLocationPromise =
+-      MozPromise<RefPtr<WindowsLocationParent>, bool, false>;
+-
+-  // Before the utility process exists, we have a promise that we will get our
+-  // location actor.  mActor and mActorPromise are never both set.
+-  RefPtr<WindowsLocationPromise> mActorPromise;
+-  RefPtr<WindowsLocationParent> mActor;
+-
+-  bool mWatching = false;
+-  bool mEverUpdated = false;
+-};
+-
+-}  // namespace mozilla::dom
+-
+-#endif  // mozilla_dom_WindowsLocationProvider_h_
+diff --git a/dom/system/windows/location/WindowsRuntimeLocationChild.cpp b/dom/system/windows/location/WindowsRuntimeLocationChild.cpp
+deleted file mode 100644
+index 4f6eb34483fcf2aec1b1e1dd9825b08207f7c6b5..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsRuntimeLocationChild.cpp
++++ /dev/null
+@@ -1,336 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#include "WindowsRuntimeLocationChild.h"
+-
+-#include <windows.foundation.h>
+-
+-#include "mozilla/dom/GeolocationPosition.h"
+-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
+-#include "mozilla/glean/DomGeolocationMetrics.h"
+-#include "nsCOMPtr.h"
+-#include "nsIGeolocationProvider.h"
+-#include "prtime.h"
+-
+-using namespace ABI::Windows::Devices::Geolocation;
+-using namespace ABI::Windows::Foundation;
+-using namespace Microsoft::WRL;
+-using namespace Microsoft::WRL::Wrappers;
+-
+-using PositionChangedHandler =
+-    ITypedEventHandler<Geolocator*, PositionChangedEventArgs*>;
+-using StatusChangedHandler =
+-    ITypedEventHandler<Geolocator*, StatusChangedEventArgs*>;
+-
+-namespace mozilla::dom {
+-
+-extern LazyLogModule gWindowsLocationProviderLog;
+-#define LOGD(...) \
+-  MOZ_LOG(gWindowsLocationProviderLog, LogLevel::Debug, (__VA_ARGS__))
+-#define LOGI(...) \
+-  MOZ_LOG(gWindowsLocationProviderLog, LogLevel::Info, (__VA_ARGS__))
+-
+-// Use string lookup since dual_labeled_counter does not yet support enums.
+-static void AddFailureTelemetry(const nsACString& aReason) {
+-  glean::geolocation::windows_failure.Get("winrt"_ns, aReason).Add();
+-}
+-
+-HRESULT
+-WindowsRuntimeLocationChild::OnPositionChanged(
+-    const ComPtr<IGeolocator>& aGeolocator,
+-    const ComPtr<IPositionChangedEventArgs>& aArgs) {
+-  LOGD("WindowsRuntimeLocationChild::OnPositionChanged(%p)", this);
+-
+-  ComPtr<IGeoposition> geoposition;
+-  HRESULT hr = aArgs->get_Position(&geoposition);
+-  if (FAILED(hr)) {
+-    return S_OK;
+-  }
+-
+-  ComPtr<IGeocoordinate> coordinate;
+-  hr = geoposition->get_Coordinate(&coordinate);
+-  if (FAILED(hr)) {
+-    return S_OK;
+-  }
+-
+-  ComPtr<IGeocoordinateWithPoint> coordinateWithPoint;
+-  hr = coordinate.As(&coordinateWithPoint);
+-  if (FAILED(hr)) {
+-    return S_OK;
+-  }
+-
+-  ComPtr<IGeopoint> geopoint;
+-  hr = coordinateWithPoint->get_Point(&geopoint);
+-  if (FAILED(hr)) {
+-    return S_OK;
+-  }
+-
+-  BasicGeoposition position;
+-  hr = geopoint->get_Position(&position);
+-  if (FAILED(hr)) {
+-    return S_OK;
+-  }
+-
+-  double latitude = position.Latitude;
+-  double longitude = position.Longitude;
+-  double altitude = position.Altitude;
+-
+-  double accuracy = [&] {
+-    DOUBLE value;
+-    if (SUCCEEDED(coordinate->get_Accuracy(&value))) {
+-      return value;
+-    }
+-    return UnspecifiedNaN<double>();
+-  }();
+-
+-  double altitudeAccuracy = [&] {
+-    ComPtr<IReference<DOUBLE>> altitudeAccuracyRef;
+-    (void)coordinate->get_AltitudeAccuracy(&altitudeAccuracyRef);
+-    if (altitudeAccuracyRef) {
+-      DOUBLE value;
+-      if (SUCCEEDED(altitudeAccuracyRef->get_Value(&value))) {
+-        return value;
+-      }
+-    }
+-    return UnspecifiedNaN<double>();
+-  }();
+-
+-  double heading = [&] {
+-    ComPtr<IReference<DOUBLE>> headingRef;
+-    (void)coordinate->get_Heading(&headingRef);
+-    if (headingRef) {
+-      DOUBLE value;
+-      if (SUCCEEDED(headingRef->get_Value(&value))) {
+-        return value;
+-      }
+-    }
+-    return UnspecifiedNaN<double>();
+-  }();
+-
+-  double speed = [&] {
+-    ComPtr<IReference<DOUBLE>> speedRef;
+-    (void)coordinate->get_Speed(&speedRef);
+-    if (speedRef) {
+-      DOUBLE value;
+-      if (SUCCEEDED(speedRef->get_Value(&value))) {
+-        return value;
+-      }
+-    }
+-    return UnspecifiedNaN<double>();
+-  }();
+-
+-  NS_DispatchToMainThread(NS_NewRunnableFunction(
+-      "WindowsRuntimeLocationChild::OnPositionChanged",
+-      [self = RefPtr{this}, latitude, longitude, altitude, accuracy,
+-       altitudeAccuracy, heading, speed]() {
+-        // nsGeoPositionCoords will convert NaNs to null for optional properties
+-        // of the JavaScript Coordinates object.
+-        RefPtr<nsGeoPosition> geckoGeoPosition = new nsGeoPosition(
+-            latitude, longitude, altitude, accuracy, altitudeAccuracy, heading,
+-            speed, PR_Now() / PR_USEC_PER_MSEC);
+-        self->SendUpdate(geckoGeoPosition);
+-      }));
+-
+-  return S_OK;
+-}
+-
+-HRESULT
+-WindowsRuntimeLocationChild::OnStatusChanged(
+-    const ComPtr<IGeolocator>& aGeolocator,
+-    const ComPtr<IStatusChangedEventArgs>& aArgs) {
+-  PositionStatus status;
+-  HRESULT hr = aArgs->get_Status(&status);
+-  if (FAILED(hr)) {
+-    LOGD(
+-        "WindowsRuntimeLocationChild::OnStatusChanged(%p) failed to get status",
+-        this);
+-    return S_OK;
+-  }
+-
+-  LOGD("WindowsRuntimeLocationChild::OnStatusChanged(%p, %d)", this, status);
+-
+-  uint16_t err;
+-  switch (status) {
+-    case PositionStatus::PositionStatus_Disabled:
+-      AddFailureTelemetry("permission denied"_ns);
+-      err = GeolocationPositionError_Binding::PERMISSION_DENIED;
+-      break;
+-    case PositionStatus::PositionStatus_NotAvailable:
+-      AddFailureTelemetry("not supported"_ns);
+-      err = GeolocationPositionError_Binding::POSITION_UNAVAILABLE;
+-      break;
+-    default:
+-      return S_OK;
+-  }
+-
+-  NS_DispatchToMainThread(NS_NewRunnableFunction(
+-      "WindowsRuntimeLocationChild::OnStatusChanged",
+-      [self = RefPtr{this}, err]() { self->SendFailed(err); }));
+-  return S_OK;
+-}
+-
+-WindowsRuntimeLocationChild::WindowsRuntimeLocationChild() {
+-  LOGD("WindowsRuntimeLocationChild::WindowsRuntimeLocationChild(%p)", this);
+-}
+-
+-WindowsRuntimeLocationChild::~WindowsRuntimeLocationChild() {
+-  LOGD("WindowsRuntimeLocationChild::~WindowsRuntimeLocationChild(%p)", this);
+-}
+-
+-mozilla::ipc::IPCResult WindowsRuntimeLocationChild::Startup() {
+-  LOGD("WindowsRuntimeLocationChild::Startup(%p, %p)", this, mGeolocator.Get());
+-
+-  if (mGeolocator) {
+-    return IPC_OK();
+-  }
+-
+-  auto sendFailOnError = MakeScopeExit([&] {
+-    // We will use MLS provider
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-  });
+-
+-  ComPtr<IInspectable> inspectable;
+-  HRESULT hr = RoActivateInstance(
+-      HStringReference(RuntimeClass_Windows_Devices_Geolocation_Geolocator)
+-          .Get(),
+-      &inspectable);
+-  if (FAILED(hr)) {
+-    LOGD(
+-        "WindowsRuntimeLocationChild(%p) failed to create Geolocator. "
+-        "HRESULT=%08lx",
+-        this, hr);
+-    AddFailureTelemetry("creation error"_ns);
+-    return IPC_OK();
+-  }
+-
+-  ComPtr<IGeolocator> geolocator;
+-  hr = inspectable.As(&geolocator);
+-  if (FAILED(hr)) {
+-    LOGD(
+-        "WindowsRuntimeLocationChild(%p) failed to get IGeolocator interface. "
+-        "HRESULT=%08lx",
+-        this, hr);
+-    AddFailureTelemetry("unexpected error"_ns);
+-    return IPC_OK();
+-  }
+-
+-  mGeolocator = std::move(geolocator);
+-  sendFailOnError.release();
+-  return IPC_OK();
+-}
+-
+-mozilla::ipc::IPCResult WindowsRuntimeLocationChild::SetHighAccuracy(
+-    const bool& aEnable) {
+-  LOGD("WindowsRuntimeLocationChild::SetHighAccuracy(%p, %p, %s)", this,
+-       mGeolocator.Get(), aEnable ? "true" : "false");
+-
+-  // We sometimes call SetHighAccuracy before Startup, so we save the
+-  // request and set it later, in RegisterForReport.
+-  mHighAccuracy = aEnable;
+-
+-  return IPC_OK();
+-}
+-
+-mozilla::ipc::IPCResult WindowsRuntimeLocationChild::RegisterForReport() {
+-  LOGD("WindowsRuntimeLocationChild::RegisterForReport(%p, %p)", this,
+-       mGeolocator.Get());
+-
+-  auto sendFailOnError = MakeScopeExit([&] {
+-    SendFailed(GeolocationPositionError_Binding::POSITION_UNAVAILABLE);
+-  });
+-
+-  if (!mGeolocator) {
+-    AddFailureTelemetry("unexpected error"_ns);
+-    return IPC_OK();
+-  }
+-
+-  HRESULT hr = mGeolocator->put_DesiredAccuracy(
+-      mHighAccuracy ? PositionAccuracy::PositionAccuracy_High
+-                    : PositionAccuracy::PositionAccuracy_Default);
+-  if (FAILED(hr)) {
+-    AddFailureTelemetry("unexpected error"_ns);
+-    return IPC_OK();
+-  }
+-
+-  RefPtr<WindowsRuntimeLocationChild> self = this;
+-  hr = mGeolocator->add_PositionChanged(
+-      Callback<PositionChangedHandler>([self](
+-                                           IGeolocator* aGeolocator,
+-                                           IPositionChangedEventArgs* aArgs) {
+-        return self->OnPositionChanged(
+-            ComPtr<IGeolocator>(aGeolocator),
+-            ComPtr<IPositionChangedEventArgs>(aArgs));
+-      }).Get(),
+-      &mPositionChangedToken);
+-  if (FAILED(hr)) {
+-    AddFailureTelemetry("failed to register"_ns);
+-    return IPC_OK();
+-  }
+-
+-  hr = mGeolocator->add_StatusChanged(
+-      Callback<StatusChangedHandler>([self](IGeolocator* aGeolocator,
+-                                            IStatusChangedEventArgs* aArgs) {
+-        return self->OnStatusChanged(ComPtr<IGeolocator>(aGeolocator),
+-                                     ComPtr<IStatusChangedEventArgs>(aArgs));
+-      }).Get(),
+-      &mStatusChangedToken);
+-  if (FAILED(hr)) {
+-    mGeolocator->remove_PositionChanged(mPositionChangedToken);
+-    mPositionChangedToken.value = 0;
+-    AddFailureTelemetry("failed to register"_ns);
+-    return IPC_OK();
+-  }
+-
+-  glean::geolocation::geolocation_service
+-      .EnumGet(glean::geolocation::GeolocationServiceLabel::eSystem)
+-      .Add();
+-  LOGI(
+-      "WindowsRuntimeLocationChild::RecvRegisterForReport successfully "
+-      "registered");
+-  sendFailOnError.release();
+-  return IPC_OK();
+-}
+-
+-mozilla::ipc::IPCResult WindowsRuntimeLocationChild::UnregisterForReport() {
+-  LOGI("WindowsRuntimeLocationChild::UnregisterForReport(%p, %p)", this,
+-       mGeolocator.Get());
+-
+-  if (!mGeolocator) {
+-    return IPC_OK();
+-  }
+-
+-  // This IPC call is by IGeolocationProvider.shutdown(), release IGeolocator.
+-  if (mPositionChangedToken.value != 0) {
+-    mGeolocator->remove_PositionChanged(mPositionChangedToken);
+-  }
+-  if (mStatusChangedToken.value != 0) {
+-    mGeolocator->remove_StatusChanged(mStatusChangedToken);
+-  }
+-  mPositionChangedToken.value = 0;
+-  mStatusChangedToken.value = 0;
+-  mGeolocator = nullptr;
+-
+-  return IPC_OK();
+-}
+-
+-void WindowsRuntimeLocationChild::ActorDestroy(ActorDestroyReason aWhy) {
+-  LOGD("WindowsRuntimeLocationChild::ActorDestroy(%p, %p)", this,
+-       mGeolocator.Get());
+-
+-  if (!mGeolocator) {
+-    return;
+-  }
+-
+-  if (mPositionChangedToken.value != 0) {
+-    mGeolocator->remove_PositionChanged(mPositionChangedToken);
+-  }
+-  if (mStatusChangedToken.value != 0) {
+-    mGeolocator->remove_StatusChanged(mStatusChangedToken);
+-  }
+-  mPositionChangedToken.value = 0;
+-  mStatusChangedToken.value = 0;
+-  mGeolocator = nullptr;
+-}
+-
+-}  // namespace mozilla::dom
+diff --git a/dom/system/windows/location/WindowsRuntimeLocationChild.h b/dom/system/windows/location/WindowsRuntimeLocationChild.h
+deleted file mode 100644
+index 6e6a59f9ad337026b2f82ce3cae48de0f7a69292..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/WindowsRuntimeLocationChild.h
++++ /dev/null
+@@ -1,54 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef mozilla_dom_WindowsRuntimeLocationChild_h_
+-#define mozilla_dom_WindowsRuntimeLocationChild_h_
+-
+-#include <windows.devices.geolocation.h>
+-#include <wrl.h>
+-
+-#include "WindowsLocationChild.h"
+-
+-namespace mozilla::dom {
+-
+-// Geolocation actor in utility process.
+-class WindowsRuntimeLocationChild final : public WindowsLocationChild {
+-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WindowsRuntimeLocationChild, override);
+-
+- public:
+-  WindowsRuntimeLocationChild();
+-
+-  void ActorDestroy(ActorDestroyReason aWhy) override;
+-
+- protected:
+-  mozilla::ipc::IPCResult Startup() override;
+-  mozilla::ipc::IPCResult RegisterForReport() override;
+-  mozilla::ipc::IPCResult UnregisterForReport() override;
+-  mozilla::ipc::IPCResult SetHighAccuracy(const bool& aEnable) override;
+-
+- private:
+-  template <typename T>
+-  using ComPtr = Microsoft::WRL::ComPtr<T>;
+-  using IGeolocator = ABI::Windows::Devices::Geolocation::IGeolocator;
+-  using IPositionChangedEventArgs =
+-      ABI::Windows::Devices::Geolocation::IPositionChangedEventArgs;
+-  using IStatusChangedEventArgs =
+-      ABI::Windows::Devices::Geolocation::IStatusChangedEventArgs;
+-
+-  ~WindowsRuntimeLocationChild() override;
+-
+-  HRESULT OnPositionChanged(const ComPtr<IGeolocator>& aGeolocator,
+-                            const ComPtr<IPositionChangedEventArgs>& aArgs);
+-  HRESULT OnStatusChanged(const ComPtr<IGeolocator>& aGeolocator,
+-                          const ComPtr<IStatusChangedEventArgs>& aArgs);
+-
+-  ComPtr<IGeolocator> mGeolocator;
+-  EventRegistrationToken mPositionChangedToken{};
+-  EventRegistrationToken mStatusChangedToken{};
+-  bool mHighAccuracy = false;
+-};
+-
+-}  // namespace mozilla::dom
+-
+-#endif  // mozilla_dom_WindowsRuntimeLocationChild_h_
+diff --git a/dom/system/windows/location/moz.build b/dom/system/windows/location/moz.build
+deleted file mode 100644
+index 323a8066e8d38a184dd7dd935c2049ce08c84b89..0000000000000000000000000000000000000000
+--- a/dom/system/windows/location/moz.build
++++ /dev/null
+@@ -1,33 +0,0 @@
+-# This Source Code Form is subject to the terms of the Mozilla Public
+-# License, v. 2.0. If a copy of the MPL was not distributed with this
+-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-
+-EXPORTS.mozilla.dom += [
+-    "WindowsLocationChild.h",
+-    "WindowsLocationParent.h",
+-]
+-
+-UNIFIED_SOURCES += [
+-    "WindowsLocationChild.cpp",
+-    "WindowsLocationParent.cpp",
+-    "WindowsLocationProvider.cpp",
+-]
+-
+-if CONFIG["CC_TYPE"] == "clang-cl":
+-    UNIFIED_SOURCES += [
+-        "WindowsRuntimeLocationChild.cpp",
+-    ]
+-
+-SOURCES += [
+-    "WindowsLegacyLocationChild.cpp",  # includes locationapi.h
+-]
+-
+-IPDL_SOURCES += [
+-    "PWindowsLocation.ipdl",
+-]
+-
+-LOCAL_INCLUDES += ["/dom/geolocation"]
+-
+-include("/ipc/chromium/chromium-config.mozbuild")
+-
+-FINAL_LIBRARY = "xul"
+diff --git a/dom/system/windows/moz.build b/dom/system/windows/moz.build
+index 60e9b685ee079722bed0429412db7249ee1ba7c8..cd043910196a760a18877ce343535ae082546a4e 100644
+--- a/dom/system/windows/moz.build
++++ b/dom/system/windows/moz.build
+@@ -15,12 +15,6 @@ IPDL_SOURCES += [
+     "PWindowsUtils.ipdl",
+ ]
+ 
+-LOCAL_INCLUDES += [
+-    "/dom/system/windows/location",
+-]
+-
+-DIRS += ["location"]
+-
+ include("/ipc/chromium/chromium-config.mozbuild")
+ 
+ FINAL_LIBRARY = "xul"
+diff --git a/toolkit/components/geolocation/GeolocationService.cpp b/toolkit/components/geolocation/GeolocationService.cpp
+index 70af7ec0c23833766fdee173c1bcf35448e3af85..6a49058e657ef0ee78722ee05634eb5cacee0d8d 100644
+--- a/toolkit/components/geolocation/GeolocationService.cpp
++++ b/toolkit/components/geolocation/GeolocationService.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include "mozilla/Services.h"
+ #include "mozilla/StaticPrefs_geo.h"
++#include "mozilla/StealthGeolocation.h"  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
+ #include "mozilla/glean/DomGeolocationMetrics.h"
+ #include "nsComponentManagerUtils.h"
+ #include "nsServiceManagerUtils.h"
+@@ -24,10 +25,6 @@
+ #  include "CoreLocationLocationProvider.h"
+ #endif
+ 
+-#ifdef XP_WIN
+-#  include "WindowsLocationProvider.h"
+-#endif
+-
+ // XXX(krosylight): We should stop directly involving child process and
+ // Geolocation API here. See also bug 2037074.
+ #include "mozilla/dom/ContentChild.h"
+@@ -69,6 +66,11 @@ nsresult GeolocationService::Init() {
+ 
+   obs->AddObserver(this, "xpcom-shutdown", false);
+ 
++  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider): the provider is the network one, never a host one.
++  if (StealthSelectGeolocationProvider(mProvider)) {
++    return NS_OK;
++  }
++
+ #ifdef MOZ_WIDGET_ANDROID
+   mProvider = new AndroidLocationProvider();
+ #endif
+@@ -108,12 +110,6 @@ nsresult GeolocationService::Init() {
+   }
+ #endif
+ 
+-#ifdef XP_WIN
+-  if (Preferences::GetBool("geo.provider.ms-windows-location", false)) {
+-    mProvider = new WindowsLocationProvider();
+-  }
+-#endif
+-
+   if (Preferences::GetBool("geo.provider.use_mls", false)) {
+     mProvider = do_CreateInstance("@mozilla.org/geolocation/mls-provider;1");
+   }
+diff --git a/toolkit/components/geolocation/moz.build b/toolkit/components/geolocation/moz.build
+index b75eb473a9cc53fc8d5ff7f7b933cdd16d73d30a..dbc5f1c5a91ccfb37a4c8e39ff1369d82d849271 100644
+--- a/toolkit/components/geolocation/moz.build
++++ b/toolkit/components/geolocation/moz.build
+@@ -8,10 +8,12 @@ with Files("**"):
+ EXPORTS.mozilla += [
+     "GeolocationService.h",
+ ]
++EXPORTS.mozilla += ["StealthGeolocation.h"]  # STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
+ 
+ UNIFIED_SOURCES += [
+     "GeolocationService.cpp",
+ ]
++UNIFIED_SOURCES += ["StealthGeolocation.cpp"]  # STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
+ 
+ XPCOM_MANIFESTS += [
+     "components.conf",
+@@ -19,6 +21,8 @@ XPCOM_MANIFESTS += [
+ XPIDL_SOURCES += ["nsIGeolocationService.idl"]
+ XPIDL_MODULE = "toolkit_geolocation"
+ 
++TEST_DIRS += ["test/gtest"]  # STEALTH-HOOK(fingerprint/geolocation/no-host-provider)
++
+ include("/ipc/chromium/chromium-config.mozbuild")
+ 
+ FINAL_LIBRARY = "xul"
+@@ -31,10 +35,6 @@ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
+     LOCAL_INCLUDES += [
+         "/dom/system/mac",
+     ]
+-elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
+-    LOCAL_INCLUDES += [
+-        "/dom/system/windows/location",
+-    ]
+ elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+     if CONFIG["MOZ_ENABLE_DBUS"]:
+         LOCAL_INCLUDES += ["/dom/system/linux"]

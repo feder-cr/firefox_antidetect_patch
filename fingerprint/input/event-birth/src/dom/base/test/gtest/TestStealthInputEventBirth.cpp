@@ -111,5 +111,6 @@ TEST(StealthFrameCrash, TheIdIsTheDigits)
   // the buffer holds the digits for as long as the notification runs, and a second id does not append to the first
   data = StealthCrashedContextData(uint64_t(9), buffer);
   EXPECT_TRUE(nsDependentString(data).EqualsLiteral("9"));
-  EXPECT_EQ(data, buffer.get());
+  // char16ptr_t has no unambiguous == with const char16_t* on Windows (clang-cl): compare the plain pointers
+  EXPECT_EQ(data, static_cast<const char16_t*>(buffer.get()));
 }

@@ -16,9 +16,9 @@
     "zoom.stealth.pointer.primary",
     "zoom.stealth.pointer.all"
    ],
-   "added": 37,
+   "added": 8,
    "removed": 0,
-   "hunks": 4,
+   "hunks": 3,
    "inline_logic_lines": 11,
    "hookable": "movable",
    "anchor": "GetDeviceSize (device-size block) and GetPointerCapabilities (stealth branch)",

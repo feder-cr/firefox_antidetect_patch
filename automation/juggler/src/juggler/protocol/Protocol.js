@@ -285,8 +285,11 @@ const Browser = {
         port: t.Number,
         username: t.Optional(t.String),
         password: t.Optional(t.String),
+        // Of a SOCKS5 proxy: whether its UDP was measured coherent with its TCP exit. Absent is 'no'.
+        udp: t.Optional(t.Enum(['coherent', 'no', 'unmeasured'])),
       },
     },
+    'setNoBrowserProxy': {},
     'setContextProxy': {
       params: {
         browserContextId: t.Optional(t.String),
@@ -296,6 +299,7 @@ const Browser = {
         port: t.Number,
         username: t.Optional(t.String),
         password: t.Optional(t.String),
+        udp: t.Optional(t.Enum(['coherent', 'no', 'unmeasured'])),
       },
     },
     'setHTTPCredentials': {
@@ -871,6 +875,15 @@ const Page = {
         scripts: t.Array(pageTypes.InitScript)
       }
     },
+    // Stealthfox: the same as Browser.addBinding, for this page only (a page's own exposed function). The page keeps it
+    // for the processes its frames move to, as it keeps its init scripts.
+    'addBinding': {
+      params: {
+        worldName: t.Optional(t.String),
+        name: t.String,
+        script: t.String,
+      }
+    },
     'navigate': {
       params: {
         frameId: t.String,
@@ -942,6 +955,11 @@ const Page = {
       returns: {
         x: t.Number,
         y: t.Number,
+        // Stealthfox: where one CSS pixel along the frame's x axis, and along its y axis, goes in the main
+        // document. (1,0) and (0,1) when the frame is only shifted; different when a CSS transform scales,
+        // skews or rotates the <iframe> or an element above it.
+        ex: t.Optional(pageTypes.DOMPoint),
+        ey: t.Optional(pageTypes.DOMPoint),
       },
     },
     'dispatchKeyEvent': {

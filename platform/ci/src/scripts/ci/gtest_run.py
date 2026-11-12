@@ -39,6 +39,11 @@ import time
 from pathlib import Path
 
 SUITE = re.compile(r"(\S+)\.(  # .*)?")
+# Suites that run with the log of the modules whose failures the reports must explain, one file per process
+# (MOZ_LOG_FILE with %PID), written synchronously so that a process that dies leaves what it said. The files stay in
+# --reports next to the suite's json. StealthSessionUdpProxy: the SOCKS UDP layer and the host resolver, for a test red
+# on one platform whose cause the sources do not say.
+LOGGED = {"StealthSessionUdpProxy": "sync,SOCKS-UDP:5,nsHostResolver:5"}
 # Named by the default filter and compiled for one platform only, from run 41402916724's logs.
 NOT_ON = {"linux": {"StealthWebGPUAdapter", "StealthWebGPUInstanceEnv"}, "win": {"StealthWebGPUBundledVulkan"}}
 
@@ -69,6 +74,16 @@ def environment(root: Path, gtest_filter: str, base=None) -> dict:
                MOZ_GMP_PATH=os.pathsep.join(str(bin_dir / p / "1.0") for p in ("gmp-fake", "gmp-fakeopenh264")),
                MOZ_WEBRENDER="0", MOZ_ENABLE_INC_ORIGIN_INIT="0")
     return env
+
+
+def logging_for(suite: str, where: Path) -> dict:
+    """MOZ_LOG and MOZ_LOG_FILE of a suite that is logged, nothing for the others."""
+    modules = LOGGED.get(suite)
+    if not modules:
+        return {}
+    folder = where / ("%s.moz-log" % suite.replace("/", "_"))
+    folder.mkdir(parents=True, exist_ok=True)
+    return {"MOZ_LOG": modules, "MOZ_LOG_FILE": str(folder / "moz-%PID.log")}
 
 
 def signal_name(status: int) -> str:
@@ -128,6 +143,7 @@ def run(root: Path, gtest_filter: str, reports=None, out=print, cores=None, debu
         for suite in suites:
             one = dict(env, GTEST_FILTER=only_suite(gtest_filter, suites, suite),
                        GTEST_OUTPUT="json:%s" % (where / ("%s.json" % suite.replace("/", "_"))))
+            one.update(logging_for(suite, where))
             out("%s: running" % suite)
             since = time.time()
             child = subprocess.Popen(args, cwd=cwd, env=one,

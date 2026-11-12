@@ -98,7 +98,7 @@ on:
         # What the last green gtests ran (run 41402916724), and the suites of the Juggler's input and crash hooks added
         # since (StealthFrameCrash, StealthJugglerEventId: their sources are in dom/base/test/gtest). * has never gone green here.
         description: "gtests=true only: which, as mach gtest takes them; * is all, and unproven"
-        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:StealthFrameCrash.*:StealthJugglerEventId.*'
+        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*'
       relaunch_of:
         description: >
           Set by the watch of a run whose machine was lost, to that run's id: this run
@@ -146,9 +146,20 @@ jobs:
         run: python3 .series/tools/engine.py materialize --into .
       - name: The plan refuses what it must
         run: python3 scripts/test_release_plan.py
+      # The engine a candidate would become: the last published firefox-N plus one. The gate seals a candidate
+      # firefox-N-candidate, and the wrapper's tests read N from the seal (scripts/release_plan.py says why).
+      - name: The last published release
+        id: last_release
+        run: |
+          set -e
+          LAST=$(git ls-remote --tags --refs "https://github.com/${GITHUB_REPOSITORY}" 'refs/tags/firefox-*' \
+            | sed 's#.*refs/tags/firefox-##' | grep -E '^[0-9]+$' | sort -n | tail -1)
+          [ -n "$LAST" ] || { echo "ERROR: no firefox-N tag in ${GITHUB_REPOSITORY}: the number of the next engine is unknown"; exit 1; }
+          echo "last_release=$LAST" | tee -a "$GITHUB_OUTPUT"
       - name: Plan
         id: plan
         env:
+          LAST_RELEASE: ${{ steps.last_release.outputs.last_release }}
           EVENT: ${{ github.event_name }}
           KIND: ${{ inputs.kind }}
           RELEASE_TAG: ${{ inputs.release_tag }}
@@ -165,7 +176,8 @@ jobs:
             --release-tag "$RELEASE_TAG" --ref-name "$REF_NAME" \
             --compile-cache "$COMPILE_CACHE" --ref-type "$REF_TYPE" \
             --gtests "$GTESTS" --gtest-filter "$GTEST_FILTER" \
-            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" > plan.txt
+            --core-ref "$CORE_REF" --wrapper-ref "$WRAPPER_REF" \
+            --last-release "$LAST_RELEASE" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every
@@ -197,7 +209,7 @@ jobs:
     # A rerun of failed jobs has no watch and no label to run on: nothing to turn on for it.
     if: needs.plan.outputs.attempt == github.run_attempt
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 45
     permissions: { actions: read, contents: read }
     steps:
@@ -658,6 +670,21 @@ jobs:
           fi
           python3 scripts/ci mozconfig --leg "$CI_LEG" --compile-cache "$COMPILE_CACHE"
 
+      # The objects of the gtests of ours, BEFORE the build of the browser (compile only, no link, the same object directory and the
+      # same flags, so the build that follows finds them made and the compile cache sees nothing different). A gtest that does not
+      # compile stops the run here, a few minutes in, and not after the link of the browser (twenty minutes in on the faster leg,
+      # an hour on the slower): three runs of the node were spent on errors of tests that do not depend on the browser at all.
+      # Only the directories that hold a test of ours (Test*Stealth*.cpp); --keep-going shows every error of them at once.
+      - name: The gtests of ours - their objects first
+        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          DIRS=$(find . -path ./obj-rel -prune -o \( -name 'Test*Stealth*.cpp' -o -name 'TestStealth*.cpp' \) -print | sed 's|/[^/]*$||; s|^\./||' | sort -u | tr '\n' ' ')
+          echo "gtest directories of ours: $DIRS"
+          [ -n "$DIRS" ] || { echo "ERROR: no gtest of ours found"; exit 1; }
+          python3 scripts/ci phase gtest-objects -- ./mach build --keep-going $DIRS
+
       - name: Build
         id: build
         env:
@@ -728,6 +755,12 @@ jobs:
           if [ "${{ matrix.node }}" = "true" ]; then
             python3 scripts/ci/background.py start build -- python3 scripts/ci phase build -- ./mach build --keep-going
             python3 scripts/ci/background.py until-compiled build
+            # The link of the gtests' libxul (one thread, full LTO, 20 min on Windows) is independent of the browser's
+            # (one thread, 12 min): beside it, not after the package. Measured on 43176569993: 12.3 + 19.7 min in a row on a
+            # node of 24 cores that was 88% idle. The two meet in `Build - the link`; the package waits for both.
+            if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then
+              python3 scripts/ci/background.py start gtest -- python3 scripts/ci phase gtest -- ./mach build --keep-going recurse_gtest
+            fi
           else
             python3 scripts/ci phase build -- ./mach build --keep-going
             if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
@@ -812,13 +845,15 @@ jobs:
           python3 scripts/ci/background.py wait build
           PROFILE="$HOME/pgo/merged.profdata"
           if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
+          # The gtests' build was started beside the link (the Build step): its errors (--keep-going shows every one) fail the leg here.
+          if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then python3 scripts/ci/background.py wait gtest; fi
       # Nothing of a leg outlives its job: the node is deleted as soon as the job ends. The
       # runner's signals reach a step's shell and no further, so this is what stops a build
       # on a cancel, about 41 s after it and well inside the 5:00 cut (PROBES.md).
       - name: The node - a cancel or a failure ends what runs beside the steps
         if: (cancelled() || failure()) && matrix.node
         timeout-minutes: 2
-        run: python3 scripts/ci/background.py stop build lavapipe
+        run: python3 scripts/ci/background.py stop build lavapipe gtest
       # What enters the compile's key and can move by itself: two runs that miss for no
       # reason differ here (scripts/ci/cache_rules.py).
       - name: Compile cache - what its key depends on
@@ -1003,10 +1038,33 @@ jobs:
         timeout-minutes: 180
         shell: bash
         run: |
-          python3 scripts/ci phase gtest -- ./mach build recurse_gtest
+          # Built beside the browser's link (the Build step, waited for in `Build - the link`); this run finds everything made, so
+          # it is the check that nothing was left to build, and it costs seconds. --keep-going: make goes on after the first error,
+          # so one run shows EVERY gtest that does not build, not one per run.
+          python3 scripts/ci phase gtest-check -- ./mach build --keep-going recurse_gtest
           # And _tests/gtest, the directory mach runs them from: what they read at run time.
           mkdir -p obj-rel/_tests/gtest
           tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest
+      - name: The node - the memory of the two links
+        if: always() && matrix.node && needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
+        continue-on-error: true
+        shell: bash
+        run: |
+          # The least memory available in the log of memory_watch (a line a minute), and when: the two links of libxul (the
+          # browser's and the gtests') run at the same time since the gtests are built beside the link.
+          python3 - <<'PY'
+          import re
+          best = None
+          for line in open("memwatch.log", encoding="utf-8", errors="replace"):
+              m = re.match(r"(\d\d:\d\d:\d\d) \[mem\] available (\d+)/(\d+) MB", line)
+              if m and (best is None or int(m.group(2)) < best[1]):
+                  best = (m.group(1), int(m.group(2)), int(m.group(3)))
+          if best:
+              print("memory at the two links: the least available was %d of %d MB at %s, so the peak in use was %d MB (%.0f%%)"
+                    % (best[1], best[2], best[0], best[2] - best[1], 100.0 * (best[2] - best[1]) / best[2]))
+          else:
+              print("memory at the two links: memwatch.log has no [mem] line")
+          PY
       - name: The node - keep them
         # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.
         timeout-minutes: 60
@@ -1163,7 +1221,7 @@ jobs:
     needs: [plan, node]
     if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.plan.outputs.attempt == github.run_attempt
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 345
     permissions: { actions: write, contents: read }
     outputs:
@@ -1197,7 +1255,7 @@ jobs:
     needs: [plan, node, watch-1]
     if: always() && needs.plan.result == 'success' && needs.node.result == 'success' && needs.plan.outputs.attempt == github.run_attempt && !contains(fromJSON('["done","lost","failed"]'), needs.watch-1.outputs.verdict)
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 345
     permissions: { actions: write, contents: read }
     outputs:
@@ -1236,7 +1294,7 @@ jobs:
     needs: [plan, node, watch-1, watch-2]
     if: always() && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
-    environment: theta-builder
+    environment: latitude-builder
     timeout-minutes: 15
     permissions: { actions: read, contents: read }
     steps:
@@ -1300,8 +1358,10 @@ jobs:
   # The gate and the publish are written once, in gate.yml and publish.yml,
   # and republish.yml calls the same two.
   gate:
-    # Red or cancelled gtests stop the gate, and so the publish that needs it.
-    needs: [plan, build, gtest-cross, gtest-linux]
+    # The gate and the gtests are two verdicts, each of its own: the gate starts when the build is done, whatever the gtests
+    # say (a gtest red on one platform used to skip the gate, so the run showed one red and hid the other: run 43134774602
+    # was the first to run the gate at all). The run is red if either is red; the publish needs both.
+    needs: [plan, build]
     permissions: { actions: read, contents: read }
     uses: ./.github/workflows/gate.yml
     with:
@@ -1311,7 +1371,8 @@ jobs:
       core_ref: ${{ needs.plan.outputs.core_ref }}
 
   publish:
-    needs: [plan, build, gate]
+    # both verdicts: the gate and the gtests (a gtest job with gtests=false runs and succeeds, its steps are skipped)
+    needs: [plan, build, gate, gtest-cross, gtest-linux]
     # a candidate publishes nothing: skipped, and the run is green
     if: needs.plan.outputs.kind == 'release'
     permissions: { actions: read, contents: write }

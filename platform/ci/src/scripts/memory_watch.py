@@ -22,7 +22,7 @@ So every 5 seconds:
 Every line also goes to --log, which the workflow uploads with build.log. The same
 loop drives cpu_watch.py: its "[cpu]" lines and the samples behind its summary.
 
-On a machine whose container has less memory than its host (the Theta node: a
+On a machine whose container has less memory than its host (the Latitude node: a
 cgroup limit of 62.5 GB, no swap possible, and a /proc/meminfo that describes the
 host) the limits are the cgroup's: what /proc/meminfo calls available and free
 swap would be memory the kernel never gives this build, and the first sign would

@@ -1592,8 +1592,8 @@ def group_same_code():
     def transport(method, url, headers, body):
         seen.append(url)
         return 200, json.dumps({"object": {"sha": "s"}}).encode()
-    got = t.GitHub("o/r", "T", "A", transport, lambda s: None).branch_head("theta/a b")
-    out.append(("same code: a branch with a slash and a space is read as itself", got == "s" and seen[0].endswith("/git/ref/heads/theta/a%20b")))
+    got = t.GitHub("o/r", "T", "A", transport, lambda s: None).branch_head("latitude/a b")
+    out.append(("same code: a branch with a slash and a space is read as itself", got == "s" and seen[0].endswith("/git/ref/heads/latitude/a%20b")))
     return out
 
 

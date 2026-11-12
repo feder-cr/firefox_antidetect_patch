@@ -1,70 +1,771 @@
 {
  "modified": [
+  "dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp",
+  "dom/media/webrtc/transport/nr_socket_proxy_config.cpp",
+  "dom/media/webrtc/transport/nr_socket_proxy_config.h",
   "dom/media/webrtc/transport/nr_socket_prsock.cpp",
-  "netwerk/base/nsUDPSocket.cpp"
+  "dom/media/webrtc/transport/nr_socket_prsock.h",
+  "netwerk/base/nsIProxyInfo.idl",
+  "netwerk/base/nsIUDPSocket.idl",
+  "netwerk/base/nsProxyInfo.cpp",
+  "netwerk/base/nsProxyInfo.h",
+  "netwerk/base/nsUDPSocket.cpp",
+  "netwerk/base/nsUDPSocket.h",
+  "netwerk/ipc/PSocketProcess.ipdl",
+  "netwerk/ipc/ProxyConfigLookup.cpp",
+  "netwerk/ipc/ProxyConfigLookup.h",
+  "netwerk/ipc/ProxyConfigLookupChild.cpp",
+  "netwerk/ipc/ProxyConfigLookupChild.h",
+  "netwerk/ipc/ProxyConfigLookupParent.cpp",
+  "netwerk/ipc/ProxyConfigLookupParent.h",
+  "netwerk/ipc/SocketProcessChild.cpp",
+  "netwerk/ipc/SocketProcessChild.h",
+  "netwerk/ipc/SocketProcessParent.cpp",
+  "netwerk/ipc/SocketProcessParent.h",
+  "netwerk/ipc/moz.build",
+  "netwerk/protocol/http/AlternateServices.cpp",
+  "netwerk/protocol/http/DnsAndConnectSocket.cpp",
+  "netwerk/protocol/http/Http3ConnectUDPStream.cpp",
+  "netwerk/protocol/http/Http3Session.cpp",
+  "netwerk/protocol/http/HttpBaseChannel.cpp",
+  "netwerk/protocol/http/HttpConnectionUDP.cpp",
+  "netwerk/protocol/http/moz.build",
+  "netwerk/socket/moz.build",
+  "netwerk/socket/nsSOCKSIOLayer.cpp",
+  "toolkit/xre/nsAppRunner.cpp"
  ],
  "added": {
   "dom/media/webrtc/transport/nr_stealth_proxy_udp.h": "100644",
-  "netwerk/base/StealthSocksUdp.cpp": "100644",
-  "netwerk/base/StealthSocksUdp.h": "100644"
+  "dom/media/webrtc/transport/test/gtest/StealthTestProxyKit.cpp": "100644",
+  "dom/media/webrtc/transport/test/gtest/StealthTestProxyKit.h": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthNrSocketBirth.cpp": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthPcUdpProxyKinds.cpp": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth.cpp": "100644",
+  "juggler/tests/the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info.test.mjs": "100644",
+  "modules/libpref/test/test_stealth_ice_prefs_locked.py": "100644",
+  "netwerk/ipc/StealthDocumentChannel.cpp": "100644",
+  "netwerk/ipc/StealthDocumentChannel.h": "100644",
+  "netwerk/socket/StealthPcUdpProxy.cpp": "100644",
+  "netwerk/socket/StealthPcUdpProxy.h": "100644",
+  "netwerk/socket/nsSOCKSUDPIOLayer.cpp": "100644",
+  "netwerk/socket/nsSOCKSUDPIOLayer.h": "100644"
  },
  "inventory": [
   {
-   "file": "dom/media/webrtc/transport/nr_socket_prsock.cpp",
-   "category": "spoof",
+   "file": "dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp",
+   "category": "other",
    "feature": "proxy-udp-egress",
-   "prefs": [
-    "zoom.stealth.webrtc.no_direct_udp"
-   ],
-   "added": 77,
-   "removed": 0,
-   "hunks": 4,
-   "inline_logic_lines": 43,
+   "prefs": [],
+   "added": 17,
+   "removed": 42,
+   "hunks": 5,
+   "inline_logic_lines": 9,
    "hookable": "movable",
-   "anchor": "new static StealthUscitaUdpDirettaVietata (before NrSocket::sendto); hooks in NrSocket::sendto and NrUdpSocketIpc::sendto",
+   "anchor": "WebrtcTCPSocket::DoProxyConfigLookup and OpenWithHttpProxy (the channel of the proxy lookup and of the HTTP tunnel)",
    "evidence": [
-    "+static bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {",
-    "+  if (StealthUscitaUdpDirettaVietata(to)) {",
-    "+    ABORT(R_REJECTED);"
+    "+#include \"mozilla/net/StealthDocumentChannel.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+  // The channel of the lookup carries the load info of the document, as the one of the HTTP proxy tunnel does",
+    "+  // (OpenWithHttpProxy): the proxy filters then see the context of the page, not the system principal's (context 0)."
    ],
-   "notes": "About 36 lines of address-range decision logic sit inside the Mozilla file, plus two 3-4 line hooks. The function can move to nr_stealth_bridge.cpp behind one call. Pref zoom.stealth.webrtc.no_direct_udp defined at StaticPrefList.yaml:21539. IPv4 0.0.0.0 passes (if (a == 0) return false), but IPv6 unspecified '::' is refused: all-zero bytes leave loopback=true, b[15]!=1, so the function returns true (CONFIRMED from the diff logic); real-world impact unverified. NrUdpSocketIpc::sendto returns R_REJECTED with no log line, unlike the NrSocket path. Merge note: upstream's comment '// This should be called on the STS thread.' now sits above the new block comment/function instead of above NrSocket::sendto.",
+   "notes": "The channel of the proxy lookup of a PeerConnection's TCP socket (TURN over TCP) is made by StealthNewChannelOfLoadInfo, with the load info of the document: the proxy filters answer for the context of the page, not for the system principal's. The HTTP tunnel's own channel is made by the same function (the code it had is gone from here).",
    "verifier": {
-    "changed": [
-     "notes"
-    ],
-    "why": "Verified IPv6 :: logic from the diff; added the displaced upstream comment as a merge note."
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nr_socket_proxy_config.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 14,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 9,
+   "hookable": "movable",
+   "anchor": "NrSocketProxyConfig constructor and UdpProxy()",
+   "evidence": [
+    "+#include \"StealthPcUdpProxy.h\"",
+    "+#include \"nsXULAppAPI.h\"",
+    "+  RefPtr<net::PcUdpProxy> mUdpProxy;"
+   ],
+   "notes": "Starts the lookup of the document's proxy (PcUdpProxy::Lookup) where the sockets of the gather are made (socket process, parent).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nr_socket_proxy_config.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "NrSocketProxyConfig: UdpProxy()",
+   "evidence": [
+    "+#include \"mozilla/RefPtr.h\"",
+    "+",
+    "+class PcUdpProxy;"
+   ],
+   "notes": "Declares the accessor of the proxy the UDP of this PeerConnection leaves by (PcUdpProxy), asked when the config is made.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nr_socket_prsock.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 63,
+   "removed": 4,
+   "hunks": 11,
+   "inline_logic_lines": 35,
+   "hookable": "movable",
+   "anchor": "include of nr_stealth_proxy_udp.h; NrSocket::create (UDP: the proxy layer); NrSocketBase::CreateSocket (the config to NrSocket; no UDP socket of a PeerConnection in a content process)",
+   "evidence": [
+    "+#include \"nr_stealth_network.h\"    // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+    "+#include \"nr_stealth_proxy_udp.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+// STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared host sockets of this process (R3). Every NrSocket"
+   ],
+   "notes": "The rule of the UDP of a PeerConnection, made where its socket is born: no proxy = a plain socket, SOCKS5 = the SOCKS5 UDP layer, a proxy without UDP = a socket whose datagrams go nowhere. In a content process the UDP sockets of a PeerConnection are refused (they would go out direct). Also (feature webrtc-declared-network, fingerprint/webrtc/declared-network): a host UDP socket of a declared address binds the wildcard of its family on the port of its connection and reports the declared address with that port; a datagram between two sockets of this process goes on the kernel's loopback while each end sees the other's declared address (StealthOwnPorts).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "dom/media/webrtc/transport/nr_socket_prsock.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 5,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "class NrSocket: constructor and mProxyConfig",
+   "evidence": [
+    "+  explicit NrSocket(const std::shared_ptr<NrSocketProxyConfig>& aProxyConfig = nullptr)  // STEALTH-HOOK(network/proxy-udp)",
+    "+      : fd_(nullptr), mProxyConfig(aProxyConfig) {}  // STEALTH-HOOK(network/proxy-udp)",
+    "+  std::shared_ptr<NrSocketProxyConfig> mProxyConfig;  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "A NrSocket takes the proxy config of its PeerConnection, so create() can put the proxy's layer on it. Also (feature webrtc-declared-network): the port the socket registered as one of ours.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsIProxyInfo.idl",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 6,
+   "hookable": "movable",
+   "anchor": "nsIProxyInfo flags",
+   "evidence": [
+    "+",
+    "+  /**",
+    "+   * STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Flag CARRIES_COHERENT_UDP: only a SOCKS5 proxy the session measured coherent carries UDP. The value is in a free slot, tested in juggler.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsIUDPSocket.idl",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "nsIUDPSocket: setSocksProxy",
+   "evidence": [
+    "+interface nsIProxyInfo;",
+    "+    /**",
+    "+     * The SOCKS5 proxy the datagrams of this socket go by (UDP ASSOCIATE), as the connection that owns it learned it:"
+   ],
+   "notes": "Declares the setter of the SOCKS5 proxy a socket goes by (an HTTP/3 connection through a proxy), called before initWithAddress.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsProxyInfo.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "nsProxyInfo::IsSOCKS5",
+   "evidence": [
+    "+// STEALTH-HOOK(network/proxy-udp)",
+    "+bool nsProxyInfo::IsSOCKS5() {",
+    "+  return mType == kProxyType_SOCKS || mType == kProxyType_SOCKS5;"
+   ],
+   "notes": "A SOCKS5 proxy (type socks or socks5): the only one that carries UDP.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsProxyInfo.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "nsProxyInfo: IsSOCKS5",
+   "evidence": [
+    "+  bool IsSOCKS5();  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Declares the SOCKS5 test the HTTP/3 gates use.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
    }
   },
   {
    "file": "netwerk/base/nsUDPSocket.cpp",
    "category": "other",
    "feature": "proxy-udp-egress",
-   "prefs": [
-    "network.proxy.socks_remote_udp",
-    "network.proxy.type",
-    "network.proxy.socks_version",
-    "network.proxy.socks",
-    "network.proxy.socks_port",
-    "network.proxy.socks_username",
-    "network.proxy.socks_password"
-   ],
-   "added": 39,
+   "prefs": [],
+   "added": 18,
    "removed": 0,
-   "hunks": 3,
-   "inline_logic_lines": 26,
+   "hunks": 4,
+   "inline_logic_lines": 7,
    "hookable": "movable",
-   "anchor": "nsUDPSocket::InitWithAddress (block before the FUZZING check)",
+   "anchor": "includes; nsUDPSocket::InitWithAddress after PR_OpenUDPSocket; nsUDPSocket::SetSocksProxy",
    "evidence": [
-    "+  if (mozilla::Preferences::GetBool(\"network.proxy.socks_remote_udp\", false)) {",
-    "+        nsresult sr = mozilla::net::nsSOCKSUDPIOLayerAddToSocket(",
-    "+            mFD, host.get(), port, user.get(), pass.get());"
+    "+#include \"StealthPcUdpProxy.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+#include \"nsIProxyInfo.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)"
    ],
-   "notes": "With SOCKS5 and network.proxy.socks_remote_udp set, pushes the SOCKS UDP layer (netwerk/socket/nsSOCKSUDPIOLayer.h:50, implemented at nsSOCKSUDPIOLayer.cpp:351) onto the new fd so QUIC/HTTP3 traffic goes through the proxy. network.proxy.socks_remote_udp is not defined in modules/libpref/init (read by string with default false). RISK CONFIRMED (from diff): if the layer attach fails the code logs 'falling back to direct UDP' and continues with direct UDP, and the block runs for every nsUDPSocket::InitWithAddress call with no check of the destination or purpose; whether callers avoid that path is unverified. The two Stealthfox comment blocks repeat each other. The block (about 26 logic lines) can move behind one call.",
+   "notes": "Puts the SOCKS5 UDP layer of the connection's proxy on the socket when it opens it (StealthPutSocksUdpLayer), the same layer and associations as the ICE sockets. Also GetFileDescriptor: a socket with the SOCKS UDP layer gives no OS handle (-1), so nothing writes on it direct.",
    "verifier": {
-    "changed": [
-     "notes"
-    ],
-    "why": "Added confirmed facts: pref not predefined, hook applies to every UDP socket; fallback behaviour confirmed from the diff."
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/base/nsUDPSocket.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "class nsUDPSocket: mSocksProxy",
+   "evidence": [
+    "+  nsCOMPtr<nsIProxyInfo> mSocksProxy;  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Holds the proxy info set by SetSocksProxy.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/PSocketProcess.ipdl",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "parent: block, PProxyConfigLookup constructor",
+   "evidence": [
+    "+                           bool aIsTRRServiceChannel,",
+    "+                           LoadInfoArgs? aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+    "+                           OriginAttributes? aOriginAttributes);  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "The constructor of PProxyConfigLookup takes an optional LoadInfoArgs. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/ProxyConfigLookup.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 21,
+   "removed": 6,
+   "hunks": 3,
+   "inline_logic_lines": 10,
+   "hookable": "movable",
+   "anchor": "ProxyConfigLookup::Create, constructor, DoProxyResolve",
+   "evidence": [
+    "+#include \"mozilla/net/StealthDocumentChannel.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+    nsICancelable** aLookupCancellable,"
+   ],
+   "notes": "The lookup uses a channel built from the document's load info when it has one (StealthNewChannelOfLoadInfo), so the proxy filters see its context. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/ProxyConfigLookup.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 11,
+   "removed": 2,
+   "hunks": 3,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "ProxyConfigLookup::Create, mLoadInfo",
+   "evidence": [
+    "+#include \"mozilla/Maybe.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+    "+#include \"mozilla/net/NeckoChannelParams.h\"  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "The lookup can be made for a document: an optional LoadInfoArgs. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/ProxyConfigLookupChild.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 6,
+   "removed": 2,
+   "hunks": 2,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "ProxyConfigLookupChild::Create",
+   "evidence": [
+    "+    std::function<void(nsIProxyInfo*, nsresult)>&& aCallback,",
+    "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+    "+    const Maybe<OriginAttributes>& aOriginAttributes) {  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Sends the optional LoadInfoArgs with the PProxyConfigLookup constructor. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/ProxyConfigLookupChild.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 4,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "ProxyConfigLookupChild::Create",
+   "evidence": [
+    "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+    "+                     std::function<void(nsIProxyInfo*, nsresult)>&& aCallback,",
+    "+                     const Maybe<LoadInfoArgs>& aLoadInfo = Nothing(),  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Carries the optional LoadInfoArgs to the parent. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/ProxyConfigLookupParent.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 10,
+   "removed": 5,
+   "hunks": 2,
+   "inline_logic_lines": 4,
+   "hookable": "movable",
+   "anchor": "ProxyConfigLookupParent constructor and DoProxyLookup",
+   "evidence": [
+    "+ProxyConfigLookupParent::ProxyConfigLookupParent(",
+    "+    nsIURI* aURI, uint32_t aProxyResolveFlags, bool aIsTRRServiceChannel,",
+    "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Gives the LoadInfoArgs on to ProxyConfigLookup::Create. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/ProxyConfigLookupParent.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 6,
+   "removed": 1,
+   "hunks": 3,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "ProxyConfigLookupParent constructor, mLoadInfo",
+   "evidence": [
+    "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+    "+                          bool aIsTRRServiceChannel,",
+    "+                          const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Holds the optional LoadInfoArgs of the lookup. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/SocketProcessChild.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 8,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "SocketProcessChild::RecvStealthWarmSocksUdp (after RecvNotifyObserver)",
+   "evidence": [
+    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+mozilla::ipc::IPCResult SocketProcessChild::RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort,",
+    "+  nsSOCKSUDPIOLayerWarm(aHost, aPort, aUser, aPass);"
+   ],
+   "notes": "Receiver of PSocketProcess::StealthWarmSocksUdp: the pool of UDP associations is warmed in the socket process, where the sockets of the PeerConnections are made. The body is one call.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/SocketProcessChild.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "SocketProcessChild (before RecvGetSocketData)",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/proxy-udp)",
+    "+  mozilla::ipc::IPCResult RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort, const nsACString& aUser,"
+   ],
+   "notes": "Declaration of the receiver of PSocketProcess::StealthWarmSocksUdp.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/SocketProcessParent.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 9,
+   "removed": 3,
+   "hunks": 1,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
+   "evidence": [
+    "+    const bool& aIsTRRServiceChannel,",
+    "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+    "+    const Maybe<OriginAttributes>& aOriginAttributes) {  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Gives the optional LoadInfoArgs to the lookup actor. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/SocketProcessParent.h",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 6,
+   "removed": 3,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
+   "evidence": [
+    "+      const bool& aIsTRRServiceChannel,",
+    "+      const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+    "+      const Maybe<OriginAttributes>& aOriginAttributes);  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Declarations follow the new constructor arguments. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/ipc/moz.build",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS.mozilla.net and UNIFIED_SOURCES lists",
+   "evidence": [
+    "+    \"StealthDocumentChannel.h\",  # STEALTH-HOOK(network/proxy-udp)",
+    "+    \"StealthTRRContext.h\",  # STEALTH-HOOK(network/doh)",
+    "+    \"StealthDocumentChannel.cpp\",  # STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Registers our StealthDocumentChannel header and source. Also registers StealthTRRContext (network/doh).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/AlternateServices.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 2,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "AltSvcCache::UpdateAltServiceMapping",
+   "evidence": [
+    "+    // STEALTH-HOOK(network/proxy-udp)",
+    "+    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy() || pi->IsSOCKS5()) : true;",
+    "-    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;"
+   ],
+   "notes": "The h3 Alt-Svc is not ignored when the proxy is SOCKS5 (UDP goes by the layer).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/DnsAndConnectSocket.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 5,
+   "removed": 2,
+   "hunks": 2,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "DnsAndConnectSocket constructor; CheckProxyConfig",
+   "evidence": [
+    "+    // STEALTH-HOOK(network/proxy-udp)",
+    "+    mIsHttp3 = mConnInfo->IsHttp3ProxyConnection() ||",
+    "+               (mConnInfo->IsHttp3() && mConnInfo->ProxyInfo()->IsSOCKS5());"
+   ],
+   "notes": "An HTTP/3 connection through a SOCKS5 proxy is an h3 attempt, and its host name is resolved (QUIC needs the address), not left to the proxy.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/Http3ConnectUDPStream.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 6,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "Http3ConnectUDPStream::SetSocksProxy",
+   "evidence": [
+    "+// STEALTH-HOOK(network/proxy-udp): nsIUDPSocket.setSocksProxy is for the sockets that leave by a SOCKS5 proxy; this stream",
+    "+// goes by its own HTTP proxy (CONNECT-UDP).",
+    "+NS_IMETHODIMP Http3ConnectUDPStream::SetSocksProxy(nsIProxyInfo* aProxyInfo) {"
+   ],
+   "notes": "nsIUDPSocket.setSocksProxy is for the sockets that leave by a SOCKS5 proxy; the CONNECT-UDP stream goes by its own HTTP proxy, so it answers not implemented.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/Http3Session.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 3,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 1,
+   "hookable": "already-hook",
+   "anchor": "Http3Session::Init (mUseNSPRForIO)",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/proxy-udp): neqo's own I/O writes on the OS handle and never reaches the SOCKS UDP layer on the socket.",
+    "+  const bool socksUdp = aConnInfo->ProxyInfo() && aConnInfo->ProxyInfo()->IsSOCKS5();"
+   ],
+   "notes": "A connection through a SOCKS5 proxy does neqo's I/O through NSPR (mUseNSPRForIO), so its datagrams go through the SOCKS UDP layer on the socket and never on the OS handle. One const bool and one operand of an existing condition.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/HttpBaseChannel.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 3,
+   "removed": 1,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "HttpBaseChannel (the proxy test of the h3 decision)",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/proxy-udp)",
+    "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy() ||",
+    "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS5())"
+   ],
+   "notes": "A SOCKS5 proxy does not forbid h3. Also (feature doh-trr-context, network/doh): GetTRRMode of an OCSP channel follows the session resolver like any other channel (upstream asks for the system one when the mode is 3); the block is removed.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/HttpConnectionUDP.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 3,
+   "hookable": "movable",
+   "anchor": "HttpConnectionUDP::InitCommon",
+   "evidence": [
+    "+  // STEALTH-HOOK(network/proxy-udp)",
+    "+  if (!isInTunnel && mConnInfo && mConnInfo->ProxyInfo() && mConnInfo->ProxyInfo()->IsSOCKS5()) {",
+    "+    NS_ENSURE_SUCCESS(mSocket->SetSocksProxy(mConnInfo->ProxyInfo()), NS_ERROR_FAILURE);"
+   ],
+   "notes": "Tells the socket of an HTTP/3 connection the SOCKS5 proxy of the connection.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/protocol/http/moz.build",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "UNIFIED_SOURCES list",
+   "evidence": [
+    "+UNIFIED_SOURCES += [\"StealthInterception.cpp\"]  # STEALTH-HOOK(automation/network-interception)"
+   ],
+   "notes": "Registers StealthInterception.cpp (another folder's hook).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/socket/moz.build",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "EXPORTS and UNIFIED_SOURCES lists",
+   "evidence": [
+    "+EXPORTS += [\"nsSOCKSUDPIOLayer.h\", \"StealthPcUdpProxy.h\"]  # STEALTH-HOOK(network/proxy-udp)",
+    "+UNIFIED_SOURCES += [\"nsSOCKSUDPIOLayer.cpp\", \"StealthPcUdpProxy.cpp\"]  # STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Registers our SOCKS5 UDP layer and PcUdpProxy.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "netwerk/socket/nsSOCKSIOLayer.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [],
+   "added": 4,
+   "removed": 1,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "nsSOCKSIOLayerAddToSocket after Init",
+   "evidence": [
+    "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+    "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/proxy-udp)"
+   ],
+   "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it). Also (network/ipv6-literal): the connect to the proxy goes through StealthIPv6Connect (one line replaced).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/xre/nsAppRunner.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [
+    "network.process.enabled",
+    "media.peerconnection.mtransport_process"
+   ],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "XREMain::XRE_mainRun after InitializeUserPrefs",
+   "evidence": [
+    "+    // STEALTH-HOOK(network/proxy-udp): the SOCKS5 UDP layer lives in the socket process; locked, no caller moves the ICE out."
+   ],
+   "notes": "Locks the two prefs that decide where the ICE of a PeerConnection runs to the retail value (socket process, ICE in it): the SOCKS5 UDP layer is attached only to the sockets of that process, and a locked pref reads its default whatever user.js, prefs.js or a caller wrote.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
    }
   }
  ]

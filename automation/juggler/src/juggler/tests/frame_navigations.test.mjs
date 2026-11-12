@@ -562,3 +562,31 @@ test('the last document told committed is kept, its address follows a same-docum
   registry.forget(CHILD);
   assert.equal(registry.lastDocument(CHILD), undefined);
 });
+
+// ── a navigation told aborted whose document appears all the same ───────────────────────────────────────────────────────────────
+//
+// The page's own location.replace (load 15032385539) is cancelled by the client's goto and restarted by the engine under the same
+// load identifier. The first cancel is told as an abort; the document that appears is that navigation's. It used to be dropped
+// (the registry knows the id as ended, not as replaced), so the frame had a document the client was never told of.
+
+test('the document of a navigation told aborted is committed under its own id', () => {
+  const { registry, events } = setup();
+  registry.onContentNavigationStarted(MAIN, 'nav-page');          // the page's own navigation
+  registry.onDocumentRequest(MAIN, 'nav-ours', 'http://x/ours');  // the client's replaces it in flight
+  registry.onNavigationAborted(MAIN, 'nav-page', 'NS_BINDING_ABORTED');   // the cancel of the first, told
+  events.length = 0;
+  registry.onNavigationAborted(MAIN, 'nav-ours', 'NS_BINDING_ABORTED');   // the client's own is over (told by the content)
+  registry.onDocumentInserted(MAIN, 'http://x/landed', '', 'nav-page');
+  assert.deepEqual(events, [aborted(MAIN, 'nav-ours', 'NS_BINDING_ABORTED'), committed(MAIN, 'nav-page', 'http://x/landed', '')]);
+  assert.equal(registry.lastCommittedNavigationId(MAIN), 'nav-page');
+});
+
+test('a navigation that is already committed is not committed again by a second document under its id', () => {
+  const { registry, events } = setup();
+  registry.onDocumentRequest(MAIN, 'nav-1', 'http://x/a');
+  registry.onDocumentInserted(MAIN, 'http://x/a', '', 'nav-1');
+  events.length = 0;
+  registry.onDocumentRequest(MAIN, 'nav-2', 'http://x/b');
+  registry.onDocumentInserted(MAIN, 'http://x/a', '', 'nav-1');
+  assert.deepEqual(events, [started(MAIN, 'nav-2')]);
+});

@@ -62,8 +62,8 @@ pref("ui.font.-moz-field", "Segoe UI");
 pref("ui.font.-moz-field.size", "12");
 
 // The SOCKS proxy credentials, declared empty so that the prefs exist with a
-// string type; read by netwerk/base/StealthSocksCredentials.cpp and
-// StealthSocksUdp.cpp.
+// string type; read by netwerk/base/StealthSocksCredentials.cpp and, for the
+// UDP associations, through nsIProxyInfo by netwerk/socket/nsSOCKSUDPIOLayer.cpp.
 pref("network.proxy.socks_username",        "");
 pref("network.proxy.socks_password",        "");
 
@@ -79,3 +79,10 @@ pref("invisible_firefox.usage_ping.enabled", true);
 // engine's own repository, so the thing that pings and the thing that is
 // counted are the same release series.
 pref("invisible_firefox.usage_ping.url", "https://github.com/feder-cr/firefox_antidetect_patch/releases/download/usage-counter/launch.txt");
+
+// The network geolocation provider is the only one (toolkit/components/geolocation/
+// StealthGeolocation.cpp), and it asks the host's Wi-Fi API for the access points around
+// (wlanapi.dll in the parent) unless this is false. The position a page reads is the
+// core's declaration; nothing about the host is scanned for it. Mozilla declares no default
+// (the fallback of NetworkGeolocationProvider.sys.mjs is true).
+pref("geo.provider.network.scan", false);

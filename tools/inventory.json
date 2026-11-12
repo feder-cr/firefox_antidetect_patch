@@ -102,7 +102,7 @@
   ],
   "added": 2,
   "removed": 2,
-  "hunks": 2,
+  "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "values changed in place on 2026-10-29",
@@ -171,7 +171,7 @@
   "category": "juggler",
   "feature": "juggler-pipe-handles",
   "prefs": [],
-  "added": 34,
+  "added": 4,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 14,
@@ -198,9 +198,9 @@
    "invisible_firefox.usage_ping.enabled",
    "invisible_firefox.usage_ping.url"
   ],
-  "added": 38,
+  "added": 3,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 8,
   "hookable": "movable",
   "anchor": "BrowserGlue.prototype._beforeUIStartup (before lazy.SessionStartup.init())",
@@ -299,7 +299,7 @@
   "category": "spoof",
   "feature": "stealth-branding-redirect",
   "prefs": [],
-  "added": 19,
+  "added": 3,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 13,
@@ -347,7 +347,7 @@
   "category": "spoof",
   "feature": "stealth-branding-redirect",
   "prefs": [],
-  "added": 7,
+  "added": 6,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 2,
@@ -397,9 +397,9 @@
    "juggler.timezone.override",
    "juggler.locale.override"
   ],
-  "added": 55,
-  "removed": 8,
-  "hunks": 7,
+  "added": 11,
+  "removed": 4,
+  "hunks": 5,
   "inline_logic_lines": 25,
   "hookable": "movable",
   "anchor": "BrowsingContext::Attach; BrowsingContext::DidSet(FieldIndex<IDX_LanguageOverride>); BrowsingContext::DidSet(FieldIndex<IDX_TimezoneOverride>)",
@@ -421,9 +421,9 @@
   "category": "juggler",
   "feature": "juggler-navigation-events",
   "prefs": [],
-  "added": 22,
+  "added": 5,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 20,
   "hookable": "movable",
   "anchor": "CanonicalBrowsingContext::LoadURI; CanonicalBrowsingContext::FixupAndLoadURIString",
@@ -461,7 +461,7 @@
   "category": "juggler",
   "feature": "juggler-link-click-events",
   "prefs": [],
-  "added": 84,
+  "added": 13,
   "removed": 0,
   "hunks": 8,
   "inline_logic_lines": 45,
@@ -485,7 +485,7 @@
   "category": "juggler",
   "feature": "juggler-docshell-attrs",
   "prefs": [],
-  "added": 7,
+  "added": 4,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -506,7 +506,7 @@
   "category": "juggler",
   "feature": "juggler-docshell-attrs",
   "prefs": [],
-  "added": 15,
+  "added": 4,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -529,9 +529,9 @@
   "category": "spoof",
   "feature": "timezone-declared",
   "prefs": [],
-  "added": 19,
+  "added": 11,
   "removed": 9,
-  "hunks": 6,
+  "hunks": 5,
   "inline_logic_lines": 6,
   "hookable": "already-hook",
   "anchor": "Document::InitCSP; static GetFormattedTimeString (called from Document::GetLastModified and Document::RetrieveRelevantHeaders); Document::ComputeVisibilityState",
@@ -555,9 +555,9 @@
   "prefs": [
    "zoom.stealth.fpp.hw_seed"
   ],
-  "added": 84,
-  "removed": 5,
-  "hunks": 3,
+  "added": 4,
+  "removed": 2,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "Element::GetShadowRootForBindings",
@@ -579,7 +579,7 @@
   "category": "juggler",
   "feature": "shadow-root-sandbox-access",
   "prefs": [],
-  "added": 3,
+  "added": 2,
   "removed": 1,
   "hunks": 1,
   "inline_logic_lines": 1,
@@ -605,7 +605,7 @@
    "zoom.stealth.hw_concurrency",
    "zoom.stealth.max_touch_points"
   ],
-  "added": 26,
+  "added": 15,
   "removed": 0,
   "hunks": 4,
   "inline_logic_lines": 6,
@@ -650,9 +650,9 @@
   "category": "spoof",
   "feature": "input-event-birth",
   "prefs": [],
-  "added": 26,
+  "added": 6,
   "removed": 0,
-  "hunks": 3,
+  "hunks": 4,
   "inline_logic_lines": 11,
   "hookable": "movable",
   "anchor": "nsContentUtils::InputEventBirth (new); nsContentUtils::SynthesizeMouseEvent",
@@ -672,7 +672,7 @@
   "category": "juggler",
   "feature": "juggler-input-dispatch",
   "prefs": [],
-  "added": 146,
+  "added": 12,
   "removed": 2,
   "hunks": 4,
   "inline_logic_lines": 80,
@@ -696,9 +696,9 @@
   "category": "spoof",
   "feature": "window-geometry",
   "prefs": [],
-  "added": 148,
+  "added": 22,
   "removed": 2,
-  "hunks": 9,
+  "hunks": 7,
   "inline_logic_lines": 66,
   "hookable": "movable",
   "anchor": "CreateNativeGlobalForInner; nsGlobalWindowOuter::GetOuterSize; nsGlobalWindowOuter::GetScreenXY; nsGlobalWindowOuter::StealthContentOriginShift (new); nsGlobalWindowOuter::IsInStealthPopup (new); nsGlobalWindowOuter::GetMozInnerScreenXOuter; nsGlobalWindowOuter::GetMozInnerScreenYOuter",
@@ -718,7 +718,7 @@
   "category": "spoof",
   "feature": "window-geometry",
   "prefs": [],
-  "added": 13,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 3,
@@ -744,9 +744,9 @@
    "zoom.stealth.screen.height",
    "zoom.stealth.screen.taskbar_px"
   ],
-  "added": 56,
+  "added": 7,
   "removed": 0,
-  "hunks": 5,
+  "hunks": 4,
   "inline_logic_lines": 12,
   "hookable": "movable",
   "anchor": "nsScreen::PixelDepth; nsScreen::GetRect; nsScreen::GetAvailRect",
@@ -805,9 +805,9 @@
   "category": "spoof",
   "feature": "canvas-2d-text-metrics",
   "prefs": [],
-  "added": 217,
-  "removed": 3,
-  "hunks": 7,
+  "added": 12,
+  "removed": 2,
+  "hunks": 4,
   "inline_logic_lines": 45,
   "hookable": "movable",
   "anchor": "CanvasRenderingContext2D::DrawOrMeasureText (TextMetrics return); also CreatePattern (2 hunks) and a comment-only block near GetImageBuffer",
@@ -830,7 +830,7 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 35,
+  "added": 21,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 5,
@@ -862,9 +862,9 @@
    "zoom.stealth.webgl2.extensions",
    "webgl.sanitize-unmasked-renderer"
   ],
-  "added": 445,
-  "removed": 42,
-  "hunks": 24,
+  "added": 35,
+  "removed": 5,
+  "hunks": 15,
   "inline_logic_lines": 300,
   "hookable": "movable",
   "anchor": "ClientWebGLContext::GetParameter, GetShaderPrecisionFormat, ReadPixels (both forms), DoReadPixels, DoReadPixelsAsync, IsSupported, GetSupportedExtensions, BufferParameter; static LookupStealthParamEntry and GetStealthExtensionWhitelist; GetImageBuffer and GetInputStream (toDataURL/toBlob projection); comment-only hunk in GetSurfaceSnapshot",
@@ -887,9 +887,9 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 13,
+  "added": 6,
   "removed": 2,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "ClientWebGLContext private section: DoReadPixels, StealthProjectReadPixels, StealthProjectReadPixelsPbo, BufferParameter",
@@ -912,9 +912,9 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 16,
+  "added": 3,
   "removed": 1,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 7,
   "hookable": "movable",
   "anchor": "OffscreenCanvas::GetSurfaceSnapshot",
@@ -934,9 +934,9 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 25,
+  "added": 9,
   "removed": 1,
-  "hunks": 3,
+  "hunks": 2,
   "inline_logic_lines": 10,
   "hookable": "movable",
   "anchor": "OffscreenCanvasDisplayHelper::GetSurfaceSnapshot (split), new GetSurfaceSnapshotAsDrawn, GetAsImage",
@@ -956,9 +956,9 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 5,
+  "added": 4,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "class OffscreenCanvasDisplayHelper (GetSurfaceSnapshot, GetSurfaceSnapshotAsDrawn)",
@@ -976,7 +976,7 @@
   "category": "spoof",
   "feature": "webgl-shader-output-language",
   "prefs": [],
-  "added": 9,
+  "added": 4,
   "removed": 1,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -998,7 +998,7 @@
   "category": "spoof",
   "feature": "webgl-shader-output-language",
   "prefs": [],
-  "added": 6,
+  "added": 2,
   "removed": 1,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -1019,9 +1019,9 @@
   "category": "spoof",
   "feature": "webgl-parameters",
   "prefs": [],
-  "added": 2,
+  "added": 4,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 3,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "WebGLContext::InitAndValidateGL (the stencil masks' starting values)",
@@ -1039,7 +1039,7 @@
   "category": "spoof",
   "feature": "webgl-shader-output-language",
   "prefs": [],
-  "added": 40,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 14,
@@ -1064,7 +1064,7 @@
   "category": "spoof",
   "feature": "webgl-shader-output-language",
   "prefs": [],
-  "added": 15,
+  "added": 5,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 1,
@@ -1087,9 +1087,9 @@
   "prefs": [
    "zoom.stealth.webgl.shader_output_language"
   ],
-  "added": 41,
-  "removed": 7,
-  "hunks": 3,
+  "added": 7,
+  "removed": 3,
+  "hunks": 2,
   "inline_logic_lines": 16,
   "hookable": "movable",
   "anchor": "webgl::StealthDeclaredShaderOutput (new, inside namespace webgl), webgl::ShaderOutputPerIlDriver (renamed from static ShaderOutput), WebGLContext::CreateShaderValidator",
@@ -1112,7 +1112,7 @@
   "category": "spoof",
   "feature": "webgl-shader-output-language",
   "prefs": [],
-  "added": 15,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -1133,9 +1133,9 @@
   "category": "build",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 4,
+  "added": 3,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "hook added by the 2026-10-29 move to our files",
@@ -1151,9 +1151,9 @@
   "category": "spoof",
   "feature": "window-geometry",
   "prefs": [],
-  "added": 74,
-  "removed": 4,
-  "hunks": 3,
+  "added": 4,
+  "removed": 1,
+  "hunks": 2,
   "inline_logic_lines": 9,
   "hookable": "movable",
   "anchor": "Event::GetScreenCoords",
@@ -1173,7 +1173,7 @@
   "category": "juggler",
   "feature": "juggler-drag-gesture",
   "prefs": [],
-  "added": 19,
+  "added": 9,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 5,
@@ -1238,7 +1238,7 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 39,
+  "added": 9,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 18,
@@ -1262,7 +1262,7 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 26,
+  "added": 5,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -1283,7 +1283,7 @@
   "category": "juggler",
   "feature": "file-chooser-intercept",
   "prefs": [],
-  "added": 24,
+  "added": 10,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 5,
@@ -1325,7 +1325,7 @@
   "category": "juggler",
   "feature": "juggler-input-dispatch",
   "prefs": [],
-  "added": 47,
+  "added": 26,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 0,
@@ -1397,7 +1397,7 @@
   "prefs": [
    "zoom.stealth.media.enumeration_ms"
   ],
-  "added": 43,
+  "added": 27,
   "removed": 13,
   "hunks": 6,
   "inline_logic_lines": 23,
@@ -1422,7 +1422,7 @@
   "category": "build",
   "feature": "audio-fingerprint-noise",
   "prefs": [],
-  "added": 1,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -1440,7 +1440,7 @@
   "category": "spoof",
   "feature": "media-decode-declaration",
   "prefs": [],
-  "added": 101,
+  "added": 6,
   "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 41,
@@ -1485,9 +1485,9 @@
   "category": "spoof",
   "feature": "media-decode-declaration",
   "prefs": [],
-  "added": 27,
+  "added": 9,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 8,
   "hookable": "movable",
   "anchor": "PDMFactory::Supports(const SupportDecoderParams&, DecoderDoctorDiagnostics*) const",
@@ -1512,7 +1512,7 @@
    "zoom.stealth.fpp.hw_seed",
    "zoom.stealth.audio.fp_noise"
   ],
-  "added": 44,
+  "added": 5,
   "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 16,
@@ -1540,7 +1540,7 @@
    "zoom.stealth.audio.output_latency_ms",
    "zoom.stealth.audio.max_channel_count"
   ],
-  "added": 13,
+  "added": 11,
   "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 4,
@@ -1564,7 +1564,7 @@
    "zoom.stealth.fpp.hw_seed",
    "zoom.stealth.audio.fp_noise"
   ],
-  "added": 37,
+  "added": 4,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 16,
@@ -1591,7 +1591,7 @@
    "zoom.stealth.fpp.hw_seed",
    "zoom.stealth.audio.fp_noise"
   ],
-  "added": 14,
+  "added": 4,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 6,
@@ -1626,236 +1626,111 @@
   }
  },
  {
-  "file": "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp",
-  "category": "spoof",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [
-   "zoom.stealth.webrtc.host_ip"
-  ],
-  "added": 12,
-  "removed": 3,
-  "hunks": 2,
-  "inline_logic_lines": 6,
-  "hookable": "movable",
-  "anchor": "PeerConnectionImpl::EnsureIceGathering",
-  "evidence": [
-   "+    auto stealthHostIp = mozilla::StaticPrefs::zoom_stealth_webrtc_host_ip();",
-   "+    if ((*stealthHostIp).IsEmpty()) {",
-   "-    return;"
-  ],
-  "notes": "Content-process gathering proceeds without parent STUN addresses when zoom.stealth.webrtc.host_ip is set (the pref is only tested for empty). Pref defined at modules/libpref/init/StaticPrefList.yaml:21977. The added comment says nICEr injects synthetic candidates 'from public_ip pref'; CONFIRMED stale: that pref was removed (StaticPrefList.yaml:21964-21972) and the public IP now comes from env STEALTHFOX_WEBRTC_PUBLIC_IP (nr_stealth_bridge.cpp:65-67). The other half of the gate (addr_ct==0 fallback in nr_ice_component_initialize) is not in this diff. Of the 6 logic lines, 3 are the old CSFLogInfo/return re-indented inside the new if.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Pref cite was wrong (StaticPrefList.yaml:47 is a header comment); stale-comment claim confirmed."
-  }
- },
- {
-  "file": "dom/media/webrtc/jsapi/moz.build",
-  "category": "build",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [],
-  "added": 1,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
-  "verifier": {
-   "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
-  }
- },
- {
   "file": "dom/media/webrtc/transport/common.build",
   "category": "build",
-  "feature": "webrtc-stealth-bridge",
+  "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 1,
+  "added": 2,
   "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
+  "hunks": 2,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "transport_lcppsrcs (source list)",
   "evidence": [
-   "+    \"nr_stealth_bridge.cpp\","
+   "+    \"nr_stealth_network.cpp\","
   ],
-  "notes": "Registers our own file dom/media/webrtc/transport/nr_stealth_bridge.cpp (present in C:/ff/source). The bridge functions used by the ICE and socket files read environment variables only, not prefs (nr_stealth_bridge.cpp:65-67 and 69-75).",
+  "notes": "Registers our file nr_stealth_network.cpp (the declared network of WebRTC).",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Wrong line cite for the bridge (env reads are at nr_stealth_bridge.cpp:65-75, not 18-29)."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "dom/media/webrtc/transport/nr_socket_prsock.cpp",
-  "category": "spoof",
+  "category": "other",
   "feature": "proxy-udp-egress",
-  "prefs": [
-   "zoom.stealth.webrtc.no_direct_udp"
-  ],
-  "added": 77,
-  "removed": 0,
-  "hunks": 4,
-  "inline_logic_lines": 43,
+  "prefs": [],
+  "added": 62,
+  "removed": 4,
+  "hunks": 11,
+  "inline_logic_lines": 35,
   "hookable": "movable",
-  "anchor": "new static StealthUscitaUdpDirettaVietata (before NrSocket::sendto); hooks in NrSocket::sendto and NrUdpSocketIpc::sendto",
+  "anchor": "include of nr_stealth_proxy_udp.h; NrSocket::create (UDP: the proxy layer); NrSocketBase::CreateSocket (the config to NrSocket; no UDP socket of a PeerConnection in a content process)",
   "evidence": [
-   "+static bool StealthUscitaUdpDirettaVietata(const nr_transport_addr* to) {",
-   "+  if (StealthUscitaUdpDirettaVietata(to)) {",
-   "+    ABORT(R_REJECTED);"
+   "+#include \"nr_stealth_network.h\"    // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+#include \"nr_stealth_proxy_udp.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+// STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared host sockets of this process (R3). Every NrSocket"
   ],
-  "notes": "About 36 lines of address-range decision logic sit inside the Mozilla file, plus two 3-4 line hooks. The function can move to nr_stealth_bridge.cpp behind one call. Pref zoom.stealth.webrtc.no_direct_udp defined at StaticPrefList.yaml:21539. IPv4 0.0.0.0 passes (if (a == 0) return false), but IPv6 unspecified '::' is refused: all-zero bytes leave loopback=true, b[15]!=1, so the function returns true (CONFIRMED from the diff logic); real-world impact unverified. NrUdpSocketIpc::sendto returns R_REJECTED with no log line, unlike the NrSocket path. Merge note: upstream's comment '// This should be called on the STS thread.' now sits above the new block comment/function instead of above NrSocket::sendto.",
+  "notes": "The rule of the UDP of a PeerConnection, made where its socket is born: no proxy = a plain socket, SOCKS5 = the SOCKS5 UDP layer, a proxy without UDP = a socket whose datagrams go nowhere. In a content process the UDP sockets of a PeerConnection are refused (they would go out direct). Also (feature webrtc-declared-network, fingerprint/webrtc/declared-network): a host UDP socket of a declared address binds the wildcard of its family on the port of its connection and reports the declared address with that port; a datagram between two sockets of this process goes on the kernel's loopback while each end sees the other's declared address (StealthOwnPorts).",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Verified IPv6 :: logic from the diff; added the displaced upstream comment as a merge note."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "dom/media/webrtc/transport/third_party/nICEr/nicer.gyp",
   "category": "build",
-  "feature": "webrtc-stealth-bridge",
+  "feature": "webrtc-declared-network",
   "prefs": [],
   "added": 3,
-  "removed": 0,
-  "hunks": 1,
+  "removed": 7,
+  "hunks": 2,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "include_dirs of the nICEr target (target name not in the hunk header)",
+  "anchor": "include_dirs of the nICEr target; the stun source list",
   "evidence": [
-   "+              '../..',"
+   "+              # transport dir — for nr_stealth_network.h",
+   "+              '../..',",
+   "+"
   ],
-  "notes": "Adds the transport directory so nICEr sources can include nr_stealth_bridge.h. The relative path resolves to dom/media/webrtc/transport. nicer.gyp is live: dom/media/webrtc/transport/third_party/moz.build:24 builds nICEr from it via GYP_DIRS. Of the 3 added lines, one is a comment and one is blank.",
+  "notes": "Adds the transport directory so nICEr sources can include nr_stealth_network.h, and drops the OS enumerators (addrs-bsd, addrs-netlink, addrs-netlink-wireless, addrs-win32) from the sources.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Added proof that nicer.gyp is live (GYP_DIRS), so the include dir is needed."
-  }
- },
- {
-  "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_candidate.cpp",
-  "category": "spoof",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [],
-  "added": 45,
-  "removed": 0,
-  "hunks": 2,
-  "inline_logic_lines": 18,
-  "hookable": "movable",
-  "anchor": "nr_ice_srvrflx_stun_finished_cb (case NR_STUN_CLIENT_STATE_DONE)",
-  "evidence": [
-   "+            if (altro != cand && altro->type == SERVER_REFLEXIVE &&",
-   "+              ABORT(R_NOT_FOUND);",
-   "+          if (nr_stealth_get_webrtc_public_ip(stealth_ip, sizeof(stealth_ip)) > 0) {"
-  ],
-  "notes": "Two blocks in the STUN-done case: suppress the real srflx when a synthetic one (stun_server == NULL) exists, and rewrite the mapped IP to the proxy IP keeping the port. Both could move behind one hook call. The public IP comes from env STEALTHFOX_WEBRTC_PUBLIC_IP via nr_stealth_bridge.cpp, not a pref. Also adds an include of ice_component.h that nothing in this file uses (only a comment at ice_candidate.cpp:56 mentions the injector; no call). ABORT(R_NOT_FOUND) at ice_candidate.cpp:976 jumps to abort: (1012-1015) which calls nr_ice_candidate_mark_done(cand, FAILED): same path as the existing FAILED case at 1004-1006; the STUN ctx is not destroyed here (as for a failed server). RISK CONFIRMED (code path): mark_done(FAILED) calls gather_handler->candidate_error (ice_candidate.cpp:293-302); NrIceCtx::candidate_error (nricectx.cpp:511-534) proceeds because the real srflx has a stun_server and signals the error; PeerConnectionImpl::OnCandidateError (PeerConnectionImpl.cpp:3646-3662) maps error_code 0 to 701 and calls mPCObserver->OnIceCandidateError, so the page can receive an icecandidateerror for the suppressed real srflx whenever the synthetic one exists. Not run, so the observed event is unverified.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Resolved the unverified ABORT cleanup question and found a page-visible side effect."
-  }
- },
- {
-  "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.cpp",
-  "category": "spoof",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [],
-  "added": 370,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 153,
-  "hookable": "movable",
-  "anchor": "new static nr_ice_stealth_srflx_fire_ready and new nr_ice_component_inject_fallback_srflx (inserted after the includes), plus the call in nr_ice_component_initialize_udp",
-  "evidence": [
-   "+static void nr_ice_stealth_srflx_fire_ready(NR_SOCKET s, int how, void *cb_arg)",
-   "+    if (nr_stealth_get_webrtc_public_ip(public_ip_buf, sizeof(public_ip_buf)) == 0)",
-   "+        (void)nr_ice_component_inject_fallback_srflx(component, &addrs[i].addr);"
-  ],
-  "notes": "About 150 logic lines of new code (the rest of the 370 added lines are comments) in a Mozilla file. Both functions can move to our own file, leaving the call site and a declaration. Reads env STEALTHFOX_WEBRTC_PUBLIC_IP through the bridge, no pref. Dead variable CONFIRMED: real_srflx_ct is declared at ice_component.cpp:603 and incremented at :623, never read (the only other mentions are comments at :173 and :642). The rest of nr_ice_component_initialize_udp is not in the diff.",
-  "verifier": {
-   "changed": [
-    "inline_logic_lines",
-    "notes"
-   ],
-   "why": "Dead-variable claim confirmed by grep; minor logic recount."
-  }
- },
- {
-  "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_component.h",
-  "category": "spoof",
-  "feature": "webrtc-ice-candidates",
-  "prefs": [],
-  "added": 9,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "file-level declarations after nr_ice_component_dump_state",
-  "evidence": [
-   "+int nr_ice_component_inject_fallback_srflx(nr_ice_component *component,"
-  ],
-  "notes": "Declaration only. The header comment says the function has two callers, including the STUN-failure branch in ice_candidate.cpp. CONFIRMED stale: the only caller in the tree is ice_component.cpp:649; ice_candidate.cpp only has an include and a comment (ice_candidate.cpp:56). Moves with the definition if that moves.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Stale-comment claim confirmed by grep."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp",
   "category": "spoof",
-  "feature": "webrtc-ice-candidates",
+  "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 73,
-  "removed": 4,
+  "added": 13,
+  "removed": 89,
   "hunks": 3,
-  "inline_logic_lines": 33,
+  "inline_logic_lines": 5,
   "hookable": "movable",
-  "anchor": "new static nr_transport_addr_is_wildcard_ip (before nr_ice_get_default_address); wildcard refusal in nr_ice_get_default_address; fallback in nr_ice_set_local_addresses",
+  "anchor": "include of nr_stealth_network.h; nr_ice_get_default_local_address; nr_ice_set_local_addresses (no default address)",
   "evidence": [
-   "+static int nr_transport_addr_is_wildcard_ip(const nr_transport_addr *addr)",
-   "+    if (nr_transport_addr_is_wildcard_ip(remote_addr)) {",
-   "-        r_log(LOG_ICE,LOG_ERR,\"ICE(%s): failed to find default addresses\",ctx->label);"
+   "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+/* STEALTH-HOOK(fingerprint/webrtc/declared-network): the default address of a family is the declared",
+   "+   address of that family (nr_stealth_network.h), found in the list the parent sent, which is the"
   ],
-  "notes": "Two behaviour changes: a wildcard remote is refused before the default-route probe, and when the probe yields no default address ICE falls back to the filtered local addresses instead of failing. The fallback block (about 12 logic lines) can move behind one call. addr_ct holds the filtered survivor count at the fallback: CONFIRMED (ice_ctx.cpp:770-791 filter/force-interface, used at 843-848). The Linux 127.0.0.1 observation in the comment (measured 2026-10-02 on firefox-34) is not checked here. Merge note: the new static nr_transport_addr_is_wildcard_ip is inserted between upstream's comment block for nr_ice_get_default_address and the function itself. No prefs.",
+  "notes": "The default address of a family is the declared entry of that family (nr_stealth_default_local_address): the route probe (a UDP socket connected to the page's server or a public address, then getsockname) is gone, with it the wildcard refusal and the fallback to every filtered address. A family the declaration does not have has no default address, as a machine with no route in that family. Mozilla's probing function is replaced by one call.",
   "verifier": {
-   "changed": [
-    "feature",
-    "notes"
-   ],
-   "why": "Feature belongs to ICE candidate gathering behind SOCKS, not UDP egress; unverified claim about addr_ct confirmed."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp",
   "category": "spoof",
-  "feature": "webrtc-ice-candidates",
+  "feature": "webrtc-declared-network",
   "prefs": [],
-  "added": 9,
-  "removed": 0,
+  "added": 3,
+  "removed": 9,
   "hunks": 2,
-  "inline_logic_lines": 4,
+  "inline_logic_lines": 1,
   "hookable": "already-hook",
-  "anchor": "nr_stun_filter_addrs_for_ifname (else-if chain)",
+  "anchor": "includes; nr_stun_get_addrs",
   "evidence": [
-   "+    else if (nr_stealth_webrtc_disable_ipv6() &&",
-   "+        r_log(NR_LOG_STUN, LOG_WARNING, \"Stealth: dropping IPv6 host candidate\");"
+   "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared adapter, never the host's.",
+   "+    _status = nr_stealth_declared_addrs(addrs, maxaddrs, count);"
   ],
-  "notes": "Drops IPv6 host addresses when nr_stealth_webrtc_disable_ipv6() is true. That reads env STEALTHFOX_WEBRTC_DISABLE_IPV6 (nr_stealth_bridge.cpp:69-75), not a pref. The comment says the upstream pref media.peerconnection.ice.disableIPv6 is dead in FF150: CONFIRMED for dom/media (no reader other than our own comments) and modules/libpref/init (not defined). That IPv6 srflx derived from the host is also stopped is unverified.",
+  "notes": "The interfaces are the declared adapter (nr_stealth_declared_addrs), never the host's: the includes of the OS enumerators are gone and nr_stun_get_addrs returns the declaration.",
   "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Wrong line cite for the bridge; upstream pref claim partly confirmed."
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -1865,7 +1740,7 @@
   "prefs": [
    "zoom.stealth.voices.list"
   ],
-  "added": 40,
+  "added": 5,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 24,
@@ -1889,7 +1764,7 @@
   "category": "spoof",
   "feature": "speech-voices-declared",
   "prefs": [],
-  "added": 82,
+  "added": 12,
   "removed": 0,
   "hunks": 5,
   "inline_logic_lines": 42,
@@ -1913,7 +1788,7 @@
   "category": "build",
   "feature": "speech-voices-declared",
   "prefs": [],
-  "added": 2,
+  "added": 1,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -2008,9 +1883,9 @@
   "category": "juggler",
   "feature": "bypass-csp",
   "prefs": [],
-  "added": 17,
+  "added": 5,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 1,
   "inline_logic_lines": 8,
   "hookable": "movable",
   "anchor": "CSP_IsBypassedFor (new) and CSP_ApplyMetaCSPToDoc",
@@ -2032,7 +1907,7 @@
   "category": "juggler",
   "feature": "bypass-csp",
   "prefs": [],
-  "added": 6,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -2075,9 +1950,9 @@
   "category": "spoof",
   "feature": "worker-locale-timezone",
   "prefs": [],
-  "added": 75,
+  "added": 3,
   "removed": 0,
-  "hunks": 4,
+  "hunks": 2,
   "inline_logic_lines": 36,
   "hookable": "movable",
   "anchor": "ServiceWorkerPrivate::Initialize (remote worker data), new static ContextDeclaration, ServiceWorkerPrivate::RefreshRemoteWorkerData",
@@ -2164,7 +2039,7 @@
   "category": "spoof",
   "feature": "synthetic-input-latency",
   "prefs": [],
-  "added": 6,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -2213,7 +2088,7 @@
   "category": "spoof",
   "feature": "worker-locale-timezone",
   "prefs": [],
-  "added": 53,
+  "added": 9,
   "removed": 1,
   "hunks": 4,
   "inline_logic_lines": 11,
@@ -2238,8 +2113,8 @@
   "category": "spoof",
   "feature": "worker-locale-timezone",
   "prefs": [],
-  "added": 11,
-  "removed": 8,
+  "added": 5,
+  "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 4,
   "hookable": "already-hook",
@@ -2262,7 +2137,7 @@
   "category": "spoof",
   "feature": "worker-locale-timezone",
   "prefs": [],
-  "added": 8,
+  "added": 5,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 2,
@@ -2283,7 +2158,7 @@
   "category": "spoof",
   "feature": "worker-locale-timezone",
   "prefs": [],
-  "added": 10,
+  "added": 7,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 4,
@@ -2329,7 +2204,7 @@
   "prefs": [],
   "added": 10,
   "removed": 1,
-  "hunks": 3,
+  "hunks": 2,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "class FontData (Borrowed constructor, destructor, member mBorrowed)",
@@ -2349,9 +2224,9 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 32,
+  "added": 12,
   "removed": 1,
-  "hunks": 4,
+  "hunks": 3,
   "inline_logic_lines": 14,
   "hookable": "movable",
   "anchor": "SourceSurfaceRecording::GetDataSurface, DrawTargetRecording::StealthProjectedSurface (new)",
@@ -2371,7 +2246,7 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 14,
+  "added": 9,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 0,
@@ -2415,9 +2290,9 @@
   "category": "spoof",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 90,
+  "added": 5,
   "removed": 0,
-  "hunks": 4,
+  "hunks": 3,
   "inline_logic_lines": 45,
   "hookable": "movable",
   "anchor": "RecordedStealthProjectSurface (class, PlayEvent, Record, stream constructor) and the RECORDED_EVENT X-macro list",
@@ -2437,7 +2312,7 @@
   "category": "other",
   "feature": "font-bundle-file-path",
   "prefs": [],
-  "added": 22,
+  "added": 8,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 5,
@@ -2458,7 +2333,7 @@
   "category": "other",
   "feature": "font-bundle-file-path",
   "prefs": [],
-  "added": 18,
+  "added": 7,
   "removed": 2,
   "hunks": 3,
   "inline_logic_lines": 4,
@@ -2503,7 +2378,7 @@
   "category": "spoof",
   "feature": "glyph-coverage-quantise",
   "prefs": [],
-  "added": 24,
+  "added": 10,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 4,
@@ -2527,7 +2402,7 @@
   "category": "build",
   "feature": "canvas-noise-projection",
   "prefs": [],
-  "added": 8,
+  "added": 13,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 0,
@@ -2549,7 +2424,7 @@
   "category": "spoof",
   "feature": "font-list-bundle-only",
   "prefs": [],
-  "added": 126,
+  "added": 32,
   "removed": 1,
   "hunks": 7,
   "inline_logic_lines": 67,
@@ -2571,9 +2446,9 @@
   "category": "spoof",
   "feature": "font-list-bundle-only",
   "prefs": [],
-  "added": 164,
-  "removed": 53,
-  "hunks": 14,
+  "added": 55,
+  "removed": 12,
+  "hunks": 13,
   "inline_logic_lines": 75,
   "hookable": "movable",
   "anchor": "gfxDWriteFontEntry::ReadCMAP; gfxDWriteFontEntry::CreateFontInstance; gfxDWriteFontEntry::CreateFontFace; gfxDWriteFontList::CreateFontEntry; gfxDWriteFontList::GetFacesInitDataForFamily; gfxDWriteFontList::ReadFaceNames; gfxDWriteFontList::ReadFaceNamesForFamily; gfxDWriteFontList::InitSharedFontListForPlatform; gfxDWriteFontList::InitFontListForPlatform; gfxDWriteFontList::CreateBundledFontsCollection",
@@ -2595,9 +2470,9 @@
   "category": "other",
   "feature": "font-bundle-file-path",
   "prefs": [],
-  "added": 14,
+  "added": 9,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "gfxDWriteFontEntry (class members mBundleFaceIndex and mBundleFilePath)",
@@ -2618,9 +2493,9 @@
   "prefs": [
    "zoom.stealth.text.system_quality"
   ],
-  "added": 71,
+  "added": 11,
   "removed": 3,
-  "hunks": 6,
+  "hunks": 4,
   "inline_logic_lines": 14,
   "hookable": "movable",
   "anchor": "GetSystemTextQuality; GetSystemGDIGamma (comment only); gfxDWriteFont::UpdateClearTypeVars",
@@ -2642,8 +2517,8 @@
   "category": "spoof",
   "feature": "font-design-metrics",
   "prefs": [],
-  "added": 113,
-  "removed": 7,
+  "added": 6,
+  "removed": 1,
   "hunks": 4,
   "inline_logic_lines": 27,
   "hookable": "movable",
@@ -2667,9 +2542,9 @@
    "zoom.stealth.text.freetype_hintstyle",
    "zoom.stealth.text.freetype_antialias"
   ],
-  "added": 268,
-  "removed": 22,
-  "hunks": 17,
+  "added": 42,
+  "removed": 6,
+  "hunks": 15,
   "inline_logic_lines": 86,
   "hookable": "movable",
   "anchor": "gfxFontconfigFontEntry::gfxFontconfigFontEntry (data-font constructor); gfxFontconfigFontEntry::GetHBFace; gfxFontconfigFontEntry::ReadCMAP; gfxFontconfigFontEntry::HasFontTableInternal; gfxFontconfigFontEntry::GetFontTableInternal; gfxFontconfigFontEntry::CreateFontInstance; gfxFcPlatformFontList::AddPatternToFontList; gfxFcPlatformFontList::InitFontListForPlatform; gfxFcPlatformFontList::InitSharedFontListForPlatform; gfxFcPlatformFontList::CreateFontEntry; gfxFcPlatformFontList::FindAndAddFamiliesLocked; gfxFcPlatformFontList::AddGenericFonts",
@@ -2692,8 +2567,8 @@
   "category": "other",
   "feature": "font-bundle-file-path",
   "prefs": [],
-  "added": 8,
-  "removed": 1,
+  "added": 1,
+  "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
@@ -2713,9 +2588,9 @@
   "category": "spoof",
   "feature": "font-metrics-declared",
   "prefs": [],
-  "added": 152,
+  "added": 3,
   "removed": 0,
-  "hunks": 5,
+  "hunks": 3,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "gfxFont::SanitizeMetrics, after the zero-size early return",
@@ -2737,7 +2612,7 @@
   "category": "spoof",
   "feature": "font-metrics-declared",
   "prefs": [],
-  "added": 8,
+  "added": 4,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -2757,9 +2632,9 @@
   "category": "other",
   "feature": "font-cmap-publish",
   "prefs": [],
-  "added": 26,
+  "added": 6,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 8,
   "hookable": "movable",
   "anchor": "gfxFontEntry::ShouldPublishCharacterMap (new, placed before gfxFontEntry::TrySetShmemCharacterMap)",
@@ -2778,7 +2653,7 @@
   "category": "other",
   "feature": "hb-face-lifetime",
   "prefs": [],
-  "added": 29,
+  "added": 6,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 3,
@@ -2801,7 +2676,7 @@
   "category": "other",
   "feature": "font-ttc-face-index",
   "prefs": [],
-  "added": 31,
+  "added": 11,
   "removed": 4,
   "hunks": 2,
   "inline_logic_lines": 22,
@@ -2823,9 +2698,9 @@
   "category": "other",
   "feature": "font-ttc-face-index",
   "prefs": [],
-  "added": 19,
-  "removed": 5,
-  "hunks": 1,
+  "added": 8,
+  "removed": 2,
+  "hunks": 2,
   "inline_logic_lines": 5,
   "hookable": "already-hook",
   "anchor": "gfxFontUtils (static declarations FindSfntOffset, FindTableDirEntry, GetTableFromFontData)",
@@ -2843,9 +2718,9 @@
   "category": "spoof",
   "feature": "font-design-metrics",
   "prefs": [],
-  "added": 153,
+  "added": 1,
   "removed": 0,
-  "hunks": 4,
+  "hunks": 1,
   "inline_logic_lines": 49,
   "hookable": "movable",
   "anchor": "gfxHarfBuzzShaper::~gfxHarfBuzzShaper; gfxHarfBuzzShaper::GetDesignFont (new); gfxHarfBuzzShaper::GetDesignGlyphExtents (new); gfxHarfBuzzShaper::GetDesignAdvance (new); gfxHarfBuzzShaper::ShapeText (comment only)",
@@ -2865,9 +2740,9 @@
   "category": "spoof",
   "feature": "font-design-metrics",
   "prefs": [],
-  "added": 36,
+  "added": 10,
   "removed": 0,
-  "hunks": 3,
+  "hunks": 2,
   "inline_logic_lines": 6,
   "hookable": "already-hook",
   "anchor": "gfxHarfBuzzShaper class: public GetDesignGlyphExtents and GetDesignAdvance declarations; private mDesignFont member and GetDesignFont declaration",
@@ -2889,9 +2764,9 @@
    "zoom.stealth.fonts.generics",
    "gfx.font_rendering.fallback.async"
   ],
-  "added": 395,
-  "removed": 24,
-  "hunks": 15,
+  "added": 31,
+  "removed": 6,
+  "hunks": 11,
   "inline_logic_lines": 147,
   "hookable": "movable",
   "anchor": "gfxPlatformFontList::MemoryReporter::CollectReports; gfxPlatformFontList::gfxPlatformFontList (constructor); gfxPlatformFontList::RecordFaceNamesFromTable (new); gfxPlatformFontList::ReadFaceNamesForFamily (new); gfxPlatformFontList::ReadFaceNames (new); gfxPlatformFontList::CommonFontFallback; gfxPlatformFontList::GlobalFontFallback; gfxPlatformFontList::FindAndAddFamiliesLocked; gfxPlatformFontList::MayDeferCmapLoading (new); gfxPlatformFontList::InitializeFamily; GetSystemUIFontFamilies; StealthDeclaredGenericFont (new static); gfxPlatformFontList::ResolveGenericFontNames; gfxPlatformFontList::ResolveEmojiFontNames",
@@ -2913,9 +2788,9 @@
   "category": "spoof",
   "feature": "font-list-bundle-only",
   "prefs": [],
-  "added": 45,
+  "added": 13,
   "removed": 4,
-  "hunks": 5,
+  "hunks": 4,
   "inline_logic_lines": 10,
   "hookable": "movable",
   "anchor": "gfxPlatformFontList class: MayDeferCmapLoading and StealthBundleOnly declarations; ReadFaceNames and ReadFaceNamesForFamily (now real virtuals, previously no-ops); RecordFaceNamesFromTable declaration; mStealthBundleOnly member",
@@ -2937,9 +2812,9 @@
   "category": "spoof",
   "feature": "font-fallback-bundle",
   "prefs": [],
-  "added": 27,
+  "added": 3,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 6,
   "hookable": "movable",
   "anchor": "gfxPlatformGtk::GetCommonFallbackFonts",
@@ -2958,7 +2833,7 @@
   "category": "spoof",
   "feature": "font-fallback-bundle",
   "prefs": [],
-  "added": 7,
+  "added": 2,
   "removed": 3,
   "hunks": 1,
   "inline_logic_lines": 1,
@@ -2999,9 +2874,9 @@
   "category": "spoof",
   "feature": "session-language-declared",
   "prefs": [],
-  "added": 24,
+  "added": 6,
   "removed": 4,
-  "hunks": 4,
+  "hunks": 3,
   "inline_logic_lines": 10,
   "hookable": "movable",
   "anchor": "LocaleService::GetRegionalPrefsLocales; new static helper MachineRegionalPrefsLocales",
@@ -3045,7 +2920,7 @@
   "category": "spoof",
   "feature": "session-language-declared",
   "prefs": [],
-  "added": 15,
+  "added": 6,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 6,
@@ -3070,9 +2945,9 @@
   "category": "spoof",
   "feature": "debugger-invisible-attach",
   "prefs": [],
-  "added": 56,
-  "removed": 17,
-  "hunks": 3,
+  "added": 18,
+  "removed": 4,
+  "hunks": 4,
   "inline_logic_lines": 35,
   "hookable": "hard",
   "anchor": "Debugger::addDebuggeeGlobal; Debugger::removeDebuggeeGlobal",
@@ -3095,7 +2970,7 @@
   "category": "spoof",
   "feature": "debugger-invisible-attach",
   "prefs": [],
-  "added": 5,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 1,
@@ -3136,9 +3011,9 @@
   "category": "spoof",
   "feature": "stack-hide-juggler-frames",
   "prefs": [],
-  "added": 29,
+  "added": 6,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 22,
   "hookable": "movable",
   "anchor": "BuildStackString",
@@ -3158,9 +3033,9 @@
   "category": "other",
   "feature": "script-cache-adopt-written",
   "prefs": [],
-  "added": 143,
-  "removed": 44,
-  "hunks": 6,
+  "added": 5,
+  "removed": 0,
+  "hunks": 3,
   "inline_logic_lines": 90,
   "hookable": "hard",
   "anchor": "ScriptPreloader::CollectReports; ScriptPreloader::WalkCacheHeader (new template); ScriptPreloader::InitCacheInternal; ScriptPreloader::AdoptWrittenCache (new); ScriptPreloader::WriteCache",
@@ -3180,9 +3055,9 @@
   "category": "other",
   "feature": "script-cache-adopt-written",
   "prefs": [],
-  "added": 52,
+  "added": 8,
   "removed": 0,
-  "hunks": 3,
+  "hunks": 2,
   "inline_logic_lines": 11,
   "hookable": "hard",
   "anchor": "ScriptPreloader::CachedStencil (AdoptMappedRange, inline); class ScriptPreloader (WalkCacheHeader and AdoptWrittenCache declarations; mWrittenCacheData member)",
@@ -3202,9 +3077,9 @@
   "category": "juggler",
   "feature": "hybrid-xrays",
   "prefs": [],
-  "added": 36,
+  "added": 22,
   "removed": 2,
-  "hunks": 7,
+  "hunks": 8,
   "inline_logic_lines": 22,
   "hookable": "movable",
   "anchor": "SandboxProxyHandler::getPropertyDescriptorImpl; xpc::CreateSandboxObject; SandboxOptions::Parse",
@@ -3246,9 +3121,9 @@
   "category": "spoof",
   "feature": "timezone-locale-override",
   "prefs": [],
-  "added": 5,
-  "removed": 15,
-  "hunks": 3,
+  "added": 4,
+  "removed": 0,
+  "hunks": 2,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "InitGlobalObjectOptions",
@@ -3268,7 +3143,7 @@
   "category": "juggler",
   "feature": "hybrid-xrays",
   "prefs": [],
-  "added": 12,
+  "added": 7,
   "removed": 1,
   "hunks": 4,
   "inline_logic_lines": 1,
@@ -3290,8 +3165,8 @@
   "category": "spoof",
   "feature": "hybrid-xrays",
   "prefs": [],
-  "added": 135,
-  "removed": 8,
+  "added": 18,
+  "removed": 7,
   "hunks": 6,
   "inline_logic_lines": 80,
   "hookable": "hard",
@@ -3314,7 +3189,7 @@
   "category": "juggler",
   "feature": "hybrid-xrays",
   "prefs": [],
-  "added": 131,
+  "added": 4,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 20,
@@ -3354,9 +3229,9 @@
   "category": "juggler",
   "feature": "juggler-mouse-event-id",
   "prefs": [],
-  "added": 51,
+  "added": 3,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 32,
   "hookable": "movable",
   "anchor": "PresShell::HandleEvent (scope-exit lambda ackJugglerEvent)",
@@ -3380,9 +3255,9 @@
   "category": "spoof",
   "feature": "canvas-as-drawn-readers",
   "prefs": [],
-  "added": 4,
+  "added": 2,
   "removed": 1,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "nsLayoutUtils::SurfaceFromElement(HTMLCanvasElement*, uint32_t, RefPtr<DrawTarget>&)",
@@ -3404,7 +3279,7 @@
   "category": "spoof",
   "feature": "screen-metrics",
   "prefs": [],
-  "added": 13,
+  "added": 5,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 2,
@@ -3430,7 +3305,7 @@
   "prefs": [],
   "added": 3,
   "removed": 1,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "nsImageRenderer::PrepareImage",
@@ -3456,9 +3331,9 @@
    "zoom.stealth.pointer.primary",
    "zoom.stealth.pointer.all"
   ],
-  "added": 37,
+  "added": 8,
   "removed": 0,
-  "hunks": 4,
+  "hunks": 3,
   "inline_logic_lines": 11,
   "hookable": "movable",
   "anchor": "GetDeviceSize (device-size block) and GetPointerCapabilities (stealth branch)",
@@ -3632,9 +3507,9 @@
    "font.size.monospace.x-unicode",
    "font.size.monospace.x-western"
   ],
-  "added": 6,
-  "removed": 6,
-  "hunks": 6,
+  "added": 7,
+  "removed": 7,
+  "hunks": 4,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "values changed in place on 2026-10-29",
@@ -3764,17 +3639,18 @@
   "category": "juggler",
   "feature": "juggler-load-identifier",
   "prefs": [],
-  "added": 10,
-  "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 2,
-  "hookable": "already-hook",
+  "added": 13,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 9,
+  "hookable": "movable",
   "anchor": "TRRLoadInfo::GetJugglerLoadIdentifier / TRRLoadInfo::SetJugglerLoadIdentifier (end of file)",
   "evidence": [
-   "+TRRLoadInfo::GetJugglerLoadIdentifier(uint64_t* aResult) {",
-   "+  return NS_ERROR_NOT_IMPLEMENTED;"
+   "+  static_cast<TRRLoadInfo*>(loadInfo.get())->mOriginAttributes =",
+   "+      mOriginAttributes;  // STEALTH-HOOK(network/doh)",
+   "+  mOriginAttributes = aOriginAttributes;  // STEALTH-HOOK(network/doh)"
   ],
-  "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern.",
+  "notes": "Stubs required because TRRLoadInfo implements nsILoadInfo. Risk 'infallible attribute returns NS_ERROR_NOT_IMPLEMENTED': REFUTED as a new problem. Upstream TRRLoadInfo.cpp:132-155 already returns NS_ERROR_NOT_IMPLEMENTED for the [infallible] attributes securityMode, isInThirdPartyContext and isThirdPartyContextToTopWindow (nsILoadInfo.idl:490, 637, 649); the new stubs follow the same pattern. Also (feature doh-trr-context, network/doh): the TRR load info keeps the origin attributes of the lookup's context, also in its clone, so the proxy filters see the context.",
   "verifier": {
    "changed": [
     "notes"
@@ -3794,7 +3670,7 @@
   "hookable": "already-hook",
   "anchor": "hook added by the 2026-10-29 move to our files",
   "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "notes": "Hook registering or calling our own code. Also the source line of network/ipv6-literal (StealthIPv6Literal.cpp).",
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
@@ -3827,7 +3703,7 @@
   "category": "juggler",
   "feature": "juggler-interception",
   "prefs": [],
-  "added": 10,
+  "added": 4,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -3853,9 +3729,9 @@
    "network.proxy.socks_username",
    "network.proxy.socks_password"
   ],
-  "added": 13,
+  "added": 8,
   "removed": 3,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 11,
   "hookable": "movable",
   "anchor": "nsProtocolProxyService::PrefsChanged; nsProtocolProxyService::Resolve_Internal (SOCKS NewProxyInfo_Internal call)",
@@ -3896,74 +3772,22 @@
   "file": "netwerk/base/nsUDPSocket.cpp",
   "category": "other",
   "feature": "proxy-udp-egress",
-  "prefs": [
-   "network.proxy.socks_remote_udp",
-   "network.proxy.type",
-   "network.proxy.socks_version",
-   "network.proxy.socks",
-   "network.proxy.socks_port",
-   "network.proxy.socks_username",
-   "network.proxy.socks_password"
-  ],
-  "added": 39,
-  "removed": 0,
-  "hunks": 3,
-  "inline_logic_lines": 26,
-  "hookable": "movable",
-  "anchor": "nsUDPSocket::InitWithAddress (block before the FUZZING check)",
-  "evidence": [
-   "+  if (mozilla::Preferences::GetBool(\"network.proxy.socks_remote_udp\", false)) {",
-   "+        nsresult sr = mozilla::net::nsSOCKSUDPIOLayerAddToSocket(",
-   "+            mFD, host.get(), port, user.get(), pass.get());"
-  ],
-  "notes": "With SOCKS5 and network.proxy.socks_remote_udp set, pushes the SOCKS UDP layer (netwerk/socket/nsSOCKSUDPIOLayer.h:50, implemented at nsSOCKSUDPIOLayer.cpp:351) onto the new fd so QUIC/HTTP3 traffic goes through the proxy. network.proxy.socks_remote_udp is not defined in modules/libpref/init (read by string with default false). RISK CONFIRMED (from diff): if the layer attach fails the code logs 'falling back to direct UDP' and continues with direct UDP, and the block runs for every nsUDPSocket::InitWithAddress call with no check of the destination or purpose; whether callers avoid that path is unverified. The two Stealthfox comment blocks repeat each other. The block (about 26 logic lines) can move behind one call.",
-  "verifier": {
-   "changed": [
-    "notes"
-   ],
-   "why": "Added confirmed facts: pref not predefined, hook applies to every UDP socket; fallback behaviour confirmed from the diff."
-  }
- },
- {
-  "file": "netwerk/dns/DNSServiceBase.cpp",
-  "category": "spoof",
-  "feature": "dns-no-local-resolution",
-  "prefs": [
-   "zoom.stealth.dns.no_local_resolution"
-  ],
-  "added": 27,
-  "removed": 6,
-  "hunks": 2,
-  "inline_logic_lines": 9,
-  "hookable": "movable",
-  "anchor": "DNSServiceBase::DNSForbiddenByActiveProxy",
-  "evidence": [
-   "+  const bool proxyDeclaredByLauncher =",
-   "+      StaticPrefs::zoom_stealth_dns_no_local_resolution();",
-   "+  if (proxyDeclaredByLauncher ||"
-  ],
-  "notes": "Adds an OR to the existing proxy guard: when the launcher declares a proxy, DNS for non-IP hostnames is refused. Pref name confirmed at StaticPrefList.yaml:21529 as zoom.stealth.dns.no_local_resolution (accessor zoom_stealth_dns_no_local_resolution). Of the 9 added logic lines, 7 are the old condition re-indented. The comment names the ICE resolver as a caller that bypasses channels; unverified. Can become one call into our own function.",
-  "verifier": {
-   "changed": [],
-   "why": "All fields and cited facts checked against the diff and source; no change."
-  }
- },
- {
-  "file": "netwerk/dns/moz.build",
-  "category": "build",
-  "feature": "dns-no-local-resolution",
   "prefs": [],
-  "added": 1,
+  "added": 18,
   "removed": 0,
-  "hunks": 1,
-  "inline_logic_lines": 0,
-  "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "hunks": 4,
+  "inline_logic_lines": 7,
+  "hookable": "movable",
+  "anchor": "includes; nsUDPSocket::InitWithAddress after PR_OpenUDPSocket; nsUDPSocket::SetSocksProxy",
+  "evidence": [
+   "+#include \"StealthPcUdpProxy.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+#include \"nsIProxyInfo.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Puts the SOCKS5 UDP layer of the connection's proxy on the socket when it opens it (StealthPutSocksUdpLayer), the same layer and associations as the ICE sockets. Also GetFileDescriptor: a socket with the SOCKS UDP layer gives no OS handle (-1), so nothing writes on it direct.",
   "verifier": {
    "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -3987,77 +3811,91 @@
   }
  },
  {
-  "file": "netwerk/protocol/http/AlternateServices.cpp",
+  "file": "netwerk/ipc/PSocketProcess.ipdl",
   "category": "other",
-  "feature": "socks-udp-h3",
-  "prefs": [
-   "network.proxy.socks_remote_udp"
-  ],
-  "added": 12,
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 8,
   "removed": 1,
   "hunks": 2,
-  "inline_logic_lines": 6,
-  "hookable": "movable",
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "parent: block, PProxyConfigLookup constructor",
+  "evidence": [
+   "+                           bool aIsTRRServiceChannel,",
+   "+                           LoadInfoArgs? aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+                           OriginAttributes? aOriginAttributes);  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The constructor of PProxyConfigLookup takes an optional LoadInfoArgs. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/AlternateServices.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 2,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
   "anchor": "AltSvcCache::UpdateAltServiceMapping",
   "evidence": [
-   "+    bool socksUdpEnabled = mozilla::Preferences::GetBool(",
-   "+           (socksUdpEnabled && pi->IsSOCKS()))",
+   "+    // STEALTH-HOOK(network/proxy-udp)",
+   "+    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy() || pi->IsSOCKS5()) : true;",
    "-    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;"
   ],
-  "notes": "Hunk 2 has 6 logic lines. Move the predicate (direct, or h3 proxy, or socks_remote_udp and SOCKS) into one function in our own file and keep a one-line hook. Not a fingerprint change in itself, but the h3 path is visible to pages (nextHopProtocol); reclassify as spoof if the team wants that. The pref is read on every call.",
+  "notes": "The h3 Alt-Svc is not ignored when the proxy is SOCKS5 (UDP goes by the layer).",
   "verifier": {
-   "changed": [
-    "evidence"
-   ],
-   "why": "evidence line had wrong indentation, now verbatim"
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "netwerk/protocol/http/DnsAndConnectSocket.cpp",
   "category": "other",
-  "feature": "socks-udp-h3",
-  "prefs": [
-   "network.proxy.socks_remote_udp"
-  ],
-  "added": 31,
-  "removed": 11,
-  "hunks": 4,
-  "inline_logic_lines": 14,
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 5,
+  "removed": 2,
+  "hunks": 2,
+  "inline_logic_lines": 3,
   "hookable": "movable",
-  "anchor": "DnsAndConnectSocket::DnsAndConnectSocket; DnsAndConnectSocket::CheckProxyConfig",
+  "anchor": "DnsAndConnectSocket constructor; CheckProxyConfig",
   "evidence": [
-   "+    if (socksUdpEnabled && isSocks) {",
-   "+      bool skipDns = !(socksUdpEnabled && isHttp3Path);",
-   "-      mPrimaryTransport.mSkipDnsResolution = true;"
+   "+    // STEALTH-HOOK(network/proxy-udp)",
+   "+    mIsHttp3 = mConnInfo->IsHttp3ProxyConnection() ||",
+   "+               (mConnInfo->IsHttp3() && mConnInfo->ProxyInfo()->IsSOCKS5());"
   ],
-  "notes": "Two logic hunks of 7 lines each (constructor and CheckProxyConfig). Both move to our own file behind one-line hooks. Privacy: with socks_remote_udp on and an h3 request through SOCKS, the hostname is now resolved on the client (skipDns false), so the local resolver sees the name; the old code let the proxy resolve it. Confirm this matches the intended DNS policy. The removed comment block explaining the skip is gone.",
+  "notes": "An HTTP/3 connection through a SOCKS5 proxy is an h3 attempt, and its host name is resolved (QUIC needs the address), not left to the proxy.",
   "verifier": {
    "changed": [],
-   "why": "all fields checked against the diff; no change"
+   "why": "Written from the diff against the tag."
   }
  },
  {
   "file": "netwerk/protocol/http/HttpBaseChannel.cpp",
   "category": "other",
-  "feature": "socks-udp-h3",
-  "prefs": [
-   "network.proxy.socks_remote_udp"
-  ],
-  "added": 12,
-  "removed": 3,
-  "hunks": 2,
-  "inline_logic_lines": 8,
-  "hookable": "movable",
-  "anchor": "HttpBaseChannel::Http3Allowed",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 3,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "HttpBaseChannel (the proxy test of the h3 decision)",
   "evidence": [
-   "+  bool socksUdpEnabled = mozilla::Preferences::GetBool(",
-   "+             (socksUdpEnabled &&",
-   "+              static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS()))"
+   "+  // STEALTH-HOOK(network/proxy-udp)",
+   "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsHttp3Proxy() ||",
+   "+                    static_cast<nsProxyInfo*>(mProxyInfo.get())->IsSOCKS5())"
   ],
-  "notes": "Same predicate as AlternateServices.cpp: use one shared function from our file so the two stay identical. Http3Allowed is const; the pref is read on every call.",
+  "notes": "A SOCKS5 proxy does not forbid h3. Also (feature doh-trr-context, network/doh): GetTRRMode of an OCSP channel follows the session resolver like any other channel (upstream asks for the system one when the mode is 3); the block is removed.",
   "verifier": {
    "changed": [],
-   "why": "all fields checked against the diff; no change"
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -4065,9 +3903,9 @@
   "category": "juggler",
   "feature": "juggler-service-worker-intercept",
   "prefs": [],
-  "added": 38,
+  "added": 4,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 1,
   "inline_logic_lines": 18,
   "hookable": "movable",
   "anchor": "InterceptedHttpChannel::ResetInterception (new InterceptAfterServiceWorkerResets and ResetInterceptionWithURI); InterceptedHttpChannel::OnStartRequest",
@@ -4090,7 +3928,7 @@
   "category": "juggler",
   "feature": "juggler-service-worker-intercept",
   "prefs": [],
-  "added": 11,
+  "added": 4,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4110,20 +3948,22 @@
  },
  {
   "file": "netwerk/protocol/http/moz.build",
-  "category": "build",
-  "feature": "socks-udp-h3",
+  "category": "other",
+  "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 2,
+  "added": 1,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
-  "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "anchor": "UNIFIED_SOURCES list",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthInterception.cpp\"]  # STEALTH-HOOK(automation/network-interception)"
+  ],
+  "notes": "Registers StealthInterception.cpp (another folder's hook).",
   "verifier": {
    "changed": [],
-   "why": "Added with the 2026-10-29 hook move."
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -4131,21 +3971,21 @@
   "category": "spoof",
   "feature": "accept-language-override-list",
   "prefs": [],
-  "added": 20,
+  "added": 11,
   "removed": 3,
   "hunks": 2,
   "inline_logic_lines": 5,
   "hookable": "already-hook",
   "anchor": "nsHttpHandler::AddStandardRequestHeaders",
   "evidence": [
-   "+    rv = PrepareAcceptLanguages(aLanguageOverride.get(), acceptLanguage);",
-   "+      rv = request->SetHeader(nsHttp::Accept_Language, acceptLanguage, false,",
-   "-    acceptLanguage.Assign(aLanguageOverride.get());"
+   "+static nsresult PrepareAcceptLanguages(const char* i_AcceptLanguages,",
+   "+    // STEALTH-HOOK(fingerprint/locale-time/accept-language)",
+   "+    rv = PrepareAcceptLanguages(aLanguageOverride.get(), acceptLanguage);"
   ],
-  "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is one extra Mozilla line. The 5 logic lines are at the already-hook limit; moving the if-block into our own helper would make it a one-liner.",
+  "notes": "Changes the Accept-Language value a page can observe on requests from a BrowsingContext with languageOverride set. A single tag prepares to itself; a list now gets q-values as intl.accept_languages does. If the prepared value is empty the header is not set (no fallback). Needs a forward declaration of the static PrepareAcceptLanguages (defined around line 2098 of this file, declared around line 748); that is two extra Mozilla lines. The 5 logic lines are at the already-hook limit.",
   "verifier": {
    "changed": [],
-   "why": "all fields checked against the diff; no change"
+   "why": "Restored from the diff against the tag (the record had the data of another feature)."
   }
  },
  {
@@ -4153,7 +3993,7 @@
   "category": "spoof",
   "feature": "stealth-branding-redirect",
   "prefs": [],
-  "added": 12,
+  "added": 9,
   "removed": 1,
   "hunks": 3,
   "inline_logic_lines": 4,
@@ -4196,23 +4036,23 @@
  },
  {
   "file": "netwerk/socket/moz.build",
-  "category": "build",
-  "feature": "socks-udp-h3",
+  "category": "other",
+  "feature": "proxy-udp-egress",
   "prefs": [],
   "added": 2,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "EXPORTS and UNIFIED_SOURCES lists",
   "evidence": [
-   "+    \"nsSOCKSUDPIOLayer.h\",",
-   "+    \"nsSOCKSUDPIOLayer.cpp\","
+   "+EXPORTS += [\"nsSOCKSUDPIOLayer.h\", \"StealthPcUdpProxy.h\"]  # STEALTH-HOOK(network/proxy-udp)",
+   "+UNIFIED_SOURCES += [\"nsSOCKSUDPIOLayer.cpp\", \"StealthPcUdpProxy.cpp\"]  # STEALTH-HOOK(network/proxy-udp)"
   ],
-  "notes": "Registers our SOCKS UDP IO layer (both files present in C:\\ff\\source\\netwerk\\socket). Base layer for the socks-udp-h3 feature in AlternateServices, DnsAndConnectSocket and HttpBaseChannel.",
+  "notes": "Registers our SOCKS5 UDP layer and PcUdpProxy.",
   "verifier": {
    "changed": [],
-   "why": "all fields checked against the diff; no change"
+   "why": "Written from the diff against the tag."
   }
  },
  {
@@ -4244,8 +4084,11 @@
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "hook added by the 2026-10-29 move to our files",
-  "evidence": [],
-  "notes": "Hook registering or calling our own code.",
+  "evidence": [
+   "+SOURCES += [\"TestStealthSocksCredentials.cpp\"]  # STEALTH-HOOK(network/socks)",
+   "+SOURCES += [\"TestStealthTRRContext.cpp\"]  # STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Hook registering or calling our own code. Also registers TestStealthTRRContext.cpp (network/doh). Also registers TestStealthIPv6Literal.cpp (network/ipv6-literal).",
   "verifier": {
    "changed": [],
    "why": "Added with the 2026-10-29 hook move."
@@ -4279,7 +4122,7 @@
   "category": "port-fix",
   "feature": "win-long-build-paths",
   "prefs": [],
-  "added": 7,
+  "added": 3,
   "removed": 2,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -4301,7 +4144,7 @@
   "category": "build",
   "feature": "win-long-build-paths",
   "prefs": [],
-  "added": 6,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -4346,7 +4189,7 @@
   "category": "juggler",
   "feature": "juggler-ignore-https-errors",
   "prefs": [],
-  "added": 20,
+  "added": 6,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 7,
@@ -4368,7 +4211,7 @@
   "category": "other",
   "feature": "stealth-branding-redirect",
   "prefs": [],
-  "added": 14,
+  "added": 10,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 5,
@@ -4389,7 +4232,7 @@
   "category": "other",
   "feature": "stealth-branding-redirect",
   "prefs": [],
-  "added": 18,
+  "added": 3,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 8,
@@ -4427,7 +4270,7 @@
   "category": "other",
   "feature": "startup-cache-foreground-writes",
   "prefs": [],
-  "added": 17,
+  "added": 3,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 1,
@@ -4441,7 +4284,7 @@
   "category": "other",
   "feature": "startup-cache-foreground-writes",
   "prefs": [],
-  "added": 8,
+  "added": 6,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4455,7 +4298,7 @@
   "category": "other",
   "feature": "hidden-desktop-window-capture",
   "prefs": [],
-  "added": 14,
+  "added": 5,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 2,
@@ -4476,7 +4319,7 @@
   "category": "other",
   "feature": "hidden-desktop-window-capture",
   "prefs": [],
-  "added": 31,
+  "added": 5,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 18,
@@ -4498,7 +4341,7 @@
   "category": "other",
   "feature": "hidden-desktop-window-capture",
   "prefs": [],
-  "added": 7,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4518,7 +4361,7 @@
   "category": "build",
   "feature": "vsdownload-download-watchdog",
   "prefs": [],
-  "added": 22,
+  "added": 3,
   "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 12,
@@ -4540,8 +4383,8 @@
   "category": "stillborn",
   "feature": "pingsender-session-route",
   "prefs": [],
-  "added": 72,
-  "removed": 14,
+  "added": 11,
+  "removed": 2,
   "hunks": 4,
   "inline_logic_lines": 27,
   "hookable": "movable",
@@ -4583,9 +4426,9 @@
   "category": "stillborn",
   "feature": "pingsender-session-route",
   "prefs": [],
-  "added": 70,
-  "removed": 7,
-  "hunks": 3,
+  "added": 3,
+  "removed": 1,
+  "hunks": 2,
   "inline_logic_lines": 36,
   "hookable": "movable",
   "anchor": "runBackgroundTask (export async function, hunk 1); sendPing (module-level async function, hunks 2 and 3); new takeSessionRoute() at file level",
@@ -4611,7 +4454,7 @@
   "prefs": [
    "zoom.stealth.apikey"
   ],
-  "added": 14,
+  "added": 2,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 1,
@@ -4635,8 +4478,8 @@
    "zoom.stealth.apikey.google_location_service",
    "zoom.stealth.apikey.google_safebrowsing"
   ],
-  "added": 78,
-  "removed": 13,
+  "added": 9,
+  "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 22,
   "hookable": "movable",
@@ -4657,7 +4500,7 @@
   "category": "build",
   "feature": "api-keys-declared",
   "prefs": [],
-  "added": 2,
+  "added": 1,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4711,8 +4554,8 @@
   "category": "spoof",
   "feature": "popup-default-position",
   "prefs": [],
-  "added": 46,
-  "removed": 3,
+  "added": 12,
+  "removed": 2,
   "hunks": 4,
   "inline_logic_lines": 19,
   "hookable": "movable",
@@ -4736,7 +4579,7 @@
   "category": "other",
   "feature": "api-keys-declared",
   "prefs": [],
-  "added": 26,
+  "added": 1,
   "removed": 5,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4802,9 +4645,9 @@
   "category": "other",
   "feature": "untrusted-modules-own-binaries",
   "prefs": [],
-  "added": 44,
+  "added": 12,
   "removed": 5,
-  "hunks": 3,
+  "hunks": 2,
   "inline_logic_lines": 25,
   "hookable": "movable",
   "anchor": "ModuleRecord::GetVersionAndVendorInfo; ModuleRecord::IsInDirectoryOf (new); IsOwnUnsignedBinary (new)",
@@ -4816,7 +4659,7 @@
   "category": "other",
   "feature": "untrusted-modules-own-binaries",
   "prefs": [],
-  "added": 13,
+  "added": 4,
   "removed": 0,
   "hunks": 1,
   "inline_logic_lines": 0,
@@ -4862,7 +4705,7 @@
   "category": "juggler",
   "feature": "juggler-pipe-stdio",
   "prefs": [],
-  "added": 20,
+  "added": 2,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 12,
@@ -4883,9 +4726,9 @@
   "category": "build",
   "feature": "juggler-download-interceptor",
   "prefs": [],
-  "added": 1,
+  "added": 2,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "hook added by the 2026-10-29 move to our files",
@@ -4901,9 +4744,9 @@
   "category": "juggler",
   "feature": "juggler-download-interceptor",
   "prefs": [],
-  "added": 12,
+  "added": 13,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 5,
   "inline_logic_lines": 4,
   "hookable": "already-hook",
   "anchor": "new method nsExternalHelperAppService::SetDownloadInterceptor, inserted after GetPreferredDownloadsDirectory (line 387)",
@@ -4924,9 +4767,9 @@
   "category": "juggler",
   "feature": "juggler-download-interceptor",
   "prefs": [],
-  "added": 5,
+  "added": 9,
   "removed": 0,
-  "hunks": 1,
+  "hunks": 2,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "class nsExternalHelperAppService, new member after the last declared member (hunk header line 302)",
@@ -4946,7 +4789,7 @@
   "category": "juggler",
   "feature": "juggler-download-interceptor",
   "prefs": [],
-  "added": 22,
+  "added": 2,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 7,
@@ -4970,7 +4813,7 @@
   "category": "juggler",
   "feature": "juggler-mouse-event-id",
   "prefs": [],
-  "added": 10,
+  "added": 4,
   "removed": 0,
   "hunks": 2,
   "inline_logic_lines": 2,
@@ -4993,9 +4836,9 @@
   "prefs": [
    "zoom.stealth.widget.occlusion_tracking.enabled"
   ],
-  "added": 8,
+  "added": 4,
   "removed": 1,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 2,
   "hookable": "already-hook",
   "anchor": "nsWindow::OnVisibilityNotifyEvent (the occlusion hunk; another adds the StaticPrefs include) and the head of nsWindow::MakeFullScreen (one line of fingerprint/screen-window/geometry: fullscreen without a window manager, nsWindow::StealthMakeFullScreenWithoutWM in widget/gtk/StealthFullscreenGtk.cpp)",
@@ -5109,7 +4952,7 @@
   "prefs": [
    "zoom.stealth.focus.ignore_os_deactivation"
   ],
-  "added": 30,
+  "added": 12,
   "removed": 0,
   "hunks": 3,
   "inline_logic_lines": 6,
@@ -5134,9 +4977,9 @@
   "category": "stillborn",
   "feature": "updater-refuses",
   "prefs": [],
-  "added": 0,
+  "added": 6,
   "removed": 0,
-  "hunks": 0,
+  "hunks": 3,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "module imports; CheckerService #updateCheck after #parseUpdates; UpdateService #downloadUpdate head",
@@ -5152,9 +4995,9 @@
   "category": "stillborn",
   "feature": "updater-refuses",
   "prefs": [],
-  "added": 0,
+  "added": 5,
   "removed": 0,
-  "hunks": 0,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "module imports; BackgroundUpdate._registerBackgroundUpdateTask head",
@@ -5170,9 +5013,9 @@
   "category": "build",
   "feature": "updater-refuses",
   "prefs": [],
-  "added": 0,
+  "added": 1,
   "removed": 0,
-  "hunks": 0,
+  "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "after EXTRA_JS_MODULES list",
@@ -5195,9 +5038,9 @@
    "app.update.checkInstallTime.days",
    "app.update.badgeWaitTime"
   ],
-  "added": 0,
-  "removed": 0,
-  "hunks": 0,
+  "added": 6,
+  "removed": 6,
+  "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "app.update.interval, promptWaitTime, url.manual, url.details, checkInstallTime.days, badgeWaitTime lines",
@@ -5241,7 +5084,7 @@
   ],
   "added": 7,
   "removed": 0,
-  "hunks": 3,
+  "hunks": 2,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "includes; Instance::RequestAdapter before and after wgpu_client_request_adapter",
@@ -5315,16 +5158,16 @@
   "prefs": [
    "dom.webgpu.external-texture.enabled"
   ],
-  "added": 1,
-  "removed": 1,
-  "hunks": 1,
+  "added": 4,
+  "removed": 4,
+  "hunks": 4,
   "inline_logic_lines": 0,
   "hookable": "already-hook",
   "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
   "evidence": [
    "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
   ],
-  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
+  "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else. Also (the hook of network/proxy, which owns only the test: a file has one owner): network.proxy.type defaults to 0 (direct) on Mozilla's own line, so the engine never creates the object that reads the host's proxy settings (STEALTH-HOOK(network/proxy)); test juggler/tests/system_proxy_is_off_by_default.test.mjs."
  },
  {
   "file": "Cargo.lock",
@@ -5517,7 +5360,7 @@
   "prefs": [],
   "added": 90,
   "removed": 3,
-  "hunks": 5,
+  "hunks": 3,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -5535,7 +5378,7 @@
   "prefs": [],
   "added": 2067,
   "removed": 119,
-  "hunks": 27,
+  "hunks": 9,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -5625,7 +5468,7 @@
   "prefs": [],
   "added": 51,
   "removed": 18,
-  "hunks": 8,
+  "hunks": 7,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -5643,7 +5486,7 @@
   "prefs": [],
   "added": 397,
   "removed": 145,
-  "hunks": 50,
+  "hunks": 24,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -5661,7 +5504,7 @@
   "prefs": [],
   "added": 2,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 1,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -5679,7 +5522,7 @@
   "prefs": [],
   "added": 63,
   "removed": 59,
-  "hunks": 4,
+  "hunks": 3,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -5841,7 +5684,7 @@
   "prefs": [],
   "added": 141,
   "removed": 43,
-  "hunks": 14,
+  "hunks": 10,
   "inline_logic_lines": 0,
   "hookable": "hard",
   "anchor": "upstream wgpu code (see BACKPORT.json)",
@@ -6274,9 +6117,9 @@
    "zoom.stealth.webgl.extensions",
    "zoom.stealth.webgl2.extensions"
   ],
-  "added": 3,
+  "added": 5,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
   "anchor": "WebGLContext::IsExtensionSupported, case WEBGL_provoking_vertex (ahead of Mozilla's per-platform policy)",
@@ -6419,7 +6262,7 @@
   "prefs": [],
   "added": 11,
   "removed": 14,
-  "hunks": 4,
+  "hunks": 1,
   "inline_logic_lines": 11,
   "hookable": "movable",
   "anchor": "ResourceCache::clear_namespace (the font resources are cleared through SharedFontResources::clear_namespace)",
@@ -6458,7 +6301,7 @@
   "feature": "juggler-frame-crash-context",
   "prefs": [],
   "added": 5,
-  "removed": 0,
+  "removed": 1,
   "hunks": 2,
   "inline_logic_lines": 1,
   "hookable": "already-hook",
@@ -6472,6 +6315,1603 @@
   "verifier": {
    "changed": [],
    "why": "Checked category, feature, prefs, anchor, evidence and notes against the diff; no correction needed."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 17,
+  "removed": 42,
+  "hunks": 5,
+  "inline_logic_lines": 9,
+  "hookable": "movable",
+  "anchor": "WebrtcTCPSocket::DoProxyConfigLookup and OpenWithHttpProxy (the channel of the proxy lookup and of the HTTP tunnel)",
+  "evidence": [
+   "+#include \"mozilla/net/StealthDocumentChannel.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+  // The channel of the lookup carries the load info of the document, as the one of the HTTP proxy tunnel does",
+   "+  // (OpenWithHttpProxy): the proxy filters then see the context of the page, not the system principal's (context 0)."
+  ],
+  "notes": "The channel of the proxy lookup of a PeerConnection's TCP socket (TURN over TCP) is made by StealthNewChannelOfLoadInfo, with the load info of the document: the proxy filters answer for the context of the page, not for the system principal's. The HTTP tunnel's own channel is made by the same function (the code it had is gone from here).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nr_socket_proxy_config.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 8,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "NrSocketProxyConfig: UdpProxy()",
+  "evidence": [
+   "+#include \"mozilla/RefPtr.h\"",
+   "+",
+   "+class PcUdpProxy;"
+  ],
+  "notes": "Declares the accessor of the proxy the UDP of this PeerConnection leaves by (PcUdpProxy), asked when the config is made.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nr_socket_proxy_config.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 14,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 9,
+  "hookable": "movable",
+  "anchor": "NrSocketProxyConfig constructor and UdpProxy()",
+  "evidence": [
+   "+#include \"StealthPcUdpProxy.h\"",
+   "+#include \"nsXULAppAPI.h\"",
+   "+  RefPtr<net::PcUdpProxy> mUdpProxy;"
+  ],
+  "notes": "Starts the lookup of the document's proxy (PcUdpProxy::Lookup) where the sockets of the gather are made (socket process, parent).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nr_socket_prsock.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 5,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "class NrSocket: constructor and mProxyConfig",
+  "evidence": [
+   "+  explicit NrSocket(const std::shared_ptr<NrSocketProxyConfig>& aProxyConfig = nullptr)  // STEALTH-HOOK(network/proxy-udp)",
+   "+      : fd_(nullptr), mProxyConfig(aProxyConfig) {}  // STEALTH-HOOK(network/proxy-udp)",
+   "+  std::shared_ptr<NrSocketProxyConfig> mProxyConfig;  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "A NrSocket takes the proxy config of its PeerConnection, so create() can put the proxy's layer on it. Also (feature webrtc-declared-network): the port the socket registered as one of ours.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsIUDPSocket.idl",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "nsIUDPSocket: setSocksProxy",
+  "evidence": [
+   "+interface nsIProxyInfo;",
+   "+    /**",
+   "+     * The SOCKS5 proxy the datagrams of this socket go by (UDP ASSOCIATE), as the connection that owns it learned it:"
+  ],
+  "notes": "Declares the setter of the SOCKS5 proxy a socket goes by (an HTTP/3 connection through a proxy), called before initWithAddress.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsProxyInfo.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "nsProxyInfo: IsSOCKS5",
+  "evidence": [
+   "+  bool IsSOCKS5();  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Declares the SOCKS5 test the HTTP/3 gates use.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsProxyInfo.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "nsProxyInfo::IsSOCKS5",
+  "evidence": [
+   "+// STEALTH-HOOK(network/proxy-udp)",
+   "+bool nsProxyInfo::IsSOCKS5() {",
+   "+  return mType == kProxyType_SOCKS || mType == kProxyType_SOCKS5;"
+  ],
+  "notes": "A SOCKS5 proxy (type socks or socks5): the only one that carries UDP.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsUDPSocket.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "class nsUDPSocket: mSocksProxy",
+  "evidence": [
+   "+  nsCOMPtr<nsIProxyInfo> mSocksProxy;  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Holds the proxy info set by SetSocksProxy.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/ProxyConfigLookup.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 11,
+  "removed": 2,
+  "hunks": 3,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "ProxyConfigLookup::Create, mLoadInfo",
+  "evidence": [
+   "+#include \"mozilla/Maybe.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+   "+#include \"mozilla/net/NeckoChannelParams.h\"  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "The lookup can be made for a document: an optional LoadInfoArgs. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/ProxyConfigLookup.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 21,
+  "removed": 6,
+  "hunks": 3,
+  "inline_logic_lines": 10,
+  "hookable": "movable",
+  "anchor": "ProxyConfigLookup::Create, constructor, DoProxyResolve",
+  "evidence": [
+   "+#include \"mozilla/net/StealthDocumentChannel.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+    nsICancelable** aLookupCancellable,"
+  ],
+  "notes": "The lookup uses a channel built from the document's load info when it has one (StealthNewChannelOfLoadInfo), so the proxy filters see its context. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/ProxyConfigLookupChild.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 4,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "ProxyConfigLookupChild::Create",
+  "evidence": [
+   "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+   "+                     std::function<void(nsIProxyInfo*, nsresult)>&& aCallback,",
+   "+                     const Maybe<LoadInfoArgs>& aLoadInfo = Nothing(),  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Carries the optional LoadInfoArgs to the parent. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/ProxyConfigLookupChild.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 6,
+  "removed": 2,
+  "hunks": 2,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "ProxyConfigLookupChild::Create",
+  "evidence": [
+   "+    std::function<void(nsIProxyInfo*, nsresult)>&& aCallback,",
+   "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+    const Maybe<OriginAttributes>& aOriginAttributes) {  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Sends the optional LoadInfoArgs with the PProxyConfigLookup constructor. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/ProxyConfigLookupParent.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 6,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "ProxyConfigLookupParent constructor, mLoadInfo",
+  "evidence": [
+   "+#include \"mozilla/OriginAttributes.h\"  // STEALTH-HOOK(network/doh)",
+   "+                          bool aIsTRRServiceChannel,",
+   "+                          const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Holds the optional LoadInfoArgs of the lookup. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/ProxyConfigLookupParent.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 10,
+  "removed": 5,
+  "hunks": 2,
+  "inline_logic_lines": 4,
+  "hookable": "movable",
+  "anchor": "ProxyConfigLookupParent constructor and DoProxyLookup",
+  "evidence": [
+   "+ProxyConfigLookupParent::ProxyConfigLookupParent(",
+   "+    nsIURI* aURI, uint32_t aProxyResolveFlags, bool aIsTRRServiceChannel,",
+   "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Gives the LoadInfoArgs on to ProxyConfigLookup::Create. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/SocketProcessParent.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 6,
+  "removed": 3,
+  "hunks": 1,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
+  "evidence": [
+   "+      const bool& aIsTRRServiceChannel,",
+   "+      const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+      const Maybe<OriginAttributes>& aOriginAttributes);  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Declarations follow the new constructor arguments. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/SocketProcessParent.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 9,
+  "removed": 3,
+  "hunks": 1,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "AllocPProxyConfigLookupParent, RecvPProxyConfigLookupConstructor",
+  "evidence": [
+   "+    const bool& aIsTRRServiceChannel,",
+   "+    const Maybe<LoadInfoArgs>& aLoadInfo,  // STEALTH-HOOK(network/proxy-udp)",
+   "+    const Maybe<OriginAttributes>& aOriginAttributes) {  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Gives the optional LoadInfoArgs to the lookup actor. Also (feature doh-trr-context, network/doh): the lookup carries the origin attributes of the DoH context next to the load info, and the stand-in channel presents them to the proxy filters.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/moz.build",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 4,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "EXPORTS.mozilla.net and UNIFIED_SOURCES lists",
+  "evidence": [
+   "+    \"StealthDocumentChannel.h\",  # STEALTH-HOOK(network/proxy-udp)",
+   "+    \"StealthTRRContext.h\",  # STEALTH-HOOK(network/doh)",
+   "+    \"StealthDocumentChannel.cpp\",  # STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Registers our StealthDocumentChannel header and source. Also registers StealthTRRContext (network/doh).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/HttpConnectionUDP.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "HttpConnectionUDP::InitCommon",
+  "evidence": [
+   "+  // STEALTH-HOOK(network/proxy-udp)",
+   "+  if (!isInTunnel && mConnInfo && mConnInfo->ProxyInfo() && mConnInfo->ProxyInfo()->IsSOCKS5()) {",
+   "+    NS_ENSURE_SUCCESS(mSocket->SetSocksProxy(mConnInfo->ProxyInfo()), NS_ERROR_FAILURE);"
+  ],
+  "notes": "Tells the socket of an HTTP/3 connection the SOCKS5 proxy of the connection.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/socket/nsSOCKSIOLayer.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 4,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "nsSOCKSIOLayerAddToSocket after Init",
+  "evidence": [
+   "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it). Also (network/ipv6-literal): the connect to the proxy goes through StealthIPv6Connect (one line replaced).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/build/moz.build",
+  "category": "build",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "EXPORTS.transport list",
+  "evidence": [
+   "+    \"../nr_stealth_network.h\",  # STEALTH-HOOK(fingerprint/webrtc/declared-network)"
+  ],
+  "notes": "Exports our header nr_stealth_network.h next to the other transport headers.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/moz.build",
+  "category": "build",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "after the FUZZING_INTERFACES block",
+  "evidence": [
+   "+TEST_DIRS += [\"test/gtest\"]  # STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+"
+  ],
+  "notes": "Builds the gtests of the transport directory (test/gtest), where the declared-network tests live.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 6,
+  "removed": 15,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_network.h; StunAddrsRequestParent::SendStunAddrs (the start of the mDNS responder)",
+  "evidence": [
+   "+#include \"transport/nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the responder joins the mDNS group on the loopback and",
+   "+  // speaks through it, not on the adapters of the list: the list is the declaration, whose address the OS does"
+  ],
+  "notes": "The parent's mDNS responder joins the group on the loopback (nr_stealth_mdns_interfaces) instead of on the host's adapters: the declared address is not the host's, a join on it fails, and the responder would never hear its own query. The loop over the adapters of the list is gone.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/mdns_service/src/lib.rs",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 11,
+  "removed": 2,
+  "hunks": 1,
+  "inline_logic_lines": 7,
+  "hookable": "movable",
+  "anchor": "MDNSService::new, after the join_multicast_v4 loop",
+  "evidence": [
+   "+        for addr in &addrs {",
+   "+            if let Err(err) = socket.join_multicast_v4(&mdns_addr, addr) {",
+   "+        // STEALTH-HOOK(fingerprint/webrtc/declared-network): the parent gives the loopback"
+  ],
+  "notes": "The responder sets the multicast interface to the address it joined on, or a query would leave on the default multicast route and never come back to its socket (on Linux a join on the loopback hears nothing without it). The loop iterates by reference so the first address stays available.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nricectx.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 9,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_network.h; NrIceCtx::TakeHostPort; member host_ports_",
+  "evidence": [
+   "+#include \"nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the next host UDP port of this connection (R3,",
+   "+  // nr_stealth_network.h StealthHostPorts)."
+  ],
+  "notes": "Each ICE context owns the counter of its host UDP ports (StealthHostPorts): consecutive from a random base in the dynamic range, as Windows hands them out.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nricectx.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 22,
+  "removed": 2,
+  "hunks": 3,
+  "inline_logic_lines": 15,
+  "hookable": "movable",
+  "anchor": "include of RandomNum.h; NrIceCtx constructor (host_ports_); nr_socket_local_create",
+  "evidence": [
+   "+#include \"mozilla/RandomNum.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+      proxy_config_(nullptr),",
+   "+      host_ports_(mozilla::RandomUint64OrDie()) {}  // STEALTH-HOOK(fingerprint/webrtc/declared-network)"
+  ],
+  "notes": "A host UDP socket of a declared address takes the next port of its connection; a busy port (R_ALREADY from NrSocket::create) is skipped, as the kernel skips it. Loopback and wildcard addresses go the plain way. The loop of 64 tries is the one piece of logic here; it could move behind one call.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/test/gtest_utils.h",
+  "category": "other",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 5,
+  "hookable": "movable",
+  "anchor": "MtransportTest::SetUp, before the env vars of the tests",
+  "evidence": [
+   "+    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the interfaces are declared, never read from the host",
+   "+    // (nr_stealth_network.h). These tests gather on the declared adapter, as the browser does.",
+   "+    std::string declared;"
+  ],
+  "notes": "The mtransport unit tests gather on a declared adapter (STEALTHFOX_WEBRTC_NETWORK is set when the environment has none), as the browser does.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/moz.yaml",
+  "category": "build",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 6,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "vendoring: exclude list",
+  "evidence": [
+   "-    - src/stun/addrs-bsd.c",
+   "-    - src/stun/addrs-bsd.h",
+   "-    - src/stun/addrs-netlink.c"
+  ],
+  "notes": "The OS enumerators of the interfaces (addrs-bsd, addrs-netlink, addrs-win32) are no longer in the files we keep.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/dns/TRR.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 4,
+  "removed": 1,
+  "hunks": 3,
+  "inline_logic_lines": 5,
+  "hookable": "movable",
+  "anchor": "include of StealthTRRContext.h; TRR::SendHTTPRequest (the channel's load info; the cached connection info)",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  // STEALTH-HOOK(network/doh): the request leaves by the proxy of the context",
+   "+  // of the lookup that caused it."
+  ],
+  "notes": "The DoH request leaves by the proxy of the context of the lookup that caused it: the channel's load info carries that context, and the cached default connection info (network.trr.async_connInfo, off in a release) is not used for another context.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/TRRServiceChannel.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 9,
+  "removed": 4,
+  "hunks": 6,
+  "inline_logic_lines": 10,
+  "hookable": "movable",
+  "anchor": "include of StealthTRRContext.h; MaybeResolveProxyAndBeginConnect; ResolveProxy; OnProxyAvailable; BeginConnect (the connection info)",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)",
+   "+      NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The proxy lookup of a DoH request is made for the context of its load info, and fails closed: a lookup that fails or cannot start ends the request (StealthTRRProxyFailure) instead of going DIRECT, which would send the name from the host's own address. The connection info of the request carries the context's origin attributes, so a tunnel of one browser context (its proxy credentials) is never reused by another.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/Http3ConnectUDPStream.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 6,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "Http3ConnectUDPStream::SetSocksProxy",
+  "evidence": [
+   "+// STEALTH-HOOK(network/proxy-udp): nsIUDPSocket.setSocksProxy is for the sockets that leave by a SOCKS5 proxy; this stream",
+   "+// goes by its own HTTP proxy (CONNECT-UDP).",
+   "+NS_IMETHODIMP Http3ConnectUDPStream::SetSocksProxy(nsIProxyInfo* aProxyInfo) {"
+  ],
+  "notes": "nsIUDPSocket.setSocksProxy is for the sockets that leave by a SOCKS5 proxy; the CONNECT-UDP stream goes by its own HTTP proxy, so it answers not implemented.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 110,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 13,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 65,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */",
+   "-/* vim: set ts=2 et sw=2 tw=80: */",
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 282,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/*",
+   "-Copyright (c) 2011, The WebRTC project authors. All rights reserved.",
+   "-"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 45,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/*",
+   "-Copyright (c) 2011, The WebRTC project authors. All rights reserved.",
+   "-"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 139,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 0,
+  "removed": 13,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "whole file (deleted)",
+  "evidence": [
+   "-/* This Source Code Form is subject to the terms of the Mozilla Public",
+   "- * License, v. 2.0. If a copy of the MPL was not distributed with this file,",
+   "- * You can obtain one at http://mozilla.org/MPL/2.0/. */"
+  ],
+  "notes": "The OS enumerator of the host's interfaces is not built and not in the tree: the interfaces are declared, never read from the host.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "include of StealthParentalControls.h; the nsParentalControlsService constructor",
+  "evidence": [
+   "+#include \"StealthParentalControls.h\"  // STEALTH-HOOK(network/doh)",
+   "+  // STEALTH-HOOK(network/doh): declared, the OS is never read.",
+   "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
+  ],
+  "notes": "The constructor takes the declared value (off) and returns before its first OS call, so the Windows parental controls provider is never asked; every reader (nsHttpHandler, the DoH heuristics, downloads, CanonicalBrowsingContext) goes through the service and sees the same value.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "include of StealthParentalControls.h; the nsParentalControlsService constructor",
+  "evidence": [
+   "+#include \"StealthParentalControls.h\"  // STEALTH-HOOK(network/doh)",
+   "+  // STEALTH-HOOK(network/doh): declared, the OS is never read.",
+   "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
+  ],
+  "notes": "The constructor takes the declared value (off), as the other implementations.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/nsHttpChannel.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 5,
+  "removed": 1,
+  "hunks": 4,
+  "inline_logic_lines": 12,
+  "hookable": "movable",
+  "anchor": "include of StealthTRRContext.h; nsHttpChannel::MaybeResolveProxyAndBeginConnect; nsHttpChannel::OnProxyAvailable",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  nsresult proxyRv = NS_OK;  // STEALTH-HOOK(network/doh)",
+   "+    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "A DoH request that runs as an nsHttpChannel (the main thread) fails closed like the TRRServiceChannel: when its proxy lookup fails or cannot start, the channel ends with StealthTRRProxyFailure instead of failing over to DIRECT (StealthFailClosedOnProxyFailure decides: a TRR channel, not cancelled, with a failed status). Other channels are untouched.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsIOService.cpp",
+  "category": "spoof",
+  "feature": "webrtc-declared-network",
+  "prefs": [],
+  "added": 3,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of nr_stealth_network.h; nsIOService::Init (first statement)",
+  "evidence": [
+   "+#  include \"transport/nr_stealth_network.h\"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)",
+   "+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): IPv6 is one fact, the declared network's (nr_stealth_network.h)."
+  ],
+  "notes": "IPv6 is one fact, the declared network's: the parent process applies the declared IP family (StealthApplyDeclaredIPFamilyFromEnvironment) before the service reads its own prefs, so the DNS, the sockets and the ICE agree.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/Http3Session.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 3,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "Http3Session::Init (mUseNSPRForIO)",
+  "evidence": [
+   "+  // STEALTH-HOOK(network/proxy-udp): neqo's own I/O writes on the OS handle and never reaches the SOCKS UDP layer on the socket.",
+   "+  const bool socksUdp = aConnInfo->ProxyInfo() && aConnInfo->ProxyInfo()->IsSOCKS5();"
+  ],
+  "notes": "A connection through a SOCKS5 proxy does neqo's I/O through NSPR (mUseNSPRForIO), so its datagrams go through the SOCKS UDP layer on the socket and never on the OS handle. One const bool and one operand of an existing condition.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsSocketTransport2.cpp",
+  "category": "other",
+  "feature": "ipv6-literal-connect",
+  "prefs": [],
+  "added": 2,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "include of StealthIPv6Literal.h; nsSocketTransport::InitiateSocket (the connect)",
+  "evidence": [
+   "+#include \"StealthIPv6Literal.h\"  // STEALTH-HOOK(network/ipv6-literal)",
+   "+  // Behind a SOCKS proxy mNetAddr is the destination, which the proxy reaches.",
+   "-  status = PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT);"
+  ],
+  "notes": "Every direct TCP connection passes InitiateSocket: PR_Connect becomes StealthIPv6Connect, which, with IPv6 declared off, fails a routable IPv6 destination like a host with no IPv6 route (network unreachable, nothing sent). A destination behind a SOCKS proxy is left alone: the proxy reaches it, not this host. One line of Mozilla replaced.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/geolocation/GeolocationSystemWin.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 5,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 3,
+  "hookable": "already-hook",
+  "anchor": "GeolocationSystemWin: GetGeolocationPermissionBehavior",
+  "evidence": [
+   "+#include \"mozilla/StealthGeolocation.h\"  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)",
+   "+  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider): the OS location switch is declared on; the OS is not asked.",
+   "+  if (StealthSystemLocationDeclaredOn()) {"
+  ],
+  "notes": "The OS location switch is declared on and never read (StealthSystemLocationDeclaredOn): an early return before the AppCapability read.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/jsapi/MediaTransportHandler.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "MediaTransportImplNicer::SetProxyConfig",
+  "evidence": [
+   "+#include \"transport/StealthIceResolverContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  mDNSResolver->SetOriginAttributes(StealthIceResolverAttributes(aProxyConfig));  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The name of an ICE server is resolved in the context of its PeerConnection: the resolver gets the origin attributes our file derives from the proxy config. Include and one call.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nriceresolver.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 1,
+  "removed": 1,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "NrIceResolver::resolve",
+  "evidence": [
+   "+  OriginAttributes attrs = mAttrs;  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The lookup starts from the origin attributes of the resolver (the DoH context of its PeerConnection) instead of default ones. One line replaced.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/media/webrtc/transport/nriceresolver.h",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "NrIceResolver class members",
+  "evidence": [
+   "+#include \"StealthIceResolverContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  void SetOriginAttributes(const OriginAttributes& aAttrs) { mAttrs = aAttrs; }  // STEALTH-HOOK(network/doh)",
+   "+  OriginAttributes mAttrs;  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The origin attributes of the resolver: one member, its setter and getter (one-line accessors) and the include of the header of our file.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/permission/PermissionObserver.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 5,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 3,
+  "hookable": "already-hook",
+  "anchor": "PermissionObserver: the geolocation permission monitor",
+  "evidence": [
+   "+#include \"mozilla/StealthGeolocation.h\"  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)",
+   "+  if (aName == PermissionName::Geolocation &&",
+   "+      StealthSystemLocationDeclaredOn()) {  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider): declared on, never changes"
+  ],
+  "notes": "The permission monitor of the OS is never started for geolocation: a condition and an include; the rule lives in StealthGeolocation.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/PWindowsUtils.ipdl",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 7,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "PWindowsUtils protocol",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: its messages leave the protocol.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/WindowsUtilsChild.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 1,
+  "removed": 24,
+  "hunks": 1,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "WindowsUtilsChild",
+  "evidence": [
+   "+namespace mozilla::dom {}  // namespace mozilla::dom"
+  ],
+  "notes": "The Windows location provider is out of the tree: its child actor factory is removed.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/WindowsUtilsChild.h",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 4,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "WindowsUtilsChild",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: its child actor factory is removed.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/PWindowsLocation.ipdl",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 36,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLegacyLocationChild.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 289,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLegacyLocationChild.h",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 42,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLocationChild.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 25,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLocationChild.h",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 33,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLocationParent.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 35,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLocationParent.h",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 50,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLocationProvider.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 274,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsLocationProvider.h",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 69,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsRuntimeLocationChild.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 336,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/WindowsRuntimeLocationChild.h",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 54,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/location/moz.build",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 33,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "(whole file deleted)",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: Mozilla's file is deleted, nothing reads the host location.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/system/windows/moz.build",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 0,
+  "removed": 6,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "moz.build",
+  "evidence": [
+   "(file deleted)"
+  ],
+  "notes": "The Windows location provider is out of the tree: the sub-directory and the IPDL file are no longer built.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/base/nsIProxyInfo.idl",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 6,
+  "hookable": "movable",
+  "anchor": "nsIProxyInfo flags",
+  "evidence": [
+   "+",
+   "+  /**",
+   "+   * STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "Flag CARRIES_COHERENT_UDP: only a SOCKS5 proxy the session measured coherent carries UDP. The value is in a free slot, tested in juggler.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/dns/moz.build",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "moz.build after the closing bracket",
+  "evidence": [
+   "+UNIFIED_SOURCES += [\"StealthSessionResolver.cpp\"]  # STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Compiles StealthSessionResolver.cpp.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/dns/nsHostResolver.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "nsHostResolver",
+  "evidence": [
+   "+#include \"StealthSessionResolver.h\"  // STEALTH-HOOK(network/doh)",
+   "+  // STEALTH-HOOK(network/doh): a \"TRR disabled\" request follows the session.",
+   "+  flags = StealthFlagsFollowSession(aHost, flags);"
+  ],
+  "notes": "One-line hook: the session resolver decides the request.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/SocketProcessChild.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 8,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 1,
+  "hookable": "already-hook",
+  "anchor": "SocketProcessChild::RecvStealthWarmSocksUdp (after RecvNotifyObserver)",
+  "evidence": [
+   "+#include \"nsSOCKSUDPIOLayer.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+mozilla::ipc::IPCResult SocketProcessChild::RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort,",
+   "+  nsSOCKSUDPIOLayerWarm(aHost, aPort, aUser, aPass);"
+  ],
+  "notes": "Receiver of PSocketProcess::StealthWarmSocksUdp: the pool of UDP associations is warmed in the socket process, where the sockets of the PeerConnections are made. The body is one call.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/ipc/SocketProcessChild.h",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 4,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "SocketProcessChild (before RecvGetSocketData)",
+  "evidence": [
+   "+  // STEALTH-HOOK(network/proxy-udp)",
+   "+  mozilla::ipc::IPCResult RecvStealthWarmSocksUdp(const nsACString& aHost, const int32_t& aPort, const nsACString& aUser,"
+  ],
+  "notes": "Declaration of the receiver of PSocketProcess::StealthWarmSocksUdp.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/xre/nsAppRunner.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [
+   "network.process.enabled",
+   "media.peerconnection.mtransport_process"
+  ],
+  "added": 4,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "XREMain::XRE_mainRun after InitializeUserPrefs",
+  "evidence": [
+   "+    // STEALTH-HOOK(network/proxy-udp): the SOCKS5 UDP layer lives in the socket process; locked, no caller moves the ICE out."
+  ],
+  "notes": "Locks the two prefs that decide where the ICE of a PeerConnection runs to the retail value (socket process, ICE in it): the SOCKS5 UDP layer is attached only to the sockets of that process, and a locked pref reads its default whatever user.js, prefs.js or a caller wrote.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/geolocation/GeolocationService.cpp",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 6,
+  "removed": 10,
+  "hunks": 4,
+  "inline_logic_lines": 3,
+  "hookable": "movable",
+  "anchor": "GeolocationService::Init",
+  "evidence": [
+   "+#include \"mozilla/StealthGeolocation.h\"  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider)",
+   "+  // STEALTH-HOOK(fingerprint/geolocation/no-host-provider): the provider is the network one, never a host one.",
+   "+  if (StealthSelectGeolocationProvider(mProvider)) {"
+  ],
+  "notes": "No host location provider is created: an early return with a call to our file; the Windows block stays intact beside it.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/geolocation/moz.build",
+  "category": "spoof",
+  "feature": "geolocation-no-host-provider",
+  "prefs": [
+   "geo.provider.network.url",
+   "geo.provider.network.scan"
+  ],
+  "added": 4,
+  "removed": 4,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "moz.build after the closing bracket",
+  "evidence": [
+   "+EXPORTS.mozilla += [\"StealthGeolocation.h\"]  # STEALTH-HOOK(fingerprint/geolocation/no-host-provider)",
+   "+UNIFIED_SOURCES += [\"StealthGeolocation.cpp\"]  # STEALTH-HOOK(fingerprint/geolocation/no-host-provider)",
+   "+TEST_DIRS += [\"test/gtest\"]  # STEALTH-HOOK(fingerprint/geolocation/no-host-provider)"
+  ],
+  "notes": "Compiles StealthGeolocation.cpp and registers the gtest directory.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
   }
  }
 ]

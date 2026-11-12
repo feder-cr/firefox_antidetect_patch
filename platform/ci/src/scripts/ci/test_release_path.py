@@ -39,10 +39,11 @@ import linker_shim  # noqa: E402
 
 ROOT = HERE.parent.parent
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
-# The filter of run 41402916724, from its log.
+# The filter of run 41402916724, from its log, with the suites added to the default since (StealthSessionUdpProxy, StealthDeclaredNetwork, StealthSocksUdpPool, TestStealthTRRContext, TestStealthSocksCredentials, TestStealthSessionResolver, StealthIceResolverContext, StealthUdpProxyBirth).
 GREEN_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
                 "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:"
-                "StealthFrameCrash.*:StealthJugglerEventId.*")
+                "StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:"
+                "StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.
 CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure", "browser/moz.configure", "build/moz.configure/*.configure")
@@ -85,7 +86,8 @@ def group_gate(doc) -> list:
     for job in GTEST_JOBS:
         for result in ("failure", "cancelled"):
             got = outcome(jobs, {job: result})
-            out.append(("gate: %s %s stops the gate and the publish" % (job, result), got["gate"] == "skipped" and got["publish"] == "skipped"))
+            out.append(("gate: %s %s stops the publish and not the gate (two verdicts, each of its own)" % (job, result),
+                        got["gate"] == "success" and got["publish"] == "skipped"))
     off = outcome(jobs, {}, gtests="false")
     out.append(("gate: gtests=false stops neither", off["gate"] == "success" and off["publish"] == "success"))
     out.append(("gate: gtests=false runs no gtest step, and the jobs are there for the gate to need",
@@ -98,9 +100,14 @@ def group_gate(doc) -> list:
                 broken["gtest-linux"] == "skipped" and broken["gate"] == "skipped" and broken["publish"] == "skipped"))
     red_gate = outcome(jobs, {"gate": "failure"})
     out.append(("gate: a red gate stops the publish", red_gate["publish"] == "skipped"))
-    out.append(("gate: the graph: publish needs gate, gate needs build and both gtest jobs, each gtest job needs the plan and the build",
-                "gate" in jobs["publish"]["needs"] and "build" in jobs["gate"]["needs"]
-                and all(j in jobs["gate"]["needs"] for j in GTEST_JOBS) and all(jobs[j]["needs"] == ["plan", "build"] for j in GTEST_JOBS)))
+    out.append(("gate: the graph: the gate needs the build and no gtest job, the publish needs the gate and both gtest jobs, each gtest job "
+                "needs the plan and the build",
+                "build" in jobs["gate"]["needs"] and not any(j in jobs["gate"]["needs"] for j in GTEST_JOBS)
+                and "gate" in jobs["publish"]["needs"] and all(j in jobs["publish"]["needs"] for j in GTEST_JOBS)
+                and all(jobs[j]["needs"] == ["plan", "build"] for j in GTEST_JOBS)))
+    red_gate_green_gtests = outcome(jobs, {"gate": "failure"})
+    out.append(("gate: a red gate leaves the gtests as they are (two verdicts: the run is red if either is)",
+                red_gate_green_gtests["gtest-linux"] == "success" and red_gate_green_gtests["gtest-cross"] == "success"))
     out.append(("gate: neither has an `if` that would run it past what it needs",
                 "if" not in jobs["gate"] and not e.STATUS.search(str(jobs["publish"].get("if", "")))))
     candidate = outcome(jobs, {}, kind="candidate")
@@ -140,6 +147,17 @@ def group_gtest(doc) -> list:
     out = []
     inputs = doc[True]["workflow_dispatch"]["inputs"]
     out.append(("gtests: the default filter is what the green candidate ran", inputs["gtest_filter"]["default"] == GREEN_FILTER))
+    # Every suite of a gtest of ours in the UDP line is in the default filter (run 43203723323: StealthNrSocketBirth and
+    # StealthPcUdpProxyKinds were built and NEVER run, because the filter is a list written by hand).
+    import re as _re
+    suites = set()
+    for folder in ("dom/media/webrtc", "netwerk"):
+        for path in (ROOT / folder).rglob("Test*Stealth*.cpp"):
+            suites |= set(_re.findall(r"^TEST(?:_F|_P)?\(\s*(\w+)\s*,", path.read_text(encoding="utf-8", errors="replace"), _re.M))
+    default = inputs["gtest_filter"]["default"].split(":")
+    missing = sorted(x for x in suites if x + ".*" not in default)
+    out.append(("gtests: every suite of a gtest of ours under netwerk/ and dom/media/webrtc/ is in the default filter (%s)" % ", ".join(missing),
+                len(suites) >= 8 and not missing))
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     import release_plan
     out.append(("gtests: the plan's default filter (release_plan.py) is the workflow's",
@@ -251,6 +269,26 @@ def group_gtest(doc) -> list:
                 os.environ.update(old)
         code = go_kept()
         out.append(("gtests: each suite's report stays where it was asked to", code == 0 and sorted(p.name for p in kept.iterdir()) == ["SuiteA.json", "SuiteB_x.json"]))
+        # StealthSessionUdpProxy runs with the log of the SOCKS UDP layer and of the resolver, one file per process, kept in
+        # the reports; the other suites run without MOZ_LOG (a test red on one platform whose cause the sources do not say
+        # needs what the process said).
+        logged_kept = tree / "logged-kept"
+        record.write_text("")
+        old = dict(os.environ)
+        os.environ.update(FAKE_SUITES="StealthSessionUdpProxy SuiteB", FAKE_FAIL="")
+        try:
+            logged_code = gtest_run.run(root, "*", reports=logged_kept, out=lambda _: None)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        logged_calls = {c["env"]["GTEST_FILTER"].split(".")[0]: c["env"] for c in (json.loads(l) for l in record.read_text().splitlines())}
+        udp = logged_calls.get("StealthSessionUdpProxy", {})
+        out.append(("gtests: StealthSessionUdpProxy runs with MOZ_LOG sync,SOCKS-UDP:5,nsHostResolver:5, a file per process (%PID) in the reports",
+                    logged_code == 0 and udp.get("MOZ_LOG") == "sync,SOCKS-UDP:5,nsHostResolver:5"
+                    and udp.get("MOZ_LOG_FILE") == str(logged_kept / "StealthSessionUdpProxy.moz-log" / "moz-%PID.log")
+                    and (logged_kept / "StealthSessionUdpProxy.moz-log").is_dir()))
+        out.append(("gtests: the other suites run without MOZ_LOG", "MOZ_LOG" not in logged_calls.get("SuiteB", {"MOZ_LOG": 1})
+                    and "MOZ_LOG_FILE" not in logged_calls.get("SuiteB", {"MOZ_LOG_FILE": 1})))
         # A suite that dies on a signal: named, and its core read into the log and the reports
         # (candidate 42473169415 said "exited -11" and nothing else).
         cores, crash_kept = tree / "cores", tree / "crash-kept"
@@ -586,7 +624,13 @@ def group_beside(doc) -> list:
     out.append(("the build: in the background on the node, in the foreground on GitHub's runners, the input checked on both",
                 'if [ "${{ matrix.node }}" = "true" ]; then' in build and "background.py start build" in build and "background.py until-compiled build" in build
                 and "--verify --strict" in build and "--verify --strict" in end["run"] and "background.py wait build" in end["run"]
-                and build.count("./mach build --keep-going") == 2))
+                and build.count("./mach build --keep-going") == 3))
+    out.append(("gtests: the tier is built beside the browser's link (after the compiles, only when asked), waited for before the package, stopped on a cancel",
+                build.index("background.py until-compiled build") < build.index("background.py start gtest -- python3 scripts/ci phase gtest -- ./mach build --keep-going recurse_gtest")
+                and 'if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then' in build
+                and 'if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then python3 scripts/ci/background.py wait gtest; fi' in end["run"]
+                and "background.py stop build lavapipe gtest" in stop["run"] and at("Build - the link") < at("Package + validate")
+                and at("Package + validate") < at("The node - its gtest binaries, for a job on GitHub's runners")))
     words = shlex.split(start["run"].replace("\\\n", " "))
     out.append(("lavapipe: starts when the compiles are over and libxul links, at nice 19, as a phase whose log is kept",
                 at("Build") < at("WebGPU's Vulkan driver (linux-x86_64) - its inputs") < at("WebGPU's Vulkan driver (linux-x86_64) - built before") < at(start["name"])
@@ -789,6 +833,52 @@ def group_stage_package(doc) -> list:
     return out
 
 
+def group_gate_workflow(doc) -> list:
+    """gate.yml and the plan step, from run 43134774602: every gate job red for a cause of the scaffolding."""
+    import yaml
+    gate = yaml.safe_load((ROOT / ".github" / "workflows" / "gate.yml").read_text(encoding="utf-8"))
+    out = []
+    steps = gate["jobs"]["gate"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    core = next(i for i, n in enumerate(names) if n.startswith("The core under test"))
+    drive = next(i for i, n in enumerate(names) if n.startswith("DRIVE GATE"))
+    out.append(("gate: the core under test and the seal of the binary come before the drive gate (the engine waits for a decision "
+                "only the core's launch sends)", core < drive))
+    out.append(("gate: the drive gate runs under the seal of the binary and the switches of the core",
+                "INVISIBLE_SEAL_FILE" in steps[drive]["run"] and "INVISIBLE_CORE_AUTOFIX=off" in steps[drive]["run"]
+                and "INVISIBLE_CORE_PIN=allow" in steps[drive]["run"]))
+    out.append(("gate: the guards reuse that seal instead of making another",
+                "seal --binary" not in next(s for s in steps if s.get("name", "").startswith("Cloak"))["run"]))
+    verdict = next(s for s in gate["jobs"]["wrapper-e2e"]["steps"] if s.get("name", "").startswith("Verdict"))["run"]
+    out.append(("gate: a main without a list is declared WITH the path of the list (the judge refuses the flag alone)",
+                "MAIN=(--main-required wrapper-main/ci/required-suites.json --main-has-no-list)" in verdict
+                and "MAIN=(--main-has-no-list)" not in verdict))
+    plan_steps = {s.get("name", ""): s for s in doc["jobs"]["plan"]["steps"]}
+    last = plan_steps.get("The last published release", {})
+    out.append(("plan: a candidate is numbered from the tags (the last published firefox-N), and the plan step is given it",
+                "git ls-remote --tags" in last.get("run", "") and "refs/tags/firefox-*" in last.get("run", "")
+                and "--last-release" in plan_steps["Plan"]["run"]
+                and "steps.last_release.outputs.last_release" in plan_steps["Plan"]["env"]["LAST_RELEASE"]))
+    return out
+
+
+def group_sources(doc) -> list:
+    """Sources that broke a build leg before, read as text (the compiler is the judge, but only after a node and 2 minutes)."""
+    # run 43143685921, build-win: <in6addr.h> defines `_S6_un` as `u`, so `pr_s6_addr` (= _S6_un._S6_u8) names a member of
+    # PRIPv6Addr that does not exist once winsock is included; the bytes of an address are read through a cast.
+    out = []
+    for relative in (("netwerk", "socket", "nsSOCKSUDPIOLayer.cpp"),
+                     ("dom", "media", "webrtc", "transport", "test", "gtest", "TestStealthDeclaredNetwork.cpp")):
+        text = ROOT.joinpath(*relative).read_text(encoding="utf-8")
+        code = [line for line in text.splitlines() if not line.lstrip().startswith("//")]
+        out.append(("sources: %s reads the bytes of an IPv6 address without the pr_s6_addr macros (winsock redefines _S6_un)"
+                    % relative[-1], not any("pr_s6_addr" in line for line in code)))
+    layer = ROOT.joinpath("netwerk", "socket", "nsSOCKSUDPIOLayer.cpp").read_text(encoding="utf-8")
+    out.append(("sources: nsSOCKSUDPIOLayer.cpp does not include <ws2tcpip.h> (it pulls <in6addr.h> and its macros over the unified file)",
+                "#  include <ws2tcpip.h>" not in layer and "#include <ws2tcpip.h>" not in layer))
+    return out
+
+
 def cases() -> list:
     try:
         import yaml
@@ -797,7 +887,7 @@ def cases() -> list:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     out = []
     for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
-                        (group_stage_package, (doc,))):
+                        (group_stage_package, (doc,)), (group_gate_workflow, (doc,)), (group_sources, (doc,))):
         try:
             out += group(*args)
         except Exception as exc:

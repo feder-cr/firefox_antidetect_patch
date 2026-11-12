@@ -118,7 +118,8 @@ test('F5 the workers of a frame forgotten at a commit end with it; the detach of
   h._onNavigationCommitted({ frameId: 'm', navigationId: 'nav-9', url: 'http://a.test/' });
   assert.deepEqual(disposed, ['w1'], 'the worker of the forgotten frame is disposed at the commit');
   assert.equal(h._workers.size, 0, '_workers');
-  assert.deepEqual(events.map(e => e[0]), ['Page.navigationCommitted', 'Page.workerDestroyed']);
+  // the worker ends BEFORE the commit that takes its frame away (the stock client closes it first, too), not after
+  assert.deepEqual(events.map(e => e[0]), ['Page.workerDestroyed', 'Page.navigationCommitted']);
   // a frame the handler does not hold live: the detach still leaves nothing of it behind, and tells the client nothing
   h._onExecutionContextCreated({ executionContextId: 'c2', auxData: { frameId: 'g' } });
   h._onWorkerCreated({ workerId: 'w2', frameId: 'g', url: 'http://a.test/w.js' });
@@ -221,4 +222,28 @@ test('Sonnet #7 a frame the client was told of is not dropped by framedropped: i
   h._handleNetworkEvent('Network.requestWillBeSent', { requestId: 'r' }, 'k');
   h._onExecutionContextCreated({ executionContextId: 'c', auxData: { frameId: 'k' } });
   assert.deepEqual(events.map(e => e[0]), ['Network.requestWillBeSent', 'Runtime.executionContextCreated']);
+});
+
+test('a worker of a frame below a commit is told ended before the commit, once, also when the old process said nothing', () => {
+  const { h, events } = pageHandlerOnly();
+  const disposed = [];
+  h._contentChannel = workerChannel(disposed);
+  h._onFrameAttached({ frameId: 'm' });
+  h._onFrameAttached({ frameId: 'f', parentFrameId: 'm' });
+  h._onFrameAttached({ frameId: 'g', parentFrameId: 'f' });        // two levels down
+  h._onWorkerCreated({ workerId: 'wf', frameId: 'f', url: 'http://b.test/w.js' });
+  h._onWorkerCreated({ workerId: 'wg', frameId: 'g', url: 'http://c.test/w.js' });
+  h._onWorkerCreated({ workerId: 'wm', frameId: 'm', url: 'http://a.test/w.js' });   // the committed frame's own: not this path's
+  events.length = 0;
+  h._onNavigationCommitted({ frameId: 'm', navigationId: 'nav-9', url: 'http://a.test/' });
+  const names = events.map(e => e[0] + (e[0] === 'Page.workerDestroyed' ? ' ' + e[1].workerId : ''));
+  const commit = names.indexOf('Page.navigationCommitted');
+  assert.ok(commit >= 0);
+  assert.deepEqual(names.slice(0, commit).sort(), ['Page.workerDestroyed wf', 'Page.workerDestroyed wg'], 'both before the commit');
+  assert.equal(names.slice(commit).filter(n => n.startsWith('Page.workerDestroyed')).length, 0, 'none after it');
+  assert.ok(h._workers.has('wm'), 'the worker of the committed frame itself is not ended by this path');
+  // the old process's own message (enterCache) arriving after: nothing more is said
+  events.length = 0;
+  h._onWorkerDestroyed({ workerId: 'wf' });
+  assert.deepEqual(events, []);
 });

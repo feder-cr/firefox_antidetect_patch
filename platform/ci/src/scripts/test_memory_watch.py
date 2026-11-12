@@ -6,7 +6,7 @@
   3. the victim is the largest process that is not the runner: killing
      Runner.Worker is what loses the job, the failure this script exists for;
   4. a runner-only machine has no victim;
-  5. a container's limits win over the host's meminfo (the Theta node's measured
+  5. a container's limits win over the host's meminfo (the Latitude node's measured
      numbers): available and free swap are the cgroup's, page cache is not used;
   6. no limit, or a limit above the host: exactly meminfo, as on GitHub's runners;
   7. the thresholds are the measured ones on 16 GB and in proportion above it.

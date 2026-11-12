@@ -46,10 +46,18 @@
  * (TargetRegistry.js). So handing HTTP credentials to
  * the endpoint is not merely unsupported: it is the wrong mechanism, and the
  * right one was already wired and already working.
+ *
+ * One request has no such channel: the DoH request. TRRServiceChannel has no
+ * auth provider, so its 407 would never be answered; it sends the
+ * Proxy-Authorization of the nsIProxyInfo up front instead. So an HTTP proxy
+ * with credentials also carries that header (see proxyAuthorizationHeaderFor).
  */
 const PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS = new Set(['socks', 'socks4']);
 
 const UINT32_MAX = Math.pow(2, 32) - 1;
+
+// The nsIProxyInfo of each record, built once (see newProxyInfoFor).
+const proxyInfoOfRecord = new WeakMap();
 
 /**
  * ONE expression of how a stored proxy record becomes an nsIProxyInfo.
@@ -68,6 +76,57 @@ const UINT32_MAX = Math.pow(2, 32) - 1;
  * silent leak one navigation later.
  */
 export function newProxyInfoFor(proxy) {
+  // Built once, when the proxy is SET (that call throws for a record that cannot
+  // be expressed). The channel filter asks again for every request and gets the
+  // same object: a filter that threw would end the request DIRECT, because
+  // necko skips a filter that throws, and no request of a session behind a
+  // proxy may take that road.
+  let info = proxyInfoOfRecord.get(proxy);
+  if (!info) {
+    info = buildProxyInfo(proxy);
+    proxyInfoOfRecord.set(proxy, info);
+  }
+  return info;
+}
+
+// The preemptive Proxy-Authorization of an http/https proxy with credentials:
+// Basic over the UTF-8 bytes of user:pass. Empty for SOCKS (its credentials
+// travel in the handshake) and for a proxy with no credentials.
+function proxyAuthorizationHeaderFor(proxy) {
+  if (PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type))
+    return '';
+  if (!proxy.username && !proxy.password)
+    return '';
+  const bytes = new TextEncoder().encode((proxy.username || '') + ':' + (proxy.password || ''));
+  return 'Basic ' + btoa(String.fromCharCode(...bytes));
+}
+
+// The connection isolation key of an http/https proxy with credentials: the
+// SHA-256 of user NUL pass, in hex. The connection hash key of a tunnel has the
+// proxy's host and port but not the Proxy-Authorization header, so without this
+// two contexts behind one endpoint with two credentials would share a tunnel
+// (and one's DoH names would leave under the other's credentials). The digest
+// only: the credentials never reach the key, a log or a return value.
+function connectionIsolationKeyFor(proxy) {
+  if (PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type))
+    return '';
+  if (!proxy.username && !proxy.password)
+    return '';
+  const bytes = new TextEncoder().encode((proxy.username || '') + '\0' + (proxy.password || ''));
+  const hasher = Cc['@mozilla.org/security/hash;1'].createInstance(Ci.nsICryptoHash);
+  hasher.init(Ci.nsICryptoHash.SHA256);
+  hasher.update(bytes, bytes.length);
+  return Array.from(hasher.finish(false), c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+
+// The one flag the session sets: a SOCKS5 proxy whose UDP the core measured coherent with its TCP exit carries the UDP of a
+// PeerConnection and of HTTP/3 (the engine reads it, PcUdpProxy). Absent, 'no' and 'unmeasured' are the same: no flag, and
+// the engine treats the proxy as a router that drops UDP, never as a way out around it.
+function udpFlagFor(proxy) {
+  return proxy.type === 'socks' && proxy.udp === 'coherent' ? Ci.nsIProxyInfo.CARRIES_COHERENT_UDP : 0;
+}
+
+function buildProxyInfo(proxy) {
   const carriesOwnCredentials = PROXY_TYPES_THAT_CARRY_THEIR_OWN_CREDENTIALS.has(proxy.type);
   const protocolProxyService = Cc['@mozilla.org/network/protocol-proxy-service;1'].getService();
   return protocolProxyService.newProxyInfoWithAuth(
@@ -76,9 +135,9 @@ export function newProxyInfoFor(proxy) {
       proxy.port,
       carriesOwnCredentials ? (proxy.username || '') : '',
       carriesOwnCredentials ? (proxy.password || '') : '',
-      '', /* aProxyAuthorizationHeader */
-      '', /* aConnectionIsolationKey */
-      Ci.nsIProxyInfo.TRANSPARENT_PROXY_RESOLVES_HOST, /* aFlags */
+      proxyAuthorizationHeaderFor(proxy), /* aProxyAuthorizationHeader */
+      connectionIsolationKeyFor(proxy), /* aConnectionIsolationKey */
+      udpFlagFor(proxy), /* aFlags: the browser resolves names itself (DoH) and connects to the IP; the UDP flag only */
       UINT32_MAX, /* aFailoverTimeout */
       null, /* failover proxy */
   );

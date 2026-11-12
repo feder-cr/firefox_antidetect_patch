@@ -40,6 +40,7 @@ function setup({ userContextId = 6, pageCount = 1, processes = [], exits = {} } 
     _browserContextIdToBrowserContext: new Map(),
     _userContextIdToBrowserContext: new Map(),
     _updateProxiesWithSameAuthCacheAndDifferentCredentials() {},
+    _syncTrrPrefs() {},
   };
   const scope = {
     ChromeUtils: { getAllDOMProcesses: () => world.processes.slice() },

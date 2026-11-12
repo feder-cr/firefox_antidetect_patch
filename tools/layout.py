@@ -4,7 +4,7 @@ The layout is one folder per feature, grouped by what the feature does:
 
     platform/     the build, the branding, the repo's own tooling
     stillborn/    Firefox services we kill at birth (updater, telemetry, ...)
-    network/      proxies, SOCKS, DNS
+    network/      proxies, SOCKS, DoH
     automation/   what the Juggler protocol needs from Gecko
     fingerprint/  what a page can observe, one folder per surface
     port/         fixes tied to one Firefox version, each with its reason to expire
@@ -44,10 +44,11 @@ FEATURES = {
     "pingsender-session-route": "stillborn/telemetry",
     "api-keys-declared": "stillborn/api-keys",
     # network
+    "ipv6-literal-connect": "network/ipv6-literal",
     "proxy-udp-egress": "network/proxy-udp",
-    "socks-udp-h3": "network/socks-udp-h3",
     "socks-credentials": "network/socks",
-    "dns-no-local-resolution": "network/dns",
+    "doh-trr-context": "network/doh",
+    "geolocation-no-host-provider": "fingerprint/geolocation/no-host-provider",
     # automation
     "juggler-build": "automation/juggler",
     "juggler-prefs": "automation/juggler",
@@ -115,8 +116,7 @@ FEATURES = {
     "webgpu-adapter-declaration": "fingerprint/webgpu/adapter-declaration",
     "webgpu-external-texture-vulkan": "fingerprint/webgpu/external-texture-vulkan",
     # fingerprint: webrtc
-    "webrtc-ice-candidates": "fingerprint/webrtc/ice-candidates",
-    "webrtc-stealth-bridge": "fingerprint/webrtc/ice-candidates",
+    "webrtc-declared-network": "fingerprint/webrtc/declared-network",
     # fingerprint: screen and window
     "screen-metrics": "fingerprint/screen-window/screen",
     "window-geometry": "fingerprint/screen-window/geometry",
@@ -175,7 +175,35 @@ OWN_FILES = [
     (r"^juggler/tests/updater_refuses_what_follows_the_check\.test\.", "stillborn/updater"),
     (r"^third_party/libwebrtc/modules/desktop_capture/win/StealthWindowInputDesktop\.", "platform/hidden-desktop"),
     (r"^netwerk/protocol/http/StealthInterception\.", "automation/network-interception"),
-    (r"^netwerk/dns/StealthDNSDeclaration\.", "network/dns"),
+    (r"^toolkit/components/parentalcontrols/StealthParentalControls\.", "network/doh"),
+    (r"^toolkit/components/geolocation/StealthGeolocation\.", "fingerprint/geolocation/no-host-provider"),
+    (r"^toolkit/components/geolocation/test/gtest/(moz\.build|TestStealthGeolocation\.cpp)$", "fingerprint/geolocation/no-host-provider"),
+    (r"^juggler/tests/geolocation_(network_url_is_empty_by_default|no_wifi_scan|override_timestamp_is_delivery_time|"
+     r"system_switch_declared_on|windows_provider_never_selected)\.", "fingerprint/geolocation/no-host-provider"),
+    (r"^netwerk/dns/StealthSessionResolver\.", "network/doh"),
+    (r"^netwerk/test/gtest/TestStealthSessionResolver\.cpp$", "network/doh"),
+    (r"^dom/media/webrtc/transport/StealthIceResolverContext\.", "network/doh"),
+    (r"^dom/media/webrtc/transport/test/gtest/TestStealthIceResolverContext\.cpp$", "network/doh"),
+    (r"^dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth\.cpp$", "network/proxy-udp"),
+    (r"^dom/media/webrtc/transport/test/gtest/(StealthTestProxyKit\.(cpp|h)|TestStealthNrSocketBirth\.cpp|TestStealthPcUdpProxyKinds\.cpp)$", "network/proxy-udp"),
+    (r"^juggler/tests/the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info\.", "network/proxy-udp"),
+    (r"^modules/libpref/test/test_stealth_ice_prefs_locked\.", "network/proxy-udp"),
+    (r"^netwerk/ipc/StealthTRRContext\.", "network/doh"),
+    (r"^netwerk/test/gtest/TestStealthTRRContext\.", "network/doh"),
+    (r"^juggler/EarlyProxyHold\.js$", "network/doh"),
+    (r"^juggler/tests/(dns_has_no_gate_of_ours|doh_|proxy_info_leaves_name_resolution_to_the_browser|"
+     r"trr_connection_info_is_not_cached_in_this_build|etc_hosts_exclusion_is_off|"
+     r"http_proxy_credentials_are_sent_preemptively_for_doh|parental_controls_are_declared_off|"
+     r"no_channel_leaves_before_the_|no_ping_leaves_before_the_session_proxy_is_decided|"
+     r"no_lookup_asks_for_the_system_resolver|trr_follows_the_proxies_present|"
+     r"warnings_reach_a_sink_that_is_not_gated)",
+     "network/doh"),
+    (r"^juggler/TrrPrefs\.js$", "network/doh"),
+    (r"^juggler/tests/system_proxy_is_off_by_default\.", "network/proxy"),
+    (r"^juggler/tests/ipv6_literal_fails_like_a_host_with_no_ipv6_route\.", "network/ipv6-literal"),
+    (r"^netwerk/base/StealthIPv6Literal\.", "network/ipv6-literal"),
+    (r"^netwerk/test/gtest/TestStealthIPv6Literal\.cpp$", "network/ipv6-literal"),
+    (r"^juggler/tests/ipv6_is_one_fact_of_the_declared_network\.", "fingerprint/webrtc/declared-network"),
     (r"^js/src/debugger/StealthDebugger\.", "fingerprint/js-surface/debugger"),
     (r"^gfx/thebes/StealthDesignMetrics\.", "fingerprint/fonts/metrics"),
     (r"^gfx/thebes/StealthTextMeasuring\.", "fingerprint/fonts/metrics"),
@@ -184,7 +212,6 @@ OWN_FILES = [
     (r"^dom/serviceworkers/StealthWorkerDeclaration\.", "fingerprint/locale-time/workers"),
     (r"^dom/security/StealthBypassCSP\.", "automation/bypass-csp"),
     (r"^dom/media/webrtc/transport/nr_stealth_proxy_udp\.", "network/proxy-udp"),
-    (r"^dom/media/webrtc/jsapi/StealthIceGathering\.", "fingerprint/webrtc/ice-candidates"),
     (r"^docshell/base/StealthNavigation\.", "automation/navigation"),
     (r"^docshell/base/StealthDocShellAttrs\.", "automation/docshell-attrs"),
     (r"^dom/canvas/StealthCanvasTextMetrics\.", "fingerprint/canvas/text-metrics"),
@@ -199,7 +226,6 @@ OWN_FILES = [
     (r"^dom/base/StealthJugglerEventId\.", "automation/input"),
     (r"^dom/base/StealthFrameCrash\.", "automation/juggler"),
     (r"^dom/base/StealthInputEventBirth\.", "fingerprint/input/event-birth"),
-    (r"^netwerk/base/StealthSocksUdp\.", "network/proxy-udp"),
     (r"^uriloader/exthandler/StealthDownloadInterceptor\.", "automation/downloads"),
     (r"^uriloader/exthandler/StealthDownloadIntercept\.", "automation/downloads"),
     (r"^toolkit/components/windowwatcher/StealthWindowPlacement\.", "fingerprint/screen-window/popup-position"),
@@ -209,8 +235,8 @@ OWN_FILES = [
     (r"^third_party/python/vsdownload/stealth_download_watchdog\.", "platform/build-tools"),
     (r"^security/sandbox/win/src/sandboxbroker/StealthSandboxBranding\.", "fingerprint/js-surface/branding"),
     (r"^netwerk/test/browser/browser_stealth_accept_language_list\.", "fingerprint/locale-time/accept-language"),
-    (r"^netwerk/protocol/http/StealthH3Proxy\.", "network/socks-udp-h3"),
     (r"^netwerk/test/gtest/TestStealthSocksCredentials\.", "network/socks"),
+    (r"^netwerk/test/gtest/stealth\.build$", "network/socks"),
     (r"^netwerk/base/StealthSocksCredentials\.", "network/socks"),
     (r"^layout/style/StealthMediaFeatures\.", "fingerprint/screen-window/css-media"),
     (r"^js/src/vm/StealthStackFrames\.", "fingerprint/js-surface/stack-frames"),
@@ -268,10 +294,13 @@ OWN_FILES = [
     (r"^widget/tests/gtest/TestStealthFullscreen\.cpp$", "fingerprint/screen-window/geometry"),
     (r"^dom/events/StealthScreenCoords\.", "fingerprint/screen-window/geometry"),
     (r"^dom/media/StealthMediaDeclaration\.", "fingerprint/media/decode-declaration"),
-    (r"^dom/media/webrtc/transport/nr_stealth_bridge\.", "fingerprint/webrtc/ice-candidates"),
-    (r"^third_party/libwebrtc/api/location\.h$", "fingerprint/webrtc/ice-candidates"),
+    (r"^dom/media/webrtc/transport/nr_stealth_network\.", "fingerprint/webrtc/declared-network"),
+    (r"^dom/media/webrtc/transport/test/gtest/(moz\.build|TestStealthDeclaredNetwork\.cpp)$", "fingerprint/webrtc/declared-network"),
+    (r"^third_party/libwebrtc/api/location\.h$", "fingerprint/webrtc/declared-network"),
     (r"^netwerk/protocol/res/StealthBranding\.", "fingerprint/js-surface/branding"),
-    (r"^netwerk/socket/nsSOCKSUDPIOLayer\.", "network/socks-udp-h3"),
+    (r"^netwerk/socket/nsSOCKSUDPIOLayer\.", "network/proxy-udp"),
+    (r"^netwerk/socket/StealthPcUdpProxy\.", "network/proxy-udp"),
+    (r"^netwerk/ipc/StealthDocumentChannel\.", "network/proxy-udp"),
     (r"^browser/config/", "platform/release"),
     (r"^\.mozconfig$", "platform/build-config"),
     (r"^STEALTH_BRANCH_README\.md$", "platform/repo"),

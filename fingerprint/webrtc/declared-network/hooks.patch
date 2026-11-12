@@ -1,0 +1,1155 @@
+diff --git a/dom/media/webrtc/transport/build/moz.build b/dom/media/webrtc/transport/build/moz.build
+index b85d03a786b52a0598280a9b4da8b006edc59b8e..94c0035ddc20eec968d785cae8f50fb2e9d82042 100644
+--- a/dom/media/webrtc/transport/build/moz.build
++++ b/dom/media/webrtc/transport/build/moz.build
+@@ -9,6 +9,7 @@ EXPORTS.transport += [
+     "../m_cpp_utils.h",
+     "../mediapacket.h",
+     "../nr_socket_proxy_config.h",
++    "../nr_stealth_network.h",  # STEALTH-HOOK(fingerprint/webrtc/declared-network)
+     "../nricectx.h",
+     "../nricemediastream.h",
+     "../nriceresolverfake.h",
+diff --git a/dom/media/webrtc/transport/common.build b/dom/media/webrtc/transport/common.build
+index 215d61190dbe192fba09e129e869093ced0eacca..9ee56099518c282ebd01dca8148ed3194d5406ff 100644
+--- a/dom/media/webrtc/transport/common.build
++++ b/dom/media/webrtc/transport/common.build
+@@ -8,6 +8,7 @@ transport_lcppsrcs = [
+     "nr_socket_proxy_config.cpp",
+     "nr_socket_prsock.cpp",
+     "nr_socket_tcp.cpp",
++    "nr_stealth_network.cpp",
+     "nr_timer.cpp",
+     "nricecandidate.cpp",
+     "nricectx.cpp",
+@@ -30,6 +31,7 @@ transport_lcppsrcs = [
+     "transportlayersrtp.cpp",
+     "WebrtcTCPSocketWrapper.cpp",
+ ]
++transport_lcppsrcs += ["StealthIceResolverContext.cpp"]  # STEALTH-HOOK(network/doh)
+ 
+ transport_cppsrcs = [
+     "/dom/media/webrtc/transport/%s" % s for s in sorted(transport_lcppsrcs)
+diff --git a/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp b/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp
+index db8a3c004486d5b27e012b0b318b4d8ac477569a..989438d66fb7b276c3eb99bc85f4243103f14981 100644
+--- a/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp
++++ b/dom/media/webrtc/transport/ipc/StunAddrsRequestParent.cpp
+@@ -13,6 +13,7 @@
+ #include "transport/nricectx.h"
+ #include "transport/nricemediastream.h"  // needed only for including nricectx.h
+ #include "transport/nricestunaddr.h"
++#include "transport/nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ 
+ using namespace mozilla::ipc;
+ 
+@@ -144,22 +145,12 @@ void StunAddrsRequestParent::SendStunAddrs(const NrIceStunAddrArray& addrs) {
+     return;
+   }
+ 
++  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the responder joins the mDNS group on the loopback and
++  // speaks through it, not on the adapters of the list: the list is the declaration, whose address the OS does
++  // not own (a join on it fails, and the responder would never hear its own query). On the loopback the query
++  // and the answer make the same round trip through the responder's thread as on a real adapter.
+   if (!MDNSServiceWrapper::Instance()) {
+-    std::ostringstream o;
+-    char buffer[16];
+-    for (auto& addr : addrs) {
+-      nr_local_addr localAddr;
+-      addr.toNrLocalAddr(localAddr);
+-      if (localAddr.addr.ip_version == NR_IPV4 &&
+-          !nr_transport_addr_is_loopback(&localAddr.addr)) {
+-        nr_transport_addr_get_addrstring(&localAddr.addr, buffer, 16);
+-        o << buffer << ";";
+-      }
+-    }
+-    std::string addrstring = o.str();
+-    if (!addrstring.empty()) {
+-      (void)MDNSServiceWrapper::EnsureInstance(addrstring);
+-    }
++    (void)MDNSServiceWrapper::EnsureInstance(nr_stealth_mdns_interfaces());
+   }
+ 
+   // send the new addresses back to the child
+diff --git a/dom/media/webrtc/transport/mdns_service/src/lib.rs b/dom/media/webrtc/transport/mdns_service/src/lib.rs
+index 82d3609ed94472e02ab3a7b9b291824160e8a79b..871627e4781d2745385d246e0489bae6fbdf4b2f 100644
+--- a/dom/media/webrtc/transport/mdns_service/src/lib.rs
++++ b/dom/media/webrtc/transport/mdns_service/src/lib.rs
+@@ -459,14 +459,23 @@ impl MDNSService {
+         socket.set_multicast_loop_v4(true)?;
+         socket.set_read_timeout(Some(time::Duration::from_millis(1)))?;
+         socket.set_write_timeout(Some(time::Duration::from_millis(1)))?;
+-        for addr in addrs {
+-            if let Err(err) = socket.join_multicast_v4(&mdns_addr, &addr) {
++        for addr in &addrs {
++            if let Err(err) = socket.join_multicast_v4(&mdns_addr, addr) {
+                 warn!(
+                     "Could not join multicast group on interface: {:?}: {}",
+                     addr, err
+                 );
+             }
+         }
++        // STEALTH-HOOK(fingerprint/webrtc/declared-network): the parent gives the loopback
++        // (nr_stealth_mdns_interfaces). The responder speaks through the interface it joined on, or a query
++        // would leave on the default multicast route and never come back to this socket: on Linux a join on
++        // 127.0.0.1 hears nothing without it (captures/mdns-loopback/loopback-join of invisible_WebRTC).
++        if let Some(addr) = addrs.first() {
++            if let Err(err) = socket2::SockRef::from(&socket).set_multicast_if_v4(addr) {
++                warn!("Could not send multicast through interface: {:?}: {}", addr, err);
++            }
++        }
+ 
+         let thread_name = "mdns_service";
+         let builder = thread::Builder::new().name(thread_name.into());
+diff --git a/dom/media/webrtc/transport/moz.build b/dom/media/webrtc/transport/moz.build
+index 98369755834cfc31e3f3df454879a1d6df64cbf6..d5b1cfc5b8919762298b011529b450c94e3ea625 100644
+--- a/dom/media/webrtc/transport/moz.build
++++ b/dom/media/webrtc/transport/moz.build
+@@ -20,6 +20,8 @@ include("/tools/fuzzing/libfuzzer-config.mozbuild")
+ if CONFIG["FUZZING_INTERFACES"]:
+     TEST_DIRS += ["fuzztest"]
+ 
++TEST_DIRS += ["test/gtest"]  # STEALTH-HOOK(fingerprint/webrtc/declared-network)
++
+ LICENSED_UNDER += ["libjingle"]
+ LICENSED_UNDER["libjingle"].paths = [
+     "sigslot.h",
+diff --git a/dom/media/webrtc/transport/nricectx.cpp b/dom/media/webrtc/transport/nricectx.cpp
+index 9a3aa1311a1841f8f849e9925c606a76115c2c77..d85f948a3a5cd061dfa02dcb1f5d8a91861a33a0 100644
+--- a/dom/media/webrtc/transport/nricectx.cpp
++++ b/dom/media/webrtc/transport/nricectx.cpp
+@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "ScopedNSSTypes.h"
+ #include "logging.h"
+ #include "mozilla/Preferences.h"
++#include "mozilla/RandomNum.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ #include "nr_socket_proxy_config.h"
+ #include "nsCOMPtr.h"
+ #include "nsError.h"
+@@ -272,7 +273,8 @@ NrIceCtx::NrIceCtx(const std::string& name)
+       trickle_(true),
+       config_(),
+       nat_(nullptr),
+-      proxy_config_(nullptr) {}
++      proxy_config_(nullptr),
++      host_ports_(mozilla::RandomUint64OrDie()) {}  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ 
+ /* static */
+ RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& aName) {
+@@ -1217,7 +1219,25 @@ int nr_socket_local_create(void* obj, nr_transport_addr* addr,
+     config = static_cast<NrIceCtx*>(obj)->GetProxyConfig();
+   }
+ 
+-  r = NrSocketBase::CreateSocket(addr, &sock, config);
++  // STEALTH-HOOK(fingerprint/webrtc/declared-network): a host UDP socket of a declared address takes the next port
++  // of its connection (R3); a busy one is skipped (R_ALREADY from NrSocket::create), as the kernel skips it.
++  if (obj && addr->protocol == IPPROTO_UDP && !nr_stealth_addr_is_wildcard_ip(addr) &&
++      !nr_transport_addr_is_loopback(addr)) {
++    nr_transport_addr chosen;
++    r = R_ALREADY;
++    bool internal_error = false;
++    static_cast<NrIceCtx*>(obj)->TakeHostPort([&](uint16_t port) {
++      if (nr_transport_addr_copy(&chosen, addr) || nr_transport_addr_set_port(&chosen, port)) {
++        internal_error = true;
++        return true;
++      }
++      r = NrSocketBase::CreateSocket(&chosen, &sock, config);
++      return r != R_ALREADY;
++    });
++    if (internal_error) ABORT(R_INTERNAL);
++  } else {
++    r = NrSocketBase::CreateSocket(addr, &sock, config);
++  }
+   if (r) {
+     ABORT(r);
+   }
+diff --git a/dom/media/webrtc/transport/nricectx.h b/dom/media/webrtc/transport/nricectx.h
+index cfd44904c9349e8e2d59d2662a336212331d7978..b8318d7c478a768a1744e572a94c69ce7ec2b483 100644
+--- a/dom/media/webrtc/transport/nricectx.h
++++ b/dom/media/webrtc/transport/nricectx.h
+@@ -59,6 +59,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "mozilla/RefPtr.h"
+ #include "nricemediastream.h"
+ #include "nricestunaddr.h"
++#include "nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ #include "nsIEventTarget.h"
+ #include "nsTArray.h"
+ #include "sigslot.h"
+@@ -231,6 +232,13 @@ class NrIceCtx {
+     return proxy_config_;
+   }
+ 
++  // STEALTH-HOOK(fingerprint/webrtc/declared-network): the next host UDP port of this connection (R3,
++  // nr_stealth_network.h StealthHostPorts).
++  template <typename F>
++  uint16_t TakeHostPort(F aTry) {
++    return host_ports_.NextAvailable(aTry);
++  }
++
+   void SetCtxFlags(bool default_route_only);
+ 
+   // Start ICE gathering
+@@ -316,6 +324,7 @@ class NrIceCtx {
+   RefPtr<TestNat> nat_;
+   std::shared_ptr<NrSocketProxyConfig> proxy_config_;
+   std::map<std::string, std::string> obfuscated_host_addresses_;
++  StealthHostPorts host_ports_;  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ };
+ 
+ }  // namespace mozilla
+diff --git a/dom/media/webrtc/transport/test/gtest_utils.h b/dom/media/webrtc/transport/test/gtest_utils.h
+index 0aaaf799af83322a42ef9f3ef5a9a9c8844b016e..75f8eeeaa3fd7e25cf1d9bcf0edfcb918ca6b501 100644
+--- a/dom/media/webrtc/transport/test/gtest_utils.h
++++ b/dom/media/webrtc/transport/test/gtest_utils.h
+@@ -105,6 +105,14 @@ class MtransportTest : public ::testing::Test {
+ 
+     NR_reg_init();
+ 
++    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the interfaces are declared, never read from the host
++    // (nr_stealth_network.h). These tests gather on the declared adapter, as the browser does.
++    std::string declared;
++    GetEnvironment("STEALTHFOX_WEBRTC_NETWORK", declared);
++    if (declared.empty()) {
++      setenv("STEALTHFOX_WEBRTC_NETWORK", "v4=192.168.10.20;v6=0;p6=", 1);
++    }
++
+     // Attempt to load env vars used by tests.
+     GetEnvironment("TURN_SERVER_ADDRESS", turn_server_);
+     GetEnvironment("TURN_SERVER_USER", turn_user_);
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/moz.yaml b/dom/media/webrtc/transport/third_party/nICEr/moz.yaml
+index 873769f9c267c4da8df58d8c14ea69b0767ea894..e6f54cf77997db30738d0bbf0abe17ab02385808 100644
+--- a/dom/media/webrtc/transport/third_party/nICEr/moz.yaml
++++ b/dom/media/webrtc/transport/third_party/nICEr/moz.yaml
+@@ -76,12 +76,6 @@ vendoring:
+     # STUN
+     - src/stun/addrs.c
+     - src/stun/addrs.h
+-    - src/stun/addrs-bsd.c
+-    - src/stun/addrs-bsd.h
+-    - src/stun/addrs-netlink.c
+-    - src/stun/addrs-netlink.h
+-    - src/stun/addrs-win32.c
+-    - src/stun/addrs-win32.h
+     - src/stun/nr_socket_buffered_stun.h
+     - src/stun/nr_socket_buffered_stun.c
+     - src/stun/nr_socket_turn.c
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp b/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp
+index 4bfd7d62d1f5695638102a22129407cd7a66b4b7..f6ca10a7ba18dfb5115173da8242de7b34f94244 100644
+--- a/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp
++++ b/dom/media/webrtc/transport/third_party/nICEr/nicer.gyp
+@@ -25,6 +25,9 @@
+               '../nrappkit/src/util/libekr',
+               '../nrappkit/src/port/generic/include',
+ 
++              # transport dir — for nr_stealth_network.h
++              '../..',
++
+               # INTERNAL
+               "./src/crypto",
+               "./src/ice",
+@@ -76,13 +79,6 @@
+                 # STUN
+                 "./src/stun/addrs.cpp",
+                 "./src/stun/addrs.h",
+-                "./src/stun/addrs-bsd.cpp",
+-                "./src/stun/addrs-bsd.h",
+-                "./src/stun/addrs-netlink.cpp",
+-                "./src/stun/addrs-netlink.h",
+-                "./src/stun/addrs-netlink-wireless.cpp",
+-                "./src/stun/addrs-win32.cpp",
+-                "./src/stun/addrs-win32.h",
+                 "./src/stun/nr_socket_turn.cpp",
+                 "./src/stun/nr_socket_turn.h",
+                 "./src/stun/nr_socket_buffered_stun.cpp",
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
+index 04c91642dc06ae1d0f2551bb0fd305e802c3e745..393ec06231d39ed23ec6b7bd45f04624b9752adf 100644
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
++++ b/dom/media/webrtc/transport/third_party/nICEr/src/ice/ice_ctx.cpp
+@@ -52,6 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include "util.h"
+ #include "addrs.h"
+ #include "nr_socket_local.h"
++#include "nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ 
+ #define ICE_UFRAG_LEN 8
+ #define ICE_PWD_LEN 32
+@@ -567,96 +568,14 @@ static int nr_ice_ctx_pair_new_trickle_candidates(nr_ice_ctx *ctx, nr_ice_candid
+     return(_status);
+   }
+ 
+-/* Get the default address by creating a UDP socket, binding it to a wildcard
+-   address, and connecting it to the remote IP. Because this is UDP, no packets
+-   are sent. This lets us query the local address assigned to the socket by the
+-   kernel.
+-
+-   If the context's remote address is NULL, then the application wasn't loaded
+-   over the network, and we can fall back on connecting to a known public
+-   address (namely Google's):
+-
+-   IPv4: 8.8.8.8
+-   IPv6: 2001:4860:4860::8888
+-*/
+-static int nr_ice_get_default_address(nr_ice_ctx *ctx, int ip_version, nr_transport_addr* addrp)
+-  {
+-    int r,_status;
+-    nr_transport_addr addr, known_remote_addr;
+-    nr_transport_addr *remote_addr=ctx->target_for_default_local_address_lookup;
+-    nr_socket *sock=0;
+-
+-    switch(ip_version) {
+-      case NR_IPV4:
+-        if ((r=nr_str_port_to_transport_addr("0.0.0.0", nullptr, 0, IPPROTO_UDP, &addr)))
+-          ABORT(r);
+-        if (!remote_addr || nr_transport_addr_is_loopback(remote_addr)) {
+-          if ((r=nr_str_port_to_transport_addr("8.8.8.8", nullptr, 53, IPPROTO_UDP, &known_remote_addr)))
+-            ABORT(r);
+-          remote_addr=&known_remote_addr;
+-        }
+-        break;
+-      case NR_IPV6:
+-        if ((r=nr_str_port_to_transport_addr("::0", nullptr, 0, IPPROTO_UDP, &addr)))
+-          ABORT(r);
+-        if (!remote_addr || nr_transport_addr_is_loopback(remote_addr)) {
+-          if ((r=nr_str_port_to_transport_addr("2001:4860:4860::8888", nullptr, 53, IPPROTO_UDP, &known_remote_addr)))
+-            ABORT(r);
+-          remote_addr=&known_remote_addr;
+-        }
+-        break;
+-      default:
+-        assert(0);
+-        ABORT(R_INTERNAL);
+-    }
+-
+-    if ((r=nr_socket_factory_create_socket(ctx->socket_factory, &addr, &sock)))
+-      ABORT(r);
+-    if ((r=nr_socket_connect(sock, remote_addr)))
+-      ABORT(r);
+-    if ((r=nr_socket_getaddr(sock, addrp)))
+-      ABORT(r);
+-
+-    r_log(LOG_GENERIC, LOG_DEBUG, "Default address: %s", addrp->as_string);
+-
+-    _status=0;
+-  abort:
+-    nr_socket_destroy(&sock);
+-    return(_status);
+-  }
+-
++/* STEALTH-HOOK(fingerprint/webrtc/declared-network): the default address of a family is the declared
++   address of that family (nr_stealth_network.h), found in the list the parent sent, which is the
++   declaration. There is no route probe: no socket is connected and getsockname() is not read, so nothing of
++   the host's routing reaches the candidates. A family the declaration does not have has no default address,
++   as a machine without a route in that family has none. */
+ static int nr_ice_get_default_local_address(nr_ice_ctx *ctx, int ip_version, nr_local_addr* addrs, int addr_ct, nr_local_addr *addrp)
+   {
+-    int r,_status;
+-    nr_transport_addr default_addr;
+-    int i;
+-
+-    if ((r=nr_ice_get_default_address(ctx, ip_version, &default_addr)))
+-        ABORT(r);
+-
+-    for (i=0; i < addr_ct; ++i) {
+-      // if default addr is found in local addrs, copy the more fully
+-      // complete local addr to the output arg.  Don't need to worry
+-      // about comparing ports here.
+-      if (!nr_transport_addr_cmp(&default_addr, &addrs[i].addr,
+-                                 NR_TRANSPORT_ADDR_CMP_MODE_ADDR)) {
+-        if ((r=nr_local_addr_copy(addrp, &addrs[i])))
+-          ABORT(r);
+-        break;
+-      }
+-    }
+-
+-    // if default addr is not in local addrs, just copy the transport addr
+-    // to output arg.
+-    if (i == addr_ct) {
+-      if ((r=nr_transport_addr_copy(&addrp->addr, &default_addr)))
+-        ABORT(r);
+-      (void)strlcpy(addrp->addr.ifname, "default route", sizeof(addrp->addr.ifname));
+-    }
+-
+-    _status=0;
+-  abort:
+-    return(_status);
++    return nr_stealth_default_local_address(ip_version, addrs, addr_ct, addrp);
+   }
+ 
+ /* if handed a IPv4 default_local_addr, looks for IPv6 address on same interface
+@@ -751,8 +670,13 @@ int nr_ice_set_local_addresses(nr_ice_ctx *ctx,
+     if ((!addr_ct) || (ctx->flags & NR_ICE_CTX_FLAGS_ONLY_DEFAULT_ADDRS)) {
+       if (ctx->target_for_default_local_address_lookup) {
+         /* Get just the default IPv4 or IPv6 addr */
++        /* STEALTH-HOOK(fingerprint/webrtc/declared-network): the family of the page's server is a property of the real
++           network path, which the declared machine hides. A machine declared without IPv6 whose page was reached over
++           IPv6 asks for the family it has: with no default address of the target's family the gathering found no
++           address at all (measured on the firefox-63 candidate, Windows, direct: zero candidates). */
+         if(!nr_ice_get_default_local_address(
+-               ctx, ctx->target_for_default_local_address_lookup->ip_version,
++               ctx, nr_stealth_default_family(ctx->target_for_default_local_address_lookup->ip_version,
++                                              local_addrs, addr_ct),
+                local_addrs, addr_ct, &default_addrs[default_addr_ct])) {
+           nr_local_addr *new_addr = &default_addrs[default_addr_ct];
+ 
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp
+deleted file mode 100644
+index ec2d084445bef2dedd7fe801ea38b475bf06eb55..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.cpp
++++ /dev/null
+@@ -1,110 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#if defined(BSD) || defined(DARWIN)
+-#include "addrs-bsd.h"
+-#include <csi_platform.h>
+-#include <assert.h>
+-#include <string.h>
+-#include "util.h"
+-#include "stun_util.h"
+-#include "util.h"
+-#include <r_macros.h>
+-
+-#include <sys/types.h> /* getifaddrs */
+-#include <ifaddrs.h> /* getifaddrs */
+-#include <sys/socket.h>
+-#include <sys/ioctl.h>
+-#include <errno.h>
+-#include <netinet/in.h>
+-#include <netinet6/in6_var.h>
+-
+-static int
+-stun_ifaddr_get_v6_flags(struct ifaddrs *ifaddr)
+-{
+-  if (ifaddr->ifa_addr->sa_family != AF_INET6) {
+-    return 0;
+-  }
+-
+-  int flags = 0;
+-  int s = socket(AF_INET6, SOCK_DGRAM, 0);
+-  if (!s) {
+-    r_log(NR_LOG_STUN, LOG_ERR, "socket(AF_INET6, SOCK_DGRAM, 0) failed, errno=%d", errno);
+-    assert(0);
+-    return 0;
+-  }
+-  struct in6_ifreq ifr6;
+-  memset(&ifr6, 0, sizeof(ifr6));
+-  strncpy(ifr6.ifr_name, ifaddr->ifa_name, sizeof(ifr6.ifr_name));
+-  /* ifr_addr is a sockaddr_in6, ifa_addr is a sockaddr* */
+-  struct sockaddr_in6 *sin6 = (struct sockaddr_in6*)ifaddr->ifa_addr;
+-  ifr6.ifr_addr = *sin6;
+-  if (ioctl(s, SIOCGIFAFLAG_IN6, &ifr6) != -1) {
+-    flags = ifr6.ifr_ifru.ifru_flags6;
+-  } else {
+-    r_log(NR_LOG_STUN, LOG_ERR, "ioctl(SIOCGIFAFLAG_IN6) failed, errno=%d", errno);
+-    assert(0);
+-  }
+-  close(s);
+-  return flags;
+-}
+-
+-static int
+-stun_ifaddr_is_disallowed_v6(int flags) {
+-  return flags & (IN6_IFF_ANYCAST | IN6_IFF_TENTATIVE | IN6_IFF_DUPLICATED | IN6_IFF_DETACHED | IN6_IFF_DEPRECATED);
+-}
+-
+-int stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count)
+-{
+-  int r,_status,flags;
+-  struct ifaddrs* if_addrs_head=NULL;
+-  struct ifaddrs* if_addr;
+-
+-  *count = 0;
+-
+-  if (maxaddrs <= 0)
+-    ABORT(R_BAD_ARGS);
+-
+-  if (getifaddrs(&if_addrs_head) == -1) {
+-    r_log(NR_LOG_STUN, LOG_ERR, "getifaddrs error e = %d", errno);
+-    ABORT(R_INTERNAL);
+-  }
+-
+-  if_addr = if_addrs_head;
+-
+-  while (if_addr && *count < maxaddrs) {
+-    /* This can be null */
+-    if (if_addr->ifa_addr) {
+-      switch (if_addr->ifa_addr->sa_family) {
+-        case AF_INET:
+-        case AF_INET6:
+-          flags = stun_ifaddr_get_v6_flags(if_addr);
+-          if (!stun_ifaddr_is_disallowed_v6(flags)) {
+-            if (r=nr_sockaddr_to_transport_addr(if_addr->ifa_addr, IPPROTO_UDP, 0, &(addrs[*count].addr))) {
+-              r_log(NR_LOG_STUN, LOG_ERR, "nr_sockaddr_to_transport_addr error r = %d", r);
+-            } else {
+-              if (flags & IN6_IFF_TEMPORARY) {
+-                addrs[*count].flags |= NR_ADDR_FLAG_TEMPORARY;
+-              }
+-              (void)strlcpy(addrs[*count].addr.ifname, if_addr->ifa_name, sizeof(addrs[*count].addr.ifname));
+-              ++(*count);
+-            }
+-          }
+-          break;
+-        default:
+-          ;
+-      }
+-    }
+-
+-    if_addr = if_addr->ifa_next;
+-  }
+-
+-  _status=0;
+-abort:
+-  if (if_addrs_head) {
+-    freeifaddrs(if_addrs_head);
+-  }
+-  return(_status);
+-}
+-#endif
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h
+deleted file mode 100644
+index b575586f48591ea239e17bc5bd20ebbb1e9ba659..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-bsd.h
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef STUN_IFADDRS_BSD_H_
+-#define STUN_IFADDRS_BSD_H_
+-
+-#include "local_addr.h"
+-
+-int stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count);
+-
+-#endif  /* STUN_IFADDRS_BSD_H_ */
+-
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp
+deleted file mode 100644
+index 75f8e7f619f079cd95971834f04dbd8776cb3e7a..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp
++++ /dev/null
+@@ -1,65 +0,0 @@
+-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+-/* vim: set ts=2 et sw=2 tw=80: */
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this
+- * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+-
+-// This code is cut-and-pasted from nICEr/src/stun/addrs-netlink.cpp.
+-// Copyright is:
+-
+-/*
+-Copyright (c) 2011, The WebRTC project authors. All rights reserved.
+-
+-Redistribution and use in source and binary forms, with or without
+-modification, are permitted provided that the following conditions are
+-met:
+-
+-  * Redistributions of source code must retain the above copyright
+-    notice, this list of conditions and the following disclaimer.
+-
+-  * Redistributions in binary form must reproduce the above copyright
+-    notice, this list of conditions and the following disclaimer in
+-    the documentation and/or other materials provided with the
+-    distribution.
+-
+-  * Neither the name of Google nor the names of its contributors may
+-    be used to endorse or promote products derived from this software
+-    without specific prior written permission.
+-
+-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-*/
+-#if defined(LINUX) && !defined(ANDROID)
+-
+-#include <csi_platform.h>
+-// clang-format off
+-// Include order matters here.
+-#  include <netinet/in.h>
+-#  include <linux/wireless.h> /* struct iwreq */
+-// clang-format off
+-#  include <sys/ioctl.h>
+-
+-#  include "local_addr.h"
+-
+-void stun_convert_netlink_wireless(nr_local_addr* addr, int s) {
+-  struct iwreq wrq{};
+-  int e;
+-
+-  (void)strlcpy(wrq.ifr_name, addr->addr.ifname, sizeof(wrq.ifr_name));
+-  e = ioctl(s, SIOCGIWRATE, &wrq);
+-  if (e == 0) {
+-    addr->interface.type = NR_INTERFACE_TYPE_WIFI;
+-    addr->interface.estimated_speed = wrq.u.bitrate.value / 1000;
+-  }
+-}
+-
+-#endif /* defined(LINUX) && !defined(ANDROID) */
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp
+deleted file mode 100644
+index 311d175049286d30714e5e7b9a67b429cf3cc6bc..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.cpp
++++ /dev/null
+@@ -1,282 +0,0 @@
+-/*
+-Copyright (c) 2011, The WebRTC project authors. All rights reserved.
+-
+-Redistribution and use in source and binary forms, with or without
+-modification, are permitted provided that the following conditions are
+-met:
+-
+-  * Redistributions of source code must retain the above copyright
+-    notice, this list of conditions and the following disclaimer.
+-
+-  * Redistributions in binary form must reproduce the above copyright
+-    notice, this list of conditions and the following disclaimer in
+-    the documentation and/or other materials provided with the
+-    distribution.
+-
+-  * Neither the name of Google nor the names of its contributors may
+-    be used to endorse or promote products derived from this software
+-    without specific prior written permission.
+-
+-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-*/
+-
+-#if defined(LINUX)
+-#include <net/if.h>
+-#include "addrs-netlink.h"
+-#include <csi_platform.h>
+-#include <assert.h>
+-#include <string.h>
+-#include "util.h"
+-#include "stun_util.h"
+-#include "util.h"
+-#include <r_macros.h>
+-
+-#include <stdlib.h>
+-#include <sys/types.h>
+-#include <sys/socket.h>
+-#include <sys/utsname.h>
+-#include <sys/ioctl.h>
+-#include <netinet/in.h>
+-#include <unistd.h>
+-#include <errno.h>
+-#include <linux/netlink.h>
+-#include <linux/rtnetlink.h>
+-
+-#ifdef ANDROID
+-/* Work around an Android NDK < r8c bug */
+-#undef __unused
+-#else
+-#include <linux/ethtool.h> /* struct ethtool_cmd */
+-#include <linux/sockios.h> /* SIOCETHTOOL */
+-#endif /* ANDROID */
+-
+-
+-struct netlinkrequest {
+-  struct nlmsghdr header;
+-  struct ifaddrmsg msg;
+-};
+-
+-static const int kMaxReadSize = 4096;
+-
+-// stun_convert_netlink_wireless is defined in
+-// dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink-wireless.cpp
+-// It is moved to avoid a conflict in cpp builds between the headers
+-// net/if.h and linux/if.h (included by linux/wireless.h)
+-void stun_convert_netlink_wireless(nr_local_addr *addr, int s);
+-
+-static void set_ifname(nr_local_addr *addr, struct ifaddrmsg* msg) {
+-  assert(sizeof(addr->addr.ifname) > IF_NAMESIZE);
+-  if_indextoname(msg->ifa_index, addr->addr.ifname);
+-}
+-
+-static int get_siocgifflags(nr_local_addr *addr) {
+-  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+-  if (fd == -1) {
+-    assert(0);
+-    return 0;
+-  }
+-  struct ifreq ifr;
+-  memset(&ifr, 0, sizeof(ifr));
+-  (void)strlcpy(ifr.ifr_name, addr->addr.ifname, sizeof(ifr.ifr_name));
+-  int rc = ioctl(fd, SIOCGIFFLAGS, &ifr);
+-  close(fd);
+-  if (rc == -1) {
+-    assert(0);
+-    return 0;
+-  }
+-  return ifr.ifr_flags;
+-}
+-
+-static int set_sockaddr(nr_local_addr *addr, struct ifaddrmsg* msg, struct rtattr* rta) {
+-  assert(rta->rta_type == IFA_ADDRESS || rta->rta_type == IFA_LOCAL);
+-  void *data = RTA_DATA(rta);
+-  size_t len = RTA_PAYLOAD(rta);
+-  if (msg->ifa_family == AF_INET) {
+-    struct sockaddr_in sa;
+-    memset(&sa, 0, sizeof(struct sockaddr_in));
+-    sa.sin_family = AF_INET;
+-    memcpy(&sa.sin_addr, data, len);
+-    return nr_sockaddr_to_transport_addr((struct sockaddr*)&sa, IPPROTO_UDP, 0, &(addr->addr));
+-  } else if (msg->ifa_family == AF_INET6) {
+-    struct sockaddr_in6 sa;
+-    memset(&sa, 0, sizeof(struct sockaddr_in6));
+-    sa.sin6_family = AF_INET6;
+-    /* We do not set sin6_scope_id to ifa_index, because that is only valid for
+-     * link local addresses, and we don't use those anyway */
+-    memcpy(&sa.sin6_addr, data, len);
+-    return nr_sockaddr_to_transport_addr((struct sockaddr*)&sa, IPPROTO_UDP, 0, &(addr->addr));
+-  }
+-
+-  return R_BAD_ARGS;
+-}
+-
+-static int
+-stun_ifaddr_is_disallowed_v6(int flags) {
+-  return flags & (IFA_F_TENTATIVE | IFA_F_OPTIMISTIC | IFA_F_DADFAILED | IFA_F_DEPRECATED);
+-}
+-
+-static int
+-stun_convert_netlink(nr_local_addr *addr, struct ifaddrmsg *address_msg, struct rtattr* rta)
+-{
+-  int r = set_sockaddr(addr, address_msg, rta);
+-  if (r) {
+-    r_log(NR_LOG_STUN, LOG_ERR, "set_sockaddr error r = %d", r);
+-    return r;
+-  }
+-
+-  set_ifname(addr, address_msg);
+-
+-  if (address_msg->ifa_flags & IFA_F_TEMPORARY) {
+-    addr->flags |= NR_ADDR_FLAG_TEMPORARY;
+-  }
+-
+-  int flags = get_siocgifflags(addr);
+-  if (flags & IFF_POINTOPOINT)
+-  {
+-    addr->interface.type = NR_INTERFACE_TYPE_UNKNOWN | NR_INTERFACE_TYPE_VPN;
+-    /* TODO (Bug 896913): find backend network type of this VPN */
+-  }
+-
+-#if defined(LINUX) && !defined(ANDROID)
+-  struct ethtool_cmd ecmd;
+-  struct ifreq ifr;
+-  int e;
+-  int s = socket(AF_INET, SOCK_DGRAM, 0);
+-
+-  (void)strlcpy(ifr.ifr_name, addr->addr.ifname, sizeof(ifr.ifr_name));
+-  /* TODO (Bug 896851): interface property for Android */
+-  /* Getting ethtool for ethernet information. */
+-  ecmd.cmd = ETHTOOL_GSET;
+-  /* In/out param */
+-  ifr.ifr_data = (char*)&ecmd;
+-
+-  e = ioctl(s, SIOCETHTOOL, &ifr);
+-  if (e == 0)
+-  {
+-    /* For wireless network, we won't get ethtool, it's a wired
+-     * connection */
+-    addr->interface.type = NR_INTERFACE_TYPE_WIRED;
+-#ifdef DONT_HAVE_ETHTOOL_SPEED_HI
+-    addr->interface.estimated_speed = ecmd.speed;
+-#else
+-    addr->interface.estimated_speed = ((ecmd.speed_hi << 16) | ecmd.speed) * 1000;
+-#endif
+-  }
+-
+-  stun_convert_netlink_wireless(addr, s);
+-
+-  close(s);
+-
+-#else
+-  addr->interface.type = NR_INTERFACE_TYPE_UNKNOWN;
+-  addr->interface.estimated_speed = 0;
+-#endif
+-  return 0;
+-}
+-
+-int
+-stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count)
+-{
+-  int _status;
+-  int fd = 0;
+-
+-  /* Scope everything else since we're using ABORT. */
+-  {
+-    *count = 0;
+-
+-    if (maxaddrs <= 0)
+-      ABORT(R_BAD_ARGS);
+-
+-    fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+-    if (fd < 0) {
+-      ABORT(R_INTERNAL);
+-    }
+-
+-    struct netlinkrequest ifaddr_request;
+-    memset(&ifaddr_request, 0, sizeof(ifaddr_request));
+-    ifaddr_request.header.nlmsg_flags = NLM_F_ROOT | NLM_F_REQUEST;
+-    ifaddr_request.header.nlmsg_type = RTM_GETADDR;
+-    ifaddr_request.header.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+-
+-    ssize_t bytes = send(fd, &ifaddr_request, ifaddr_request.header.nlmsg_len, 0);
+-    if ((size_t)bytes != ifaddr_request.header.nlmsg_len) {
+-      ABORT(R_INTERNAL);
+-    }
+-
+-    char buf[kMaxReadSize];
+-    ssize_t amount_read = recv(fd, &buf, kMaxReadSize, 0);
+-    while ((amount_read > 0) && (*count != maxaddrs)) {
+-      struct nlmsghdr* header = (struct nlmsghdr*)&buf[0];
+-      size_t header_size = (size_t)amount_read;
+-      for ( ; NLMSG_OK(header, header_size) && (*count != maxaddrs);
+-            header = NLMSG_NEXT(header, header_size)) {
+-        switch (header->nlmsg_type) {
+-          case NLMSG_DONE:
+-            /* Success. Return. */
+-            close(fd);
+-            return 0;
+-          case NLMSG_ERROR:
+-            ABORT(R_INTERNAL);
+-          case RTM_NEWADDR: {
+-            struct ifaddrmsg* address_msg =
+-                (struct ifaddrmsg*)NLMSG_DATA(header);
+-            struct rtattr* rta = IFA_RTA(address_msg);
+-            ssize_t payload_len = IFA_PAYLOAD(header);
+-            bool found = false;
+-            while (RTA_OK(rta, payload_len)) {
+-              // This is a bit convoluted. IFA_ADDRESS and IFA_LOCAL are the
+-              // same thing except when using a POINTTOPOINT interface, in
+-              // which case IFA_LOCAL is the local address, and IFA_ADDRESS is
+-              // the remote address. In a reasonable world, that would mean we
+-              // could just use IFA_LOCAL all the time. Sadly, IFA_LOCAL is not
+-              // always set (IPv6 in particular). So, we have to be on the
+-              // lookout for both, and prefer IFA_LOCAL when present.
+-              if (rta->rta_type == IFA_ADDRESS || rta->rta_type == IFA_LOCAL) {
+-                int family = address_msg->ifa_family;
+-                if ((family == AF_INET || family == AF_INET6) &&
+-                    !stun_ifaddr_is_disallowed_v6(address_msg->ifa_flags) &&
+-                    !stun_convert_netlink(&addrs[*count], address_msg, rta)) {
+-                  found = true;
+-                  if (rta->rta_type == IFA_LOCAL) {
+-                    // IFA_LOCAL is what we really want; if we find it we're
+-                    // done. If this is IFA_ADDRESS instead, we do not proceed
+-                    // yet, and allow a subsequent IFA_LOCAL to overwrite what
+-                    // we just put in |addrs|.
+-                    break;
+-                  }
+-                }
+-              }
+-              /* TODO: Use IFA_LABEL instead of if_indextoname? We would need
+-               * to remember how many nr_local_addr we've converted for this
+-               * ifaddrmsg, and set the label on all of them. */
+-              rta = RTA_NEXT(rta, payload_len);
+-            }
+-
+-            if (found) {
+-              ++(*count);
+-            }
+-            break;
+-          }
+-        }
+-      }
+-      amount_read = recv(fd, &buf, kMaxReadSize, 0);
+-    }
+-  }
+-
+-  _status=0;
+-abort:
+-  close(fd);
+-  return(_status);
+-}
+-
+-#endif  /* defined(LINUX) */
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h
+deleted file mode 100644
+index b2b07bddc90fd0767c63775d0e1e3de4a7742e79..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-netlink.h
++++ /dev/null
+@@ -1,45 +0,0 @@
+-/*
+-Copyright (c) 2011, The WebRTC project authors. All rights reserved.
+-
+-Redistribution and use in source and binary forms, with or without
+-modification, are permitted provided that the following conditions are
+-met:
+-
+-  * Redistributions of source code must retain the above copyright
+-    notice, this list of conditions and the following disclaimer.
+-
+-  * Redistributions in binary form must reproduce the above copyright
+-    notice, this list of conditions and the following disclaimer in
+-    the documentation and/or other materials provided with the
+-    distribution.
+-
+-  * Neither the name of Google nor the names of its contributors may
+-    be used to endorse or promote products derived from this software
+-    without specific prior written permission.
+-
+-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-*/
+-
+-#ifndef WEBRTC_BASE_IFADDRS_NETLINK_H_
+-#define WEBRTC_BASE_IFADDRS_NETLINK_H_
+-
+-#include <stdio.h>
+-#include <sys/socket.h>
+-#include "local_addr.h"
+-
+-/* for platforms with netlink (android and linux) */
+-/* Filters out things like deprecated addresses, and stuff that doesn't pass
+- * IPv6 duplicate address detection */
+-int stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count);
+-#endif  /* WEBRTC_BASE_IFADDRS_NETLINK_H_ */
+-
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp
+deleted file mode 100644
+index 9e9bbeb51860e2052932f39c515da07305c3ec18..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.cpp
++++ /dev/null
+@@ -1,139 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifdef WIN32
+-
+-#include "addrs-win32.h"
+-#include <csi_platform.h>
+-#include <assert.h>
+-#include <string.h>
+-#include "util.h"
+-#include "stun_util.h"
+-#include "util.h"
+-#include <r_macros.h>
+-#include "nr_crypto.h"
+-
+-#include <iphlpapi.h>
+-
+-#define NR_MD5_HASH_LENGTH 16
+-
+-static int stun_win32_address_disallowed(IP_ADAPTER_UNICAST_ADDRESS *addr)
+-{
+-  return (addr->DadState != NldsPreferred) &&
+-          (addr->DadState != IpDadStatePreferred);
+-}
+-
+-static int stun_win32_address_temp_v6(IP_ADAPTER_UNICAST_ADDRESS *addr)
+-{
+-  return (addr->Address.lpSockaddr->sa_family == AF_INET6) &&
+-      (addr->SuffixOrigin == IpSuffixOriginRandom);
+-}
+-
+-int
+-stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count)
+-{
+-    int r, _status;
+-    PIP_ADAPTER_ADDRESSES AdapterAddresses = NULL, tmpAddress = NULL;
+-    // recomended per https://msdn.microsoft.com/en-us/library/windows/desktop/aa365915(v=vs.85).aspx
+-    static const ULONG initialBufLen = 15000;
+-    ULONG buflen = initialBufLen;
+-    char bin_hashed_ifname[NR_MD5_HASH_LENGTH];
+-    char hex_hashed_ifname[MAXIFNAME];
+-    int n = 0;
+-
+-    *count = 0;
+-
+-    if (maxaddrs <= 0)
+-      ABORT(R_BAD_ARGS);
+-
+-    /* According to MSDN (see above) we have try GetAdapterAddresses() multiple times */
+-    for (n = 0; n < 5; n++) {
+-      AdapterAddresses = (PIP_ADAPTER_ADDRESSES) malloc(buflen);
+-      if (AdapterAddresses == NULL) {
+-        r_log(NR_LOG_STUN, LOG_ERR, "Error allocating buf for GetAdaptersAddresses()");
+-        ABORT(R_NO_MEMORY);
+-      }
+-
+-      r = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, NULL, AdapterAddresses, &buflen);
+-      if (r == NO_ERROR) {
+-        break;
+-      }
+-      r_log(NR_LOG_STUN, LOG_ERR, "GetAdaptersAddresses() returned error (%d)", r);
+-      free(AdapterAddresses);
+-      AdapterAddresses = NULL;
+-    }
+-
+-    if (n >= 5) {
+-      r_log(NR_LOG_STUN, LOG_ERR, "5 failures calling GetAdaptersAddresses()");
+-      ABORT(R_INTERNAL);
+-    }
+-
+-    n = 0;
+-
+-    /* Loop through the adapters */
+-
+-    for (tmpAddress = AdapterAddresses; tmpAddress != NULL; tmpAddress = tmpAddress->Next) {
+-
+-      if (tmpAddress->OperStatus != IfOperStatusUp)
+-        continue;
+-
+-      if ((tmpAddress->IfIndex != 0) || (tmpAddress->Ipv6IfIndex != 0)) {
+-        IP_ADAPTER_UNICAST_ADDRESS *u = 0;
+-
+-        if(r=nr_crypto_md5((UCHAR *)tmpAddress->FriendlyName,
+-                           wcslen(tmpAddress->FriendlyName) * sizeof(wchar_t),
+-                           (UCHAR *)bin_hashed_ifname))
+-          ABORT(r);
+-        if(r=nr_bin2hex((UCHAR*)bin_hashed_ifname, sizeof(bin_hashed_ifname),
+-                        (UCHAR*)hex_hashed_ifname))
+-          ABORT(r);
+-
+-        for (u = tmpAddress->FirstUnicastAddress; u != 0; u = u->Next) {
+-          SOCKET_ADDRESS *sa_addr = &u->Address;
+-
+-          if ((sa_addr->lpSockaddr->sa_family != AF_INET) &&
+-              (sa_addr->lpSockaddr->sa_family != AF_INET6)) {
+-            r_log(NR_LOG_STUN, LOG_DEBUG, "Unrecognized sa_family for address on adapter %lu", tmpAddress->IfIndex);
+-            continue;
+-          }
+-
+-          if (stun_win32_address_disallowed(u)) {
+-            continue;
+-          }
+-
+-          if ((r=nr_sockaddr_to_transport_addr((struct sockaddr*)sa_addr->lpSockaddr, IPPROTO_UDP, 0, &(addrs[n].addr)))) {
+-            ABORT(r);
+-          }
+-
+-          strlcpy(addrs[n].addr.ifname, hex_hashed_ifname, sizeof(addrs[n].addr.ifname));
+-          if (tmpAddress->IfType == IF_TYPE_ETHERNET_CSMACD) {
+-            addrs[n].interface.type = NR_INTERFACE_TYPE_WIRED;
+-          } else if (tmpAddress->IfType == IF_TYPE_IEEE80211) {
+-            /* Note: this only works for >= Win Vista */
+-            addrs[n].interface.type = NR_INTERFACE_TYPE_WIFI;
+-          } else {
+-            addrs[n].interface.type = NR_INTERFACE_TYPE_UNKNOWN;
+-          }
+-          addrs[n].interface.estimated_speed = tmpAddress->TransmitLinkSpeed / 1000;
+-          if (stun_win32_address_temp_v6(u)) {
+-            addrs[n].flags |= NR_ADDR_FLAG_TEMPORARY;
+-          }
+-
+-          if (++n >= maxaddrs)
+-            goto done;
+-        }
+-      }
+-    }
+-
+-   done:
+-    *count = n;
+-    _status = 0;
+-
+-  abort:
+-    free(AdapterAddresses);
+-    return _status;
+-}
+-
+-#endif //WIN32
+-
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h
+deleted file mode 100644
+index a00802192a5dc998f759aa64b98995770951a8da..0000000000000000000000000000000000000000
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs-win32.h
++++ /dev/null
+@@ -1,13 +0,0 @@
+-/* This Source Code Form is subject to the terms of the Mozilla Public
+- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+-
+-#ifndef STUN_IFADDRS_WIN32_H_
+-#define STUN_IFADDRS_WIN32_H_
+-
+-#include "local_addr.h"
+-
+-int stun_getaddrs_filtered(nr_local_addr addrs[], int maxaddrs, int *count);
+-
+-#endif  /* STUN_IFADDRS_WIN32_H_ */
+-
+diff --git a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp
+index 9449432365c9b0371c1f13ebf20f50cd18ed1dbe..56fc41adb0c984298bdd8f84f09df66fd8acb0fc 100644
+--- a/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp
++++ b/dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.cpp
+@@ -34,17 +34,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #include <assert.h>
+ #include <string.h>
+ 
+-#ifdef WIN32
+-#include "addrs-win32.h"
+-#elif defined(BSD) || defined(DARWIN)
+-#include "addrs-bsd.h"
+-#else
+-#include "addrs-netlink.h"
+-#endif
+-
+ #include "stun.h"
+ #include "addrs.h"
+ #include "util.h"
++#include "nr_stealth_network.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ 
+ static int
+ nr_stun_is_duplicate_addr(nr_local_addr addrs[], int count, nr_local_addr *addr)
+@@ -212,7 +205,8 @@ nr_stun_get_addrs(nr_local_addr addrs[], int maxaddrs, int *count)
+        memset(addrs, 0, maxaddrs * sizeof(nr_local_addr));
+     }
+ 
+-    _status = stun_getaddrs_filtered(addrs, maxaddrs, count);
++    // STEALTH-HOOK(fingerprint/webrtc/declared-network): the declared adapter, never the host's.
++    _status = nr_stealth_declared_addrs(addrs, maxaddrs, count);
+ 
+     for (i = 0; i < *count; ++i) {
+       nr_local_addr_fmt_info_string(addrs+i,typestr,sizeof(typestr));
+diff --git a/netwerk/base/nsIOService.cpp b/netwerk/base/nsIOService.cpp
+index 31b794135b1e02e35dab6dc6714402ee699f1d69..aec9b83ddd81a3a7d3600d0724dfd67b137544b6 100644
+--- a/netwerk/base/nsIOService.cpp
++++ b/netwerk/base/nsIOService.cpp
+@@ -8,6 +8,7 @@
+ #include "MainThreadUtils.h"
+ #include "SerializedLoadContext.h"
+ #include "StaticComponents.h"
++#include "StealthIPv6Literal.h"  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+ #include "SuspendableChannelWrapper.h"
+ #include "WebTransportSessionProxy.h"
+ #include "mozilla/AppShutdown.h"
+@@ -286,6 +287,8 @@ static const char* gCallbackSecurityPrefs[] = {
+ };
+ 
+ nsresult nsIOService::Init() {
++  StealthApplyDeclaredNetwork();  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
++
+   SSLTokensCache::Init();
+ 
+   InitializeCaptivePortalService();

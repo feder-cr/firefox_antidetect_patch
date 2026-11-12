@@ -14,10 +14,11 @@ platform/webrender-memory
 stillborn/api-keys
 stillborn/telemetry
 stillborn/updater
-network/dns
+network/doh
+network/ipv6-literal
+network/proxy
 network/proxy-udp
 network/socks
-network/socks-udp-h3
 automation/bypass-csp
 automation/docshell-attrs
 automation/downloads
@@ -42,6 +43,7 @@ fingerprint/fonts/bundle
 fingerprint/fonts/font-list
 fingerprint/fonts/idwr
 fingerprint/fonts/metrics
+fingerprint/geolocation/no-host-provider
 fingerprint/hardware/concurrency
 fingerprint/hardware/profile
 fingerprint/hardware/storage-quota
@@ -72,4 +74,4 @@ fingerprint/webgl/parameters
 fingerprint/webgl/shader-language
 fingerprint/webgpu/adapter-declaration
 fingerprint/webgpu/external-texture-vulkan
-fingerprint/webrtc/ice-candidates
+fingerprint/webrtc/declared-network

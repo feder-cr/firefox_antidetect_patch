@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include("/ipc/chromium/chromium-config.mozbuild")
+include("/dom/media/webrtc/transport/common.build")
+
+# STEALTH-HOOK(fingerprint/webrtc/declared-network)
+SOURCES += ["TestStealthDeclaredNetwork.cpp"]
+SOURCES += ["TestStealthIceResolverContext.cpp"]  # STEALTH-HOOK(network/doh)
+
+# STEALTH-HOOK(network/proxy-udp)
+SOURCES += ["TestStealthUdpProxyBirth.cpp"]
+SOURCES += ["StealthTestProxyKit.cpp"]  # the config of a PeerConnection, in a unit of its own (IPDL headers and nICEr headers do not mix)
+SOURCES += ["TestStealthNrSocketBirth.cpp"]
+SOURCES += ["TestStealthPcUdpProxyKinds.cpp"]
+
+LOCAL_INCLUDES += [
+    "/dom/media/webrtc/transport/ipc",
+    "/netwerk/socket",  # STEALTH-HOOK(network/proxy-udp)
+]
+
+FINAL_LIBRARY = "xul-gtest"

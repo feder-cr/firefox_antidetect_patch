@@ -135,9 +135,55 @@ jobs:
           chmod +x "$EXE" 2>/dev/null || true
           echo "FF_EXE=$EXE" >> "$GITHUB_ENV"
           echo "located: $EXE"
-      - name: DRIVE GATE — Playwright launch via juggler + real page (+ interaction on --full)
+      # THE CORE UNDER TEST AND THE SEAL OF THE BINARY, BEFORE ANYTHING DRIVES IT. The drive gate launches through the
+      # wrapper and the core, not through bare Playwright: since firefox-63 the engine holds every channel that asks the
+      # proxy service until the client says how the session leaves the host, and only the core's launch says it first
+      # (run 43134774602: Page.goto timed out on both legs). What follows is the install of core_ref from git, the
+      # assertion that it is the core under test, and the seal of the binary; the guards below reuse them. The reasons
+      # for each switch are written at the guards.
+      - name: The core under test (core_ref, from git), the wrapper, and the seal of the binary
         shell: bash
-        run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
+        env:
+          CORE_REF: ${{ inputs.core_ref }}
+          SEAL_TAG: ${{ inputs.seal_tag }}
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          CORE_GIT="git+https://github.com/feder-cr/invisible_core@$CORE_REF"
+          python -m pip install --quiet "$CORE_GIT"
+          python -m pip install --quiet ".[dev]"
+          python -m pip install --quiet --force-reinstall "$CORE_GIT"
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          from importlib.metadata import distribution, version
+          ref = os.environ["CORE_REF"]
+          if re.fullmatch(r"[0-9a-f]{40}", ref):
+              want = ref
+          else:
+              rows = [line.split() for line in subprocess.run(
+                  ["git", "ls-remote", "https://github.com/feder-cr/invisible_core", ref, ref + "^{}"],
+                  capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()]
+              peeled = [s for s, r in rows if r.endswith("^{}")]  # an annotated tag: its commit, not the tag object
+              want = (peeled or [s for s, _ in rows] or [""])[0]
+          import invisible_playwright  # noqa: F401 - the import-time pin repair runs here, as under pytest
+          raw = distribution("invisible-core").read_text("direct_url.json")
+          got = (json.loads(raw).get("vcs_info") or {}).get("commit_id") if raw else None
+          print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
+          if not want or got != want:
+              sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s. "
+                       "Something put another core over the git install (an install after it, or the wrapper's "
+                       "import-time repair with INVISIBLE_CORE_AUTOFIX not off), and with the published core "
+                       "the engine refuses the launch on the declarations that core does not emit."
+                       % (version("invisible-core"), got or "the index", ref,
+                          want or "not a full sha nor a ref of invisible_core"))
+          PY
+          python -m invisible_core seal --binary "$FF_EXE" \
+            --tag "$SEAL_TAG" \
+            -o gate.seal.json
+      - name: DRIVE GATE — the wrapper launches the binary via juggler + real page (+ interaction on --full)
+        shell: bash
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
 
       # HIDDEN-DESKTOP + WEBGL-MASKING GUARDS - run the wrapper's e2e checks
       # against THIS leg's freshly-built artifact, on its native runner. The
@@ -228,42 +274,8 @@ jobs:
       # version is fetched as before, and the force-reinstall puts core_ref back.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
-        env:
-          CORE_REF: ${{ inputs.core_ref }}
-          SEAL_TAG: ${{ inputs.seal_tag }}
         run: |
           export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
-          CORE_GIT="git+https://github.com/feder-cr/invisible_core@$CORE_REF"
-          python -m pip install --quiet "$CORE_GIT"
-          python -m pip install --quiet ".[dev]"
-          python -m pip install --quiet --force-reinstall "$CORE_GIT"
-          python - <<'PY'
-          import json, os, re, subprocess, sys
-          from importlib.metadata import distribution, version
-          ref = os.environ["CORE_REF"]
-          if re.fullmatch(r"[0-9a-f]{40}", ref):
-              want = ref
-          else:
-              rows = [line.split() for line in subprocess.run(
-                  ["git", "ls-remote", "https://github.com/feder-cr/invisible_core", ref, ref + "^{}"],
-                  capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()]
-              peeled = [s for s, r in rows if r.endswith("^{}")]  # an annotated tag: its commit, not the tag object
-              want = (peeled or [s for s, _ in rows] or [""])[0]
-          import invisible_playwright  # noqa: F401 - the import-time pin repair runs here, as under pytest
-          raw = distribution("invisible-core").read_text("direct_url.json")
-          got = (json.loads(raw).get("vcs_info") or {}).get("commit_id") if raw else None
-          print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
-          if not want or got != want:
-              sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s. "
-                       "Something put another core over the git install (an install after it, or the wrapper's "
-                       "import-time repair with INVISIBLE_CORE_AUTOFIX not off), and with the published core "
-                       "the engine refuses the launch on the declarations that core does not emit."
-                       % (version("invisible-core"), got or "the index", ref,
-                          want or "not a full sha nor a ref of invisible_core"))
-          PY
-          python -m invisible_core seal --binary "$FF_EXE" \
-            --tag "$SEAL_TAG" \
-            -o gate.seal.json
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
@@ -290,6 +302,269 @@ jobs:
           name: host-dump-${{ matrix.leg }}
           path: host-dump
           retention-days: 14
+
+  # THE UDP LINE'S E2E, on the leg's own runner and in parallel with the gate above (not behind it): the suites the wrapper
+  # lists in ci/required-suites.json, run with the leg's freshly built binary. A required suite cannot be skipped or dropped
+  # in silence: scripts/ci_verdict.py fails the job if a listed test did not run and pass, if anything was skipped or
+  # deselected, if fewer tests were collected than the list says, or if the list lost a row since main (it only grows).
+  # The suite id is the name of the job (wrapper.e2e.udp-<leg>); a suite that outgrows its 15 minutes is split in two ids,
+  # its tests are not taken out. The candidate's engine is firefox-63-candidate, so the tests of the UDP line (which skip
+  # on an engine older than firefox-63) run here and are never skipped.
+  wrapper-e2e:
+    name: ${{ matrix.suite }}-${{ matrix.leg }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { suite: wrapper.e2e.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.e2e.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the chain by name, whose exit is a documentation address added to lo (`ip addr add`): Linux as root, no Windows leg
+          - { suite: wrapper.e2e.udp.exit, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
+          # the same road with the browser's sandbox ON, run by a normal user: on this runner AppArmor refuses user namespaces to a user,
+          # so every other non-root suite runs a browser without the sandbox of its socket process; this leg turns the restriction off
+          - { suite: wrapper.e2e.udp.sandbox, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, sandbox: true }
+          # the routes and HTTP/3 e2e, split from the suite above (500 s of tests on Linux, 14 minutes and more on Windows)
+          - { suite: wrapper.e2e.web, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.e2e.web, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the unit tests of the line, on both OSes, with the same core and wrapper as the e2e
+          - { suite: wrapper.unit.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.unit.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the DoH suite: Linux (root: its resolver trap points /etc/resolv.conf at a counting resolver) and Windows, the system
+          # of reference (there the trap does not run: the one assertion it makes is the only one not made)
+          - { suite: wrapper.e2e.doh, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
+          - { suite: wrapper.e2e.doh, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the realness check without a real proxy (six declared exits, the values a page reads): like the DoH suite, Linux as root
+          # without xdist (the resolver trap), Windows without the trap
+          - { suite: wrapper.e2e.realness, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
+          - { suite: wrapper.e2e.realness, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the page and popup suites (a page is handed over on Page.ready; a popup reaches the client as Playwright's does)
+          - { suite: wrapper.e2e.page, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.e2e.page, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          - { suite: wrapper.unit.page, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.unit.page, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+    steps:
+      - name: Checkout wrapper (its tests, ci/required-suites.json and scripts/ci_verdict.py)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: ${{ inputs.wrapper_ref }}
+          fetch-depth: 1
+      # The judge and the list it compares against are MAIN's, not the candidate's: a candidate that edits ci_verdict.py or
+      # shortens its own list does not judge itself. (Until main has the judge the candidate's own copy runs, said loudly.)
+      - name: Checkout wrapper main (the judge and the list that bind the candidate)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          path: wrapper-main
+          fetch-depth: 1
+      - name: Download asset
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: asset-${{ matrix.leg }}
+          path: art
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ inputs.build_run_id != github.run_id && github.token || '' }}
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: Linux system deps (Firefox runtime libs, a virtual display)
+        if: matrix.kind == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          python -m pip install --quiet "playwright==$(cat scripts/playwright_pin.txt)"
+          sudo "$(which python)" -m playwright install-deps firefox
+      - name: Extract + locate firefox binary
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ff
+          set -- art/firefox-*-stealth-${{ matrix.leg }}.*
+          [ "$#" -eq 1 ] && [ -e "$1" ] || { echo "ERROR: expected one firefox-*-stealth-${{ matrix.leg }} archive in art/, found: $*"; exit 1; }
+          A="$1"
+          case "${{ matrix.kind }}" in
+            win)   python -c "import zipfile; zipfile.ZipFile('$A').extractall('ff')"; EXE="ff/firefox.exe";;
+            linux) tar xzf "$A" -C ff; EXE="ff/firefox";;
+          esac
+          [ -e "$EXE" ] || { echo "ERROR: firefox binary not found at $EXE"; exit 1; }
+          chmod +x "$EXE" 2>/dev/null || true
+          echo "FF_EXE=$PWD/$EXE" >> "$GITHUB_ENV"
+      # The core under test is exactly core_ref, from git, over what the wrapper's pin resolves (the gate above explains why
+      # and asserts it; the same switches here).
+      - name: The core under test (core_ref, from git) and the wrapper with its dev extra
+        shell: bash
+        env:
+          CORE_REF: ${{ inputs.core_ref }}
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          CORE_GIT="git+https://github.com/feder-cr/invisible_core@$CORE_REF"
+          python -m pip install --quiet "$CORE_GIT"
+          python -m pip install --quiet ".[dev]"
+          python -m pip install --quiet --force-reinstall "$CORE_GIT"
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          from importlib.metadata import distribution, version
+          ref = os.environ["CORE_REF"]
+          if re.fullmatch(r"[0-9a-f]{40}", ref):
+              want = ref
+          else:
+              rows = [line.split() for line in subprocess.run(
+                  ["git", "ls-remote", "https://github.com/feder-cr/invisible_core", ref, ref + "^{}"],
+                  capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()]
+              peeled = [s for s, r in rows if r.endswith("^{}")]
+              want = (peeled or [s for s, _ in rows] or [""])[0]
+          import invisible_playwright  # noqa: F401
+          raw = distribution("invisible-core").read_text("direct_url.json")
+          got = (json.loads(raw).get("vcs_info") or {}).get("commit_id") if raw else None
+          print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
+          if not want or got != want:
+              sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s"
+                       % (version("invisible-core"), got or "the index", ref, want or "not a ref of invisible_core"))
+          PY
+      - name: Seal of the binary under test
+        shell: bash
+        env:
+          SEAL_TAG: ${{ inputs.seal_tag }}
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          python -m invisible_core seal --binary "$FF_EXE" --tag "$SEAL_TAG" -o gate.seal.json
+      # The sandbox leg: the restriction of AppArmor on user namespaces is turned off, as on any Linux where a user may have them, and the runner
+      # user shows that it has one now. The first test of the suite fails if the socket process still has no seccomp filter.
+      - name: User namespaces for a normal user (the sandbox leg)
+        if: matrix.sandbox
+        shell: bash
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces 2>&1 || true
+          unshare -U true && echo "user namespaces: allowed for $(id -un) (uid $(id -u))"
+      # The root legs run an engine that stays under /home/runner (the home of the runner user, mode 750). The socket process is born with
+      # CLONE_NEWUSER and does execve INSIDE the new user namespace, where uid 1001 is not mapped and root has no CAP_DAC_OVERRIDE: the
+      # execve fails ("exited with status 127"), there is no socket process and the gather of a PeerConnection has no candidate (run
+      # 43188313516; reproduced by repos-6b: a home of 755, or an engine of root's, and everything works with the real sandbox, Seccomp: 2).
+      # So the engine goes to a path of root's that everyone can read, before the root steps, and FF_EXE points there.
+      - name: The engine where root can run it (the root legs)
+        if: matrix.root
+        shell: bash
+        run: |
+          sudo rm -rf /opt/ff
+          sudo cp -a "$(dirname "$FF_EXE")" /opt/ff
+          sudo chown -R root:root /opt/ff
+          sudo chmod -R go+rX /opt/ff
+          ls -ld /opt /opt/ff /opt/ff/firefox
+          echo "FF_EXE=/opt/ff/$(basename "$FF_EXE")" >> "$GITHUB_ENV"
+      - name: The suite - every listed test runs and passes
+        shell: bash
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          export INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" STEALTHFOX_E2E_BINARY="$FF_EXE"
+          mkdir -p result
+          # The log of a job that is cancelled is what pytest had written: unbuffered, so that it says how far the suite got.
+          export PYTHONUNBUFFERED=1
+          # The engine's log of the UDP layer, a file per process, kept with the result: what the browser said is the only way
+          # to tell a product that was slow from a test that was wrong (the e2e of run 43164943499 could not be told apart).
+          case "${{ matrix.suite }}" in
+            *e2e*)
+              LOGDIR="$(python -c "import os; os.makedirs('result/moz-logs', exist_ok=True); print(os.path.abspath('result/moz-logs'))")"
+              # `timestamp`: a time on every line (the logs of run 43188313516 had none, and a red on Windows could not be read against the test's own times)
+              export MOZ_LOG="timestamp,sync,SOCKS-UDP:5" MOZ_LOG_FILE="$LOGDIR/moz-%PID.log"
+              # the HTTP/3 e2e: what the browser says of the QUIC it starts (a visit that reads h2 where h3 was due)
+              if [ "${{ matrix.suite }}" = "wrapper.e2e.web" ]; then export MOZ_LOG="$MOZ_LOG,nsHttp:5,neqo_http3:5"; fi
+              # the root legs (run 43188313516: the socket process of every one wrote nothing, the gather had no candidate): the
+              # transport and the sandbox that starts that process
+              if [ "${{ matrix.root }}" = "true" ] || [ "${{ matrix.sandbox }}" = "true" ]; then export MOZ_LOG="$MOZ_LOG,mtransport:5,SandboxBroker:5,SandboxTarget:5"; fi;;
+          esac
+          JUDGE=scripts/ci_verdict.py
+          [ -f wrapper-main/scripts/ci_verdict.py ] && JUDGE=wrapper-main/scripts/ci_verdict.py
+          echo "JUDGE=$JUDGE" >> "$GITHUB_ENV"
+          python "$JUDGE" args --required ci/required-suites.json --suite "${{ matrix.suite }}" --os "${{ matrix.os }}" --with-marker > result/args.txt
+          mapfile -t SELECT < <(tr -d '\r' < result/args.txt)
+          # no PYTEST_ADDOPTS from the environment, no rerun plugin (a test that passes on its second try is not green), junit
+          # in the xunit2 family (the judge reads the class of every test from it)
+          PYTEST=(python -m pytest "${SELECT[@]}" -o addopts='' -o junit_family=xunit2 -q -p no:cacheprovider -p no:rerunfailures -rs --junitxml="result/${{ matrix.suite }}.${{ matrix.os }}.xml")
+          if [ "${{ matrix.root }}" = "true" ]; then
+            # The trap listens on port 53 of a loopback address and points /etc/resolv.conf at it (it takes the first of
+            # 127.0.0.1... it can bind). The runner's own stub resolver is NOT stopped: stopping it took the DNS of the runner
+            # with it, and the result of the job could not be uploaded (run 43164943499: EAI_AGAIN). What listens is said
+            # whole, before the suite, so that a port the trap cannot bind has its holder in the log.
+            (ss -lntup 2>/dev/null || netstat -lntup 2>/dev/null) || echo "no ss or netstat on this runner"
+            # -H: the browser must not see the runner's home as another user's. -u XDG_RUNTIME_DIR: Firefox refuses to run as
+            # root when that directory belongs to the runner's user ("Running Nightly as root in a regular user's session is
+            # not supported", run 43164943499). The trap must run: a test that cannot make it fails instead of going on
+            # without its assertion.
+            # DIAGNOSTICS of the root legs, kept with the result in result/root-diag/ (they judge nothing): the kernel's say on
+            # user namespaces and AppArmor, the processes of the browser a few times during the run, and what the kernel logged.
+            mkdir -p result/root-diag
+            { sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces \
+                kernel.yama.ptrace_scope 2>&1; id; cat /proc/self/status | grep -i -E "^(Cap|Seccomp|NoNewPrivs)"; } > result/root-diag/kernel.txt 2>&1 || true
+            ( for _ in $(seq 1 40); do date +%T; ps -eo pid,ppid,user,stat,args | grep -i -E "[f]irefox|[X]vfb" | cut -c1-260; sleep 15; done ) \
+              > result/root-diag/ps.log 2>&1 &
+            sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
+            sudo dmesg 2>&1 | grep -i -E "apparmor|DENIED|seccomp|userns" | tail -80 > result/root-diag/dmesg.txt || true
+          else
+            env -u PYTEST_ADDOPTS "${PYTEST[@]}" || true
+          fi
+      # The verdict, whatever pytest said: a skipped test, a missing file or a list that shrank is red here.
+      - name: Verdict - required suite
+        shell: bash
+        run: |
+          # main's list is read from the checkout of main above: a failed download cannot pass for "main has no list".
+          if [ -f wrapper-main/ci/required-suites.json ]; then
+            MAIN=(--main-required wrapper-main/ci/required-suites.json)
+          else
+            echo "::warning::wrapper main has no ci/required-suites.json yet: nothing to compare the list with (the first merge to main ends this)"
+            MAIN=(--main-required wrapper-main/ci/required-suites.json --main-has-no-list)
+          fi
+          [ "$JUDGE" = "scripts/ci_verdict.py" ] && echo "::warning::wrapper main has no ci_verdict.py yet: the candidate's own judge runs (the first merge to main ends this)"
+          python "$JUDGE" judge --required ci/required-suites.json --suite "${{ matrix.suite }}" --os "${{ matrix.os }}" \
+            --junit "result/${{ matrix.suite }}.${{ matrix.os }}.xml" --binary "$FF_EXE" --seal gate.seal.json \
+            --commit "$(git rev-parse HEAD)" "${MAIN[@]}" --out "result/${{ matrix.suite }}.${{ matrix.os }}.json"
+      - name: Keep the result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: result-${{ matrix.suite }}-${{ matrix.os }}
+          path: result
+          retention-days: 14
+
+  # Every row of the list, on every OS it names, has a verdict in this run, and it is green. The matrix above is written by hand;
+  # a row or an OS that nobody put in it would otherwise be a suite that never ran and a job that never failed.
+  wrapper-e2e-complete:
+    name: wrapper-e2e-complete
+    needs: wrapper-e2e
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout wrapper (the candidate's list)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: ${{ inputs.wrapper_ref }}
+          fetch-depth: 1
+      - name: Checkout wrapper main (the judge)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: feder-cr/invisible_playwright
+          ref: main
+          path: wrapper-main
+          fetch-depth: 1
+      - name: Every verdict of the run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: result-*
+          path: results
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.11' }
+      - name: The list and the verdicts agree
+        shell: bash
+        run: |
+          JUDGE=scripts/ci_verdict.py
+          [ -f wrapper-main/scripts/ci_verdict.py ] && JUDGE=wrapper-main/scripts/ci_verdict.py
+          python "$JUDGE" complete --required ci/required-suites.json --results results
 
   # HOST GATE, the comparison. What a page reads is a function of the declared
   # identity and of Firefox's code: the same seed gives the same bytes on every

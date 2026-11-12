@@ -49,7 +49,7 @@
    ],
    "added": 7,
    "removed": 0,
-   "hunks": 3,
+   "hunks": 2,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "includes; Instance::RequestAdapter before and after wgpu_client_request_adapter",
@@ -152,16 +152,16 @@
    "prefs": [
     "dom.webgpu.external-texture.enabled"
    ],
-   "added": 1,
-   "removed": 1,
-   "hunks": 1,
+   "added": 4,
+   "removed": 4,
+   "hunks": 4,
    "inline_logic_lines": 0,
    "hookable": "already-hook",
    "anchor": "dom.webgpu.external-texture.enabled, the non-Windows value",
    "evidence": [
     "+  value: true  # STEALTH-HOOK(fingerprint/webgpu/adapter-declaration): Windows' value on every OS"
    ],
-   "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else."
+   "notes": "Mozilla's value changed on its own line, as the prefs-declared-once rule asks: the pref is declared nowhere else. Also (the hook of network/proxy, which owns only the test: a file has one owner): network.proxy.type defaults to 0 (direct) on Mozilla's own line, so the engine never creates the object that reads the host's proxy settings (STEALTH-HOOK(network/proxy)); test juggler/tests/system_proxy_is_off_by_default.test.mjs."
   }
  ]
 }
