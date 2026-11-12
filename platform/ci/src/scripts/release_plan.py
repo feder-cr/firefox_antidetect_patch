@@ -9,7 +9,12 @@ deciding again from the event and the inputs.
              it is refused rather than ignored. Its archives are the run's
              `asset-*` artifacts; if they are the ones to ship, republish.yml
              publishes them from this run's id, without a rebuild. The gate
-             seals the binary with a LOCAL seal (tag `local`).
+             seals the binary with a LOCAL seal named `firefox-N-candidate`, N
+             being the engine this candidate would become: the last published
+             `firefox-N` plus one (`--last-release`, read from the tags by the
+             workflow). The wrapper's tests ask the engine's number (a property of
+             the UDP line is for firefox-63 or later), and a tag with no number
+             (`local`) does not say which engine it is: they fail on it.
   release    a manual run with kind=release, or a republish: the seal and the
              DRAFT under a `firefox-N` tag, the tag checked here before any build
              starts.
@@ -51,6 +56,7 @@ what is wrong. Its known-bad inputs: scripts/test_release_plan.py.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -59,7 +65,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from make_seal import SealBuildError, check_release_tag  # noqa: E402
 
 KINDS = ("candidate", "release")
-LOCAL_SEAL_TAG = "local"
+# A candidate's seal tag: the number of the engine it would become, then "-candidate". It is not a release tag
+# (the core reads it as a local seal), and the wrapper's tests read the number from it.
+CANDIDATE_SEAL_TAG = "firefox-{n}-candidate"
 # What the compile_cache output can say. "gha" is sccache on the GitHub Actions
 # cache; "off" is a cold build. Anything else is refused.
 COMPILE_CACHES = ("gha", "off")
@@ -87,13 +95,16 @@ class PlanError(ValueError):
 
 def plan(event: str, kind: str, release_tag: str, ref_name: str,
          compile_cache: str = "", ref_type: str = "", gtests: str = "",
-         gtest_filter: str = "", core_ref: str = "", wrapper_ref: str = "") -> dict[str, str]:
+         gtest_filter: str = "", core_ref: str = "", wrapper_ref: str = "",
+         last_release: str = "") -> dict[str, str]:
     """The outputs of a run, or PlanError.
 
     compile_cache is the run's request: "" takes the default. ref_type is what the
     run started from; republish.yml builds nothing, passes none and is not asked.
     gtests, gtest_filter, core_ref and wrapper_ref are the run's inputs, empty on an
-    automatic run: it is a candidate from main with the gtests and the defaults."""
+    automatic run: it is a candidate from main with the gtests and the defaults.
+    last_release is the number N of the last published `firefox-N` (the workflow reads
+    it from the tags): a candidate is the engine after it."""
     if event in AUTOMATIC_EVENTS:
         if ref_type != "branch" or ref_name != RELEASE_BRANCH:
             raise PlanError(f"a run by itself is a candidate from the branch {RELEASE_BRANCH}, "
@@ -125,8 +136,12 @@ def plan(event: str, kind: str, release_tag: str, ref_name: str,
                 f"{release_tag!r}). To publish a draft from this run set kind=release; "
                 f"to publish a candidate's archives later, run republish.yml with its "
                 f"run id.")
+        if not re.fullmatch(r"[0-9]+", last_release):
+            raise PlanError(f"a candidate is sealed firefox-N-candidate, N being the engine after the last published "
+                            f"release: the number of the last release is needed (got {last_release!r})")
         return {"kind": "candidate", "tag": "", "num": "", "prevtag": "",
-                "seal_tag": LOCAL_SEAL_TAG, "compile_cache": compile_cache or "gha", **common}
+                "seal_tag": CANDIDATE_SEAL_TAG.format(n=int(last_release) + 1),
+                "compile_cache": compile_cache or "gha", **common}
     try:
         n = check_release_tag(release_tag)
     except SealBuildError as exc:
@@ -148,11 +163,13 @@ def main(argv=None) -> int:
     ap.add_argument("--gtest-filter", default="")
     ap.add_argument("--core-ref", default="")
     ap.add_argument("--wrapper-ref", default="")
+    ap.add_argument("--last-release", default="", help="N of the last published firefox-N tag (a candidate is N+1)")
     a = ap.parse_args(argv)
     try:
         outputs = plan(a.event, a.kind, a.release_tag.strip(), a.ref_name,
                        a.compile_cache.strip(), a.ref_type.strip(), a.gtests.strip(),
-                       a.gtest_filter.strip(), a.core_ref.strip(), a.wrapper_ref.strip())
+                       a.gtest_filter.strip(), a.core_ref.strip(), a.wrapper_ref.strip(),
+                       a.last_release.strip())
     except PlanError as exc:
         print(f"PLAN REFUSED: {exc}", file=sys.stderr)
         return 1

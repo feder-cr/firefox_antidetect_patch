@@ -8,6 +8,7 @@ const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Help
 const {NetUtil} = ChromeUtils.importESModule('resource://gre/modules/NetUtil.sys.mjs');
 const { ChannelEventSinkFactory } = ChromeUtils.importESModule("resource://gre/modules/juggler/ChannelEventSink.sys.mjs");
 const { say } = ChromeUtils.importESModule('resource://gre/modules/juggler/Say.js');
+const { sayWhenHeldTooLong } = ChromeUtils.importESModule('resource://gre/modules/juggler/EarlyProxyHold.js');
 const { newProxyInfoFor } = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 
 
@@ -753,7 +754,7 @@ export class NetworkObserver {
     if (this._waitingSaid)
       return;
     this._waitingSaid = true;
-    say('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
+    sayWhenHeldTooLong(() => this._pendingProxyFilters.length > 0);
   }
 
   // The answer of the filter for one channel, once the session's road is decided.

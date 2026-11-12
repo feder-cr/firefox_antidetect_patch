@@ -82,13 +82,19 @@ test('the warnings of the hold and of the observer arrive at the sink, with dump
     classes: { '@mozilla.org/network/protocol-proxy-service;1': { getService: () => ({ registerChannelFilter() {} }) } },
     interfaces: { nsIProtocolProxyChannelFilter: {} }, utils: {}, results: {},
   };
+  const timers = [];
+  const setTimeout = (fn, ms) => timers.push({ fn, ms });
   const { EarlyProxyHold } = load('EarlyProxyHold.js', {
     Components: components,
-    ChromeUtils: { generateQI: () => () => {}, importESModule: () => ({ say }) },
+    ChromeUtils: { generateQI: () => () => {}, importESModule: () => ({ say, setTimeout }) },
     dump: () => { throw new Error('bare dump used'); },
   }, ['EarlyProxyHold']);
+  EarlyProxyHold.pending.push({});    // a channel is held
   EarlyProxyHold.noteHeld();
   EarlyProxyHold.noteHeld();
+  assert.deepEqual(written, [], 'nothing until the look, 5 s later');
+  assert.deepEqual(timers.map(t => t.ms), [5000]);
+  for (const t of timers) t.fn();
   assert.equal(written.length, 1);
-  assert.match(written[0], /waiting for Browser\.setBrowserProxy or Browser\.setNoBrowserProxy/);
+  assert.match(written[0], /no request leaves until Browser\.setBrowserProxy or Browser\.setNoBrowserProxy is received/);
 });

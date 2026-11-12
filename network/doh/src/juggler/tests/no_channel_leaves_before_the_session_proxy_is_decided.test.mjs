@@ -97,6 +97,7 @@ function observe(registry) {
         ChannelEventSinkFactory: { getService: () => ({ registerCollector() {} }) },
         NetUtil: {},
         say: text => said.push(text),
+        sayWhenHeldTooLong: () => {},   // the 5 s look at the hold: no_channel_leaves_before_the_network_observer_exists.test.mjs
       }),
       generateQI: () => () => {},
     },

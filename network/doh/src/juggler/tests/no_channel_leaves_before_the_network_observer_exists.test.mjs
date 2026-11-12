@@ -106,6 +106,16 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
   // global dump is a no-op here, as it is in an official build.
   const say = text => dumped.push(text);
   const noDump = () => {};
+  // The clock of the hold: setTimeout only records, the test lets the time pass.
+  const timers = [];
+  const setTimeout = (fn, ms) => { timers.push({ fn, ms }); };
+  const letTimePass = () => { for (const t of timers.splice(0)) t.fn(); };
+
+  const { EarlyProxyHold, sayWhenHeldTooLong, HELD_TOO_LONG_MS, HELD_TOO_LONG_LINE } = load('EarlyProxyHold.js', {
+    Components: components,
+    ChromeUtils: { generateQI: () => () => {}, importESModule: () => ({ say, setTimeout }) },
+    Services: services, dump: noDump,
+  }, ['EarlyProxyHold', 'sayWhenHeldTooLong', 'HELD_TOO_LONG_MS', 'HELD_TOO_LONG_LINE']);
 
   const { TargetRegistry: RealRegistry } = load('TargetRegistry.js', {
     Ci, Cc: {}, Components: { results: Cr },
@@ -137,17 +147,12 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
         ChannelEventSinkFactory: { getService: () => ({ registerCollector() {} }) },
         NetUtil: {},
         say,
+        sayWhenHeldTooLong,
       }),
       generateQI: () => () => {},
     },
     Services: services, dump: noDump,
   }, ['NetworkObserver']);
-
-  const { EarlyProxyHold } = load('EarlyProxyHold.js', {
-    Components: components,
-    ChromeUtils: { generateQI: () => () => {}, importESModule: () => ({ say }) },
-    Services: services, dump: noDump,
-  }, ['EarlyProxyHold']);
 
   class Dispatcher {
     rootSession() { return { setHandler() {} }; }
@@ -192,6 +197,7 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
   };
   return {
     juggler, cmdLine, registered, observers, log, ask, dumped, TargetRegistry, EarlyProxyHold,
+    timers, letTimePass, HELD_TOO_LONG_MS, HELD_TOO_LONG_LINE,
     start: async () => {
       await juggler.observe(null, 'profile-after-change');
       await juggler.observe(cmdLine, 'command-line-startup');
@@ -321,28 +327,57 @@ test('source: the hold file is ours, listed in moz.build, and asks only for what
   // Only the proxy service (needs prefs and the observer service) is used.
   const services = Array.from(hold.matchAll(/Cc\[['"]([^'"]+)['"]\]/g), m => m[1]);
   assert.deepEqual(services, ['@mozilla.org/network/protocol-proxy-service;1']);
-  // The only module it imports is the one-function helper that writes the warning.
+  // The only modules it imports are the one-function helper that writes the warning and the timer of the 5 s look.
   assert.doesNotMatch(hold, /TargetRegistry/);
-  assert.deepEqual(Array.from(hold.matchAll(/importESModule\('([^']+)'\)/g), m => m[1]), ['resource://gre/modules/juggler/Say.js']);
+  assert.deepEqual(Array.from(hold.matchAll(/importESModule\('([^']+)'\)/g), m => m[1]),
+      ['resource://gre/modules/juggler/Say.js', 'resource://gre/modules/Timer.sys.mjs']);
 });
 
-// A driver that sends neither Browser.setBrowserProxy nor
-// Browser.setNoBrowserProxy would hang without a word: one line says why.
-const WAITING = 'juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n';
-const waitingLines = b => b.dumped.filter(text => /waiting for Browser\.setBrowserProxy/.test(text));
+// A client that is not core/wrapper (a stock Playwright started on this binary with executable_path) sends neither
+// Browser.setBrowserProxy nor Browser.setNoBrowserProxy, and its first request waits for ever, by design. Nothing is released on a
+// timer; one line, once, tells whoever reads the stderr of the browser why, when a channel has waited more than 5 s.
+const heldLines = b => b.dumped.filter(text => /no request leaves until/.test(text));
 
-test('the first held channel writes one line, however many are held', async () => {
+test('a channel held and still held after 5 s writes one line, however many are held', async () => {
   const b = browser();
   await b.start();
-  assert.deepEqual(waitingLines(b), [], 'nothing before a channel is held');
+  assert.deepEqual(heldLines(b), [], 'nothing before a channel is held');
   for (let i = 0; i < 5; i++)
     b.ask('early' + i);
-  assert.deepEqual(waitingLines(b), [WAITING]);
+  assert.deepEqual(heldLines(b), [], 'and nothing at the moment it is held: the line is for the ones that stay');
+  assert.deepEqual(b.timers.map(t => t.ms), [5000], 'one look, 5 s after the first held channel, not one per channel');
+  assert.equal(b.HELD_TOO_LONG_MS, 5000);
   await b.finalUi();
   for (let i = 0; i < 5; i++)
     b.ask('late' + i);
-  assert.deepEqual(waitingLines(b), [WAITING], 'still one line after the observer took over');
+  assert.equal(b.timers.length, 1, 'still one look after the observer took over');
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), [b.HELD_TOO_LONG_LINE]);
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), [b.HELD_TOO_LONG_LINE], 'once');
   assert.ok(!b.dumped.join('').includes('.example'), 'no URL or host is printed');
+});
+
+test('the line says what the client has to send, in the words of the contract', () => {
+  const b = browser();
+  assert.match(b.HELD_TOO_LONG_LINE,
+      /no request leaves until Browser\.setBrowserProxy or Browser\.setNoBrowserProxy is received\n$/);
+  assert.match(b.HELD_TOO_LONG_LINE, /^juggler: /);
+});
+
+test('the line changes nothing: the channels stay held, no timer lets one go', async () => {
+  const b = browser();
+  await b.start();
+  const early = b.ask('early');
+  await b.finalUi();
+  const late = b.ask('late');
+  b.letTimePass();
+  assert.equal(heldLines(b).length, 1);
+  assert.deepEqual([early, late], [[], []], 'held after the line as before it');
+  assert.deepEqual(b.log, []);
+  assert.deepEqual(b.timers, [], 'the look re-arms nothing');
+  b.registry().setNoBrowserProxy();
+  assert.deepEqual([early, late], [[DEFAULT], [DEFAULT]], 'the decision still answers them, in order');
 });
 
 test('a hold that the observer registered itself writes the line once too', async () => {
@@ -351,17 +386,42 @@ test('a hold that the observer registered itself writes the line once too', asyn
   await b.finalUi();
   for (let i = 0; i < 3; i++)
     b.ask('late' + i);
-  assert.deepEqual(waitingLines(b), [WAITING]);
+  assert.deepEqual(b.timers.map(t => t.ms), [5000]);
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), [b.HELD_TOO_LONG_LINE]);
 });
 
-test('no line when the decision already exists', async () => {
+test('a session that decides within 5 s writes nothing (every core/wrapper session)', async () => {
+  const b = browser();
+  await b.start();
+  b.ask('early');
+  await b.finalUi();
+  b.ask('late');
+  b.registry().setNoBrowserProxy();
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), []);
+});
+
+test('the same with a proxy, and the line never carries a secret', async () => {
+  const b = browser();
+  await b.start();
+  b.ask('early');
+  await b.finalUi();
+  b.registry().setBrowserProxy({ type: 'http', host: 'gw', port: 3128, username: 'u', password: 'secret', bypass: [] });
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), []);
+  assert.ok(!b.dumped.join('').includes('secret'));
+});
+
+test('no look at all when the decision already exists', async () => {
   const b = browser();
   await b.start();
   await b.finalUi();
   b.registry().setNoBrowserProxy();
   for (let i = 0; i < 3; i++)
     b.ask('late' + i);
-  assert.deepEqual(waitingLines(b), []);
+  assert.deepEqual(b.timers, []);
+  assert.deepEqual(heldLines(b), []);
 });
 
 test('a decision that comes before any channel is held writes no line, and a proxy neither', async () => {
@@ -370,13 +430,26 @@ test('a decision that comes before any channel is held writes no line, and a pro
   await b.finalUi();
   b.registry().setBrowserProxy({ type: 'http', host: 'gw', port: 3128, username: 'u', password: 'secret', bypass: [] });
   b.ask('late');
-  assert.deepEqual(waitingLines(b), []);
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), []);
   assert.ok(!b.dumped.join('').includes('secret'));
 });
 
-test('source: the line is written by the hold and, for the fallback, by the observer, with the same words', () => {
+test('a look that throws writes nothing and breaks nothing', async () => {
+  const b = browser();
+  await b.start();
+  b.ask('early');
+  b.EarlyProxyHold._pending = null;   // the predicate of the look now throws
+  b.letTimePass();
+  assert.deepEqual(heldLines(b), []);
+});
+
+test('source: the hold and the fallback observer share one function and one line, and the old immediate line is gone', () => {
   const hold = read('EarlyProxyHold.js');
   const observer = read('NetworkObserver.js');
-  const line = /'(juggler: waiting for Browser\.setBrowserProxy or Browser\.setNoBrowserProxy before the first proxied channel can start)\\n'/;
-  assert.equal(hold.match(line)[1], observer.match(line)[1]);
+  assert.equal(hold.match(/no request leaves until Browser\.setBrowserProxy or Browser\.setNoBrowserProxy is received/g).length, 1);
+  assert.doesNotMatch(observer, /no request leaves until/);
+  assert.match(observer, /sayWhenHeldTooLong\(\(\) => this\._pendingProxyFilters\.length > 0\)/);
+  assert.match(hold, /sayWhenHeldTooLong\(\(\) => this\._pending\.length > 0\)/);
+  assert.doesNotMatch(hold + observer, /waiting for Browser\.setBrowserProxy/);
 });

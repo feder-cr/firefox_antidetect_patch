@@ -7,6 +7,26 @@
 const Cc = Components.classes;
 const Ci = Components.interfaces;
 const { say } = ChromeUtils.importESModule('resource://gre/modules/juggler/Say.js');
+const { setTimeout } = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
+
+// A channel that waits this long with no decision is the sign of a client that does not know the contract (a stock Playwright
+// started on this binary, say): the hold never lets it go on a timer, so the one thing to do is to say why it waits.
+export const HELD_TOO_LONG_MS = 5000;
+export const HELD_TOO_LONG_LINE =
+    'juggler: a request has been held for more than 5 s: no request leaves until Browser.setBrowserProxy or Browser.setNoBrowserProxy is received\n';
+
+// Starts the one look at the hold: after HELD_TOO_LONG_MS, if aStillHeld() says a channel still waits, one line on stderr (Say.js: not
+// gated by a pref, not readable from a page). It decides nothing and releases nothing; no URL, no host, no credential in it.
+export function sayWhenHeldTooLong(aStillHeld) {
+  setTimeout(() => {
+    try {
+      if (aStillHeld())
+        say(HELD_TOO_LONG_LINE);
+    } catch (e) {
+      // A diagnostic must not become the failure it describes.
+    }
+  }, HELD_TOO_LONG_MS);
+}
 
 /**
  * The proxy filter of a driven browser, from the first point where Juggler
@@ -34,14 +54,14 @@ export const EarlyProxyHold = {
   _delegate: null,
   _waitingSaid: false,
 
-  // One line, the first time a channel is held, so a driver that never sends
-  // Browser.setBrowserProxy or Browser.setNoBrowserProxy does not hang without
-  // a word. No URL, no credential, no line per channel, no timeout.
+  // The first time a channel is held, one look 5 s later: a driver that never sends Browser.setBrowserProxy or
+  // Browser.setNoBrowserProxy does not hang without a word. A session that decides in time (every core/wrapper session)
+  // writes nothing. No URL, no credential, no line per channel, and no release on a timer: the channels stay held.
   noteHeld() {
     if (this._waitingSaid)
       return;
     this._waitingSaid = true;
-    say('juggler: waiting for Browser.setBrowserProxy or Browser.setNoBrowserProxy before the first proxied channel can start\n');
+    sayWhenHeldTooLong(() => this._pending.length > 0);
   },
 
   // The (channel, callback) pairs waiting for the decision.

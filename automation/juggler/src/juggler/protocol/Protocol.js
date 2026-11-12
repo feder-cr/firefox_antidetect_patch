@@ -946,6 +946,11 @@ const Page = {
       returns: {
         x: t.Number,
         y: t.Number,
+        // Stealthfox: where one CSS pixel along the frame's x axis, and along its y axis, goes in the main
+        // document. (1,0) and (0,1) when the frame is only shifted; different when a CSS transform scales,
+        // skews or rotates the <iframe> or an element above it.
+        ex: t.Optional(pageTypes.DOMPoint),
+        ey: t.Optional(pageTypes.DOMPoint),
       },
     },
     'dispatchKeyEvent': {

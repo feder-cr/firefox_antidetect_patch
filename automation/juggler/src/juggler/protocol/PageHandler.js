@@ -1089,6 +1089,12 @@ export class PageHandler {
   async ['Page.getFrameOrigin']({frameId}) {
     const mux = this._contentChannel;
     let point = {x: 0, y: 0};
+    // Where one CSS pixel along the frame's x and along its y goes in the main document: the images of
+    // (1,0) and (0,1). A box that is not a translation (a CSS scale, a skew, a rotation on the <iframe> or on
+    // something above it) makes them different from (1,0) and (0,1); the client needs them to take a point of
+    // the main document back to the frame.
+    let ex = {x: 1, y: 0};
+    let ey = {x: 0, y: 1};
     let current = frameId;
     while (this._rootIdOf(current) !== mux.mainRootId() || this._rootFrameIdOf(current) !== current) {
       const viewport = await this._contentPage.send('frameViewport', {frameId: current});
@@ -1098,9 +1104,15 @@ export class PageHandler {
       if (transform.parentRootFrameId === current)
         throw new Error('Frame ' + current + ' is its own parent');
       point = mapPoint(transform, viewport, point);
+      // The linear part of this step: u = x / width, v = y / height, so (1,0) goes to Ex / width, (0,1) to Ey / height.
+      const lx = {x: transform.Ex.x / viewport.width, y: transform.Ex.y / viewport.width};
+      const ly = {x: transform.Ey.x / viewport.height, y: transform.Ey.y / viewport.height};
+      const apply = v => ({x: v.x * lx.x + v.y * ly.x, y: v.x * lx.y + v.y * ly.y});
+      ex = apply(ex);
+      ey = apply(ey);
       current = transform.parentRootFrameId;
     }
-    return point;
+    return {x: point.x, y: point.y, ex, ey};
   }
 
   // The root (the id of its browsing context) a frame belongs to. The mux does not know it for a frame in

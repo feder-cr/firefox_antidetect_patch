@@ -78,7 +78,9 @@ function handler(boxes, viewports) {
 }
 
 const box = (x, y, w, h, parentRootFrameId) => ({ O: { x, y }, Ex: { x: w, y: 0 }, Ey: { x: 0, y: h }, parentRootFrameId });
-const origin = (h, frameId) => h['Page.getFrameOrigin']({ frameId }).then(plain);
+const answer = (h, frameId) => h['Page.getFrameOrigin']({ frameId }).then(plain);
+const origin = (h, frameId) => answer(h, frameId).then(({ x, y }) => ({ x, y }));
+const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, actual + ' != ' + expected);
 
 test('the main frame starts at the origin of the main document, and nothing is asked', async () => {
   const { h, sent } = handler({}, {});
@@ -141,4 +143,47 @@ test('the protocol declares the command, and the page handler answers it', () =>
   const protocol = fs.readFileSync(path.join(ROOT, 'protocol/Protocol.js'), 'utf8');
   assert.match(protocol, /'getFrameOrigin': \{\s*params: \{\s*frameId: t\.String,\s*\},\s*returns: \{\s*x: t\.Number,\s*y: t\.Number,/);
   assert.equal(typeof PageHandler.prototype['Page.getFrameOrigin'], 'function');
+});
+
+test('a frame only shifted has the axes of the identity: (1,0) and (0,1)', async () => {
+  const { h } = handler({ 'subframe-20': box(68, 68, 600, 500, 'mainframe-9') }, { 'subframe-20': { width: 600, height: 500 } });
+  assert.deepEqual(await answer(h, 'subframe-20'), { x: 68, y: 68, ex: { x: 1, y: 0 }, ey: { x: 0, y: 1 } });
+  assert.deepEqual(await answer(handler({}, {}).h, 'mainframe-9'), { x: 0, y: 0, ex: { x: 1, y: 0 }, ey: { x: 0, y: 1 } });
+});
+
+test('an <iframe> shown at half size (CSS scale 0.5) has the axes (0.5,0) and (0,0.5)', async () => {
+  const { h } = handler({ 'subframe-20': box(100, 50, 200, 150, 'mainframe-9') }, { 'subframe-20': { width: 400, height: 300 } });
+  assert.deepEqual(await answer(h, 'subframe-20'), { x: 100, y: 50, ex: { x: 0.5, y: 0 }, ey: { x: 0, y: 0.5 } });
+});
+
+test('a skewed <iframe> has the axes of its box: the point of the frame is not the point minus the origin', async () => {
+  // a 400x300 viewport shown on a parallelogram: x goes right and a little down, y goes down and to the right.
+  const skewed = { O: { x: 10, y: 20 }, Ex: { x: 400, y: 100 }, Ey: { x: 60, y: 300 }, parentRootFrameId: 'mainframe-9' };
+  const { h } = handler({ 'subframe-20': skewed }, { 'subframe-20': { width: 400, height: 300 } });
+  const a = await answer(h, 'subframe-20');
+  assert.deepEqual([a.x, a.y], [10, 20]);
+  close(a.ex.x, 1); close(a.ex.y, 0.25); close(a.ey.x, 0.2); close(a.ey.y, 1);
+});
+
+test('the axes of a frame in a scaled <iframe> in a scaled <iframe> are the product of both, across the boundary', async () => {
+  // 21 (400x250) is shown at half size in 20; 20 (600x500) is shown at 1.5x in the top.
+  const { h } = handler({
+    'subframe-21': box(40, 30, 200, 125, 'subframe-20'),
+    'subframe-20': box(100, 100, 900, 750, 'mainframe-9'),
+  }, { 'subframe-21': { width: 400, height: 250 }, 'subframe-20': { width: 600, height: 500 } });
+  const a = await answer(h, 'subframe-20'.replace('20', '21'));
+  close(a.x, 100 + 1.5 * 40); close(a.y, 100 + 1.5 * 30);
+  close(a.ex.x, 0.75); close(a.ex.y, 0); close(a.ey.x, 0); close(a.ey.y, 0.75);
+});
+
+test('the point a client takes back with the axes is the point it started from', async () => {
+  const skewed = { O: { x: 10, y: 20 }, Ex: { x: 400, y: 100 }, Ey: { x: 60, y: 300 }, parentRootFrameId: 'mainframe-9' };
+  const { h } = handler({ 'subframe-20': skewed }, { 'subframe-20': { width: 400, height: 300 } });
+  const a = await answer(h, 'subframe-20');
+  // the centre of the frame, (200,150), is at 10 + 200*1 + 150*0.2, 20 + 200*0.25 + 150*1 in the main document
+  const main = { x: a.x + 200 * a.ex.x + 150 * a.ey.x, y: a.y + 200 * a.ex.y + 150 * a.ey.y };
+  const det = a.ex.x * a.ey.y - a.ey.x * a.ex.y;
+  const dx = main.x - a.x, dy = main.y - a.y;
+  close((dx * a.ey.y - dy * a.ey.x) / det, 200);
+  close((a.ex.x * dy - a.ex.y * dx) / det, 150);
 });
