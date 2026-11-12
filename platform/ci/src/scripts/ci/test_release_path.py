@@ -844,6 +844,16 @@ def group_gate_workflow(doc) -> list:
     return out
 
 
+def group_sources(doc) -> list:
+    """Sources that broke a build leg before, read as text (the compiler is the judge, but only after a node and 2 minutes)."""
+    layer = (ROOT / "netwerk" / "socket" / "nsSOCKSUDPIOLayer.cpp").read_text(encoding="utf-8")
+    # run 43143685921, build-win: <in6addr.h> defines `_S6_un` as `u`, so `pr_s6_addr` (= _S6_un._S6_u8) names a member of
+    # PRIPv6Addr that does not exist once winsock is included; the bytes of an address are read through a cast.
+    code = [line for line in layer.splitlines() if not line.lstrip().startswith("//")]
+    return [("sources: nsSOCKSUDPIOLayer.cpp reads the bytes of an IPv6 address without the pr_s6_addr macros (winsock redefines _S6_un)",
+             not any("pr_s6_addr" in line for line in code))]
+
+
 def cases() -> list:
     try:
         import yaml
@@ -852,7 +862,7 @@ def cases() -> list:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     out = []
     for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
-                        (group_stage_package, (doc,)), (group_gate_workflow, (doc,))):
+                        (group_stage_package, (doc,)), (group_gate_workflow, (doc,)), (group_sources, (doc,))):
         try:
             out += group(*args)
         except Exception as exc:
