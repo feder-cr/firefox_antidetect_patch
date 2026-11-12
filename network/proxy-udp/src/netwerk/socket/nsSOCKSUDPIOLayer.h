@@ -30,6 +30,8 @@
 #ifndef nsSOCKSUDPIOLayer_h__
 #define nsSOCKSUDPIOLayer_h__
 
+#include <functional>
+
 #include "nsString.h"
 #include "nscore.h"
 #include "prio.h"
@@ -86,6 +88,16 @@ void nsSOCKSUDPIOLayerShutDownPoolForTests(bool aShutDown);
  */
 bool nsSOCKSUDPIOLayerFirstWarmForProcess(uint64_t aProcessId, const nsACString& aHost, int32_t aPort, const nsACString& aUser,
                                           const nsACString& aPass);
+
+/*
+ * Parent process, main thread: tell the socket process about this proxy, ONCE, and count it told only if the message was delivered.
+ * nsSOCKSUDPIOLayerFirstWarmForProcess decides (true the first time for a proxy and a process); aSend is then called, and is the
+ * sending itself (it returns whether the message went out). When it fails the proxy is taken off the list again, so that the next SOCKS5
+ * connection to that proxy tells the process once more: a message that did not go out must not leave the pool of the socket process cold
+ * for good. True when the message was delivered, false when it was not needed (already told) or not delivered.
+ */
+bool nsSOCKSUDPIOLayerWarmTheSocketProcess(uint64_t aProcessId, const nsACString& aHost, int32_t aPort, const nsACString& aUser,
+                                           const nsACString& aPass, const std::function<bool()>& aSend);
 
 /*
  * Parent process, main thread: whether the sockets of the PeerConnections are made in the socket process (so the parent has to tell it

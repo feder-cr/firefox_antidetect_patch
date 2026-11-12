@@ -1817,6 +1817,34 @@ TEST(StealthSessionUdpProxy, TheSocketProcessIsToldOncePerProxyAndPerProcess)
   EXPECT_FALSE(nsSOCKSUDPIOLayerFirstWarmForProcess(101, "gw"_ns, 1080, "u"_ns, "p"_ns));
 }
 
+// The proxy counts as told only when the message went out. A Send that fails (the channel is not open yet, or is closing) must not leave the
+// pool of the socket process cold for good: the next SOCKS5 connection to that proxy tells the process once more, and a delivered message is
+// not repeated.
+TEST(StealthSessionUdpProxy, ASendThatFailedLeavesTheSocketProcessToBeToldAgain)
+{
+  int sends = 0;
+  auto fails = [&] {
+    ++sends;
+    return false;
+  };
+  auto delivers = [&] {
+    ++sends;
+    return true;
+  };
+  EXPECT_FALSE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw2"_ns, 1080, "u"_ns, "p"_ns, fails)) << "not delivered";
+  EXPECT_EQ(sends, 1);
+  EXPECT_TRUE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw2"_ns, 1080, "u"_ns, "p"_ns, delivers))
+      << "the next connection tells the process once more";
+  EXPECT_EQ(sends, 2);
+  EXPECT_FALSE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw2"_ns, 1080, "u"_ns, "p"_ns, delivers)) << "a delivered message is not repeated";
+  EXPECT_EQ(sends, 2) << "the sending was not even tried";
+  // Another proxy of the same process is its own count: a failure of one does not touch the other.
+  EXPECT_TRUE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw3"_ns, 1080, "u"_ns, "p"_ns, delivers));
+  EXPECT_FALSE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw4"_ns, 1080, "u"_ns, "p"_ns, fails));
+  EXPECT_FALSE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw3"_ns, 1080, "u"_ns, "p"_ns, delivers)) << "still told";
+  EXPECT_TRUE(nsSOCKSUDPIOLayerWarmTheSocketProcess(200, "gw4"_ns, 1080, "u"_ns, "p"_ns, delivers)) << "the one that failed is told again";
+}
+
 // The parent tells the socket process when the sockets of the PeerConnections are made there. NOT when "HTTP runs in the socket
 // process" (nsIOService::UseSocketProcess), which is off by default: with that test the message was never sent.
 TEST(StealthSessionUdpProxy, TheSocketProcessIsToldWhenItMakesTheIceSockets)

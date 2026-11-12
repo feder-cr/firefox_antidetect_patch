@@ -322,6 +322,9 @@ jobs:
           - { suite: wrapper.e2e.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
           # the chain by name, whose exit is a documentation address added to lo (`ip addr add`): Linux as root, no Windows leg
           - { suite: wrapper.e2e.udp.exit, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
+          # the same road with the browser's sandbox ON, run by a normal user: on this runner AppArmor refuses user namespaces to a user,
+          # so every other non-root suite runs a browser without the sandbox of its socket process; this leg turns the restriction off
+          - { suite: wrapper.e2e.udp.sandbox, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, sandbox: true }
           # the routes and HTTP/3 e2e, split from the suite above (500 s of tests on Linux, 14 minutes and more on Windows)
           - { suite: wrapper.e2e.web, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.e2e.web, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
@@ -428,6 +431,30 @@ jobs:
         run: |
           export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
           python -m invisible_core seal --binary "$FF_EXE" --tag "$SEAL_TAG" -o gate.seal.json
+      # The sandbox leg: the restriction of AppArmor on user namespaces is turned off, as on any Linux where a user may have them, and the runner
+      # user shows that it has one now. The first test of the suite fails if the socket process still has no seccomp filter.
+      - name: User namespaces for a normal user (the sandbox leg)
+        if: matrix.sandbox
+        shell: bash
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces 2>&1 || true
+          unshare -U true && echo "user namespaces: allowed for $(id -un) (uid $(id -u))"
+      # The root legs run an engine that stays under /home/runner (the home of the runner user, mode 750). The socket process is born with
+      # CLONE_NEWUSER and does execve INSIDE the new user namespace, where uid 1001 is not mapped and root has no CAP_DAC_OVERRIDE: the
+      # execve fails ("exited with status 127"), there is no socket process and the gather of a PeerConnection has no candidate (run
+      # 43188313516; reproduced by repos-6b: a home of 755, or an engine of root's, and everything works with the real sandbox, Seccomp: 2).
+      # So the engine goes to a path of root's that everyone can read, before the root steps, and FF_EXE points there.
+      - name: The engine where root can run it (the root legs)
+        if: matrix.root
+        shell: bash
+        run: |
+          sudo rm -rf /opt/ff
+          sudo cp -a "$(dirname "$FF_EXE")" /opt/ff
+          sudo chown -R root:root /opt/ff
+          sudo chmod -R go+rX /opt/ff
+          ls -ld /opt /opt/ff /opt/ff/firefox
+          echo "FF_EXE=/opt/ff/$(basename "$FF_EXE")" >> "$GITHUB_ENV"
       - name: The suite - every listed test runs and passes
         shell: bash
         run: |
@@ -447,7 +474,7 @@ jobs:
               if [ "${{ matrix.suite }}" = "wrapper.e2e.web" ]; then export MOZ_LOG="$MOZ_LOG,nsHttp:5,neqo_http3:5"; fi
               # the root legs (run 43188313516: the socket process of every one wrote nothing, the gather had no candidate): the
               # transport and the sandbox that starts that process
-              if [ "${{ matrix.root }}" = "true" ]; then export MOZ_LOG="$MOZ_LOG,mtransport:5,SandboxBroker:5,SandboxTarget:5"; fi;;
+              if [ "${{ matrix.root }}" = "true" ] || [ "${{ matrix.sandbox }}" = "true" ]; then export MOZ_LOG="$MOZ_LOG,mtransport:5,SandboxBroker:5,SandboxTarget:5"; fi;;
           esac
           JUDGE=scripts/ci_verdict.py
           [ -f wrapper-main/scripts/ci_verdict.py ] && JUDGE=wrapper-main/scripts/ci_verdict.py
@@ -476,14 +503,6 @@ jobs:
               > result/root-diag/ps.log 2>&1 &
             sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
             sudo dmesg 2>&1 | grep -i -E "apparmor|DENIED|seccomp|userns" | tail -80 > result/root-diag/dmesg.txt || true
-            # The realness suite once more, one case, with the sandboxes of the socket and content processes off: if the gather
-            # then has candidates the sandbox is what starts the root run without a socket process that works (it judges nothing).
-            if [ "${{ matrix.suite }}" = "wrapper.e2e.realness" ]; then
-              sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" \
-                MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_LOG_FILE="$PWD/result/root-diag/moz-nosandbox-%PID.log" \
-                python -m pytest tests/test_realness_behind_a_declared_exit_e2e.py -k germany -x -q -o addopts='' -p no:cacheprovider -p no:rerunfailures \
-                > result/root-diag/nosandbox.txt 2>&1 || true
-            fi
           else
             env -u PYTEST_ADDOPTS "${PYTEST[@]}" || true
           fi

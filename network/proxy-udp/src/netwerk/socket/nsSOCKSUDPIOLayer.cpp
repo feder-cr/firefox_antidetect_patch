@@ -1618,6 +1618,28 @@ bool nsSOCKSUDPIOLayerFirstWarmForProcess(uint64_t aProcessId, const nsACString&
   return true;
 }
 
+bool nsSOCKSUDPIOLayerWarmTheSocketProcess(uint64_t aProcessId, const nsACString& aHost, int32_t aPort, const nsACString& aUser,
+                                           const nsACString& aPass, const std::function<bool()>& aSend) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!nsSOCKSUDPIOLayerFirstWarmForProcess(aProcessId, aHost, aPort, aUser, aPass)) {
+    return false;
+  }
+  if (aSend()) {
+    return true;
+  }
+  // The message did not go out (the channel is not open yet, or is closing): the proxy is not told, so it is not counted told. The next
+  // SOCKS5 connection to it comes through here again and tells the process.
+  if (sWarmSent && sWarmSent->mProcessId == aProcessId) {
+    ProxyKey key;
+    key.mHost = aHost;
+    key.mPort = aPort;
+    key.mUser = aUser;
+    key.mPass = aPass;
+    sWarmSent->mKeys.RemoveElement(key);
+  }
+  return false;
+}
+
 bool nsSOCKSUDPIOLayerSocketProcessMakesTheIceSockets() {
   MOZ_ASSERT(NS_IsMainThread());
   // The conditions under which the sockets of a PeerConnection are made in the socket process (MediaTransportHandler::Create) and
@@ -1661,8 +1683,10 @@ void WarmTheSocketProcess(const nsACString& aHost, int32_t aPort, const nsACStri
         }
         io->CallOrWaitForSocketProcess([host, aPort, user, pass] {
           RefPtr<SocketProcessParent> actor = SocketProcessParent::GetSingleton();
-          if (actor && nsSOCKSUDPIOLayerFirstWarmForProcess(static_cast<uint64_t>(actor->OtherPid()), host, aPort, user, pass)) {
-            (void)actor->SendStealthWarmSocksUdp(host, aPort, user, pass);
+          if (actor) {
+            nsSOCKSUDPIOLayerWarmTheSocketProcess(static_cast<uint64_t>(actor->OtherPid()), host, aPort, user, pass, [&] {
+              return actor->SendStealthWarmSocksUdp(host, aPort, user, pass);
+            });
           }
         });
       }));

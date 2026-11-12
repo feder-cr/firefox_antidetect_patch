@@ -1650,7 +1650,7 @@
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
-  "added": 63,
+  "added": 62,
   "removed": 4,
   "hunks": 11,
   "inline_logic_lines": 35,

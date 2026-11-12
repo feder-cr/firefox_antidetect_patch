@@ -42,7 +42,8 @@ WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 # The filter of run 41402916724, from its log, with the suites added to the default since (StealthSessionUdpProxy, StealthDeclaredNetwork, StealthSocksUdpPool, TestStealthTRRContext, TestStealthSocksCredentials, TestStealthSessionResolver, StealthIceResolverContext, StealthUdpProxyBirth).
 GREEN_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
                 "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:"
-                "StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*")
+                "StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:"
+                "StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.
 CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure", "browser/moz.configure", "build/moz.configure/*.configure")
@@ -146,6 +147,17 @@ def group_gtest(doc) -> list:
     out = []
     inputs = doc[True]["workflow_dispatch"]["inputs"]
     out.append(("gtests: the default filter is what the green candidate ran", inputs["gtest_filter"]["default"] == GREEN_FILTER))
+    # Every suite of a gtest of ours in the UDP line is in the default filter (run 43203723323: StealthNrSocketBirth and
+    # StealthPcUdpProxyKinds were built and NEVER run, because the filter is a list written by hand).
+    import re as _re
+    suites = set()
+    for folder in ("dom/media/webrtc", "netwerk"):
+        for path in (ROOT / folder).rglob("Test*Stealth*.cpp"):
+            suites |= set(_re.findall(r"^TEST(?:_F|_P)?\(\s*(\w+)\s*,", path.read_text(encoding="utf-8", errors="replace"), _re.M))
+    default = inputs["gtest_filter"]["default"].split(":")
+    missing = sorted(x for x in suites if x + ".*" not in default)
+    out.append(("gtests: every suite of a gtest of ours under netwerk/ and dom/media/webrtc/ is in the default filter (%s)" % ", ".join(missing),
+                len(suites) >= 8 and not missing))
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     import release_plan
     out.append(("gtests: the plan's default filter (release_plan.py) is the workflow's",
