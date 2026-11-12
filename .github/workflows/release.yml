@@ -658,6 +658,21 @@ jobs:
           fi
           python3 scripts/ci mozconfig --leg "$CI_LEG" --compile-cache "$COMPILE_CACHE"
 
+      # The objects of the gtests of ours, BEFORE the build of the browser (compile only, no link, the same object directory and the
+      # same flags, so the build that follows finds them made and the compile cache sees nothing different). A gtest that does not
+      # compile stops the run here, a few minutes in, and not after the link of the browser (twenty minutes in on the faster leg,
+      # an hour on the slower): three runs of the node were spent on errors of tests that do not depend on the browser at all.
+      # Only the directories that hold a test of ours (Test*Stealth*.cpp); --keep-going shows every error of them at once.
+      - name: The gtests of ours - their objects first
+        if: needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
+        timeout-minutes: 40
+        shell: bash
+        run: |
+          DIRS=$(find . -path ./obj-rel -prune -o \( -name 'Test*Stealth*.cpp' -o -name 'TestStealth*.cpp' \) -print | sed 's|/[^/]*$||; s|^\./||' | sort -u | tr '\n' ' ')
+          echo "gtest directories of ours: $DIRS"
+          [ -n "$DIRS" ] || { echo "ERROR: no gtest of ours found"; exit 1; }
+          python3 scripts/ci phase gtest-objects -- ./mach build --keep-going $DIRS
+
       - name: Build
         id: build
         env:

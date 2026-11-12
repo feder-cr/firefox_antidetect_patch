@@ -1362,7 +1362,6 @@ TEST(StealthSessionUdpProxy, ADocumentThatHasNoAddressOfItsOwnFollowsTheSessionP
     LoadInfoArgs args;
     nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
     ASSERT_EQ(NS_OK, ipc::LoadInfoToLoadInfoArgs(loadInfo, &args));
-    ASSERT_TRUE(args.isSome());
     RefPtr<PcUdpProxy> proxy = PcUdpProxy::Lookup(args);
     ASSERT_TRUE(SpinEventLoopUntil("StealthSessionUdpProxy"_ns,
                                    [&] { return proxy->GetKind() != PcUdpProxy::Kind::Resolving; }));
