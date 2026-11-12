@@ -301,6 +301,7 @@
  "toolkit/xre/dllservices/UntrustedModulesData.h": 4,
  "toolkit/xre/dllservices/moz.build": 1,
  "toolkit/xre/dllservices/tests/gtest/moz.build": 1,
+ "toolkit/xre/nsAppRunner.cpp": 4,
  "toolkit/xre/nsWindowsWMain.cpp": 2,
  "uriloader/exthandler/moz.build": 2,
  "uriloader/exthandler/nsExternalHelperAppService.cpp": 13,

@@ -1032,3 +1032,18 @@ index de33c4c1c0344437db3e6041bbb5c461a7cc0be9..31e84c659f97aa7c78fa3f045363fc48
    layer->secret = (PRFilePrivate*)infoObject;
  
    PRDescIdentity fdIdentity = PR_GetLayersIdentity(fd);
+diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
+index 003fc8545a7a8940dad6c34c3e15f8eb26928f68..61e093783e780dd94923a0c7a2314c0408de4797 100644
+--- a/toolkit/xre/nsAppRunner.cpp
++++ b/toolkit/xre/nsAppRunner.cpp
+@@ -6203,6 +6203,10 @@ nsresult XREMain::XRE_mainRun() {
+     // ready in time for early consumers, such as the component loader.
+     mDirProvider.InitializeUserPrefs();
+ 
++    // STEALTH-HOOK(network/proxy-udp): the SOCKS5 UDP layer lives in the socket process; locked, no caller moves the ICE out.
++    (void)Preferences::Lock("network.process.enabled");
++    (void)Preferences::Lock("media.peerconnection.mtransport_process");
++
+     // Now that preferences are loaded the profile service may be able to
+     // determine the correct startup profile.
+     mProfileSvc->UpdateCurrentProfile();

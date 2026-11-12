@@ -31,12 +31,14 @@
   "netwerk/protocol/http/HttpConnectionUDP.cpp",
   "netwerk/protocol/http/moz.build",
   "netwerk/socket/moz.build",
-  "netwerk/socket/nsSOCKSIOLayer.cpp"
+  "netwerk/socket/nsSOCKSIOLayer.cpp",
+  "toolkit/xre/nsAppRunner.cpp"
  ],
  "added": {
   "dom/media/webrtc/transport/nr_stealth_proxy_udp.h": "100644",
   "dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth.cpp": "100644",
   "juggler/tests/the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info.test.mjs": "100644",
+  "modules/libpref/test/test_stealth_ice_prefs_locked.py": "100644",
   "netwerk/ipc/StealthDocumentChannel.cpp": "100644",
   "netwerk/ipc/StealthDocumentChannel.h": "100644",
   "netwerk/socket/StealthPcUdpProxy.cpp": "100644",
@@ -734,6 +736,29 @@
     "+  if (socksVersion == 5) mozilla::net::nsSOCKSUDPIOLayerWarm(proxy);  // STEALTH-HOOK(network/proxy-udp)"
    ],
    "notes": "Tells the pool of UDP associations the SOCKS5 proxy of a connection (warms it). Also (network/ipv6-literal): the connect to the proxy goes through StealthIPv6Connect (one line replaced).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/xre/nsAppRunner.cpp",
+   "category": "other",
+   "feature": "proxy-udp-egress",
+   "prefs": [
+    "network.process.enabled",
+    "media.peerconnection.mtransport_process"
+   ],
+   "added": 4,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "XREMain::XRE_mainRun after InitializeUserPrefs",
+   "evidence": [
+    "+    // STEALTH-HOOK(network/proxy-udp): the SOCKS5 UDP layer lives in the socket process; locked, no caller moves the ICE out."
+   ],
+   "notes": "Locks the two prefs that decide where the ICE of a PeerConnection runs to the retail value (socket process, ICE in it): the SOCKS5 UDP layer is attached only to the sockets of that process, and a locked pref reads its default whatever user.js, prefs.js or a caller wrote.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
