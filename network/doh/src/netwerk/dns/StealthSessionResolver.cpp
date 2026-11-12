@@ -11,6 +11,7 @@
 #include "nsCharSeparatedTokenizer.h"
 #include "nsIRequest.h"
 #include "nsIStandardURL.h"
+#include "nsIURIMutator.h"
 #include "nsIURI.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"

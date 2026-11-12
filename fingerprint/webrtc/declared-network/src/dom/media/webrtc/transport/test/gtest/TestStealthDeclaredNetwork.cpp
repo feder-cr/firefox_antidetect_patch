@@ -34,6 +34,7 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "prnetdb.h"
 
 namespace {
 

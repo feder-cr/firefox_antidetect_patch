@@ -20,6 +20,8 @@
 #include "gtest/gtest.h"
 
 #include "mozilla/OriginAttributes.h"
+#include "mozilla/RefPtr.h"
+#include "nsString.h"
 #include "nriceresolver.h"
 
 using namespace mozilla;

@@ -79,7 +79,9 @@ int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
 
 #  include <set>
 
-#  include "prnetdb.h"
+// NSPR's address union. Not <prnetdb.h>: this header is included by nICEr's C++ files, which are compiled without the NSPR
+// include path (run 43161344648: "prnetdb.h file not found" in ice_ctx.o and addrs.o); a file that uses the type includes it.
+union PRNetAddr;
 
 namespace mozilla {
 
@@ -154,7 +156,7 @@ class StealthOwnPorts final {
  * socket is nowhere a page can read: a relay candidate carries the server's mapped address, not the local one, and the TCP
  * host candidate that is announced is the active one, which declares port 9. False when `aDeclaredAddress` does not
  * parse as an address. `aNicerPort` is the port nICEr proposed, only logged (WebrtcTCPSocket log module). */
-bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, PRNetAddr* aOut);
+bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, union PRNetAddr* aOut);
 
 }  // namespace mozilla
 

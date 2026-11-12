@@ -100,14 +100,16 @@ test('the timestamp of the override is the time it is read, not the time it was 
   assert.ok(second <= Date.now());
 });
 
-test('a page that reads timestamp then Date.now() sees a difference between -2 and 0 ms', () => {
+test('a page that reads timestamp then Date.now() sees a difference between -20 and 0 ms', () => {
   const { handlers, calls } = runInitialize({});
   handlers.applyContextSetting({ name: 'geolocation', value: GEO });
   wait(30); // time passes between the set and the delivery, as in a real page
   const position = calls[0][0];
   for (let i = 0; i < 20; i++) {
     const diff = position.timestamp - Date.now();
-    assert.ok(diff >= -2 && diff <= 0, `timestamp - Date.now() = ${diff}`);
+    // The set happened 30 ms before the reads: a timestamp taken at the set would read -30 or less. 20 ms is room for the
+    // scheduler of a loaded machine (2 ms was not: the export gate found -3 once).
+    assert.ok(diff >= -20 && diff <= 0, `timestamp - Date.now() = ${diff}`);
     wait(5);
   }
 });

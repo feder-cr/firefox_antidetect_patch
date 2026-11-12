@@ -13,6 +13,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
+#include "prnetdb.h"
 
 // nICEr is C++: its headers are not wrapped in extern "C".
 // clang-format off
