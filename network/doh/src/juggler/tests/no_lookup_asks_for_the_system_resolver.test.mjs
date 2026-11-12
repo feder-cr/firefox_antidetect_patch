@@ -118,7 +118,8 @@ test('the resolver hook: only the two mode bits, per context, never the name of 
   assert.match(h, /StealthFlagsFollowSession\(\s*const nsACString& aHost, const OriginAttributes& aAttrs,\s*nsIDNSService::DNSFlags aFlags\)/);
   // Built in the DNS library, and with its gtest.
   assert.match(read('netwerk/dns/moz.build'), /\]\nUNIFIED_SOURCES \+= \["StealthSessionResolver\.cpp"\]  # STEALTH-HOOK\(network\/doh\)\n/);
-  assert.match(read('netwerk/test/gtest/moz.build'), /SOURCES \+= \["TestStealthSessionResolver\.cpp"\]  # STEALTH-HOOK\(network\/doh\)/);
+  assert.match(read('netwerk/test/gtest/moz.build'), /include\("stealth\.build"\)  # STEALTH-HOOK\(network\/socks\)/);
+  assert.match(read('netwerk/test/gtest/stealth.build'), /SOURCES \+= \[[^\]]*"TestStealthSessionResolver\.cpp",/);
   const gtest = read('netwerk/test/gtest/TestStealthSessionResolver.cpp');
   for (const name of ['ListParsing', 'ContextAgainstList', 'ProxiedLookupIsDoHOnly', 'UnproxiedLookupIsNative',
     'OtherFlagsStay', 'TheResultIsStableUnderASecondCall', 'TheDoHServerKeepsItsRequest'])

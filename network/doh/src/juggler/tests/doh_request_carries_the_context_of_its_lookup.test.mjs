@@ -95,6 +95,7 @@ test('a TRR load info keeps the context, and its clone (a redirect) too', () => 
 test('our file and its gtest are registered', () => {
   assert.match(read('netwerk/ipc/moz.build'), /"StealthTRRContext\.h",  # STEALTH-HOOK\(network\/doh\)/);
   assert.match(read('netwerk/ipc/moz.build'), /"StealthTRRContext\.cpp",  # STEALTH-HOOK\(network\/doh\)/);
-  assert.match(read('netwerk/test/gtest/moz.build'),
-      /SOURCES \+= \["TestStealthTRRContext\.cpp"\]  # STEALTH-HOOK\(network\/doh\)/);
+  // The gtests of the network line are listed in stealth.build, which Mozilla's moz.build includes with one line.
+  assert.match(read('netwerk/test/gtest/moz.build'), /include\("stealth\.build"\)  # STEALTH-HOOK\(network\/socks\)/);
+  assert.match(read('netwerk/test/gtest/stealth.build'), /SOURCES \+= \[[^\]]*"TestStealthTRRContext\.cpp",/);
 });

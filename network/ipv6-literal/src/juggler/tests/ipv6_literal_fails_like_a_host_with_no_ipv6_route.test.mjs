@@ -193,7 +193,8 @@ test('no other code decides: neither the HTTP channel, nor the DNS service, nor 
 
 test('the build lists the source, and the gtest runs in a suite the candidate filter selects', () => {
   assert.match(read('netwerk/base/moz.build'), /UNIFIED_SOURCES \+= \["StealthIPv6Literal\.cpp"\]\s+# STEALTH-HOOK\(network\/ipv6-literal\)/);
-  assert.match(read('netwerk/test/gtest/moz.build'), /SOURCES \+= \["TestStealthIPv6Literal\.cpp"\]\s+# STEALTH-HOOK\(network\/ipv6-literal\)/);
+  assert.match(read('netwerk/test/gtest/moz.build'), /include\("stealth\.build"\)  # STEALTH-HOOK\(network\/socks\)/);
+  assert.match(read('netwerk/test/gtest/stealth.build'), /SOURCES \+= \[[^\]]*"TestStealthIPv6Literal\.cpp",/);
   const test = read('netwerk/test/gtest/TestStealthIPv6Literal.cpp');
   assert.match(test, /TEST\(StealthDeclaredNetwork, AnIPv6LiteralFailsLikeAHostWithNoIPv6Route\)/);
   assert.match(test, /TEST\(StealthDeclaredNetwork, NothingIsBlockedWhileIPv6IsDeclared\)/);

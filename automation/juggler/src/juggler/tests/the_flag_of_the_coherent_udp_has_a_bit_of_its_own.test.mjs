@@ -29,6 +29,8 @@ function constants() {
 test('the flag of the coherent UDP is bit 2 and no other constant of nsIProxyInfo takes it', () => {
   const all = constants();
   assert.equal(all.CARRIES_COHERENT_UDP, 4, 'our flag is 1 << 2');
-  const sharing = Object.entries(all).filter(([name, value]) => name !== 'CARRIES_COHERENT_UDP' && (value & 4) !== 0);
+  // SOCKS_V4 = 4 and SOCKS_V5 = 5 are version numbers to compare against, not Proxy Flags: they are not in the bit space.
+  const sharing = Object.entries(all).filter(([name, value]) =>
+      name !== 'CARRIES_COHERENT_UDP' && !/^SOCKS_V\d$/.test(name) && (value & 4) !== 0);
   assert.deepEqual(sharing, [], 'another constant of nsIProxyInfo uses the bit of our flag (the SOCKS version constants are not flags)');
 });

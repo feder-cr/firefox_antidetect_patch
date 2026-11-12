@@ -69,14 +69,33 @@ const LEGACY_MODE = 3;
 const MODE_PREF = 'network.trr.mode';
 const CONTEXTS_PREF = 'network.trr.stealth.contexts';
 
+// The ASCII (punycode, lowercase) form of a host name, the form the DNS suffix
+// match of the excluded-domains list compares against. The platform's URL
+// parser does the IDNA conversion; when it refuses the name the lowercased name
+// is kept.
+function asciiName(name) {
+  if (/[\s/\\?#@%]/.test(name))
+    return name;
+  try {
+    const host = new URL('http://' + name).hostname.toLowerCase();
+    return host || name;
+  } catch (e) {
+    return name;
+  }
+}
+
 // A host that is not a name: an IPv4 literal (dotted, or one number) or an IPv6
 // literal, with or without brackets. A proxy given by IP needs no exclusion:
-// there is no name to resolve.
+// there is no name to resolve. A name is written in its ASCII form, lowercase,
+// without the trailing dot of a fully qualified name.
 function nameOf(host) {
   const bare = String(host || '').trim().replace(/^\[|\]$/g, '').toLowerCase();
   if (!bare || bare.includes(':') || /^[0-9.]+$/.test(bare) || /^0x[0-9a-f.x]+$/.test(bare))
     return '';
-  return bare;
+  const name = asciiName(bare).replace(/\.+$/, '');
+  if (!name || /^[0-9.]+$/.test(name))
+    return '';
+  return name;
 }
 
 /**

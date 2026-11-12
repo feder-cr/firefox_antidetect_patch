@@ -900,6 +900,9 @@ def main() -> int:
     if a.command == "status":
         return status(a.source, head)
     if a.command == "export":
+        # The tests the build job runs first, on the whole tree of the head, before a byte is written (tools/export_gate.py).
+        import export_gate
+        export_gate.gate(a.source, head)
         export(a.source, base, head)
         return 0
     return verify(a.source, base, head)
