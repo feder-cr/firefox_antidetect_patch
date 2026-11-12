@@ -135,9 +135,55 @@ jobs:
           chmod +x "$EXE" 2>/dev/null || true
           echo "FF_EXE=$EXE" >> "$GITHUB_ENV"
           echo "located: $EXE"
-      - name: DRIVE GATE — Playwright launch via juggler + real page (+ interaction on --full)
+      # THE CORE UNDER TEST AND THE SEAL OF THE BINARY, BEFORE ANYTHING DRIVES IT. The drive gate launches through the
+      # wrapper and the core, not through bare Playwright: since firefox-63 the engine holds every channel that asks the
+      # proxy service until the client says how the session leaves the host, and only the core's launch says it first
+      # (run 43134774602: Page.goto timed out on both legs). What follows is the install of core_ref from git, the
+      # assertion that it is the core under test, and the seal of the binary; the guards below reuse them. The reasons
+      # for each switch are written at the guards.
+      - name: The core under test (core_ref, from git), the wrapper, and the seal of the binary
         shell: bash
-        run: python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
+        env:
+          CORE_REF: ${{ inputs.core_ref }}
+          SEAL_TAG: ${{ inputs.seal_tag }}
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          CORE_GIT="git+https://github.com/feder-cr/invisible_core@$CORE_REF"
+          python -m pip install --quiet "$CORE_GIT"
+          python -m pip install --quiet ".[dev]"
+          python -m pip install --quiet --force-reinstall "$CORE_GIT"
+          python - <<'PY'
+          import json, os, re, subprocess, sys
+          from importlib.metadata import distribution, version
+          ref = os.environ["CORE_REF"]
+          if re.fullmatch(r"[0-9a-f]{40}", ref):
+              want = ref
+          else:
+              rows = [line.split() for line in subprocess.run(
+                  ["git", "ls-remote", "https://github.com/feder-cr/invisible_core", ref, ref + "^{}"],
+                  capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()]
+              peeled = [s for s, r in rows if r.endswith("^{}")]  # an annotated tag: its commit, not the tag object
+              want = (peeled or [s for s, _ in rows] or [""])[0]
+          import invisible_playwright  # noqa: F401 - the import-time pin repair runs here, as under pytest
+          raw = distribution("invisible-core").read_text("direct_url.json")
+          got = (json.loads(raw).get("vcs_info") or {}).get("commit_id") if raw else None
+          print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
+          if not want or got != want:
+              sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s. "
+                       "Something put another core over the git install (an install after it, or the wrapper's "
+                       "import-time repair with INVISIBLE_CORE_AUTOFIX not off), and with the published core "
+                       "the engine refuses the launch on the declarations that core does not emit."
+                       % (version("invisible-core"), got or "the index", ref,
+                          want or "not a full sha nor a ref of invisible_core"))
+          PY
+          python -m invisible_core seal --binary "$FF_EXE" \
+            --tag "$SEAL_TAG" \
+            -o gate.seal.json
+      - name: DRIVE GATE — the wrapper launches the binary via juggler + real page (+ interaction on --full)
+        shell: bash
+        run: |
+          export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
+          INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" python scripts/ci_drive_gate.py "$FF_EXE" ${{ matrix.extra }}
 
       # HIDDEN-DESKTOP + WEBGL-MASKING GUARDS - run the wrapper's e2e checks
       # against THIS leg's freshly-built artifact, on its native runner. The
@@ -228,42 +274,8 @@ jobs:
       # version is fetched as before, and the force-reinstall puts core_ref back.
       - name: Cloak + WebGL-masking guards (headed)
         shell: bash
-        env:
-          CORE_REF: ${{ inputs.core_ref }}
-          SEAL_TAG: ${{ inputs.seal_tag }}
         run: |
           export INVISIBLE_CORE_AUTOFIX=off INVISIBLE_CORE_PIN=allow
-          CORE_GIT="git+https://github.com/feder-cr/invisible_core@$CORE_REF"
-          python -m pip install --quiet "$CORE_GIT"
-          python -m pip install --quiet ".[dev]"
-          python -m pip install --quiet --force-reinstall "$CORE_GIT"
-          python - <<'PY'
-          import json, os, re, subprocess, sys
-          from importlib.metadata import distribution, version
-          ref = os.environ["CORE_REF"]
-          if re.fullmatch(r"[0-9a-f]{40}", ref):
-              want = ref
-          else:
-              rows = [line.split() for line in subprocess.run(
-                  ["git", "ls-remote", "https://github.com/feder-cr/invisible_core", ref, ref + "^{}"],
-                  capture_output=True, text=True, check=True).stdout.splitlines() if line.strip()]
-              peeled = [s for s, r in rows if r.endswith("^{}")]  # an annotated tag: its commit, not the tag object
-              want = (peeled or [s for s, _ in rows] or [""])[0]
-          import invisible_playwright  # noqa: F401 - the import-time pin repair runs here, as under pytest
-          raw = distribution("invisible-core").read_text("direct_url.json")
-          got = (json.loads(raw).get("vcs_info") or {}).get("commit_id") if raw else None
-          print("core under test: %s from %s" % (version("invisible-core"), got or "the index"))
-          if not want or got != want:
-              sys.exit("THE CORE UNDER TEST IS NOT core_ref: installed %s from %s, core_ref %r is %s. "
-                       "Something put another core over the git install (an install after it, or the wrapper's "
-                       "import-time repair with INVISIBLE_CORE_AUTOFIX not off), and with the published core "
-                       "the engine refuses the launch on the declarations that core does not emit."
-                       % (version("invisible-core"), got or "the index", ref,
-                          want or "not a full sha nor a ref of invisible_core"))
-          PY
-          python -m invisible_core seal --binary "$FF_EXE" \
-            --tag "$SEAL_TAG" \
-            -o gate.seal.json
           INVISIBLE_SEAL_FILE="$PWD/gate.seal.json" INVPW_BINARY_PATH="$FF_EXE" python -m pytest \
             tests/test_hidden_desktop.py \
             "tests/test_fingerprint_surface.py::test_webgl_readpixels_no_masking_signature" \
@@ -432,7 +444,7 @@ jobs:
             MAIN=(--main-required wrapper-main/ci/required-suites.json)
           else
             echo "::warning::wrapper main has no ci/required-suites.json yet: nothing to compare the list with (the first merge to main ends this)"
-            MAIN=(--main-has-no-list)
+            MAIN=(--main-required wrapper-main/ci/required-suites.json --main-has-no-list)
           fi
           [ "$JUDGE" = "scripts/ci_verdict.py" ] && echo "::warning::wrapper main has no ci_verdict.py yet: the candidate's own judge runs (the first merge to main ends this)"
           python "$JUDGE" judge --required ci/required-suites.json --suite "${{ matrix.suite }}" --os "${{ matrix.os }}" \

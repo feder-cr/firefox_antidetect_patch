@@ -85,7 +85,8 @@ def group_gate(doc) -> list:
     for job in GTEST_JOBS:
         for result in ("failure", "cancelled"):
             got = outcome(jobs, {job: result})
-            out.append(("gate: %s %s stops the gate and the publish" % (job, result), got["gate"] == "skipped" and got["publish"] == "skipped"))
+            out.append(("gate: %s %s stops the publish and not the gate (two verdicts, each of its own)" % (job, result),
+                        got["gate"] == "success" and got["publish"] == "skipped"))
     off = outcome(jobs, {}, gtests="false")
     out.append(("gate: gtests=false stops neither", off["gate"] == "success" and off["publish"] == "success"))
     out.append(("gate: gtests=false runs no gtest step, and the jobs are there for the gate to need",
@@ -98,9 +99,14 @@ def group_gate(doc) -> list:
                 broken["gtest-linux"] == "skipped" and broken["gate"] == "skipped" and broken["publish"] == "skipped"))
     red_gate = outcome(jobs, {"gate": "failure"})
     out.append(("gate: a red gate stops the publish", red_gate["publish"] == "skipped"))
-    out.append(("gate: the graph: publish needs gate, gate needs build and both gtest jobs, each gtest job needs the plan and the build",
-                "gate" in jobs["publish"]["needs"] and "build" in jobs["gate"]["needs"]
-                and all(j in jobs["gate"]["needs"] for j in GTEST_JOBS) and all(jobs[j]["needs"] == ["plan", "build"] for j in GTEST_JOBS)))
+    out.append(("gate: the graph: the gate needs the build and no gtest job, the publish needs the gate and both gtest jobs, each gtest job "
+                "needs the plan and the build",
+                "build" in jobs["gate"]["needs"] and not any(j in jobs["gate"]["needs"] for j in GTEST_JOBS)
+                and "gate" in jobs["publish"]["needs"] and all(j in jobs["publish"]["needs"] for j in GTEST_JOBS)
+                and all(jobs[j]["needs"] == ["plan", "build"] for j in GTEST_JOBS)))
+    red_gate_green_gtests = outcome(jobs, {"gate": "failure"})
+    out.append(("gate: a red gate leaves the gtests as they are (two verdicts: the run is red if either is)",
+                red_gate_green_gtests["gtest-linux"] == "success" and red_gate_green_gtests["gtest-cross"] == "success"))
     out.append(("gate: neither has an `if` that would run it past what it needs",
                 "if" not in jobs["gate"] and not e.STATUS.search(str(jobs["publish"].get("if", "")))))
     candidate = outcome(jobs, {}, kind="candidate")
@@ -251,6 +257,26 @@ def group_gtest(doc) -> list:
                 os.environ.update(old)
         code = go_kept()
         out.append(("gtests: each suite's report stays where it was asked to", code == 0 and sorted(p.name for p in kept.iterdir()) == ["SuiteA.json", "SuiteB_x.json"]))
+        # StealthSessionUdpProxy runs with the log of the SOCKS UDP layer and of the resolver, one file per process, kept in
+        # the reports; the other suites run without MOZ_LOG (a test red on one platform whose cause the sources do not say
+        # needs what the process said).
+        logged_kept = tree / "logged-kept"
+        record.write_text("")
+        old = dict(os.environ)
+        os.environ.update(FAKE_SUITES="StealthSessionUdpProxy SuiteB", FAKE_FAIL="")
+        try:
+            logged_code = gtest_run.run(root, "*", reports=logged_kept, out=lambda _: None)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        logged_calls = {c["env"]["GTEST_FILTER"].split(".")[0]: c["env"] for c in (json.loads(l) for l in record.read_text().splitlines())}
+        udp = logged_calls.get("StealthSessionUdpProxy", {})
+        out.append(("gtests: StealthSessionUdpProxy runs with MOZ_LOG sync,SOCKS-UDP:5,nsHostResolver:5, a file per process (%PID) in the reports",
+                    logged_code == 0 and udp.get("MOZ_LOG") == "sync,SOCKS-UDP:5,nsHostResolver:5"
+                    and udp.get("MOZ_LOG_FILE") == str(logged_kept / "StealthSessionUdpProxy.moz-log" / "moz-%PID.log")
+                    and (logged_kept / "StealthSessionUdpProxy.moz-log").is_dir()))
+        out.append(("gtests: the other suites run without MOZ_LOG", "MOZ_LOG" not in logged_calls.get("SuiteB", {"MOZ_LOG": 1})
+                    and "MOZ_LOG_FILE" not in logged_calls.get("SuiteB", {"MOZ_LOG_FILE": 1})))
         # A suite that dies on a signal: named, and its core read into the log and the reports
         # (candidate 42473169415 said "exited -11" and nothing else).
         cores, crash_kept = tree / "cores", tree / "crash-kept"
@@ -789,6 +815,35 @@ def group_stage_package(doc) -> list:
     return out
 
 
+def group_gate_workflow(doc) -> list:
+    """gate.yml and the plan step, from run 43134774602: every gate job red for a cause of the scaffolding."""
+    import yaml
+    gate = yaml.safe_load((ROOT / ".github" / "workflows" / "gate.yml").read_text(encoding="utf-8"))
+    out = []
+    steps = gate["jobs"]["gate"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    core = next(i for i, n in enumerate(names) if n.startswith("The core under test"))
+    drive = next(i for i, n in enumerate(names) if n.startswith("DRIVE GATE"))
+    out.append(("gate: the core under test and the seal of the binary come before the drive gate (the engine waits for a decision "
+                "only the core's launch sends)", core < drive))
+    out.append(("gate: the drive gate runs under the seal of the binary and the switches of the core",
+                "INVISIBLE_SEAL_FILE" in steps[drive]["run"] and "INVISIBLE_CORE_AUTOFIX=off" in steps[drive]["run"]
+                and "INVISIBLE_CORE_PIN=allow" in steps[drive]["run"]))
+    out.append(("gate: the guards reuse that seal instead of making another",
+                "seal --binary" not in next(s for s in steps if s.get("name", "").startswith("Cloak"))["run"]))
+    verdict = next(s for s in gate["jobs"]["wrapper-e2e"]["steps"] if s.get("name", "").startswith("Verdict"))["run"]
+    out.append(("gate: a main without a list is declared WITH the path of the list (the judge refuses the flag alone)",
+                "MAIN=(--main-required wrapper-main/ci/required-suites.json --main-has-no-list)" in verdict
+                and "MAIN=(--main-has-no-list)" not in verdict))
+    plan_steps = {s.get("name", ""): s for s in doc["jobs"]["plan"]["steps"]}
+    last = plan_steps.get("The last published release", {})
+    out.append(("plan: a candidate is numbered from the tags (the last published firefox-N), and the plan step is given it",
+                "git ls-remote --tags" in last.get("run", "") and "refs/tags/firefox-*" in last.get("run", "")
+                and "--last-release" in plan_steps["Plan"]["run"]
+                and "steps.last_release.outputs.last_release" in plan_steps["Plan"]["env"]["LAST_RELEASE"]))
+    return out
+
+
 def cases() -> list:
     try:
         import yaml
@@ -797,7 +852,7 @@ def cases() -> list:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     out = []
     for group, args in ((group_expressions, ()), (group_gate, (doc,)), (group_gtest, (doc,)), (group_build_steps, (doc,)), (group_beside, (doc,)),
-                        (group_stage_package, (doc,))):
+                        (group_stage_package, (doc,)), (group_gate_workflow, (doc,))):
         try:
             out += group(*args)
         except Exception as exc:

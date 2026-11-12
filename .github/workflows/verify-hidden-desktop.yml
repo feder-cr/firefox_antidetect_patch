@@ -27,6 +27,9 @@ on:
       run_id:
         description: 'build run id whose asset-* artifacts to re-gate (e.g. 27346856197)'
         required: true
+      seal_tag:
+        description: 'tag the binary was sealed under in that run: a candidate is firefox-NN-candidate (the wrapper e2e read NN from it)'
+        default: 'local'
       wrapper_ref:
         description: 'invisible_playwright ref to drive the binaries with'
         default: 'main'
@@ -43,7 +46,8 @@ jobs:
     uses: ./.github/workflows/gate.yml
     with:
       build_run_id: ${{ inputs.run_id }}
-      # a re-gate seals locally, as a candidate does (scripts/release_plan.py)
-      seal_tag: local
+      # the tag the build run sealed under: a candidate is firefox-NN-candidate (scripts/release_plan.py); `local` only for a
+      # re-gate whose tests do not ask the engine's number
+      seal_tag: ${{ inputs.seal_tag }}
       wrapper_ref: ${{ inputs.wrapper_ref }}
       core_ref: ${{ inputs.core_ref || 'main' }}

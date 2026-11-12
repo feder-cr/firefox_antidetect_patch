@@ -46,9 +46,12 @@
 
 #ifdef XP_WIN
 #  include <winsock2.h>
+#  include <ws2tcpip.h>
 #else
 #  include <errno.h>
 #  include <fcntl.h>
+#  include <netinet/in.h>
+#  include <sys/socket.h>
 #endif
 
 // netwerk/socket/nsSOCKSIOLayer.h is not exported: the one function the SOCKS5 connection of a context calls.
@@ -234,6 +237,29 @@ bool NativeSocketIsOpen(PROsfd aFd) {
 #endif
 }
 
+// IPV6_V6ONLY of the native socket under aFd: 0 is dual-stack, 1 is v6-only, -1 when it cannot be read (not an AF_INET6 socket).
+int V6OnlyOption(PRFileDesc* aFd) {
+  PRFileDesc* native = PR_GetIdentitiesLayer(aFd, PR_NSPR_IO_LAYER);
+  PROsfd osfd = native ? PR_FileDesc2NativeHandle(native) : -1;
+  if (osfd == -1) {
+    return -1;
+  }
+#ifdef XP_WIN
+  DWORD value = 7;
+  int len = sizeof(value);
+  if (getsockopt(static_cast<SOCKET>(osfd), IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char*>(&value), &len) != 0) {
+    return -1;
+  }
+#else
+  int value = 7;
+  socklen_t len = sizeof(value);
+  if (getsockopt(static_cast<int>(osfd), IPPROTO_IPV6, IPV6_V6ONLY, &value, &len) != 0) {
+    return -1;
+  }
+#endif
+  return static_cast<int>(value);
+}
+
 PRNetAddr Loopback(uint16_t aPort) {
   PRNetAddr addr;
   PR_InitializeNetAddr(PR_IpAddrLoopback, aPort, &addr);
@@ -327,8 +353,10 @@ class FakeSocks {
       PRNetAddr other = HostAddress(0);
       PR_Bind(from, &other);
     }
-    PRInt32 sent =
-        PR_SendTo(from, frame, 10 + len, 0, &mClient, PR_INTERVAL_NO_TIMEOUT);
+    // From a socket bound to an address of the host the destination is the host's address too (Windows refuses a datagram from the LAN
+    // address to 127.0.0.1: WSAEADDRNOTAVAIL); the client's socket is bound to any address and hears both.
+    PRNetAddr hostTarget = HostAddress(PR_ntohs(mClient.inet.port));
+    PRInt32 sent = PR_SendTo(from, frame, 10 + len, 0, aFromTheRelay ? &mClient : &hostTarget, PR_INTERVAL_NO_TIMEOUT);
     if (!aFromTheRelay) PR_Close(from);
     return sent > 0;
   }
@@ -462,6 +490,8 @@ PRNetAddr HostAddress(uint16_t aPort) {
 
 // The sockets of the engine (nsUDPSocket, NrSocket) are non-blocking: with nothing to read they answer WOULD_BLOCK, where a
 // blocking one answers a timeout.
+// Non-blocking, and BOUND (to any address, a port of the system's choice): a socket that receives before it has sent anything is
+// an error on Windows (recvfrom on an unbound UDP socket is WSAEINVAL), and a PeerConnection's socket is always bound.
 PRFileDesc* NonBlockingUdpSocket() {
   PRFileDesc* fd = PR_NewUDPSocket();
   if (fd) {
@@ -469,6 +499,9 @@ PRFileDesc* NonBlockingUdpSocket() {
     opt.option = PR_SockOpt_Nonblocking;
     opt.value.non_blocking = PR_TRUE;
     PR_SetSocketOption(fd, &opt);
+    PRNetAddr any;
+    PR_InitializeNetAddr(PR_IpAddrAny, 0, &any);
+    PR_Bind(fd, &any);
   }
   return fd;
 }
@@ -1406,10 +1439,12 @@ TEST(StealthSessionUdpProxy, AnIpv6DestinationGoesThroughAnIpv4Relay)
   if (!fd) {
     GTEST_SKIP() << "no IPv6 socket on this host";
   }
+  // The layer first and the bind after, as the engine does it (NrSocket::create, nsUDPSocket::InitWithAddress): the layer makes the
+  // socket dual-stack, and Windows allows that only before the bind (after it, IPV6_V6ONLY is WSAEINVAL).
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr any;
   PR_SetNetAddr(PR_IpAddrAny, PR_AF_INET6, 0, &any);
   ASSERT_EQ(PR_SUCCESS, PR_Bind(fd, &any));
-  ASSERT_EQ(NS_OK, prefs.Attach(fd));
   PRNetAddr to;
   ASSERT_EQ(PR_SUCCESS, PR_StringToNetAddr("2001:db8::1", &to));
   to.ipv6.port = PR_htons(3478);
@@ -1417,8 +1452,58 @@ TEST(StealthSessionUdpProxy, AnIpv6DestinationGoesThroughAnIpv4Relay)
   nsCString got = proxy.FirstDatagram();
   ASSERT_EQ(got.Length(), 4u + 16u + 2u + 4u) << "the datagram of an IPv6 destination did not reach the IPv4 relay";
   EXPECT_EQ(0x04, static_cast<uint8_t>(got[3])) << "ATYP of an IPv6 destination";
-  EXPECT_EQ(0, std::memcmp(got.get() + 22, "\x0d\x96", 2)) << "port 3478";
-  EXPECT_EQ(0, std::memcmp(got.get() + 24, "ping", 4));
+  EXPECT_EQ(0, std::memcmp(got.get() + 20, "\x0d\x96", 2)) << "port 3478";
+  EXPECT_EQ(0, std::memcmp(got.get() + 22, "ping", 4));
+  PR_Close(fd);
+}
+
+// Windows makes an AF_INET6 socket v6-only by default, and then it cannot send to the IPv4-mapped address of an IPv4 relay
+// (WSAEADDRNOTAVAIL); the layer switches that off when it is put on the socket, before the bind. Linux has it off already.
+TEST(StealthSessionUdpProxy, AnIpv6SocketWithTheLayerIsDualStack)
+{
+  UdpSession prefs;
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+  PRFileDesc* fd = PR_OpenUDPSocket(PR_AF_INET6);
+  if (!fd) {
+    GTEST_SKIP() << "no IPv6 socket on this host";
+  }
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
+  EXPECT_EQ(0, V6OnlyOption(fd)) << "an AF_INET6 socket with the layer must be dual-stack, or the IPv4 relay is out of its reach";
+  PR_Close(fd);
+}
+
+// The way back: the IPv4 relay answers the IPv6 socket, whose address of the relay is the IPv4-mapped one, and the layer knows it for
+// the relay's (FromTheRelay) and hands the payload over.
+TEST(StealthSessionUdpProxy, AnIpv6SocketReadsWhatTheIpv4RelaySends)
+{
+  UdpSession prefs;
+  FakeSocks proxy;
+  prefs.Arm("127.0.0.1", proxy.Port());
+  PRFileDesc* fd = PR_OpenUDPSocket(PR_AF_INET6);
+  if (!fd) {
+    GTEST_SKIP() << "no IPv6 socket on this host";
+  }
+  ASSERT_EQ(NS_OK, prefs.Attach(fd));
+  PRNetAddr any;
+  PR_SetNetAddr(PR_IpAddrAny, PR_AF_INET6, 0, &any);
+  ASSERT_EQ(PR_SUCCESS, PR_Bind(fd, &any));
+  PRNetAddr stun = StunServer();
+  ASSERT_EQ(4, PR_SendTo(fd, "ping", 4, 0, &stun, PR_INTERVAL_NO_WAIT));
+  ASSERT_EQ(proxy.FirstDatagram().Length(), 10u + 4u) << "the datagram of the IPv6 socket did not reach the IPv4 relay";
+  ASSERT_TRUE(proxy.SendToClient("good", /* aFromTheRelay = */ true));
+  nsCString got;
+  PRNetAddr from;
+  std::memset(&from, 0, sizeof(from));
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        char buf[64];
+        int32_t n = PR_RecvFrom(fd, buf, sizeof(buf), 0, &from, PR_INTERVAL_NO_WAIT);
+        if (n > 0) got.Assign(buf, n);
+        return n > 0;
+      },
+      2000));
+  EXPECT_TRUE(got.EqualsLiteral("good")) << "got '" << got.get() << "'";
   PR_Close(fd);
 }
 
@@ -1438,7 +1523,7 @@ TEST(StealthSessionUdpProxy, TheKindOfProxyDecidesWhereTheUdpGoes)
   ProxyPrefsReset reset;
   auto KindOf = [&]() {
     nsCOMPtr<nsIURI> uri;
-    EXPECT_EQ(NS_OK, NS_NewURI(getter_AddRefs(uri), "https://example.net/"_ns));
+    EXPECT_EQ(NS_OK, NS_NewURI(getter_AddRefs(uri), "http://example.net/"_ns));
     nsCOMPtr<nsIChannel> channel;
     EXPECT_EQ(NS_OK, NS_NewChannel(getter_AddRefs(channel), uri, nsContentUtils::GetSystemPrincipal(),
                                    nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL, nsIContentPolicy::TYPE_OTHER));

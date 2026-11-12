@@ -12,6 +12,14 @@
 
 #include <algorithm>
 
+#ifdef XP_WIN
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+#else
+#  include <netinet/in.h>
+#  include <sys/socket.h>
+#endif
+
 #include "nspr.h"
 #include "private/pprio.h"
 #include "mozilla/Atomics.h"
@@ -1309,11 +1317,37 @@ void EnsureMethods() {
 
 }  // namespace
 
+namespace {
+
+// The socket of a PeerConnection can be an AF_INET6 socket and the relay of the proxy an IPv4 address (the layer sends to its IPv4-mapped
+// form). Windows makes an AF_INET6 socket v6-only by default and then refuses that send (WSAEADDRNOTAVAIL, 10049; reproduced in plain
+// Winsock: V6ONLY=1 fails, V6ONLY=0 arrives), neither NSPR nor NrSocket switch it off, and Linux has it off by default: so it is switched
+// off here, before the socket is bound. It succeeds only on an AF_INET6 socket; anything else is left as it is.
+void MakeDualStack(PRFileDesc* aFd) {
+  PRFileDesc* native = PR_GetIdentitiesLayer(aFd, PR_NSPR_IO_LAYER);
+  if (!native) {
+    return;
+  }
+  PROsfd osfd = PR_FileDesc2NativeHandle(native);
+  if (osfd == -1) {
+    return;
+  }
+  int off = 0;
+#ifdef XP_WIN
+  (void)setsockopt(static_cast<SOCKET>(osfd), IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char*>(&off), sizeof(off));
+#else
+  (void)setsockopt(static_cast<int>(osfd), IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+#endif
+}
+
+}  // namespace
+
 nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, PcUdpProxy* aProxy) {
   if (!aProxy) {
     return NS_ERROR_INVALID_ARG;
   }
   EnsureMethods();
+  MakeDualStack(aFd);
 
   PRFileDesc* layer = PR_CreateIOLayerStub(gIdentity, &gMethods);
   if (!layer) {
