@@ -49,25 +49,7 @@ void PcUdpProxy::DoLookup(const LoadInfoArgs& aLoadInfo) {
   rv = ProxyConfigLookup::Create(
       [self](nsIProxyInfo* aProxyInfo, nsresult aStatus) {
         Socks5Info info;
-        // A failed lookup is a proxy that is not known: nothing goes out. A lookup that answers with no proxy info is a
-        // PeerConnection with no proxy.
-        Kind kind = NS_SUCCEEDED(aStatus) ? Kind::Direct : Kind::Blocked;
-        if (NS_SUCCEEDED(aStatus) && aProxyInfo) {
-          nsAutoCString type;
-          aProxyInfo->GetType(type);
-          uint32_t flags = 0;
-          aProxyInfo->GetFlags(&flags);
-          if (type.EqualsLiteral("socks") && (flags & nsIProxyInfo::CARRIES_COHERENT_UDP)) {
-            // SOCKS5 whose UDP the session measured coherent: the road of the PeerConnection's UDP.
-            kind = Kind::Socks5;
-            aProxyInfo->GetHost(info.mHost);
-            aProxyInfo->GetPort(&info.mPort);
-            aProxyInfo->GetUsername(info.mUser);
-            aProxyInfo->GetPassword(info.mPass);
-          } else if (!type.EqualsLiteral("direct")) {
-            kind = Kind::Blocked;
-          }
-        }
+        const Kind kind = KindFor(aStatus, aProxyInfo, &info);
         self->Resolved(kind, info);
       },
       uri, nsIProtocolProxyService::RESOLVE_PREFER_SOCKS_PROXY, false, nullptr, Some(aLoadInfo));
@@ -75,6 +57,33 @@ void PcUdpProxy::DoLookup(const LoadInfoArgs& aLoadInfo) {
     // The lookup could not be made: the proxy is not known, so nothing goes out (see above).
     Resolved(Kind::Blocked, Socks5Info());
   }
+}
+
+// static
+PcUdpProxy::Kind PcUdpProxy::KindFor(nsresult aStatus, nsIProxyInfo* aProxyInfo, Socks5Info* aInfo) {
+  Socks5Info scratch;
+  Socks5Info& info = aInfo ? *aInfo : scratch;
+  info = Socks5Info();
+  // A failed lookup is a proxy that is not known: nothing goes out. A lookup that answers with no proxy info is a
+  // PeerConnection with no proxy.
+  Kind kind = NS_SUCCEEDED(aStatus) ? Kind::Direct : Kind::Blocked;
+  if (NS_SUCCEEDED(aStatus) && aProxyInfo) {
+    nsAutoCString type;
+    aProxyInfo->GetType(type);
+    uint32_t flags = 0;
+    aProxyInfo->GetFlags(&flags);
+    if (type.EqualsLiteral("socks") && (flags & nsIProxyInfo::CARRIES_COHERENT_UDP)) {
+      // SOCKS5 whose UDP the session measured coherent: the road of the PeerConnection's UDP.
+      kind = Kind::Socks5;
+      aProxyInfo->GetHost(info.mHost);
+      aProxyInfo->GetPort(&info.mPort);
+      aProxyInfo->GetUsername(info.mUser);
+      aProxyInfo->GetPassword(info.mPass);
+    } else if (!type.EqualsLiteral("direct")) {
+      kind = Kind::Blocked;
+    }
+  }
+  return kind;
 }
 
 void PcUdpProxy::Resolved(Kind aKind, const Socks5Info& aInfo) {

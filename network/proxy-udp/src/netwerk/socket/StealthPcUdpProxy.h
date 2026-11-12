@@ -12,6 +12,8 @@
 #include "nsString.h"
 #include "nsTArray.h"
 
+class nsIProxyInfo;
+
 namespace mozilla::net {
 
 class LoadInfoArgs;
@@ -49,6 +51,11 @@ class PcUdpProxy final {
   static already_AddRefed<PcUdpProxy> Known(Kind aKind, const PcUdpSocks5Info& aInfo = PcUdpSocks5Info());
 
   Kind GetKind(Socks5Info* aInfo = nullptr);
+
+  // What the answer of the lookup means, as a pure function of it (the callback of Lookup calls it): a lookup that failed is a proxy that
+  // is not known, so nothing goes out (Blocked); an answer with no proxy info is no proxy (Direct); a SOCKS5 proxy whose UDP the session
+  // measured coherent is Socks5 (aInfo, if given, is filled with it); any other proxy carries no UDP (Blocked). Any thread.
+  static Kind KindFor(nsresult aStatus, nsIProxyInfo* aProxyInfo, Socks5Info* aInfo = nullptr);
 
   // Any thread: aCallback runs, once, as soon as the kind is not Resolving (at once if it already is not), on the thread
   // that learned it or on the caller's.

@@ -36,6 +36,10 @@
  ],
  "added": {
   "dom/media/webrtc/transport/nr_stealth_proxy_udp.h": "100644",
+  "dom/media/webrtc/transport/test/gtest/StealthTestProxyKit.cpp": "100644",
+  "dom/media/webrtc/transport/test/gtest/StealthTestProxyKit.h": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthNrSocketBirth.cpp": "100644",
+  "dom/media/webrtc/transport/test/gtest/TestStealthPcUdpProxyKinds.cpp": "100644",
   "dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth.cpp": "100644",
   "juggler/tests/the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info.test.mjs": "100644",
   "modules/libpref/test/test_stealth_ice_prefs_locked.py": "100644",

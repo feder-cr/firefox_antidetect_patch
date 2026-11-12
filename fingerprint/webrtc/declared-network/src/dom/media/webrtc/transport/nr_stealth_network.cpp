@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mozilla/Atomics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
@@ -259,6 +260,14 @@ bool IsOwnPeer(const nr_transport_addr* aSelf, const mozilla::StealthOwnPorts& a
 }
 
 }  // namespace
+
+namespace {
+mozilla::Atomic<bool> sFailNextSocketAttachForTests{false};
+}  // namespace
+
+void mozilla::StealthFailNextSocketAttachForTests(bool aFail) { sFailNextSocketAttachForTests = aFail; }
+
+bool mozilla::StealthTakeFailNextSocketAttachForTests() { return sFailNextSocketAttachForTests.exchange(false); }
 
 bool mozilla::StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, PRNetAddr* aOut) {
   static LazyLogModule sLog("WebrtcTCPSocket");

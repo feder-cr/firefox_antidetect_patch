@@ -612,7 +612,13 @@ def group_beside(doc) -> list:
     out.append(("the build: in the background on the node, in the foreground on GitHub's runners, the input checked on both",
                 'if [ "${{ matrix.node }}" = "true" ]; then' in build and "background.py start build" in build and "background.py until-compiled build" in build
                 and "--verify --strict" in build and "--verify --strict" in end["run"] and "background.py wait build" in end["run"]
-                and build.count("./mach build --keep-going") == 2))
+                and build.count("./mach build --keep-going") == 3))
+    out.append(("gtests: the tier is built beside the browser's link (after the compiles, only when asked), waited for before the package, stopped on a cancel",
+                build.index("background.py until-compiled build") < build.index("background.py start gtest -- python3 scripts/ci phase gtest -- ./mach build --keep-going recurse_gtest")
+                and 'if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then' in build
+                and 'if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then python3 scripts/ci/background.py wait gtest; fi' in end["run"]
+                and "background.py stop build lavapipe gtest" in stop["run"] and at("Build - the link") < at("Package + validate")
+                and at("Package + validate") < at("The node - its gtest binaries, for a job on GitHub's runners")))
     words = shlex.split(start["run"].replace("\\\n", " "))
     out.append(("lavapipe: starts when the compiles are over and libxul links, at nice 19, as a phase whose log is kept",
                 at("Build") < at("WebGPU's Vulkan driver (linux-x86_64) - its inputs") < at("WebGPU's Vulkan driver (linux-x86_64) - built before") < at(start["name"])

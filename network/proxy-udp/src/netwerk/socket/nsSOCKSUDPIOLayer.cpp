@@ -78,6 +78,8 @@ PRDescIdentity gIdentity = PR_INVALID_IO_LAYER;
 
 // Test only: the socket transport service is taken as missing (a browser that is shutting down), see Start().
 Atomic<bool> sNoSocketThreadForTests{false};
+// Test only: the next nsSOCKSUDPIOLayerAddToSocket is refused (the layer could not be pushed), once.
+Atomic<bool> sFailNextPushForTests{false};
 PRIOMethods gMethods;
 
 // ── The association ─────────────────────────────────────────────────────────
@@ -987,6 +989,8 @@ already_AddRefed<SocksUdpAssociation> SocksUdpPool::Take(const ProxyKey& aKey) {
     if (chosen == entry.mIdle.Length() && !entry.mIdle.IsEmpty()) {
       chosen = 0;
     }
+    LOG(("SocksUdpPool::Take: %u idle, the socket gets %s", static_cast<unsigned>(entry.mIdle.Length()),
+         chosen >= entry.mIdle.Length() ? "a new association" : (entry.mIdle[chosen]->IsReady() ? "a ready one" : "one still being made")));
     if (chosen < entry.mIdle.Length()) {
       taken = std::move(entry.mIdle[chosen]);
       entry.mIdle.RemoveElementAt(chosen);
@@ -1465,6 +1469,9 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, PcUdpProxy* aProxy) {
   if (!aProxy) {
     return NS_ERROR_INVALID_ARG;
   }
+  if (sFailNextPushForTests.exchange(false)) {
+    return NS_ERROR_FAILURE;
+  }
   EnsureMethods();
   MakeDualStack(aFd);
 
@@ -1702,10 +1709,13 @@ nsresult StealthPutSocksUdpLayer(PRFileDesc* aFd, nsIProxyInfo* aProxyInfo) {
   const bool carries = (flags & nsIProxyInfo::CARRIES_COHERENT_UDP) != 0;
   RefPtr<PcUdpProxy> proxy =
       PcUdpProxy::Known(carries ? PcUdpProxy::Kind::Socks5 : PcUdpProxy::Kind::Blocked, info);
+  LOG(("an HTTP/3 socket gets the SOCKS5 UDP layer (%s)", carries ? "the proxy carries UDP" : "a router that drops it"));
   return nsSOCKSUDPIOLayerAddToSocket(aFd, proxy);
 }
 
 void nsSOCKSUDPIOLayerNoSocketThreadForTests(bool aMissing) { sNoSocketThreadForTests = aMissing; }
+
+void nsSOCKSUDPIOLayerFailNextPushForTests(bool aFail) { sFailNextPushForTests = aFail; }
 
 bool nsSOCKSUDPIOLayerHasFailed(PRFileDesc* aFd) {
   SocksUdpShared* shared = aFd ? SharedOf(PR_GetIdentitiesLayer(aFd, gIdentity)) : nullptr;

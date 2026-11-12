@@ -755,6 +755,12 @@ jobs:
           if [ "${{ matrix.node }}" = "true" ]; then
             python3 scripts/ci/background.py start build -- python3 scripts/ci phase build -- ./mach build --keep-going
             python3 scripts/ci/background.py until-compiled build
+            # The link of the gtests' libxul (one thread, full LTO, 20 min on Windows) is independent of the browser's
+            # (one thread, 12 min): beside it, not after the package. Measured on 43176569993: 12.3 + 19.7 min in a row on a
+            # node of 24 cores that was 88% idle. The two meet in `Build - the link`; the package waits for both.
+            if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then
+              python3 scripts/ci/background.py start gtest -- python3 scripts/ci phase gtest -- ./mach build --keep-going recurse_gtest
+            fi
           else
             python3 scripts/ci phase build -- ./mach build --keep-going
             if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
@@ -839,13 +845,15 @@ jobs:
           python3 scripts/ci/background.py wait build
           PROFILE="$HOME/pgo/merged.profdata"
           if [ -f "$PROFILE" ]; then python3 scripts/ci input-watch --file "$PROFILE" --log inputwatch.log --verify --strict; fi
+          # The gtests' build was started beside the link (the Build step): its errors (--keep-going shows every one) fail the leg here.
+          if [ "${{ needs.plan.outputs.gtests }}" = "true" ]; then python3 scripts/ci/background.py wait gtest; fi
       # Nothing of a leg outlives its job: the node is deleted as soon as the job ends. The
       # runner's signals reach a step's shell and no further, so this is what stops a build
       # on a cancel, about 41 s after it and well inside the 5:00 cut (PROBES.md).
       - name: The node - a cancel or a failure ends what runs beside the steps
         if: (cancelled() || failure()) && matrix.node
         timeout-minutes: 2
-        run: python3 scripts/ci/background.py stop build lavapipe
+        run: python3 scripts/ci/background.py stop build lavapipe gtest
       # What enters the compile's key and can move by itself: two runs that miss for no
       # reason differ here (scripts/ci/cache_rules.py).
       - name: Compile cache - what its key depends on
@@ -1030,12 +1038,33 @@ jobs:
         timeout-minutes: 180
         shell: bash
         run: |
-          # --keep-going: make goes on after the first error, so one run shows EVERY gtest that does not build, not one per run
-          # (a build of the gtests that stops at the first error costs a run on the node for each of them)
-          python3 scripts/ci phase gtest -- ./mach build --keep-going recurse_gtest
+          # Built beside the browser's link (the Build step, waited for in `Build - the link`); this run finds everything made, so
+          # it is the check that nothing was left to build, and it costs seconds. --keep-going: make goes on after the first error,
+          # so one run shows EVERY gtest that does not build, not one per run.
+          python3 scripts/ci phase gtest-check -- ./mach build --keep-going recurse_gtest
           # And _tests/gtest, the directory mach runs them from: what they read at run time.
           mkdir -p obj-rel/_tests/gtest
           tar -chf gtest-bin.tar -C obj-rel/dist bin -C ../_tests gtest
+      - name: The node - the memory of the two links
+        if: always() && matrix.node && needs.plan.outputs.gtests == 'true' && runner.environment != 'github-hosted'
+        continue-on-error: true
+        shell: bash
+        run: |
+          # The least memory available in the log of memory_watch (a line a minute), and when: the two links of libxul (the
+          # browser's and the gtests') run at the same time since the gtests are built beside the link.
+          python3 - <<'PY'
+          import re
+          best = None
+          for line in open("memwatch.log", encoding="utf-8", errors="replace"):
+              m = re.match(r"(\d\d:\d\d:\d\d) \[mem\] available (\d+)/(\d+) MB", line)
+              if m and (best is None or int(m.group(2)) < best[1]):
+                  best = (m.group(1), int(m.group(2)), int(m.group(3)))
+          if best:
+              print("memory at the two links: the least available was %d of %d MB at %s, so the peak in use was %d MB (%.0f%%)"
+                    % (best[1], best[2], best[0], best[2] - best[1], 100.0 * (best[2] - best[1]) / best[2]))
+          else:
+              print("memory at the two links: memwatch.log has no [mem] line")
+          PY
       - name: The node - keep them
         # dist/bin at 5 MB/s is minutes. A stalled upload must not take the job's 350.
         timeout-minutes: 60

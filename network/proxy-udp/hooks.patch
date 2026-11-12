@@ -184,7 +184,7 @@ index 47332372f34482172ce0801dd8e16520d365e64d..d7954045e92de94dc1f8fe09dcffd50d
    // dom::ProxyConfig includes stuff that conflicts with nICEr includes.
    // Make it possible to include this header file without tripping over this
 diff --git a/dom/media/webrtc/transport/nr_socket_prsock.cpp b/dom/media/webrtc/transport/nr_socket_prsock.cpp
-index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f211511844 100644
+index f15df437c8b6bbe76fb701ad62dbb6308b07456a..03386f48ec7bde9da26148fbcf3027d7c8c01d3a 100644
 --- a/dom/media/webrtc/transport/nr_socket_prsock.cpp
 +++ b/dom/media/webrtc/transport/nr_socket_prsock.cpp
 @@ -155,6 +155,8 @@ nrappkit copyright:
@@ -259,7 +259,15 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f2
    }
  
    // Set nonblocking
-@@ -670,6 +701,15 @@ int NrSocket::create(nr_transport_addr* addr) {
+@@ -663,6 +694,7 @@ int NrSocket::create(nr_transport_addr* addr) {
+   if (!NS_SUCCEEDED(rv)) ABORT(R_INTERNAL);
+ 
+   // Finally, register with the STS
++  if (addr->protocol == IPPROTO_UDP && StealthTakeFailNextSocketAttachForTests()) ABORT(R_INTERNAL);  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
+   rv = stservice->AttachSocket(fd_, this);
+   if (!NS_SUCCEEDED(rv)) {
+     r_log(LOG_GENERIC, LOG_CRIT, "Couldn't attach socket to STS, rv=%u",
+@@ -670,6 +702,15 @@ int NrSocket::create(nr_transport_addr* addr) {
      ABORT(R_INTERNAL);
    }
  
@@ -275,7 +283,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f2
    _status = 0;
  
  abort:
-@@ -736,6 +776,14 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
+@@ -736,6 +777,14 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
    PRNetAddr naddr;
    int32_t status;
  
@@ -290,7 +298,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f2
    if ((r = nr_transport_addr_to_praddr(to, &naddr))) ABORT(r);
  
    if (fd_ == nullptr) ABORT(R_EOD);
-@@ -788,6 +836,9 @@ int NrSocket::recvfrom(void* buf, size_t maxlen, size_t* len, int flags,
+@@ -788,6 +837,9 @@ int NrSocket::recvfrom(void* buf, size_t maxlen, size_t* len, int flags,
  
    if ((r = nr_praddr_to_transport_addr(&nfrom, from, my_addr_.protocol, 0)))
      ABORT(r);
@@ -300,7 +308,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f2
  
    // r_log(LOG_GENERIC,LOG_DEBUG,"Read %d bytes from %s",*len,addr->as_string);
    mozilla::profiler_count_bandwidth_read_bytes(status);
-@@ -805,6 +856,10 @@ int NrSocket::getaddr(nr_transport_addr* addrp) {
+@@ -805,6 +857,10 @@ int NrSocket::getaddr(nr_transport_addr* addrp) {
  // Close the socket so that the STS will detach and then kill it
  void NrSocket::close() {
    ASSERT_ON_THREAD(ststhread_);
@@ -311,7 +319,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c2f4ed90cebc300b59ffcdebaf4d25f2
    mCondition = NS_BASE_STREAM_CLOSED;
    cancel(NR_ASYNC_WAIT_READ);
    cancel(NR_ASYNC_WAIT_WRITE);
-@@ -1599,17 +1654,20 @@ int NrSocketBase::CreateSocket(
+@@ -1599,17 +1655,20 @@ int NrSocketBase::CreateSocket(
    // create IPC bridge for content process
    if (XRE_IsParentProcess()) {
      // TODO: Make NrTcpSocket work on the parent process

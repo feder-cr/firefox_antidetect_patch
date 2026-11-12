@@ -103,6 +103,10 @@ nsresult StealthPutSocksUdpLayer(PRFileDesc* aFd, nsIProxyInfo* aProxyInfo);
 // Test only: the associations are started as if the socket transport service were gone (a browser that is shutting down).
 void nsSOCKSUDPIOLayerNoSocketThreadForTests(bool aMissing);
 
+// Test only: the next nsSOCKSUDPIOLayerAddToSocket (once) fails as if the layer could not be pushed: the socket of the PeerConnection must
+// then not exist (a plain one would send direct).
+void nsSOCKSUDPIOLayerFailNextPushForTests(bool aFail);
+
 // True when the SOCKS5 UDP layer is on aFd.
 bool nsSOCKSUDPIOLayerIsOn(PRFileDesc* aFd);
 

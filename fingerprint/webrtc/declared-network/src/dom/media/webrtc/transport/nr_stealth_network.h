@@ -158,6 +158,11 @@ class StealthOwnPorts final {
  * parse as an address. `aNicerPort` is the port nICEr proposed, only logged (WebrtcTCPSocket log module). */
 bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, union PRNetAddr* aOut);
 
+/* Tests only: the next NrSocket::create (once) finds the socket transport service refusing the socket, at the step just before a declared
+ * host socket is registered as one of ours (R3). A create that fails there must leave nothing in the set of our ports. */
+void StealthFailNextSocketAttachForTests(bool aFail);
+bool StealthTakeFailNextSocketAttachForTests();
+
 }  // namespace mozilla
 
 /* For a socket whose identity is `self` (the declared address and its bound port): the peer of a datagram as the

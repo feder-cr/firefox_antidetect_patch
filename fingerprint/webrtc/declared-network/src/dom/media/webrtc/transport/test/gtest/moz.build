@@ -11,6 +11,9 @@ SOURCES += ["TestStealthIceResolverContext.cpp"]  # STEALTH-HOOK(network/doh)
 
 # STEALTH-HOOK(network/proxy-udp)
 SOURCES += ["TestStealthUdpProxyBirth.cpp"]
+SOURCES += ["StealthTestProxyKit.cpp"]  # the config of a PeerConnection, in a unit of its own (IPDL headers and nICEr headers do not mix)
+SOURCES += ["TestStealthNrSocketBirth.cpp"]
+SOURCES += ["TestStealthPcUdpProxyKinds.cpp"]
 
 LOCAL_INCLUDES += [
     "/dom/media/webrtc/transport/ipc",

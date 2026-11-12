@@ -320,6 +320,8 @@ jobs:
         include:
           - { suite: wrapper.e2e.udp, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.e2e.udp, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the chain by name, whose exit is a documentation address added to lo (`ip addr add`): Linux as root, no Windows leg
+          - { suite: wrapper.e2e.udp.exit, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
           # the routes and HTTP/3 e2e, split from the suite above (500 s of tests on Linux, 14 minutes and more on Windows)
           - { suite: wrapper.e2e.web, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.e2e.web, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
@@ -439,7 +441,13 @@ jobs:
           case "${{ matrix.suite }}" in
             *e2e*)
               LOGDIR="$(python -c "import os; os.makedirs('result/moz-logs', exist_ok=True); print(os.path.abspath('result/moz-logs'))")"
-              export MOZ_LOG="sync,SOCKS-UDP:5" MOZ_LOG_FILE="$LOGDIR/moz-%PID.log";;
+              # `timestamp`: a time on every line (the logs of run 43188313516 had none, and a red on Windows could not be read against the test's own times)
+              export MOZ_LOG="timestamp,sync,SOCKS-UDP:5" MOZ_LOG_FILE="$LOGDIR/moz-%PID.log"
+              # the HTTP/3 e2e: what the browser says of the QUIC it starts (a visit that reads h2 where h3 was due)
+              if [ "${{ matrix.suite }}" = "wrapper.e2e.web" ]; then export MOZ_LOG="$MOZ_LOG,nsHttp:5,neqo_http3:5"; fi
+              # the root legs (run 43188313516: the socket process of every one wrote nothing, the gather had no candidate): the
+              # transport and the sandbox that starts that process
+              if [ "${{ matrix.root }}" = "true" ]; then export MOZ_LOG="$MOZ_LOG,mtransport:5,SandboxBroker:5,SandboxTarget:5"; fi;;
           esac
           JUDGE=scripts/ci_verdict.py
           [ -f wrapper-main/scripts/ci_verdict.py ] && JUDGE=wrapper-main/scripts/ci_verdict.py
@@ -459,7 +467,23 @@ jobs:
             # root when that directory belongs to the runner's user ("Running Nightly as root in a regular user's session is
             # not supported", run 43164943499). The trap must run: a test that cannot make it fails instead of going on
             # without its assertion.
+            # DIAGNOSTICS of the root legs, kept with the result in result/root-diag/ (they judge nothing): the kernel's say on
+            # user namespaces and AppArmor, the processes of the browser a few times during the run, and what the kernel logged.
+            mkdir -p result/root-diag
+            { sysctl kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces \
+                kernel.yama.ptrace_scope 2>&1; id; cat /proc/self/status | grep -i -E "^(Cap|Seccomp|NoNewPrivs)"; } > result/root-diag/kernel.txt 2>&1 || true
+            ( for _ in $(seq 1 40); do date +%T; ps -eo pid,ppid,user,stat,args | grep -i -E "[f]irefox|[X]vfb" | cut -c1-260; sleep 15; done ) \
+              > result/root-diag/ps.log 2>&1 &
             sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
+            sudo dmesg 2>&1 | grep -i -E "apparmor|DENIED|seccomp|userns" | tail -80 > result/root-diag/dmesg.txt || true
+            # The realness suite once more, one case, with the sandboxes of the socket and content processes off: if the gather
+            # then has candidates the sandbox is what starts the root run without a socket process that works (it judges nothing).
+            if [ "${{ matrix.suite }}" = "wrapper.e2e.realness" ]; then
+              sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" \
+                MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_LOG_FILE="$PWD/result/root-diag/moz-nosandbox-%PID.log" \
+                python -m pytest tests/test_realness_behind_a_declared_exit_e2e.py -k germany -x -q -o addopts='' -p no:cacheprovider -p no:rerunfailures \
+                > result/root-diag/nosandbox.txt 2>&1 || true
+            fi
           else
             env -u PYTEST_ADDOPTS "${PYTEST[@]}" || true
           fi
