@@ -315,6 +315,11 @@ jobs:
           # of reference (there the trap does not run: the one assertion it makes is the only one not made)
           - { suite: wrapper.e2e.doh, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
           - { suite: wrapper.e2e.doh, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          # the page and popup suites (a page is handed over on Page.ready; a popup reaches the client as Playwright's does)
+          - { suite: wrapper.e2e.page, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.e2e.page, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
+          - { suite: wrapper.unit.page, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
+          - { suite: wrapper.unit.page, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
     steps:
       - name: Checkout wrapper (its tests, ci/required-suites.json and scripts/ci_verdict.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

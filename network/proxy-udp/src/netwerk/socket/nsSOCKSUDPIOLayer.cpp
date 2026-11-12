@@ -12,9 +12,18 @@
 
 #include <algorithm>
 
+#ifdef XP_WIN
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+#else
+#  include <netinet/in.h>
+#  include <sys/socket.h>
+#endif
+
 #include "nspr.h"
 #include "private/pprio.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
@@ -53,6 +62,11 @@ namespace net {
 static LazyLogModule gSocksUdpLog("SOCKS-UDP");
 #define LOG(args) MOZ_LOG(gSocksUdpLog, LogLevel::Debug, args)
 #define LOGE(args) MOZ_LOG(gSocksUdpLog, LogLevel::Error, args)
+
+namespace {
+// The application has begun to shut down (what CaptivePortalService asks): from then on the pool is not made, kept or refilled.
+bool ApplicationIsShuttingDown() { return AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed); }
+}  // namespace
 
 namespace {
 
@@ -825,15 +839,21 @@ bool SocksUdpShared::SetAssociation(SocksUdpAssociation* aAssociation) {
 // moment Firefox learns the proxy), so a socket takes one that is made, or being made, instead of paying the round trips
 // of the handshake itself. Take is the only place that asks a proxy for an association of its own accord; a taken one
 // is replaced, for the proxies that were warmed. Any thread.
-// How many associations a proxy keeps ready: the number of UDP sockets a PeerConnection holds at once while it gathers, MEASURED
-// (captures/udp-pool-size/ of the study repo invisible_WebRTC; the engine candidate of 12/11, one declared IPv4 interface, 2 runs of each
-// case with identical results; sockets counted from /proc as the UDP sockets of the browser's processes):
-//   data channel only .......................... 1 socket
-//   audio + video + data channel (3 m-sections) .. 5 sockets
-// with and without ICE servers (a STUN and a TURN server add none). The pool keeps the largest of them ready, so a PeerConnection of any
-// shape finds the association of every one of its sockets made. The pool never makes a socket wait for a ready one: a socket that finds
-// the pool short makes its own association.
-constexpr size_t kPoolReady = 5;
+// How many associations a proxy keeps ready. Measured (captures/udp-pool-size/ of the study repo invisible_WebRTC; the engine candidate of
+// 12/11, one declared IPv4 interface, 2 runs of each case, equal): the UDP sockets ONE PeerConnection holds at once while it gathers are
+//   data channel only .......................... 1
+//   one audio m-section, or one video m-section ... 2
+//   audio + data channel ....................... 3
+//   audio + video .............................. 4
+//   audio + video + data channel ............... 5
+// with and without ICE servers. TWO are kept, not five, on purpose: the warm-up starts at the first TCP connection of EVERY context
+// that has a proxy, whether or not the page ever uses WebRTC, and each ready association is an authenticated connection held open at
+// the proxy, for the context and for the process (a context per fetch means that many more connections to the proxy's provider for
+// every fetch). Two cover what a page that probes WebRTC does: a data channel (1 socket) and a first audio m-section. A whole
+// audio + video + data PeerConnection has its third socket and the ones after it wait for the rest of the handshake - a known limit
+// (docs/KNOWN-ISSUES.md). The pool refills on every take, so the sockets after the first two find the pool refilling, never empty
+// for good, and no socket ever fails for want of a ready one: it makes its own association.
+constexpr size_t kPoolReady = 2;
 constexpr size_t kPoolKeys = 16;  // proxies kept; the one used longest ago is let go of
 // A proxy that ends every association it makes (ready, then closed) is not replaced for ever: after this many replacements with no
 // socket having taken one the pool stops, and the next socket finds it short (and makes its own, and the pool starts again).
@@ -849,22 +869,53 @@ struct PoolEntry {
 
 StaticMutex sPoolMutex;
 StaticAutoPtr<nsTArray<PoolEntry>> sPool MOZ_GUARDED_BY(sPoolMutex);
+// Set by the shutdown hook, under the lock: from then on nobody makes the pool again, finds an entry, or replaces anything.
+bool sPoolShutDown MOZ_GUARDED_BY(sPoolMutex) = false;
 
-// The entry of a proxy, the most recently used last; the ones pushed out are returned to be let go of outside the lock.
-PoolEntry& PoolEntryFor(const ProxyKey& aKey, nsTArray<RefPtr<SocksUdpAssociation>>& aEvicted)
-    MOZ_REQUIRES(sPoolMutex) {
+// The pool is let go of at XPCOM shutdown UNDER ITS LOCK: the socket service thread closes the control connections of the associations that
+// wait in it at that very moment, and the one that ends tells the pool (SocksUdpPool::Ended), which reads and changes it. ClearOnShutdown
+// would have reset the pointer on the main thread with no lock. The array is moved out under the lock and destroyed outside it.
+void ShutDownPool() {
+  nsTArray<PoolEntry> doomed;
+  {
+    StaticMutexAutoLock lock(sPoolMutex);
+    sPoolShutDown = true;
+    if (sPool) {
+      doomed = std::move(*sPool);
+      sPool = nullptr;
+    }
+  }
+  for (PoolEntry& entry : doomed) {
+    for (const RefPtr<SocksUdpAssociation>& idle : entry.mIdle) {
+      idle->Cancel();
+    }
+  }
+}
+
+// Main thread, once, when the pool is first made.
+void RegisterPoolShutdown() {
+  if (NS_IsMainThread()) {
+    if (!ApplicationIsShuttingDown()) {
+      RunOnShutdown([] { ShutDownPool(); }, ShutdownPhase::XPCOMShutdown);
+    }
+    return;
+  }
+  NS_DispatchToMainThread(NS_NewRunnableFunction("SocksUdpPool::RegisterShutdown", [] {
+    if (!ApplicationIsShuttingDown()) {
+      RunOnShutdown([] { ShutDownPool(); }, ShutdownPhase::XPCOMShutdown);
+    }
+  }));
+}
+
+// The entry of a proxy, the most recently used last; the ones pushed out are returned to be let go of outside the lock. Null once the pool
+// is shut down or the application is: nothing is kept then, a socket makes its own association.
+PoolEntry* PoolEntryFor(const ProxyKey& aKey, nsTArray<RefPtr<SocksUdpAssociation>>& aEvicted) MOZ_REQUIRES(sPoolMutex) {
+  if (sPoolShutDown || ApplicationIsShuttingDown()) {
+    return nullptr;
+  }
   if (!sPool) {
     sPool = new nsTArray<PoolEntry>();
-    if (NS_IsMainThread()) {
-      ClearOnShutdown(&sPool);
-    } else {
-      NS_DispatchToMainThread(NS_NewRunnableFunction("SocksUdpPool::ClearOnShutdown", [] {
-        StaticMutexAutoLock lock(sPoolMutex);
-        if (sPool) {
-          ClearOnShutdown(&sPool);
-        }
-      }));
-    }
+    RegisterPoolShutdown();
   }
   for (size_t i = 0; i < sPool->Length(); ++i) {
     if ((*sPool)[i].mKey == aKey) {
@@ -873,7 +924,7 @@ PoolEntry& PoolEntryFor(const ProxyKey& aKey, nsTArray<RefPtr<SocksUdpAssociatio
         sPool->RemoveElementAt(i);
         sPool->AppendElement(std::move(moved));
       }
-      return sPool->LastElement();
+      return &sPool->LastElement();
     }
   }
   PoolEntry& entry = *sPool->AppendElement();
@@ -882,7 +933,7 @@ PoolEntry& PoolEntryFor(const ProxyKey& aKey, nsTArray<RefPtr<SocksUdpAssociatio
     aEvicted.AppendElements(std::move((*sPool)[0].mIdle));
     sPool->RemoveElementAt(0);
   }
-  return sPool->LastElement();
+  return &sPool->LastElement();
 }
 
 PoolEntry* PoolFind(const ProxyKey& aKey) MOZ_REQUIRES(sPoolMutex) {
@@ -912,7 +963,14 @@ already_AddRefed<SocksUdpAssociation> SocksUdpPool::Take(const ProxyKey& aKey) {
   nsTArray<RefPtr<SocksUdpAssociation>> evicted;
   {
     StaticMutexAutoLock lock(sPoolMutex);
-    PoolEntry& entry = PoolEntryFor(aKey, evicted);
+    PoolEntry* found = PoolEntryFor(aKey, evicted);
+    if (!found) {
+      // Shutting down: no pool; the socket makes its own association and nothing is kept.
+      taken = new SocksUdpAssociation(aKey);
+      taken->Start();
+      return taken.forget();
+    }
+    PoolEntry& entry = *found;
     entry.mIdle.RemoveElementsBy([](const RefPtr<SocksUdpAssociation>& a) { return a->IsFailed(); });  // the proxy may have ended it
     // A ready one first (it sends at once), else the one that has been waiting longest.
     size_t chosen = entry.mIdle.Length();
@@ -948,10 +1006,13 @@ void SocksUdpPool::Warm(const ProxyKey& aKey) {
   nsTArray<RefPtr<SocksUdpAssociation>> evicted;
   {
     StaticMutexAutoLock lock(sPoolMutex);
-    PoolEntry& entry = PoolEntryFor(aKey, evicted);
-    entry.mWarmed = true;
-    if (!entry.mRefused) {
-      PoolFill(entry);
+    PoolEntry* entry = PoolEntryFor(aKey, evicted);
+    if (!entry) {
+      return;
+    }
+    entry->mWarmed = true;
+    if (!entry->mRefused) {
+      PoolFill(*entry);
     }
   }
   for (const RefPtr<SocksUdpAssociation>& gone : evicted) {
@@ -961,6 +1022,10 @@ void SocksUdpPool::Warm(const ProxyKey& aKey) {
 
 void SocksUdpPool::Ended(const ProxyKey& aKey, SocksUdpAssociation* aEnded) {
   StaticMutexAutoLock lock(sPoolMutex);
+  // Shutting down the associations close on their own and nothing is replaced: the pool may be gone or going.
+  if (sPoolShutDown || ApplicationIsShuttingDown()) {
+    return;
+  }
   PoolEntry* entry = PoolFind(aKey);
   if (!entry) {
     return;
@@ -1362,11 +1427,37 @@ void EnsureMethods() {
 
 }  // namespace
 
+namespace {
+
+// The socket of a PeerConnection can be an AF_INET6 socket and the relay of the proxy an IPv4 address (the layer sends to its IPv4-mapped
+// form). Windows makes an AF_INET6 socket v6-only by default and then refuses that send (WSAEADDRNOTAVAIL, 10049; reproduced in plain
+// Winsock: V6ONLY=1 fails, V6ONLY=0 arrives), neither NSPR nor NrSocket switch it off, and Linux has it off by default: so it is switched
+// off here, before the socket is bound. It succeeds only on an AF_INET6 socket; anything else is left as it is.
+void MakeDualStack(PRFileDesc* aFd) {
+  PRFileDesc* native = PR_GetIdentitiesLayer(aFd, PR_NSPR_IO_LAYER);
+  if (!native) {
+    return;
+  }
+  PROsfd osfd = PR_FileDesc2NativeHandle(native);
+  if (osfd == -1) {
+    return;
+  }
+  int off = 0;
+#ifdef XP_WIN
+  (void)setsockopt(static_cast<SOCKET>(osfd), IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<const char*>(&off), sizeof(off));
+#else
+  (void)setsockopt(static_cast<int>(osfd), IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+#endif
+}
+
+}  // namespace
+
 nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, PcUdpProxy* aProxy) {
   if (!aProxy) {
     return NS_ERROR_INVALID_ARG;
   }
   EnsureMethods();
+  MakeDualStack(aFd);
 
   PRFileDesc* layer = PR_CreateIOLayerStub(gIdentity, &gMethods);
   if (!layer) {
@@ -1398,6 +1489,15 @@ nsresult nsSOCKSUDPIOLayerAddToSocket(PRFileDesc* aFd, PcUdpProxy* aProxy) {
 
 uint32_t nsSOCKSUDPIOLayerPoolReady() { return static_cast<uint32_t>(kPoolReady); }
 
+void nsSOCKSUDPIOLayerShutDownPoolForTests(bool aShutDown) {
+  if (aShutDown) {
+    ShutDownPool();
+    return;
+  }
+  StaticMutexAutoLock lock(sPoolMutex);
+  sPoolShutDown = false;
+}
+
 void nsSOCKSUDPIOLayerWarm(const nsACString& aHost, int32_t aPort, const nsACString& aUser, const nsACString& aPass) {
   if (aHost.IsEmpty() || aPort <= 0 || aPort > 65535) {
     return;
@@ -1423,21 +1523,39 @@ StaticAutoPtr<WarmSent> sWarmSent;
 // SOCKS connections queues one message, not a hundred. Taken off when the main thread has decided (told, or not needed). Any thread.
 StaticMutex sWarmQueuedMutex;
 StaticAutoPtr<nsTArray<ProxyKey>> sWarmQueued MOZ_GUARDED_BY(sWarmQueuedMutex);
+bool sWarmQueuedShutDown MOZ_GUARDED_BY(sWarmQueuedMutex) = false;
+
+void RegisterWarmQueuedShutdown() {
+  auto hook = [] {
+    RunOnShutdown(
+        [] {
+          nsTArray<ProxyKey> doomed;
+          StaticMutexAutoLock lock(sWarmQueuedMutex);
+          sWarmQueuedShutDown = true;
+          if (sWarmQueued) {
+            doomed = std::move(*sWarmQueued);
+            sWarmQueued = nullptr;
+          }
+        },
+        ShutdownPhase::XPCOMShutdown);
+  };
+  if (NS_IsMainThread()) {
+    if (!ApplicationIsShuttingDown()) hook();
+    return;
+  }
+  NS_DispatchToMainThread(NS_NewRunnableFunction("WarmQueued::RegisterShutdown", [hook] {
+    if (!ApplicationIsShuttingDown()) hook();
+  }));
+}
 
 bool WarmQueueEnter(const ProxyKey& aKey) {
   StaticMutexAutoLock lock(sWarmQueuedMutex);
+  if (sWarmQueuedShutDown || ApplicationIsShuttingDown()) {
+    return false;
+  }
   if (!sWarmQueued) {
     sWarmQueued = new nsTArray<ProxyKey>();
-    if (NS_IsMainThread()) {
-      ClearOnShutdown(&sWarmQueued);
-    } else {
-      NS_DispatchToMainThread(NS_NewRunnableFunction("WarmQueuedClear", [] {
-        StaticMutexAutoLock lock2(sWarmQueuedMutex);
-        if (sWarmQueued) {
-          ClearOnShutdown(&sWarmQueued);
-        }
-      }));
-    }
+    RegisterWarmQueuedShutdown();
   }
   if (sWarmQueued->Contains(aKey)) {
     return false;
@@ -1514,21 +1632,22 @@ void WarmTheSocketProcess(const nsACString& aHost, int32_t aPort, const nsACStri
   }
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "WarmTheSocketProcess", [key, host = nsCString(aHost), aPort, user = nsCString(aUser), pass = nsCString(aPass)] {
+        // The key leaves the queue NOW, whatever follows: it only keeps a page's hundred SOCKS connections from queueing a hundred messages
+        // at once, and a socket process that never calls back (it failed to start) must not leave the proxy unannounced for good. A second
+        // message for the same process is refused by nsSOCKSUDPIOLayerFirstWarmForProcess.
+        WarmQueueLeave(key);
         if (!nsSOCKSUDPIOLayerSocketProcessMakesTheIceSockets()) {
-          WarmQueueLeave(key);
           return;
         }
         RefPtr<nsIOService> io = nsIOService::GetInstance();
         if (!io) {
-          WarmQueueLeave(key);
           return;
         }
-        io->CallOrWaitForSocketProcess([key, host, aPort, user, pass] {
+        io->CallOrWaitForSocketProcess([host, aPort, user, pass] {
           RefPtr<SocketProcessParent> actor = SocketProcessParent::GetSingleton();
           if (actor && nsSOCKSUDPIOLayerFirstWarmForProcess(static_cast<uint64_t>(actor->OtherPid()), host, aPort, user, pass)) {
             (void)actor->SendStealthWarmSocksUdp(host, aPort, user, pass);
           }
-          WarmQueueLeave(key);
         });
       }));
 }

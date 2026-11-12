@@ -75,6 +75,9 @@ void nsSOCKSUDPIOLayerWarm(nsIProxyInfo* aProxy);
 /* How many associations the pool of a proxy keeps ready (the tests follow the code, not a copy of the number). */
 uint32_t nsSOCKSUDPIOLayerPoolReady();
 
+/* Tests only: do what the XPCOM shutdown hook does to the pool (true), or open it again (false). */
+void nsSOCKSUDPIOLayerShutDownPoolForTests(bool aShutDown);
+
 /*
  * Parent process, main thread: whether the socket process aProcessId has to be told about this proxy: true the first time for a proxy
  * and a process (and again for a new process id: a socket process that was restarted), false otherwise. The message is an advance, said

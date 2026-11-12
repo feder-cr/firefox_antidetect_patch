@@ -390,6 +390,9 @@ TEST(StealthDeclaredNetwork, NoIPv6InTheDeclarationIsNoIPv6NameLookup)
   IPFamilyPref restore;
   for (const DeclRow& row : kDecls) {
     // A user value (true, which differs from the default) must not survive a declaration: it is the one source.
+    // The default is put back first: a row before this one may have declared "no IPv6" and set the default to true, and Gecko
+    // keeps no user value equal to the default, so the user value below would not exist for a row that touches nothing.
+    mozilla::Preferences::SetBool(IPFamilyPref::kName, false, mozilla::PrefValueKind::Default);
     mozilla::Preferences::SetBool(IPFamilyPref::kName, true);
     bool declared = mozilla::StealthApplyDeclaredIPFamily(row.decl);
     EXPECT_EQ(row.parses, declared) << Show(row.decl);

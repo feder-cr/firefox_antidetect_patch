@@ -251,6 +251,26 @@ def group_gtest(doc) -> list:
                 os.environ.update(old)
         code = go_kept()
         out.append(("gtests: each suite's report stays where it was asked to", code == 0 and sorted(p.name for p in kept.iterdir()) == ["SuiteA.json", "SuiteB_x.json"]))
+        # StealthSessionUdpProxy runs with the log of the SOCKS UDP layer and of the resolver, one file per process, kept in
+        # the reports; the other suites run without MOZ_LOG (a test red on one platform whose cause the sources do not say
+        # needs what the process said).
+        logged_kept = tree / "logged-kept"
+        record.write_text("")
+        old = dict(os.environ)
+        os.environ.update(FAKE_SUITES="StealthSessionUdpProxy SuiteB", FAKE_FAIL="")
+        try:
+            logged_code = gtest_run.run(root, "*", reports=logged_kept, out=lambda _: None)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        logged_calls = {c["env"]["GTEST_FILTER"].split(".")[0]: c["env"] for c in (json.loads(l) for l in record.read_text().splitlines())}
+        udp = logged_calls.get("StealthSessionUdpProxy", {})
+        out.append(("gtests: StealthSessionUdpProxy runs with MOZ_LOG sync,SOCKS-UDP:5,nsHostResolver:5, a file per process (%PID) in the reports",
+                    logged_code == 0 and udp.get("MOZ_LOG") == "sync,SOCKS-UDP:5,nsHostResolver:5"
+                    and udp.get("MOZ_LOG_FILE") == str(logged_kept / "StealthSessionUdpProxy.moz-log" / "moz-%PID.log")
+                    and (logged_kept / "StealthSessionUdpProxy.moz-log").is_dir()))
+        out.append(("gtests: the other suites run without MOZ_LOG", "MOZ_LOG" not in logged_calls.get("SuiteB", {"MOZ_LOG": 1})
+                    and "MOZ_LOG_FILE" not in logged_calls.get("SuiteB", {"MOZ_LOG_FILE": 1})))
         # A suite that dies on a signal: named, and its core read into the log and the reports
         # (candidate 42473169415 said "exited -11" and nothing else).
         cores, crash_kept = tree / "cores", tree / "crash-kept"
