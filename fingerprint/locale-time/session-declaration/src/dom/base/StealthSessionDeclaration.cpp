@@ -13,6 +13,7 @@
 #include "mozilla/Span.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/intl/StealthSessionPrefs.h"
 #include "mozilla/intl/TimeZone.h"
 #include "nsAtom.h"
