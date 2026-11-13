@@ -94,12 +94,12 @@ def _cases() -> list:
     add("geoip: the verification of the evidence binds, and runs whatever pytest said (`if: always()`)", binding(verify, "always()"))
     add("geoip: the verification reads the pin of MAIN when main has one, and calls the script's `verify` with the evidence",
         'GEOIP_PIN=ci/geoip.json\n[ -f wrapper-main/ci/geoip.json ] && GEOIP_PIN=wrapper-main/ci/geoip.json' in "\n".join(l.strip() for l in verify["run"].splitlines())
-        and 'ci_lab_geoip.py verify --pin "$GEOIP_PIN" --evidence result/geoip.json' in verify["run"])
+        and 'ci_lab_geoip.py verify --pin "$GEOIP_PIN" --evidence geoip-evidence.json' in verify["run"])
     verdict = step_of(gate, "wrapper-e2e", VERDICT_STEP)
     add("geoip: the verdict step binds", binding(verdict, None))
     add("geoip: the judge is handed the evidence and the pin of MAIN's checkout when main has one",
         "[ -f wrapper-main/ci/geoip.json ] && GEOIP_PIN=wrapper-main/ci/geoip.json" in verdict["run"]
-        and '--geoip result/geoip.json --geoip-pin "$GEOIP_PIN"' in verdict["run"])
+        and '--geoip geoip-evidence.json --geoip-pin "$GEOIP_PIN"' in verdict["run"])
     mirror = step_of(gate, "gate", MIRROR_STEP)
     add("protocol mirror: the step binds, and runs on the Linux leg only", binding(mirror, "matrix.leg == 'linux-x86_64'"))
     add("protocol mirror: it calls `--check` against the binary", "_gen_protocol --check --binary" in mirror["run"])

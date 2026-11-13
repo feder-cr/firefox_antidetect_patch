@@ -530,11 +530,11 @@ jobs:
             ( for _ in $(seq 1 40); do date +%T; { ps -eo pid,ppid,user,stat,args | grep -i -E "[f]irefox|[X]vfb" | cut -c1-260; } || true; sleep 15; done ) \
               > result/root-diag/ps.log 2>&1 &
             # What the environment of THIS launch says about the GeoIP database (the judge reads it): through the same sudo as pytest.
-            sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR "PATH=$PATH" python scripts/ci_lab_geoip.py evidence --out result/geoip.json > /dev/null
+            sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR "PATH=$PATH" python scripts/ci_lab_geoip.py evidence --out geoip-evidence.json > /dev/null
             sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR INVPW_REQUIRE_TRAP=1 "PATH=$PATH" "${PYTEST[@]}" || true
             sudo dmesg 2>&1 | grep -i -E "apparmor|DENIED|seccomp|userns" | tail -80 > result/root-diag/dmesg.txt || true
           else
-            env -u PYTEST_ADDOPTS python scripts/ci_lab_geoip.py evidence --out result/geoip.json > /dev/null
+            env -u PYTEST_ADDOPTS python scripts/ci_lab_geoip.py evidence --out geoip-evidence.json > /dev/null
             env -u PYTEST_ADDOPTS "${PYTEST[@]}" || true
           fi
       # The verdict, whatever pytest said: a skipped test, a missing file or a list that shrank is red here.
@@ -546,7 +546,7 @@ jobs:
         run: |
           GEOIP_PIN=ci/geoip.json
           [ -f wrapper-main/ci/geoip.json ] && GEOIP_PIN=wrapper-main/ci/geoip.json
-          python scripts/ci_lab_geoip.py verify --pin "$GEOIP_PIN" --evidence result/geoip.json --used "$GEOIP_USED_OUT"
+          python scripts/ci_lab_geoip.py verify --pin "$GEOIP_PIN" --evidence geoip-evidence.json --used "$GEOIP_USED_OUT"
       - name: Verdict - required suite
         shell: bash
         run: |
@@ -564,7 +564,7 @@ jobs:
           GEOIP_PIN=ci/geoip.json
           [ -f wrapper-main/ci/geoip.json ] && GEOIP_PIN=wrapper-main/ci/geoip.json
           if grep -q -- '--geoip-pin' "$JUDGE"; then
-            GEOIP=(--geoip result/geoip.json --geoip-pin "$GEOIP_PIN")
+            GEOIP=(--geoip geoip-evidence.json --geoip-pin "$GEOIP_PIN")
           else
             echo "::warning::the judge ($JUDGE) does not read the GeoIP evidence yet: the leg is not judged on its database"
           fi

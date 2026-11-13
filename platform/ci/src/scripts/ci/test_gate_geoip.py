@@ -38,8 +38,8 @@ def test_the_jobs_that_only_judge_do_not_make_it():
 
 
 def test_the_suite_writes_the_evidence_in_the_environment_pytest_is_launched_in():
-    root_launch = 'sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR "PATH=$PATH" python scripts/ci_lab_geoip.py evidence --out result/geoip.json'
-    other = "env -u PYTEST_ADDOPTS python scripts/ci_lab_geoip.py evidence --out result/geoip.json"
+    root_launch = 'sudo -H -E env -u PYTEST_ADDOPTS -u XDG_RUNTIME_DIR "PATH=$PATH" python scripts/ci_lab_geoip.py evidence --out geoip-evidence.json'
+    other = "env -u PYTEST_ADDOPTS python scripts/ci_lab_geoip.py evidence --out geoip-evidence.json"
     assert GATE.count(root_launch) == 1
     assert GATE.count(other) == 1
     # both before the line that starts pytest in the same branch
@@ -49,7 +49,7 @@ def test_the_suite_writes_the_evidence_in_the_environment_pytest_is_launched_in(
 
 def test_the_verdict_hands_the_evidence_and_the_pin_to_the_judge():
     assert '"${MAIN[@]}" "${GEOIP[@]}" --out' in GATE
-    assert "GEOIP=(--geoip result/geoip.json --geoip-pin " in GATE
+    assert "GEOIP=(--geoip geoip-evidence.json --geoip-pin " in GATE
     assert "wrapper-main/ci/geoip.json" in GATE, "the pin of main binds the candidate, as the judge and the list do"
     assert re.search(r"if grep -q -- '--geoip-pin' \"\$JUDGE\"", GATE), "a judge that does not read the evidence yet is said, loudly"
 
@@ -57,9 +57,16 @@ def test_the_verdict_hands_the_evidence_and_the_pin_to_the_judge():
 def test_the_leg_verifies_that_it_ran_with_the_pinned_database_before_the_verdict_and_whatever_the_judge_knows():
     step = "      - name: The leg ran with the pinned GeoIP database\n        if: always()\n"
     assert GATE.count(step) == 1
-    assert 'python scripts/ci_lab_geoip.py verify --pin "$GEOIP_PIN" --evidence result/geoip.json --used "$GEOIP_USED_OUT"' in GATE
+    assert 'python scripts/ci_lab_geoip.py verify --pin "$GEOIP_PIN" --evidence geoip-evidence.json --used "$GEOIP_USED_OUT"' in GATE
     assert GATE.index("      - name: The suite - every listed test runs and passes\n") < GATE.index(step) < GATE.index("      - name: Verdict - required suite\n")
 
+
+
+def test_the_evidence_is_not_in_the_uploaded_result_folder():
+    """The aggregate judge reads every JSON file of the uploaded result folders as a result: the GeoIP evidence written
+    into result/ was refused as "not a result of judge" on every leg (candidate 43505101105), so it lives beside it."""
+    assert "result/geoip.json" not in GATE
+    assert "evidence --out geoip-evidence.json" in GATE
 
 def cases() -> list:
     """The tests above as (name, ok) pairs, for scripts/ci/test_ci.py, which the plan job runs (a test that no job runs is deleted)."""
