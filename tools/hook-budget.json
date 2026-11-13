@@ -302,6 +302,7 @@
  "toolkit/mozapps/update/BackgroundUpdate.sys.mjs": 5,
  "toolkit/mozapps/update/UpdateService.sys.mjs": 6,
  "toolkit/mozapps/update/moz.build": 1,
+ "toolkit/profile/nsProfileLock.cpp": 2,
  "toolkit/toolkit.mozbuild": 1,
  "toolkit/xre/dllservices/UntrustedModulesData.cpp": 12,
  "toolkit/xre/dllservices/UntrustedModulesData.h": 4,

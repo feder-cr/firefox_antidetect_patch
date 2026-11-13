@@ -318,3 +318,23 @@ index 118b630a5bfaece654861830b86fbdf15d076e8b..4d416191dcc6ca291a94728c125e62a0
    // On at least some builds of Windows 10, the old parental controls API no
    // longer exists, so we have to pull the info we need out of the registry.
    nsAutoString regKeyName;
+diff --git a/toolkit/profile/nsProfileLock.cpp b/toolkit/profile/nsProfileLock.cpp
+index 3d17171117c8382e1513657554bd2c657a9acd30..5f0eeae527112fea2493f34b775d1c75708044e5 100644
+--- a/toolkit/profile/nsProfileLock.cpp
++++ b/toolkit/profile/nsProfileLock.cpp
+@@ -319,6 +319,7 @@ nsresult nsProfileLock::LockWithSymlink(nsIFile* aLockFile,
+   //   2. The file system does not support fcntl() locking.
+   //   3. The browser is run from two different computers at the same time.
+ #  ifndef MOZ_PROXY_BYPASS_PROTECTION
++#    if 0  // STEALTH-HOOK(network/doh): the host's own name is never looked up; the signature keeps 127.0.0.1
+   char hostname[256];
+   PRStatus status = PR_GetSystemInfo(PR_SI_HOSTNAME, hostname, sizeof hostname);
+   if (status == PR_SUCCESS) {
+@@ -327,6 +328,7 @@ nsresult nsProfileLock::LockWithSymlink(nsIFile* aLockFile,
+     status = PR_GetHostByName(hostname, netdbbuf, sizeof netdbbuf, &hostent);
+     if (status == PR_SUCCESS) memcpy(&inaddr, hostent.h_addr, sizeof inaddr);
+   }
++#    endif  // STEALTH-HOOK(network/doh)
+ #  endif
+ 
+   mozilla::SmprintfPointer signature =

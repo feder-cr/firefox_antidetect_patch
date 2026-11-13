@@ -96,6 +96,8 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
 - `netwerk/protocol/http/TLSTransportLayer.cpp`: one include, and the origin attributes argument of `AddToSocket` is
   `StealthTransportContext(mSocketTransport)` (one of Mozilla's lines rewritten: the wrong value is that argument).
 - `netwerk/protocol/http/nsHttpChannel.cpp`: the two existing calls of `StealthTRRFailClosed` take `StealthProxyIsMandatory(...)`.
+- `toolkit/profile/nsProfileLock.cpp`: two tagged lines compile out the lookup of the machine's own host name in the Unix
+  symlink lock (made at start-up, before any proxy is decided, through the system resolver); the signature keeps 127.0.0.1.
 - `netwerk/dns/nsHostResolver.cpp`: the two calls of `StealthFlagsFollowSession`; `netwerk/dns/moz.build`: our source.
 - `toolkit/components/parentalcontrols/nsParentalControlsService{Win,Default}.cpp`: the declared value before the first OS call
   (the Cocoa and Android files are Mozilla's: those OSes are never the persona).

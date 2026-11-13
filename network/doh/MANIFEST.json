@@ -11,7 +11,8 @@
   "netwerk/protocol/http/nsHttpChannel.cpp",
   "security/manager/ssl/nsNSSCallbacks.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
-  "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp"
+  "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp",
+  "toolkit/profile/nsProfileLock.cpp"
  ],
  "added": {
   "dom/media/webrtc/transport/StealthIceResolverContext.cpp": "100644",
@@ -297,6 +298,27 @@
     "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
    ],
    "notes": "The constructor takes the declared value (off) and returns before its first OS call, so the Windows parental controls provider is never asked; every reader (nsHttpHandler, the DoH heuristics, downloads, CanonicalBrowsingContext) goes through the service and sees the same value.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/profile/nsProfileLock.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "nsProfileLock::LockWithSymlink, the address in the signature of the symlink lock (Unix)",
+   "evidence": [
+    "+#    if 0  // STEALTH-HOOK(network/doh): the host's own name is never looked up; the signature keeps 127.0.0.1",
+    "+#    endif  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Mozilla resolves the machine's own host name with PR_GetHostByName at start-up, before any proxy is decided, through the system resolver, unless MOZ_PROXY_BYPASS_PROTECTION is set. The block is compiled out so the signature keeps 127.0.0.1, as that build does; nothing else of that build is taken. Windows takes another lock and makes no lookup.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."
