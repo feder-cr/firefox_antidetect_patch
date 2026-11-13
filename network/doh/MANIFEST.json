@@ -12,6 +12,11 @@
   "security/manager/ssl/nsNSSCallbacks.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp",
+  "toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs",
+  "toolkit/components/url-classifier/moz.build",
+  "toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl",
+  "toolkit/components/url-classifier/nsUrlClassifierDBService.cpp",
+  "toolkit/components/url-classifier/tests/unit/xpcshell.toml",
   "toolkit/profile/nsProfileLock.cpp"
  ],
  "added": {
@@ -43,7 +48,9 @@
   "netwerk/ipc/StealthTRRContext.h": "100644",
   "netwerk/test/gtest/TestStealthSessionResolver.cpp": "100644",
   "netwerk/test/gtest/TestStealthTRRContext.cpp": "100644",
-  "toolkit/components/parentalcontrols/StealthParentalControls.h": "100644"
+  "toolkit/components/parentalcontrols/StealthParentalControls.h": "100644",
+  "toolkit/components/url-classifier/StealthHashCompleterContext.sys.mjs": "100644",
+  "toolkit/components/url-classifier/tests/unit/test_stealth_hashcompleter_context.js": "100644"
  },
  "inventory": [
   {
@@ -298,6 +305,111 @@
     "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
    ],
    "notes": "The constructor takes the declared value (off) and returns before its first OS call, so the Windows parental controls provider is never asked; every reader (nsHttpHandler, the DoH heuristics, downloads, CanonicalBrowsingContext) goes through the service and sees the same value.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 7,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "HashCompleter.complete and openChannel: the completion road of a page's context",
+   "evidence": [
+    "+// STEALTH-HOOK(network/doh)",
+    "+import {",
+    "+  stealthApplyContext,"
+   ],
+   "notes": "complete() hands a completion of a non-default context to the completer of that context (StealthHashCompleterContext.sys.mjs), and openChannel gives the channel that context's origin attributes: the gethash request leaves by the proxy and the resolver of the page's context, and contexts never share a request. The default context takes Mozilla's code unchanged.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/moz.build",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "EXTRA_JS_MODULES of the url-classifier",
+   "evidence": [
+    "+    \"StealthHashCompleterContext.sys.mjs\",  # STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Registers StealthHashCompleterContext.sys.mjs.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "nsIUrlClassifierHashCompleterCallback",
+   "evidence": [
+    "+  readonly attribute uint32_t userContextId;  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "One readonly attribute, userContextId: the context of the lookup a completion callback belongs to.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/nsUrlClassifierDBService.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "nsUrlClassifierHashCompleterBase and nsUrlClassifierDBService::Classify",
+   "evidence": [
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+  uint32_t mStealthUserContextId = mozilla::net::StealthCurrentLookupContext();  // STEALTH-HOOK(network/doh)",
+    "+NS_IMETHODIMP nsUrlClassifierHashCompleterBase::GetUserContextId(uint32_t* aId) { return mozilla::net::StealthLookupContextOut(mStealthUserContextId, aId); }  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Classify opens a lookup-context scope from the page's principal; the completion callback made inside it keeps that userContextId and answers it through userContextId (helpers in netwerk/ipc/StealthTRRContext).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/tests/unit/xpcshell.toml",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "the xpcshell manifest of the url-classifier",
+   "evidence": [
+    "+[\"test_stealth_hashcompleter_context.js\"]  # STEALTH-HOOK(network/doh)",
+    "+"
+   ],
+   "notes": "Lists test_stealth_hashcompleter_context.js.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."

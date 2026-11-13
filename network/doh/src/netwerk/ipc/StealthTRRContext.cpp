@@ -8,6 +8,7 @@
 #include "nsDebug.h"
 #include "nsIChannel.h"
 #include "nsILoadInfo.h"
+#include "nsIPrincipal.h"
 #include "nsISocketTransport.h"
 #include "nsString.h"
 
@@ -88,6 +89,33 @@ bool StealthFailClosedOnProxyFailure(nsresult aProxyStatus,
                                      bool aIsTRRServiceChannel,
                                      bool aCanceled) {
   return NS_FAILED(aProxyStatus) && aIsTRRServiceChannel && !aCanceled;
+}
+
+// A plain thread-local: the scope is opened and the lookup callbacks are made
+// on the same (main) thread, and a thread that opened none reads 0.
+static thread_local uint32_t sStealthLookupContext =
+    kStealthDefaultUserContextId;
+
+uint32_t StealthCurrentLookupContext() { return sStealthLookupContext; }
+
+StealthLookupContextScope::StealthLookupContextScope(uint32_t aUserContextId)
+    : mPrevious(sStealthLookupContext) {
+  sStealthLookupContext = aUserContextId;
+}
+
+StealthLookupContextScope::StealthLookupContextScope(nsIPrincipal* aPrincipal)
+    : StealthLookupContextScope(
+          aPrincipal ? aPrincipal->OriginAttributesRef().mUserContextId
+                     : kStealthDefaultUserContextId) {}
+
+StealthLookupContextScope::~StealthLookupContextScope() {
+  sStealthLookupContext = mPrevious;
+}
+
+nsresult StealthLookupContextOut(uint32_t aContext, uint32_t* aOut) {
+  NS_ENSURE_ARG_POINTER(aOut);
+  *aOut = aContext;
+  return NS_OK;
 }
 
 }  // namespace mozilla::net

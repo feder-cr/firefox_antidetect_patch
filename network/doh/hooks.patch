@@ -318,6 +318,108 @@ index 118b630a5bfaece654861830b86fbdf15d076e8b..4d416191dcc6ca291a94728c125e62a0
    // On at least some builds of Windows 10, the old parental controls API no
    // longer exists, so we have to pull the info we need out of the registry.
    nsAutoString regKeyName;
+diff --git a/toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs b/toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs
+index 9e77741ecfeb38e27605f78def3bce139d27df07..1452204b8584d9b89360e99f3fab690dc0b0bd2a 100644
+--- a/toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs
++++ b/toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs
+@@ -15,6 +15,11 @@ const PREF_DEBUG_ENABLED = "browser.safebrowsing.debug";
+ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+ 
+ import { NetUtil } from "resource://gre/modules/NetUtil.sys.mjs";
++// STEALTH-HOOK(network/doh)
++import {
++  stealthApplyContext,
++  stealthCompleteInContext,
++} from "resource://gre/modules/StealthHashCompleterContext.sys.mjs";
+ 
+ const lazy = {};
+ 
+@@ -201,6 +206,7 @@ export class HashCompleter {
+   // Even though it only takes one partial hash and callback, subsequent
+   // calls are made into the same HTTP request by using a thread dispatch.
+   complete(aPartialHash, aGethashUrl, aTableName, aCallback) {
++    if (stealthCompleteInContext(this, aPartialHash, aGethashUrl, aTableName, aCallback)) { return; }  // STEALTH-HOOK(network/doh)
+     if (!aGethashUrl) {
+       throw Components.Exception("", Cr.NS_ERROR_NOT_INITIALIZED);
+     }
+@@ -510,6 +516,7 @@ class HashCompleterRequestBase {
+       firstPartyDomain:
+         "safebrowsing.86868755-6b82-4842-b301-72671a0db32e.mozilla",
+     };
++    stealthApplyContext(channel, this.completer);  // STEALTH-HOOK(network/doh)
+ 
+     // Disable keepalive.
+     let httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
+diff --git a/toolkit/components/url-classifier/moz.build b/toolkit/components/url-classifier/moz.build
+index ac590cf60ef5e32937216eef0097f0210ec3ed86..8f95933d949d1989e4840f4f92d73c56171d1096 100644
+--- a/toolkit/components/url-classifier/moz.build
++++ b/toolkit/components/url-classifier/moz.build
+@@ -58,6 +58,7 @@ SOURCES += [
+ 
+ EXTRA_JS_MODULES += [
+     "SafeBrowsing.sys.mjs",
++    "StealthHashCompleterContext.sys.mjs",  # STEALTH-HOOK(network/doh)
+     "UrlClassifierHashCompleter.sys.mjs",
+     "UrlClassifierLib.sys.mjs",
+     "UrlClassifierListManager.sys.mjs",
+diff --git a/toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl b/toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl
+index 64aaffae3064b43bde144b8f3f9076b02ffa54e9..917519f917fb5ffd684e0b764996887f5fe4094f 100644
+--- a/toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl
++++ b/toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl
+@@ -70,6 +70,7 @@ interface nsIUrlClassifierHashCompleterCallback : nsISupports
+    *        NS_OK if the request completed successfully, or an error code.
+    */
+   void completionFinished(in nsresult status);
++  readonly attribute uint32_t userContextId;  // STEALTH-HOOK(network/doh)
+ };
+ 
+ /**
+diff --git a/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp b/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
+index 02a2030c2480ccc9c2fa007239025d1e563c03b5..82c847f6a856924350d00541d5b51c45b3c007f2 100644
+--- a/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
++++ b/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
+@@ -43,6 +43,7 @@
+ #include "nsIUrlListManager.h"
+ #include "ProtocolParser.h"
+ #include "nsContentUtils.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "mozilla/Components.h"
+ #include "mozilla/dom/ContentChild.h"
+ #include "mozilla/ContentClassifierService.h"
+@@ -1256,10 +1257,12 @@ class nsUrlClassifierHashCompleterBase
+   nsCOMPtr<nsIUrlClassifierCallback> mCallback;
+   ConstCacheResultArray mCacheResults;
+   uint32_t mPendingCompletions = 0;
++  uint32_t mStealthUserContextId = mozilla::net::StealthCurrentLookupContext();  // STEALTH-HOOK(network/doh)
+ };
+ 
+ NS_IMPL_ISUPPORTS(nsUrlClassifierHashCompleterBase,
+                   nsIUrlClassifierHashCompleterCallback)
++NS_IMETHODIMP nsUrlClassifierHashCompleterBase::GetUserContextId(uint32_t* aId) { return mozilla::net::StealthLookupContextOut(mStealthUserContextId, aId); }  // STEALTH-HOOK(network/doh)
+ 
+ nsUrlClassifierHashCompleterBase::~nsUrlClassifierHashCompleterBase() {
+   if (mCallback) {
+@@ -2154,6 +2157,7 @@ nsUrlClassifierDBService::Classify(nsIPrincipal* aPrincipal,
+     return NS_OK;
+   }
+ 
++  mozilla::net::StealthLookupContextScope stealthScope(aPrincipal);  // STEALTH-HOOK(network/doh)
+   if (Classifier::IsRealTimeModeEnabled()) {
+     RefPtr<nsUrlClassifierClassifyCallback> callback =
+         new (fallible) nsUrlClassifierClassifyCallback(c);
+diff --git a/toolkit/components/url-classifier/tests/unit/xpcshell.toml b/toolkit/components/url-classifier/tests/unit/xpcshell.toml
+index 6e8890525dd1b40860c170704e17a7d7797e4855..4bbc08047ba5bb4b5177fc72a0ef9810a8ea2988 100644
+--- a/toolkit/components/url-classifier/tests/unit/xpcshell.toml
++++ b/toolkit/components/url-classifier/tests/unit/xpcshell.toml
+@@ -59,6 +59,8 @@ tags = "remote-settings"
+ 
+ ["test_shouldclassify.js"]
+ 
++["test_stealth_hashcompleter_context.js"]  # STEALTH-HOOK(network/doh)
++
+ ["test_streamupdater.js"]
+ 
+ ["test_threat_type_conversion.js"]
 diff --git a/toolkit/profile/nsProfileLock.cpp b/toolkit/profile/nsProfileLock.cpp
 index 3d17171117c8382e1513657554bd2c657a9acd30..5f0eeae527112fea2493f34b775d1c75708044e5 100644
 --- a/toolkit/profile/nsProfileLock.cpp

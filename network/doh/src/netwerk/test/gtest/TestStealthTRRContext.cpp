@@ -9,6 +9,7 @@
 
 #include "TRRLoadInfo.h"
 #include "gtest/gtest.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/SpinEventLoopUntil.h"
@@ -23,6 +24,7 @@
 #include "nsIProtocolProxyFilter.h"
 #include "nsIProtocolProxyService.h"
 #include "nsIParentalControlsService.h"
+#include "nsIPrincipal.h"
 #include "nsIProxyInfo.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
@@ -134,6 +136,48 @@ TEST(TestStealthTRRContext, TheOcspRequestOfTheDefaultContextIsUnchanged)
 TEST(TestStealthTRRContext, ATlsOverATunnelWithoutATransportIsInTheDefaultContext)
 {
   EXPECT_TRUE(StealthTransportContext(nullptr) == OriginAttributes());
+}
+
+// The Safe Browsing completion of a page load is requested in the context of
+// that page: Classify opens a scope with the page's principal, the lookup
+// callbacks made inside it read the context, the default context stays 0.
+TEST(TestStealthTRRContext, ALookupScopeCarriesTheContextOfThePrincipalAndRestores)
+{
+  nsCOMPtr<nsIURI> uri;
+  ASSERT_EQ(NS_NewURI(getter_AddRefs(uri), "https://a.test/"_ns), NS_OK);
+  OriginAttributes attrs;
+  attrs.mUserContextId = 7;
+  RefPtr<BasePrincipal> page = BasePrincipal::CreateContentPrincipal(uri, attrs);
+  ASSERT_TRUE(page);
+  RefPtr<BasePrincipal> plain =
+      BasePrincipal::CreateContentPrincipal(uri, OriginAttributes());
+  ASSERT_TRUE(plain);
+
+  EXPECT_EQ(StealthCurrentLookupContext(), 0u);
+  {
+    StealthLookupContextScope outer(page.get());
+    EXPECT_EQ(StealthCurrentLookupContext(), 7u);
+    {
+      uint32_t other = 3;
+      StealthLookupContextScope inner(other);
+      EXPECT_EQ(StealthCurrentLookupContext(), 3u);
+    }
+    EXPECT_EQ(StealthCurrentLookupContext(), 7u);
+  }
+  EXPECT_EQ(StealthCurrentLookupContext(), 0u);
+
+  StealthLookupContextScope defaultContext(plain.get());
+  EXPECT_EQ(StealthCurrentLookupContext(), 0u);
+  StealthLookupContextScope noPrincipal(static_cast<nsIPrincipal*>(nullptr));
+  EXPECT_EQ(StealthCurrentLookupContext(), 0u);
+}
+
+TEST(TestStealthTRRContext, TheLookupContextGetterGivesTheContextAndRefusesNull)
+{
+  uint32_t out = 99;
+  EXPECT_EQ(StealthLookupContextOut(7, &out), NS_OK);
+  EXPECT_EQ(out, 7u);
+  EXPECT_EQ(StealthLookupContextOut(7, nullptr), NS_ERROR_INVALID_POINTER);
 }
 
 // The load info of a DoH channel off the main thread is a TRRLoadInfo; it used

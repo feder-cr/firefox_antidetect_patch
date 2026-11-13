@@ -182,6 +182,7 @@ OWN_FILES = [
      r"system_switch_declared_on|windows_provider_never_selected)\.", "fingerprint/geolocation/no-host-provider"),
     (r"^netwerk/dns/StealthSessionResolver\.", "network/doh"),
     (r"^netwerk/test/gtest/TestStealthSessionResolver\.cpp$", "network/doh"),
+    (r"^toolkit/components/url-classifier/(StealthHashCompleterContext\.sys\.mjs|tests/unit/test_stealth_hashcompleter_context\.js)$", "network/doh"),
     (r"^dom/media/webrtc/transport/StealthIceResolverContext\.", "network/doh"),
     (r"^dom/media/webrtc/transport/test/gtest/TestStealthIceResolverContext\.cpp$", "network/doh"),
     (r"^dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth\.cpp$", "network/proxy-udp"),

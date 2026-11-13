@@ -5,6 +5,8 @@
 #ifndef mozilla_net_StealthTRRContext_h
 #define mozilla_net_StealthTRRContext_h
 
+#include <cstdint>
+
 #include "mozilla/Maybe.h"
 #include "mozilla/OriginAttributes.h"
 #include "nsError.h"
@@ -13,6 +15,7 @@
 class nsIChannel;
 class nsILoadInfo;
 class nsIProxyInfo;
+class nsIPrincipal;
 class nsISocketTransport;
 
 namespace mozilla::net {
@@ -168,6 +171,47 @@ bool StealthTRRProxyAnswerRefused(nsIProxyInfo* aProxyInfo);
  */
 nsresult StealthTRRProxyAnswer(nsresult aStatus, nsIProxyInfo* aProxyInfo,
                                bool aIsTRRServiceChannel);
+
+/**
+ * The Safe Browsing completion (gethash) of a page load is requested in the
+ * browser context of that page, so it takes that context's proxy and resolver.
+ * nsUrlClassifierDBService::Classify knows the page's principal; the lookup
+ * callbacks are made inside it, and the completion callback reads the context
+ * it was made in, to hand it on to the completer (the JS side keeps one
+ * completion road per context, so a request never mixes contexts).
+ *
+ * The context of the lookup being set up on this thread: the userContextId of
+ * the innermost live StealthLookupContextScope, 0 (the default context) when
+ * there is none.
+ */
+uint32_t StealthCurrentLookupContext();
+
+/**
+ * Makes aUserContextId (or that of aPrincipal; null: the default context) the
+ * lookup context of this thread for the life of the scope, then restores the
+ * previous one. Scopes nest. (A literal 0 is ambiguous between the two forms:
+ * pass a uint32_t variable or a principal.)
+ */
+class StealthLookupContextScope final {
+ public:
+  explicit StealthLookupContextScope(uint32_t aUserContextId);
+  explicit StealthLookupContextScope(nsIPrincipal* aPrincipal);
+  ~StealthLookupContextScope();
+
+  StealthLookupContextScope(const StealthLookupContextScope&) = delete;
+  StealthLookupContextScope& operator=(const StealthLookupContextScope&) =
+      delete;
+
+ private:
+  uint32_t mPrevious;
+};
+
+/**
+ * The out parameter of the attribute getter that hands the context of a lookup
+ * to its completion callback (nsIUrlClassifierHashCompleterCallback
+ * .userContextId). NS_ERROR_INVALID_POINTER for a null out parameter.
+ */
+nsresult StealthLookupContextOut(uint32_t aContext, uint32_t* aOut);
 
 }  // namespace mozilla::net
 

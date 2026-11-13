@@ -96,6 +96,12 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
 - `netwerk/protocol/http/TLSTransportLayer.cpp`: one include, and the origin attributes argument of `AddToSocket` is
   `StealthTransportContext(mSocketTransport)` (one of Mozilla's lines rewritten: the wrong value is that argument).
 - `netwerk/protocol/http/nsHttpChannel.cpp`: the two existing calls of `StealthTRRFailClosed` take `StealthProxyIsMandatory(...)`.
+- `toolkit/components/url-classifier/`: the Safe Browsing completion (gethash) of a page load is requested in the context of that
+  page. `nsUrlClassifierDBService.cpp` opens a lookup-context scope from the page's principal in `Classify` (helpers in
+  netwerk/ipc/StealthTRRContext) and the completion callback answers it through a new `userContextId` attribute
+  (`nsIUrlClassifierHashCompleter.idl`); `UrlClassifierHashCompleter.sys.mjs` hands a completion of a non-default context to
+  the completer of that context (`StealthHashCompleterContext.sys.mjs`, registered in `moz.build`), whose channel carries that
+  context: contexts never share a request, the default context is Mozilla's code; `tests/unit/xpcshell.toml` lists its test.
 - `toolkit/profile/nsProfileLock.cpp`: two tagged lines compile out the lookup of the machine's own host name in the Unix
   symlink lock (made at start-up, before any proxy is decided, through the system resolver); the signature keeps 127.0.0.1.
 - `netwerk/dns/nsHostResolver.cpp`: the two calls of `StealthFlagsFollowSession`; `netwerk/dns/moz.build`: our source.
