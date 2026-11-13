@@ -47,6 +47,10 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
   request of the lookup of a `stun:` or `turn:` name left in the default user context. The resolver now holds the attributes of the
   PeerConnection, set in `MediaTransportImplNicer::SetProxyConfig` from the load info of its proxy config; `StealthIceResolverAttributes`
   (dom/media/webrtc/transport/StealthIceResolverContext) keeps the user context alone, which is what the proxy depends on.
+  A TURN server given by name over TCP does not go through `NrIceResolver` (in the process that gathers, that path is set only in the parent
+  process): `nsSocketTransport` resolves the name itself, so `WebrtcTCPSocket::OpenWithoutHttpProxy` calls `StealthTcpNameContext`
+  (StealthIceResolverContext.cpp, declared in nr_stealth_network.h), which gives the transport the same `StealthIceResolverAttributes`
+  of the PeerConnection's load info, right after `CreateTransport` and before `Bind`, where the transport is born.
 - The DoH prefs follow the proxies present. `juggler/TrrPrefs.js` derives them from the set of proxies the engine received (the
   browser-wide one plus every live context's): with at least one, mode 3, `network.trr.exclude-etc-hosts` false and
   `network.trr.excluded-domains` are set as user values; with none, exactly those three are cleared. The provider
@@ -74,6 +78,9 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
 - `netwerk/protocol/http/nsHttpChannel.cpp`: the same fail-closed rule for a DoH request that runs as an nsHttpChannel.
 - `dom/media/webrtc/transport/nriceresolver.{h,cpp}`, `dom/media/webrtc/jsapi/MediaTransportHandler.cpp`: the resolver's origin attributes (one member, its
   accessors, one line in `resolve`) and the call that sets them; `dom/media/webrtc/transport/common.build` (fingerprint/webrtc/declared-network) lists our source.
+- `dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp` (owned by network/proxy-udp): the origin attributes of the PeerConnection on the
+  transport of a TURN-over-TCP name, one call of `StealthTcpNameContext` tagged `STEALTH-HOOK(network/doh)`; its declaration is in
+  `dom/media/webrtc/transport/nr_stealth_network.h` (owned by fingerprint/webrtc/declared-network), which that file already includes.
 - `netwerk/dns/nsHostResolver.cpp`: the two calls of `StealthFlagsFollowSession`; `netwerk/dns/moz.build`: our source.
 - `toolkit/components/parentalcontrols/nsParentalControlsService{Win,Default}.cpp`: the declared value before the first OS call
   (the Cocoa and Android files are Mozilla's: those OSes are never the persona).

@@ -9,7 +9,16 @@
 // The attributes travel: WebrtcProxyConfig.loadInfoArgs().originAttributes() (already
 // sent to the process that gathers, before the gather) -> NrIceResolver::mAttrs (set on
 // the STS thread by MediaTransportImplNicer::SetProxyConfig) -> AsyncResolveNative.
-// Every name of iceServers (STUN and TURN) goes through the one NrIceResolver.
+// The names of the UDP candidates (STUN, TURN over UDP) go through the one NrIceResolver. A TURN
+// server given by name over TCP (turn:name:port?transport=tcp) does not: in the process that
+// gathers, NR_ICE_REG_USE_NR_RESOLVER_FOR_TCP is set only in the parent process, so the name
+// reaches NrTcpSocket::connect -> WebrtcTCPSocket::OpenWithoutHttpProxy, which creates an
+// nsSocketTransport whose origin attributes are the default ones. nsSocketTransport::ResolveHost
+// then asks the DNS service for userContextId 0, which is in no context's DoH list
+// (network.trr.stealth.contexts): the name is resolved by the machine's resolver. The same
+// attributes are therefore given to that transport, before it is bound (it refuses them once its
+// socket exists), whenever the socket has a proxy config (the config carries the load info of the
+// PeerConnection).
 //
 // Source guards: the C++ cannot run here. The behaviour is in
 // dom/media/webrtc/transport/test/gtest/TestStealthIceResolverContext.cpp.
@@ -25,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 const TREE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = rel => fs.readFileSync(path.join(TREE, rel), 'utf8');
 const T = 'dom/media/webrtc/transport/';
+const TCP = T + 'ipc/WebrtcTCPSocket.cpp';
 
 test('the resolver looks the name up with the attributes it was given, never with a bare default', () => {
   const text = read(T + 'nriceresolver.cpp');
@@ -59,6 +69,41 @@ test('our function reads the attributes of the load info of the config and keeps
   assert.match(header, /OriginAttributes StealthIceResolverAttributes\(\s*const NrSocketProxyConfig& aConfig\)/);
   assert.match(code, /aConfig\.GetConfig\(\)\.loadInfoArgs\(\)\.originAttributes\(\)/);
   assert.match(code, /attrs\.mUserContextId = aPeerConnection\.mUserContextId;/);
+});
+
+test('a TURN server given by name over TCP is resolved in the context of the PeerConnection: no query reaches the system resolver', () => {
+  const text = read(TCP);
+  const body = text.match(/void WebrtcTCPSocket::OpenWithoutHttpProxy\([\s\S]*?\n}\n/)[0];
+  const hook = '\n  mozilla::StealthTcpNameContext(mTransport, mProxyConfig.ptrOr(nullptr));  // STEALTH-HOOK(network/doh)\n';
+  assert.ok(body.includes(hook), 'the transport of the TCP socket is not given the attributes of the PeerConnection');
+  assert.equal(text.match(/StealthTcpNameContext\(/g).length, 1);
+  const at = body.indexOf(hook);
+  const created = body.indexOf('sts->CreateTransport(');
+  assert.ok(created > 0 && created < at, 'the attributes are set on a transport that does not exist yet');
+  assert.ok(at < body.indexOf('mTransport->SetReuseAddrPort('), 'the context is the first thing the new transport is given');
+  assert.ok(at < body.indexOf('mTransport->Bind('), 'the transport refuses its attributes once it is bound');
+  assert.ok(at < body.indexOf('OpenInputStream('), 'the lookup starts when the streams open');
+  assert.ok(body.indexOf('CloseWithReason(rv);', created) < at, 'a transport that was not created is not used');
+  // The function itself: the attributes the resolver of the UDP names uses, taken from the load info of the config.
+  const own = read(T + 'StealthIceResolverContext.cpp');
+  const fn = own.match(/void StealthTcpNameContext\([\s\S]*?\n}\n/)[0];
+  assert.match(fn, /if \(aTransport && aConfig\) \{/);
+  assert.match(fn, /aTransport->SetOriginAttributes\(StealthIceResolverAttributes\(\s*aConfig->loadInfoArgs\(\)\.originAttributes\(\)\)\);/);
+});
+
+test('a TURN name over TCP does not go through NrIceResolver in the process that gathers, so the transport is the only place to carry the context', () => {
+  const nricectx = read(T + 'nricectx.cpp');
+  assert.match(nricectx, /NR_ICE_REG_USE_NR_RESOLVER_FOR_TCP/);
+  assert.match(nricectx, /XRE_IsParentProcess\(\)/);
+  assert.equal(read(TCP).match(/CreateTransport\(/g).length, 1, 'a second transport of the TCP socket would need the same attributes');
+});
+
+test('the function is declared in a header the TCP socket already includes, so its file gains one line and no include', () => {
+  assert.match(read(T + 'nr_stealth_network.h'), /\nvoid StealthTcpNameContext\(nsISocketTransport\* aTransport, const net::WebrtcProxyConfig\* aConfig\);\n/);
+  const text = read(TCP);
+  assert.match(text, /\n#include "transport\/nr_stealth_network\.h"/);
+  assert.doesNotMatch(text, /StealthIceResolverContext\.h/);
+  assert.doesNotMatch(read(T + 'build/moz.build'), /StealthIceResolverContext/);
 });
 
 test('the files are built', () => {

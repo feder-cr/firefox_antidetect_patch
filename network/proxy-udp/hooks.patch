@@ -1,5 +1,5 @@
 diff --git a/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp b/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
-index 28458bedcd1b97143c73e3cf0526439adbfa529e..8aec77e303a4282d1a19d499e51922968a090bd1 100644
+index 28458bedcd1b97143c73e3cf0526439adbfa529e..f22fe2a52872faa306fd388fd8a180527bb7f13c 100644
 --- a/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
 +++ b/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
 @@ -6,6 +6,7 @@
@@ -46,14 +46,21 @@ index 28458bedcd1b97143c73e3cf0526439adbfa529e..8aec77e303a4282d1a19d499e5192296
    if (NS_WARN_IF(NS_FAILED(rv))) {
      return rv;
    }
-@@ -333,8 +335,8 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
+@@ -324,6 +326,7 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
+     return;
+   }
+ 
++  mozilla::StealthTcpNameContext(mTransport, mProxyConfig.ptrOr(nullptr));  // STEALTH-HOOK(network/doh)
+   mTransport->SetReuseAddrPort(true);
+ 
+   PRNetAddr prAddr;
+@@ -333,8 +336,7 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
      return;
    }
  
 -  if (NS_WARN_IF(PR_SUCCESS !=
 -                 PR_StringToNetAddr(mLocalAddress.get(), &prAddr))) {
-+  // STEALTH-HOOK(fingerprint/webrtc/declared-network): wildcard of the declared family, port 0 (nr_stealth_network.h).
-+  if (NS_WARN_IF(!mozilla::StealthTcpBindAddress(mLocalAddress.get(), mLocalPort, &prAddr))) {
++  if (NS_WARN_IF(!mozilla::StealthTcpBindAddress(mLocalAddress.get(), mLocalPort, &prAddr))) {  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
      CloseWithReason(NS_ERROR_FAILURE);
      return;
    }

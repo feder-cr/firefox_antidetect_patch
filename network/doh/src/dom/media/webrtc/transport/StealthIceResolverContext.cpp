@@ -8,6 +8,8 @@
 
 #include "mozilla/net/WebrtcProxyConfig.h"
 #include "nr_socket_proxy_config.h"
+#include "nr_stealth_network.h"
+#include "nsISocketTransport.h"
 
 namespace mozilla {
 
@@ -22,6 +24,14 @@ OriginAttributes StealthIceResolverAttributes(
     const NrSocketProxyConfig& aConfig) {
   return StealthIceResolverAttributes(
       aConfig.GetConfig().loadInfoArgs().originAttributes());
+}
+
+void StealthTcpNameContext(nsISocketTransport* aTransport,
+                           const net::WebrtcProxyConfig* aConfig) {
+  if (aTransport && aConfig) {
+    aTransport->SetOriginAttributes(StealthIceResolverAttributes(
+        aConfig->loadInfoArgs().originAttributes()));
+  }
 }
 
 }  // namespace mozilla

@@ -83,6 +83,7 @@ int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
 // include path (run 43161344648: "prnetdb.h file not found" in ice_ctx.o and addrs.o); a file that uses the type includes it.
 union PRNetAddr;
 struct PRFileDesc;
+class nsISocketTransport;
 
 namespace mozilla {
 
@@ -158,6 +159,18 @@ class StealthOwnPorts final {
  * host candidate that is announced is the active one, which declares port 9. False when `aDeclaredAddress` does not
  * parse as an address. `aNicerPort` is the port nICEr proposed, only logged (WebrtcTCPSocket log module). */
 bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, union PRNetAddr* aOut);
+
+namespace net {
+class WebrtcProxyConfig;
+}
+
+/* network/doh (defined in StealthIceResolverContext.cpp): the transport of a TCP socket of a PeerConnection looks its
+ * host name up in the browser context of that PeerConnection, as NrIceResolver does for the names of the UDP candidates.
+ * A TURN server given by name over TCP does not go through NrIceResolver in the process that gathers: the name reaches
+ * the socket transport, whose default attributes are those of the default context. Called right after the transport is
+ * created and before it is bound (a transport refuses its attributes once its socket exists). `aConfig` is the proxy
+ * config of the socket (it carries the load info of the PeerConnection), null when it has none: nothing is done. */
+void StealthTcpNameContext(nsISocketTransport* aTransport, const net::WebrtcProxyConfig* aConfig);
 
 /* Tests only: the next NrSocket::create (once) finds the socket transport service refusing the socket, at the step just before a declared
  * host socket is registered as one of ours (R3). A create that fails there must leave nothing in the set of our ports. */

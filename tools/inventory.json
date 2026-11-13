@@ -6383,7 +6383,7 @@
   "prefs": [],
   "added": 17,
   "removed": 42,
-  "hunks": 5,
+  "hunks": 6,
   "inline_logic_lines": 9,
   "hookable": "movable",
   "anchor": "WebrtcTCPSocket::DoProxyConfigLookup and OpenWithHttpProxy (the channel of the proxy lookup and of the HTTP tunnel)",
@@ -6392,7 +6392,7 @@
    "+  // The channel of the lookup carries the load info of the document, as the one of the HTTP proxy tunnel does",
    "+  // (OpenWithHttpProxy): the proxy filters then see the context of the page, not the system principal's (context 0)."
   ],
-  "notes": "The channel of the proxy lookup of a PeerConnection's TCP socket (TURN over TCP) is made by StealthNewChannelOfLoadInfo, with the load info of the document: the proxy filters answer for the context of the page, not for the system principal's. The HTTP tunnel's own channel is made by the same function (the code it had is gone from here).",
+  "notes": "The channel of the proxy lookup of a PeerConnection's TCP socket (TURN over TCP) is made by StealthNewChannelOfLoadInfo, with the load info of the document: the proxy filters answer for the context of the page, not for the system principal's. The HTTP tunnel's own channel is made by the same function (the code it had is gone from here). In OpenWithoutHttpProxy one call of StealthTcpNameContext (network/doh, body in StealthIceResolverContext.cpp) gives the socket transport the origin attributes of the PeerConnection right after CreateTransport, so a TURN name over TCP is resolved in the context of the page.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."
