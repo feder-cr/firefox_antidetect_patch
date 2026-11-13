@@ -1,5 +1,25 @@
+diff --git a/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp b/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp
+index 74ec5d79595fa08a4e1db2e841ff9f5a204999cf..07daec118ea9f942706cdbe7c86d429a4cf391e0 100644
+--- a/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp
++++ b/dom/media/webrtc/jsapi/PeerConnectionImpl.cpp
+@@ -113,6 +113,7 @@
+ #include "nsURLHelper.h"
+ #include "nsXULAppAPI.h"
+ #include "transport/nr_socket_proxy_config.h"
++#include "transport/StealthIceResolverContext.h"  // STEALTH-HOOK(network/proxy-udp)
+ 
+ #ifdef XP_WIN
+ // We need to undef the MS macro again in case the windows include file
+@@ -2641,6 +2642,7 @@ nsresult PeerConnectionImpl::SetConfiguration(
+   }
+ 
+   auto proxyConfig = GetProxyConfig();
++  proxyConfig = StealthProxyConfigOf(std::move(proxyConfig), mWindow.get(), mForceProxy);  // STEALTH-HOOK(network/proxy-udp)
+   if (proxyConfig) {
+     // Note that this could check if PrivacyRequested() is set on the PC and
+     // remove "webrtc" from the ALPN list.  But that would only work if the PC
 diff --git a/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp b/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
-index 28458bedcd1b97143c73e3cf0526439adbfa529e..f22fe2a52872faa306fd388fd8a180527bb7f13c 100644
+index 28458bedcd1b97143c73e3cf0526439adbfa529e..e2264a5ece621f729674be5c6a6ce73487651562 100644
 --- a/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
 +++ b/dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp
 @@ -6,6 +6,7 @@
@@ -46,21 +66,21 @@ index 28458bedcd1b97143c73e3cf0526439adbfa529e..f22fe2a52872faa306fd388fd8a18052
    if (NS_WARN_IF(NS_FAILED(rv))) {
      return rv;
    }
-@@ -324,6 +326,7 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
-     return;
+@@ -268,6 +270,7 @@ NS_IMETHODIMP WebrtcTCPSocket::OnProxyAvailable(nsICancelable* aRequest,
+     }
    }
  
-+  mozilla::StealthTcpNameContext(mTransport, mProxyConfig.ptrOr(nullptr));  // STEALTH-HOOK(network/doh)
-   mTransport->SetReuseAddrPort(true);
++  if (mozilla::StealthTcpDirectRefused(mProxyConfig.isSome(), NS_FAILED(aResult), aProxyinfo)) { CloseWithReason(NS_ERROR_FAILURE); return NS_OK; }  // STEALTH-HOOK(network/proxy-udp)
+   OpenWithoutHttpProxy(nullptr);
  
-   PRNetAddr prAddr;
+   return NS_OK;
 @@ -333,8 +336,7 @@ void WebrtcTCPSocket::OpenWithoutHttpProxy(nsIProxyInfo* aSocksProxyInfo) {
      return;
    }
  
 -  if (NS_WARN_IF(PR_SUCCESS !=
 -                 PR_StringToNetAddr(mLocalAddress.get(), &prAddr))) {
-+  if (NS_WARN_IF(!mozilla::StealthTcpBindAddress(mLocalAddress.get(), mLocalPort, &prAddr))) {  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
++  if (NS_WARN_IF(!mozilla::StealthTcpSocketBorn(mTransport, mProxyConfig.ptrOr(nullptr), mLocalAddress.get(), mLocalPort, &prAddr))) {  // STEALTH-HOOK(fingerprint/webrtc/declared-network)
      CloseWithReason(NS_ERROR_FAILURE);
      return;
    }

@@ -7,8 +7,10 @@
 #include "TRRService.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/net/StealthTRRContext.h"
 #include "nsCOMPtr.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsILoadInfo.h"
 #include "nsIRequest.h"
 #include "nsIStandardURL.h"
 #include "nsIURIMutator.h"
@@ -114,6 +116,28 @@ nsIDNSService::DNSFlags StealthFlagsFollowSession(
   return StealthResolverFlags(
       aFlags, StealthContextHasProxy(aAttrs.mUserContextId, contexts),
       hostIsTRRServer);
+}
+
+bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, uint32_t aUserContextId,
+                             const nsACString& aContextsWithProxy) {
+  return aIsTRRServiceChannel ||
+         StealthContextHasProxy(aUserContextId, aContextsWithProxy);
+}
+
+bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, nsILoadInfo* aLoadInfo) {
+  if (aIsTRRServiceChannel) {
+    return true;
+  }
+  nsAutoCString contexts;
+  {
+    auto declared = StaticPrefs::network_trr_stealth_contexts();
+    contexts = *declared;
+  }
+  // A load info is always there for a channel; a missing one is the default
+  // context, which the list answers for ("*" or "0").
+  return StealthProxyIsMandatory(
+      false, aLoadInfo ? aLoadInfo->GetOriginAttributes().mUserContextId : 0,
+      contexts);
 }
 
 }  // namespace mozilla::net

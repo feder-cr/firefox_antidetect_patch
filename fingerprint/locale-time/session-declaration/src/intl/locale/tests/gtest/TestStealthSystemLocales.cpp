@@ -17,9 +17,11 @@
 #include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/intl/StealthSessionPrefs.h"
+#include "nsAtom.h"
 #include "nsString.h"
 #include "nsTArray.h"
 
+using mozilla::Preferences;
 using namespace mozilla::intl;
 
 static nsTArray<nsCString> Declared(const char* aList, bool* aDeclared = nullptr) {
@@ -187,7 +189,7 @@ TEST(Intl_Locale_StealthSystemLocales, TheDeclarationWinsOverACacheFilledBeforeI
   Preferences::ClearUser("juggler.locale.override");
   nsTArray<nsCString> back;
   ASSERT_TRUE(NS_SUCCEEDED(os->GetSystemLocales(back)));
-  EXPECT_EQ(back, before);
+  EXPECT_TRUE(back == before);
 }
 
 TEST(Intl_Locale_StealthSystemLocales, TheDeclaredListIsWhatEveryCallerOfTheSystemSees)

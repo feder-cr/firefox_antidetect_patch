@@ -133,6 +133,27 @@ index 6ce08c2b016e757f30402b325dd615c332abd76f..322af4faa744068cefc1bd9f9c8e1e9f
    RefPtr<nsHostRecord> rec;
    RefPtr<nsResolveHostCallback> callback(aCallback);
  
+diff --git a/netwerk/protocol/http/TLSTransportLayer.cpp b/netwerk/protocol/http/TLSTransportLayer.cpp
+index 67a27ab0551a2999fad921c321844884e4fdc143..895c5cf73bd6f5180ee67c3293e578e7a3937d8f 100644
+--- a/netwerk/protocol/http/TLSTransportLayer.cpp
++++ b/netwerk/protocol/http/TLSTransportLayer.cpp
+@@ -6,6 +6,7 @@
+ #include "TLSTransportLayer.h"
+ 
+ #include "HttpLog.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "nsISocketProvider.h"
+ #include "nsITLSSocketControl.h"
+ #include "nsQueryObject.h"
+@@ -449,7 +450,7 @@ bool TLSTransportLayer::Init(const char* aTLSHost, int32_t aTLSPort) {
+   mFD->secret = reinterpret_cast<PRFilePrivate*>(this);
+ 
+   return NS_SUCCEEDED(provider->AddToSocket(
+-      PR_AF_INET, aTLSHost, aTLSPort, nullptr, OriginAttributes(), 0, 0, mFD,
++      PR_AF_INET, aTLSHost, aTLSPort, nullptr, StealthTransportContext(mSocketTransport), 0, 0, mFD,  // STEALTH-HOOK(network/doh)
+       getter_AddRefs(mTLSSocketControl)));
+ }
+ 
 diff --git a/netwerk/protocol/http/TRRServiceChannel.cpp b/netwerk/protocol/http/TRRServiceChannel.cpp
 index 376ae9120226120b8a0f7c2335b9207e2b985a97..c985f474e72c602270298a39c9445311a811d5e8 100644
 --- a/netwerk/protocol/http/TRRServiceChannel.cpp
@@ -199,7 +220,7 @@ index 376ae9120226120b8a0f7c2335b9207e2b985a97..c985f474e72c602270298a39c9445311
          .EnumGet(glean::http::TransactionUseAltsvcLabel::eTrue)
          .Add();
 diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
-index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..4def86f61e29ae36bd3b74c6995896df13dbe6e9 100644
+index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..b27cac783dc1e9f7a1c197eadb1cb726ef56d414 100644
 --- a/netwerk/protocol/http/nsHttpChannel.cpp
 +++ b/netwerk/protocol/http/nsHttpChannel.cpp
 @@ -71,6 +71,7 @@
@@ -227,7 +248,7 @@ index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..4def86f61e29ae36bd3b74c6995896df
        return;
      }
    }
-+  if (StealthTRRFailClosed(this, proxyRv, LoadIsTRRServiceChannel(), mCanceled)) { return; }  // STEALTH-HOOK(network/doh)
++  if (StealthTRRFailClosed(this, proxyRv, StealthProxyIsMandatory(LoadIsTRRServiceChannel(), mLoadInfo.get()), mCanceled)) { return; }  // STEALTH-HOOK(network/doh)
  
    if (!gHttpHandler->Active()) {
      LOG(
@@ -235,10 +256,30 @@ index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..4def86f61e29ae36bd3b74c6995896df
    // proxy info.  That is a non-fatal error assuming it wasn't because the
    // request was canceled.  We just failover to DIRECT when proxy resolution
    // fails (failure can mean that the PAC URL could not be loaded).
-+  if (StealthTRRFailClosed(this, status, LoadIsTRRServiceChannel(), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
++  if (StealthTRRFailClosed(this, status, StealthProxyIsMandatory(LoadIsTRRServiceChannel(), mLoadInfo.get()), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
  
    if (NS_SUCCEEDED(status)) {
      mProxyInfo = pi;
+diff --git a/security/manager/ssl/nsNSSCallbacks.cpp b/security/manager/ssl/nsNSSCallbacks.cpp
+index 3602ab2a31330263af2c8d4b5a2e7d635dc80486..be162b006a3381e16fa0891fed1346282104b86b 100644
+--- a/security/manager/ssl/nsNSSCallbacks.cpp
++++ b/security/manager/ssl/nsNSSCallbacks.cpp
+@@ -22,6 +22,7 @@
+ #include "mozilla/StaticPrefs_security.h"
+ #include "mozilla/SyncRunnable.h"
+ #include "mozilla/glean/SecurityManagerSslMetrics.h"
++#include "mozilla/net/StealthTRRContext.h"  // STEALTH-HOOK(network/doh)
+ #include "mozpkix/pkixtypes.h"
+ #include "nsComponentManagerUtils.h"
+ #include "nsContentUtils.h"
+@@ -277,6 +278,7 @@ OCSPRequest::Run() {
+     OriginAttributes attrs;
+     attrs.mFirstPartyDomain = mOriginAttributes.mFirstPartyDomain;
+     attrs.mPrivateBrowsingId = mOriginAttributes.mPrivateBrowsingId;
++    mozilla::net::StealthKeepRequestContext(mOriginAttributes, attrs);  // STEALTH-HOOK(network/doh)
+ 
+     rv = loadInfo->SetOriginAttributes(attrs);
+     if (NS_FAILED(rv)) {
 diff --git a/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp b/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp
 index 1f42525b3ea45282c0ea1de2fcc73e7c81ed578b..8df7edde5136b13b5da975d8c79a370942eae661 100644
 --- a/toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp

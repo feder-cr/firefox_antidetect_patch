@@ -185,6 +185,7 @@ OWN_FILES = [
     (r"^dom/media/webrtc/transport/StealthIceResolverContext\.", "network/doh"),
     (r"^dom/media/webrtc/transport/test/gtest/TestStealthIceResolverContext\.cpp$", "network/doh"),
     (r"^dom/media/webrtc/transport/test/gtest/TestStealthUdpProxyBirth\.cpp$", "network/proxy-udp"),
+    (r"^dom/media/webrtc/transport/test/gtest/(TestStealthPcProxyConfig|TestStealthTcpProxyRoad)\.cpp$", "network/proxy-udp"),
     (r"^dom/media/webrtc/transport/test/gtest/(StealthTestProxyKit\.(cpp|h)|TestStealthNrSocketBirth\.cpp|TestStealthPcUdpProxyKinds\.cpp)$", "network/proxy-udp"),
     (r"^juggler/tests/the_udp_of_a_socks5_proxy_is_a_flag_of_its_proxy_info\.", "network/proxy-udp"),
     (r"^modules/libpref/test/test_stealth_ice_prefs_locked\.", "network/proxy-udp"),

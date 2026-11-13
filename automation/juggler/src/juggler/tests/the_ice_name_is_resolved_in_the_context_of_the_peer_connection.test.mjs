@@ -74,13 +74,15 @@ test('our function reads the attributes of the load info of the config and keeps
 test('a TURN server given by name over TCP is resolved in the context of the PeerConnection: no query reaches the system resolver', () => {
   const text = read(TCP);
   const body = text.match(/void WebrtcTCPSocket::OpenWithoutHttpProxy\([\s\S]*?\n}\n/)[0];
-  const hook = '\n  mozilla::StealthTcpNameContext(mTransport, mProxyConfig.ptrOr(nullptr));  // STEALTH-HOOK(network/doh)\n';
+  // One call gives the transport its context and the family of its bind address (StealthTcpSocketBorn): the hook of the
+  // context and the hook of the bind address of this function are one line, so the file keeps its number of lines.
+  const hook = '\n  if (NS_WARN_IF(!mozilla::StealthTcpSocketBorn(mTransport, mProxyConfig.ptrOr(nullptr), mLocalAddress.get(), mLocalPort, &prAddr))) {  // STEALTH-HOOK(fingerprint/webrtc/declared-network)\n';
   assert.ok(body.includes(hook), 'the transport of the TCP socket is not given the attributes of the PeerConnection');
-  assert.equal(text.match(/StealthTcpNameContext\(/g).length, 1);
+  assert.equal(text.match(/StealthTcpSocketBorn\(/g).length, 1);
+  assert.doesNotMatch(text, /StealthTcpNameContext\(/, 'the context has its own line again: the merge is undone');
   const at = body.indexOf(hook);
   const created = body.indexOf('sts->CreateTransport(');
   assert.ok(created > 0 && created < at, 'the attributes are set on a transport that does not exist yet');
-  assert.ok(at < body.indexOf('mTransport->SetReuseAddrPort('), 'the context is the first thing the new transport is given');
   assert.ok(at < body.indexOf('mTransport->Bind('), 'the transport refuses its attributes once it is bound');
   assert.ok(at < body.indexOf('OpenInputStream('), 'the lookup starts when the streams open');
   assert.ok(body.indexOf('CloseWithReason(rv);', created) < at, 'a transport that was not created is not used');
@@ -89,6 +91,10 @@ test('a TURN server given by name over TCP is resolved in the context of the Pee
   const fn = own.match(/void StealthTcpNameContext\([\s\S]*?\n}\n/)[0];
   assert.match(fn, /if \(aTransport && aConfig\) \{/);
   assert.match(fn, /aTransport->SetOriginAttributes\(StealthIceResolverAttributes\(\s*aConfig->loadInfoArgs\(\)\.originAttributes\(\)\)\);/);
+  // The merged call: the context first, then the bind address, both in the file that holds them.
+  const born = own.match(/bool StealthTcpSocketBorn\([\s\S]*?\n}\n/)[0];
+  assert.ok(born.includes('StealthTcpNameContext(aTransport, aConfig);'));
+  assert.ok(born.indexOf('StealthTcpNameContext(') < born.indexOf('return StealthTcpBindAddress('), 'the bind address is decided before the context is given');
 });
 
 test('a TURN name over TCP does not go through NrIceResolver in the process that gathers, so the transport is the only place to carry the context', () => {

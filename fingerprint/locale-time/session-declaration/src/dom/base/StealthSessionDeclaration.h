@@ -11,6 +11,8 @@
 #include "nsStringFwd.h"
 #include "prtime.h"
 
+class nsAtom;
+
 namespace JS {
 class RealmOptions;
 }

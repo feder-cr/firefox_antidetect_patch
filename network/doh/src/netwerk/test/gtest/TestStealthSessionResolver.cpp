@@ -10,12 +10,22 @@
 // candidate's gtest filter runs.
 
 #include "StealthSessionResolver.h"
+#include "TRRLoadInfo.h"
 #include "gtest/gtest.h"
+#include "mozilla/OriginAttributes.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/net/StealthTRRContext.h"
+#include "nsCOMPtr.h"
+#include "nsIContentPolicy.h"
 #include "nsIDNSService.h"
+#include "nsILoadInfo.h"
 #include "nsIRequest.h"
 #include "nsString.h"
 
 using namespace mozilla::net;
+using mozilla::OriginAttributes;
+using mozilla::Preferences;
+using mozilla::RefPtr;
 
 namespace {
 
@@ -180,4 +190,55 @@ TEST(TestStealthSessionResolver, TheDoHServerKeepsItsRequest)
                nsIDNSService::RESOLVE_REFRESH_NEGATIVE_CACHE);
   EXPECT_EQ(StealthResolverFlags(flags, true, true), flags);
   EXPECT_EQ(StealthResolverFlags(flags, false, true), flags);
+}
+
+// A channel of a context that has a proxy never goes out DIRECT because the lookup of its proxy failed: nsHttpChannel asks
+// StealthProxyIsMandatory whether a failed lookup must end the channel. A DoH request always; any other channel when its
+// user context is in the declared list; a channel of a context without a proxy keeps upstream's failover.
+TEST(TestStealthSessionResolver, ADoHChannelIsAlwaysMandatory)
+{
+  EXPECT_TRUE(StealthProxyIsMandatory(true, 0, ""_ns));
+  EXPECT_TRUE(StealthProxyIsMandatory(true, 6, "7"_ns));
+}
+
+TEST(TestStealthSessionResolver, AChannelOfAContextWithAProxyIsMandatory)
+{
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 6, "6"_ns)) << "a page of a proxied context failed over to DIRECT";
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 7, "*,6"_ns));
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 0, "*"_ns)) << "the browser-wide proxy covers the default context";
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 0, "0, 6"_ns));
+}
+
+TEST(TestStealthSessionResolver, AChannelOfAContextWithoutAProxyKeepsUpstream)
+{
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 7, "6"_ns));
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 0, "6"_ns));
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 0, ""_ns));
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 6, "garbage, 06"_ns));
+}
+
+TEST(TestStealthSessionResolver, TheContextAndTheListAreReadFromTheLoadInfoAndThePref)
+{
+  nsAutoCString old;
+  const bool hadValue = NS_SUCCEEDED(Preferences::GetCString("network.trr.stealth.contexts", old));
+  RefPtr<TRRLoadInfo> loadInfo = new TRRLoadInfo(nullptr, nsIContentPolicy::TYPE_OTHER);
+  OriginAttributes attrs;
+  attrs.mUserContextId = 7;
+  nsCOMPtr<nsILoadInfo> asLoadInfo = loadInfo.get();
+  ASSERT_EQ(asLoadInfo->SetOriginAttributes(attrs), NS_OK);
+
+  ASSERT_EQ(Preferences::SetCString("network.trr.stealth.contexts", "6,7"_ns), NS_OK);
+  EXPECT_TRUE(StealthProxyIsMandatory(false, asLoadInfo));
+  ASSERT_EQ(Preferences::SetCString("network.trr.stealth.contexts", "6"_ns), NS_OK);
+  EXPECT_FALSE(StealthProxyIsMandatory(false, asLoadInfo));
+  EXPECT_TRUE(StealthProxyIsMandatory(true, asLoadInfo)) << "a DoH request does not depend on the list";
+  ASSERT_EQ(Preferences::SetCString("network.trr.stealth.contexts", "0"_ns), NS_OK);
+  EXPECT_TRUE(StealthProxyIsMandatory(false, nullptr)) << "no load info is the default context";
+  EXPECT_FALSE(StealthProxyIsMandatory(false, asLoadInfo));
+
+  if (hadValue) {
+    Preferences::SetCString("network.trr.stealth.contexts", old);
+  } else {
+    Preferences::ClearUser("network.trr.stealth.contexts");
+  }
 }

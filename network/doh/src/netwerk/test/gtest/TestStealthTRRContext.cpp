@@ -94,6 +94,48 @@ TEST(TestStealthTRRContext, SuffixOfAContextCarriesTheUserContextIdAlone)
   EXPECT_TRUE(context->mPartitionKey.IsEmpty());
 }
 
+// The OCSP request of a certificate is made for the page's TLS: it keeps of the
+// page's attributes the first party domain and the private browsing id (as
+// Mozilla's code in nsNSSCallbacks.cpp copies them) and, from this function, the
+// context, which is what the proxy filter answers by. Without it the request
+// left in the default context, outside the proxy of the page's context.
+TEST(TestStealthTRRContext, TheOcspRequestKeepsTheContextOfThePage)
+{
+  OriginAttributes page;
+  page.mUserContextId = 7;
+  page.mFirstPartyDomain.Assign(u"a.test"_ns);
+  page.mPrivateBrowsingId = 1;
+  // What Mozilla's code copies before the hook.
+  OriginAttributes request;
+  request.mFirstPartyDomain = page.mFirstPartyDomain;
+  request.mPrivateBrowsingId = page.mPrivateBrowsingId;
+
+  StealthKeepRequestContext(page, request);
+
+  EXPECT_EQ(request.mUserContextId, 7u);
+  EXPECT_TRUE(request.mFirstPartyDomain.Equals(u"a.test"_ns));
+  EXPECT_EQ(request.mPrivateBrowsingId, 1u);
+  EXPECT_TRUE(request.mPartitionKey.IsEmpty());
+  EXPECT_TRUE(request != OriginAttributes());
+}
+
+TEST(TestStealthTRRContext, TheOcspRequestOfTheDefaultContextIsUnchanged)
+{
+  OriginAttributes page;  // userContextId 0
+  OriginAttributes request;
+  request.mPrivateBrowsingId = 1;
+  StealthKeepRequestContext(page, request);
+  EXPECT_EQ(request.mUserContextId, 0u);
+  EXPECT_EQ(request.mPrivateBrowsingId, 1u);
+}
+
+// The TLS layered over a tunnel is made for the page whose connection it is;
+// with no transport it is the default context, as it always was.
+TEST(TestStealthTRRContext, ATlsOverATunnelWithoutATransportIsInTheDefaultContext)
+{
+  EXPECT_TRUE(StealthTransportContext(nullptr) == OriginAttributes());
+}
+
 // The load info of a DoH channel off the main thread is a TRRLoadInfo; it used
 // to refuse the attributes (NS_ERROR_NOT_IMPLEMENTED), so the context could
 // not be put on the channel.

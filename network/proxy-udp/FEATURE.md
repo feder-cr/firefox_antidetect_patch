@@ -20,6 +20,13 @@ info of the page, so the filters of the Juggler answer for the context of the pa
 keeps the answer for one PeerConnection: no proxy (direct), SOCKS5, or a proxy that carries no UDP (blocked). A lookup that
 fails, or a document with no URI, is blocked: it never opens a road around the proxy.
 
+The TCP sockets of a PeerConnection follow the same rule. `WebrtcTCPSocket::OnProxyAvailable` opened the socket plain when the
+lookup failed or gave a proxy of a type it does not know; `StealthTcpDirectRefused` (StealthIceResolverContext.cpp) closes it
+instead: only the answer "no proxy" opens a plain socket. And a PeerConnection always has a proxy config: Mozilla's
+`GetProxyConfig` returns none for a window that was torn down (a detached iframe, a closed popup), and a PeerConnection with no
+config has plain sockets and a resolver in the default context. `StealthProxyConfigOf` keeps Mozilla's config when there is one
+and otherwise builds it from the principal of the window; when that cannot be done the proxy is forced.
+
 The UDP is decided where a socket is born. `NrSocket::create` (ICE sockets) and `nsUDPSocket::InitWithAddress` (HTTP/3,
 `setSocksProxy`) push the SOCKS UDP layer (netwerk/socket/nsSOCKSUDPIOLayer) when the proxy is SOCKS5. The layer returns at
 once: the association (resolve, connect, greeting, auth, UDP ASSOCIATE) is made afterwards on the socket thread, the first
@@ -51,7 +58,10 @@ document's load info, so a page on the loopback, a `file:`, a `data:` or a docum
   fingerprint/webrtc/declared-network (bind, own ports; tagged with that feature).
 - `dom/media/webrtc/transport/nr_socket_proxy_config.{h,cpp}`: `UdpProxy()`, the lookup started with the config.
 - `dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp`: the lookup channel and the tunnel channel come from
-  StealthNewChannelOfLoadInfo (Mozilla's own channel-building code is gone from here).
+  StealthNewChannelOfLoadInfo (Mozilla's own channel-building code is gone from here), and one call of `StealthTcpDirectRefused`
+  at the end of `OnProxyAvailable`.
+- `dom/media/webrtc/jsapi/PeerConnectionImpl.cpp`: one include and one call of `StealthProxyConfigOf`, beside Mozilla's
+  `GetProxyConfig()` line.
 - `netwerk/ipc/ProxyConfigLookup*.{h,cpp}`, `PSocketProcess.ipdl`, `SocketProcessParent.{h,cpp}`: the optional load info of the
   document goes with the lookup. The same files carry the hooks of network/doh (the origin attributes of the DoH context go with
   the load info; tagged with that feature).

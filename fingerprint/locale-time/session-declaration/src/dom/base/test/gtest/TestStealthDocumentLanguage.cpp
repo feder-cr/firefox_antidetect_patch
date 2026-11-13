@@ -15,12 +15,14 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/StealthSessionDeclaration.h"
 #include "mozilla/intl/StealthSessionPrefs.h"
+#include "nsAtom.h"
 #include "nsGkAtoms.h"
 #include "nsLanguageAtomService.h"
 #include "nsString.h"
 
-using namespace mozilla;
-using namespace mozilla::dom;
+// In the namespace itself, not by using-directives: this file shares a unified translation unit with
+// others that have their own.
+namespace mozilla::dom {
 
 namespace {
 // The session's declaration, as the core writes it, for the life of a test.
@@ -136,3 +138,5 @@ TEST(StealthDocumentLanguage, ARealmCreatedOnAWorkerThreadDeclaresTheThreadsLang
   // The main thread never gets a worker language.
   EXPECT_EQ(intl::WorkerLocaleLanguage(), nullptr);
 }
+
+}  // namespace mozilla::dom

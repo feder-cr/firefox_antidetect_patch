@@ -8,6 +8,7 @@
 #include "nsDebug.h"
 #include "nsIChannel.h"
 #include "nsILoadInfo.h"
+#include "nsISocketTransport.h"
 #include "nsString.h"
 
 namespace mozilla::net {
@@ -61,6 +62,19 @@ nsresult StealthApplyTRRContextToChannel(
   NS_ENSURE_TRUE(aChannel, NS_ERROR_UNEXPECTED);
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   return StealthApplyTRRContext(loadInfo, aContext);
+}
+
+void StealthKeepRequestContext(const OriginAttributes& aPage,
+                               OriginAttributes& aRequest) {
+  aRequest.mUserContextId = aPage.mUserContextId;
+}
+
+OriginAttributes StealthTransportContext(nsISocketTransport* aTransport) {
+  OriginAttributes attrs;
+  if (aTransport) {
+    (void)aTransport->GetOriginAttributes(&attrs);
+  }
+  return attrs;
 }
 
 nsresult StealthTRRProxyFailure(nsresult aProxyStatus) {

@@ -6,8 +6,10 @@
   "netwerk/dns/TRR.cpp",
   "netwerk/dns/moz.build",
   "netwerk/dns/nsHostResolver.cpp",
+  "netwerk/protocol/http/TLSTransportLayer.cpp",
   "netwerk/protocol/http/TRRServiceChannel.cpp",
   "netwerk/protocol/http/nsHttpChannel.cpp",
+  "security/manager/ssl/nsNSSCallbacks.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp"
  ],
@@ -171,6 +173,27 @@
    }
   },
   {
+   "file": "netwerk/protocol/http/TLSTransportLayer.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "TLSTransportLayer::Init, the AddToSocket of the TLS layered over a tunnel",
+   "evidence": [
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+      PR_AF_INET, aTLSHost, aTLSPort, nullptr, StealthTransportContext(mSocketTransport), 0, 0, mFD,  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "The TLS layered over a tunnel (an HTTPS proxy, an HTTP/2 tunnel) was added to its socket with default origin attributes, so what that TLS asks for on its own (the OCSP request of its certificate) had already lost the context of the page. StealthTransportContext (StealthTRRContext.cpp) gives it the attributes of the socket transport that carries it, as a direct connection has.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
    "file": "netwerk/protocol/http/TRRServiceChannel.cpp",
    "category": "other",
    "feature": "doh-trr-context",
@@ -209,6 +232,27 @@
     "+    } else if (NS_SUCCEEDED(proxyRv = ResolveProxy())) {  // STEALTH-HOOK(network/doh)"
    ],
    "notes": "A DoH request that runs as an nsHttpChannel (the main thread) fails closed like the TRRServiceChannel: when its proxy lookup fails or cannot start, the channel ends with StealthTRRProxyFailure instead of failing over to DIRECT (StealthFailClosedOnProxyFailure decides: a TRR channel, not cancelled, with a failed status). Other channels are untouched.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "security/manager/ssl/nsNSSCallbacks.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "OCSPRequest::Run, where the origin attributes of the OCSP channel are chosen",
+   "evidence": [
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+    mozilla::net::StealthKeepRequestContext(mOriginAttributes, attrs);  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "The OCSP request of a certificate is made with the system principal and keeps of the page's origin attributes only the first party domain and the private browsing id, so it left in the default user context: outside the proxy and the resolver of the page's browser context. StealthKeepRequestContext (StealthTRRContext.cpp) adds the userContextId, the one the proxy filter and the resolver answer by; the default context is unchanged.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."

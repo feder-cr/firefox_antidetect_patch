@@ -125,6 +125,15 @@ const FILES = [
   ['dom/media/webrtc/transport/nriceresolver.cpp', 1, 1],
   ['dom/media/webrtc/transport/nriceresolver.h', 4, 0],
   ['dom/media/webrtc/jsapi/MediaTransportHandler.cpp', 2, 0],
+  // The OCSP request of a page's TLS keeps the context of the page
+  // (the_ocsp_request_keeps_the_context_of_the_page.test.mjs). nsNSSCallbacks.cpp:
+  // the include and the one call after Mozilla's two copies; no Mozilla line is
+  // rewritten. TLSTransportLayer.cpp: the include and the one argument of
+  // AddToSocket; one Mozilla line is rewritten, registered: the argument
+  // `OriginAttributes()` of that call becomes the context of the transport, and
+  // the call has no other place for it.
+  ['security/manager/ssl/nsNSSCallbacks.cpp', 2, 0],
+  ['netwerk/protocol/http/TLSTransportLayer.cpp', 2, 1],
   ['toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp', 2, 0],
   ['toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp', 2, 0],
 ];

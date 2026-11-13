@@ -30,7 +30,7 @@ const section = (text, start, length = 6000) => text.slice(text.indexOf(start), 
 test('nsHttpChannel::OnProxyAvailable ends a TRR service channel whose proxy lookup failed', () => {
   const text = read('netwerk/protocol/http/nsHttpChannel.cpp');
   const body = section(text, 'nsHttpChannel::OnProxyAvailable(');
-  const hook = body.search(/StealthTRRFailClosed\(this, status, LoadIsTRRServiceChannel\(\), mCanceled\)/);
+  const hook = body.search(/StealthTRRFailClosed\(this, status, StealthProxyIsMandatory\(LoadIsTRRServiceChannel\(\), mLoadInfo\.get\(\)\), mCanceled\)/);
   const used = body.indexOf('if (NS_SUCCEEDED(status)) {\n    mProxyInfo = pi;');
   assert.ok(hook > 0, 'no fail-closed rule in OnProxyAvailable');
   assert.ok(used > hook, 'the status is used before the rule');
@@ -41,7 +41,7 @@ test('nsHttpChannel: a proxy lookup that cannot start ends a TRR service channel
   const text = read('netwerk/protocol/http/nsHttpChannel.cpp');
   const body = section(text, 'void nsHttpChannel::MaybeResolveProxyAndBeginConnect()', 2500);
   const lookup = body.indexOf('NS_SUCCEEDED(proxyRv = ResolveProxy())');
-  const hook = body.search(/StealthTRRFailClosed\(this, proxyRv, LoadIsTRRServiceChannel\(\), mCanceled\)\) \{ return; \}/);
+  const hook = body.search(/StealthTRRFailClosed\(this, proxyRv, StealthProxyIsMandatory\(LoadIsTRRServiceChannel\(\), mLoadInfo\.get\(\)\), mCanceled\)\) \{ return; \}/);
   const direct = body.indexOf('rv = BeginConnect();');
   assert.ok(lookup > 0, 'the status of ResolveProxy is not kept');
   assert.ok(hook > lookup, 'no fail-closed rule after the lookup');

@@ -12,6 +12,7 @@
 
 class nsIChannel;
 class nsILoadInfo;
+class nsISocketTransport;
 
 namespace mozilla::net {
 
@@ -48,6 +49,26 @@ nsresult StealthApplyTRRContext(nsILoadInfo* aLoadInfo,
  */
 nsresult StealthApplyTRRContextToChannel(
     nsIChannel* aChannel, const Maybe<OriginAttributes>& aContext);
+
+/**
+ * A request made on behalf of the TLS of a page leaves by the proxy, and its
+ * name is resolved by the resolver, of the browser context of that page. The
+ * OCSP request of a certificate keeps of the page's attributes only the first
+ * party domain and the private browsing id (Mozilla's rule, which stays); this
+ * adds the userContextId, the one the proxy filter answers by. The default
+ * context stays the default one.
+ */
+void StealthKeepRequestContext(const OriginAttributes& aPage,
+                               OriginAttributes& aRequest);
+
+/**
+ * The attributes of the socket transport that carries a TLS: the TLS layered
+ * over a tunnel (the transport of an HTTPS proxy or of an HTTP/2 tunnel) is
+ * made for the page whose connection it is, so its socket control must know
+ * that page's context, not the default one. The default attributes when there
+ * is no transport.
+ */
+OriginAttributes StealthTransportContext(nsISocketTransport* aTransport);
 
 /**
  * Fail closed. When the proxy of a DoH request could not be learned, upstream
@@ -108,6 +129,24 @@ bool StealthTRRServiceFailClosed(ServiceChannelT* aChannel,
   (void)aChannel->AsyncAbort(StealthTRRProxyFailure(aProxyStatus));
   return true;
 }
+
+/**
+ * A channel of a context that has a proxy never goes out DIRECT because the
+ * lookup of its proxy failed. aIsTRRServiceChannel is what the hook of
+ * nsHttpChannel passed alone before: a DoH request is always mandatory. Any
+ * other channel is when the user context of its load info is in the declared
+ * list of contexts with a proxy (network.trr.stealth.contexts: "*" or decimal
+ * ids), the list the resolver already follows for the names. A channel of a
+ * context without a proxy keeps upstream's behaviour (a failed lookup goes on
+ * DIRECT). Defined in netwerk/dns/StealthSessionResolver.cpp, next to the parser
+ * of that list.
+ *
+ * The first form is pure (the list is a parameter), the second reads the pref
+ * and the context of aLoadInfo (null: the default context). Any thread.
+ */
+bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, uint32_t aUserContextId,
+                             const nsACString& aContextsWithProxy);
+bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, nsILoadInfo* aLoadInfo);
 
 }  // namespace mozilla::net
 

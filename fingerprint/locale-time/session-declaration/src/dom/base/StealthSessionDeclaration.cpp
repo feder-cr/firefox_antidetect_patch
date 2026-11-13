@@ -163,7 +163,11 @@ void SetDeclaredRealmTimeAndLanguage(JS::RealmOptions& aOptions,
   if (!NS_IsMainThread()) {
     // This worker thread's text; empty clears it, for a thread that is given a
     // second realm with no declaration (a worklet's).
-    intl::SetWorkerLocaleLanguage(aLocaleEnUS ? ""_ns : aLanguage);
+    if (aLocaleEnUS) {
+      intl::SetWorkerLocaleLanguage(EmptyCString());
+    } else {
+      intl::SetWorkerLocaleLanguage(aLanguage);
+    }
   }
 }
 

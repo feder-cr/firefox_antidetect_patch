@@ -14,6 +14,8 @@ SOURCES += ["TestStealthUdpProxyBirth.cpp"]
 SOURCES += ["StealthTestProxyKit.cpp"]  # the config of a PeerConnection, in a unit of its own (IPDL headers and nICEr headers do not mix)
 SOURCES += ["TestStealthNrSocketBirth.cpp"]
 SOURCES += ["TestStealthPcUdpProxyKinds.cpp"]
+SOURCES += ["TestStealthTcpProxyRoad.cpp"]
+SOURCES += ["TestStealthPcProxyConfig.cpp"]
 
 LOCAL_INCLUDES += [
     "/dom/media/webrtc/transport/ipc",
