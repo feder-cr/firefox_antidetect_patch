@@ -6,6 +6,7 @@ const {Helper} = ChromeUtils.importESModule('resource://gre/modules/juggler/Help
 const {setTimeout} = ChromeUtils.importESModule('resource://gre/modules/Timer.sys.mjs');
 const {StealthCursor} = ChromeUtils.importESModule('resource://gre/modules/juggler/StealthCursor.js');
 const {ContentMux} = ChromeUtils.importESModule('resource://gre/modules/juggler/ContentMux.js');
+const {GoneContexts} = ChromeUtils.importESModule('resource://gre/modules/juggler/GoneContexts.js');
 const {newProxyInfoFor, proxyForHost} = ChromeUtils.importESModule('resource://gre/modules/juggler/SessionRoute.js');
 const {syncTrrPrefs} = ChromeUtils.importESModule('resource://gre/modules/juggler/TrrPrefs.js');
 const {Preferences} = ChromeUtils.importESModule("resource://gre/modules/Preferences.sys.mjs");
@@ -536,8 +537,9 @@ export class TargetRegistry {
    */
   proxyRecordFor(userContextId) {
     const browserContext = userContextId === undefined ? null : this.browserContextForUserContextId(userContextId);
-    // Prefer context proxy and fallback to browser-level proxy.
-    return (browserContext && browserContext._proxy) || this._browserProxy || null;
+    // Prefer context proxy, then the proxy a context that ended had (its requests in flight still leave by it, never DIRECT),
+    // and fallback to browser-level proxy.
+    return (browserContext && browserContext._proxy) || GoneContexts.recordFor(userContextId) || this._browserProxy || null;
   }
 
   defaultContext() {
@@ -1441,6 +1443,8 @@ class BrowserContext {
         await this._waitForProcessesToExit(PROCESS_KILL_WAIT_MS);
       }
     }
+    // Before the maps forget it: a request of this context still in flight asks the proxy filter after this point.
+    GoneContexts.keep(this.userContextId, this._proxy);
     this._registry._browserContextIdToBrowserContext.delete(this.browserContextId);
     this._registry._userContextIdToBrowserContext.delete(this.userContextId);
     if (Services.ppmm.sharedData.has(this._crossProcessCookieKey())) {

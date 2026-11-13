@@ -68,6 +68,7 @@ function setup({ userContextId = 6, pageCount = 1, processes = [], exits = {} } 
     setTimeout,
     Date,
     IDENTITY_NAME: 'JUGGLER ',
+    GoneContexts: { keep() {} },
     // The wait times of the file, shortened: the structure is what is tested; the real ones are checked below.
     PROCESS_EXIT_WAIT_MS: 120,
     PROCESS_KILL_WAIT_MS: 120,

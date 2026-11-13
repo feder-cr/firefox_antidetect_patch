@@ -12,6 +12,7 @@
 
 class nsIChannel;
 class nsILoadInfo;
+class nsIProxyInfo;
 class nsISocketTransport;
 
 namespace mozilla::net {
@@ -147,6 +148,26 @@ bool StealthTRRServiceFailClosed(ServiceChannelT* aChannel,
 bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, uint32_t aUserContextId,
                              const nsACString& aContextsWithProxy);
 bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, nsILoadInfo* aLoadInfo);
+
+/**
+ * A DoH request exists only because a context has a proxy, so a proxy answer
+ * that leaves it DIRECT is never a road for it: no proxy info at all (the
+ * filter of the session found no proxy for the channel, e.g. its context left
+ * the registry, or the bypass list matched the DoH host) or a "direct" one.
+ * True: that answer must end the request, not connect it. Pure. Defined in
+ * netwerk/dns/StealthSessionResolver.cpp.
+ */
+bool StealthTRRProxyAnswerRefused(nsIProxyInfo* aProxyInfo);
+
+/**
+ * The status the fail-closed rule above reads for the answer of a proxy lookup
+ * (status and proxy info as OnProxyAvailable receives them): the failure of the
+ * lookup as it is; an answer that is OK but refused (aIsTRRServiceChannel and
+ * StealthTRRProxyAnswerRefused) is NS_ERROR_PROXY_CONNECTION_REFUSED, so it
+ * ends the same way a failed lookup does. Any other channel keeps its status.
+ */
+nsresult StealthTRRProxyAnswer(nsresult aStatus, nsIProxyInfo* aProxyInfo,
+                               bool aIsTRRServiceChannel);
 
 }  // namespace mozilla::net
 

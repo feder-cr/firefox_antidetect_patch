@@ -155,7 +155,7 @@ index 67a27ab0551a2999fad921c321844884e4fdc143..895c5cf73bd6f5180ee67c3293e578e7
  }
  
 diff --git a/netwerk/protocol/http/TRRServiceChannel.cpp b/netwerk/protocol/http/TRRServiceChannel.cpp
-index 376ae9120226120b8a0f7c2335b9207e2b985a97..c985f474e72c602270298a39c9445311a811d5e8 100644
+index 376ae9120226120b8a0f7c2335b9207e2b985a97..5854963a96e411661292d509d89c322c816de02c 100644
 --- a/netwerk/protocol/http/TRRServiceChannel.cpp
 +++ b/netwerk/protocol/http/TRRServiceChannel.cpp
 @@ -15,6 +15,7 @@
@@ -195,7 +195,7 @@ index 376ae9120226120b8a0f7c2335b9207e2b985a97..c985f474e72c602270298a39c9445311
    // proxy info.  That is a non-fatal error assuming it wasn't because the
    // request was canceled.  We just failover to DIRECT when proxy resolution
    // fails (failure can mean that the PAC URL could not be loaded).
-+  if (StealthTRRServiceFailClosed(this, status, mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
++  if (StealthTRRServiceFailClosed(this, StealthTRRProxyAnswer(status, pi, true), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
  
    if (NS_SUCCEEDED(status)) mProxyInfo = pi;
  
@@ -220,7 +220,7 @@ index 376ae9120226120b8a0f7c2335b9207e2b985a97..c985f474e72c602270298a39c9445311
          .EnumGet(glean::http::TransactionUseAltsvcLabel::eTrue)
          .Add();
 diff --git a/netwerk/protocol/http/nsHttpChannel.cpp b/netwerk/protocol/http/nsHttpChannel.cpp
-index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..b27cac783dc1e9f7a1c197eadb1cb726ef56d414 100644
+index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..34e8c7dd1ba6a1e352ef4f4a32a7c47e41760db6 100644
 --- a/netwerk/protocol/http/nsHttpChannel.cpp
 +++ b/netwerk/protocol/http/nsHttpChannel.cpp
 @@ -71,6 +71,7 @@
@@ -256,7 +256,7 @@ index d17a57fd8b96d618a1452c95d4d5e27bc0cd88db..b27cac783dc1e9f7a1c197eadb1cb726
    // proxy info.  That is a non-fatal error assuming it wasn't because the
    // request was canceled.  We just failover to DIRECT when proxy resolution
    // fails (failure can mean that the PAC URL could not be loaded).
-+  if (StealthTRRFailClosed(this, status, StealthProxyIsMandatory(LoadIsTRRServiceChannel(), mLoadInfo.get()), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
++  if (StealthTRRFailClosed(this, StealthTRRProxyAnswer(status, pi, LoadIsTRRServiceChannel()), StealthProxyIsMandatory(LoadIsTRRServiceChannel(), mLoadInfo.get()), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)
  
    if (NS_SUCCEEDED(status)) {
      mProxyInfo = pi;

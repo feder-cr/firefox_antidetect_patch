@@ -52,7 +52,7 @@ const { Helper } = load('Helper.js', {
 const newProxyInfoFor = proxy => ({ proxyInfoOf: proxy.host });
 const proxyForHost = (record, host) =>
   !record || record.bypass.some(suffix => host.endsWith(suffix)) ? null : record;
-const modules = { Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {} };
+const modules = { Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {}, GoneContexts: { recordFor: () => null } };
 
 // A fresh TargetRegistry class, so the static state of one test is not the next one's.
 function freshClass() {

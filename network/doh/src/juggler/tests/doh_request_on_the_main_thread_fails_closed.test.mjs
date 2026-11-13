@@ -30,11 +30,11 @@ const section = (text, start, length = 6000) => text.slice(text.indexOf(start), 
 test('nsHttpChannel::OnProxyAvailable ends a TRR service channel whose proxy lookup failed', () => {
   const text = read('netwerk/protocol/http/nsHttpChannel.cpp');
   const body = section(text, 'nsHttpChannel::OnProxyAvailable(');
-  const hook = body.search(/StealthTRRFailClosed\(this, status, StealthProxyIsMandatory\(LoadIsTRRServiceChannel\(\), mLoadInfo\.get\(\)\), mCanceled\)/);
+  const hook = body.search(/StealthTRRFailClosed\(this, StealthTRRProxyAnswer\(status, pi, LoadIsTRRServiceChannel\(\)\), StealthProxyIsMandatory\(LoadIsTRRServiceChannel\(\), mLoadInfo\.get\(\)\), mCanceled\)/);
   const used = body.indexOf('if (NS_SUCCEEDED(status)) {\n    mProxyInfo = pi;');
   assert.ok(hook > 0, 'no fail-closed rule in OnProxyAvailable');
   assert.ok(used > hook, 'the status is used before the rule');
-  assert.match(body.slice(hook, hook + 200), /mCanceled\)\) \{ return NS_OK; \}  \/\/ STEALTH-HOOK\(network\/doh\)\n/);
+  assert.match(body.slice(hook, hook + 320), /mCanceled\)\) \{ return NS_OK; \}  \/\/ STEALTH-HOOK\(network\/doh\)\n/);
 });
 
 test('nsHttpChannel: a proxy lookup that cannot start ends a TRR service channel too', () => {

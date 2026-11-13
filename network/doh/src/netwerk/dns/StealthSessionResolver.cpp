@@ -11,6 +11,7 @@
 #include "nsCOMPtr.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsILoadInfo.h"
+#include "nsIProxyInfo.h"
 #include "nsIRequest.h"
 #include "nsIStandardURL.h"
 #include "nsIURIMutator.h"
@@ -138,6 +139,23 @@ bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, nsILoadInfo* aLoadInfo) 
   return StealthProxyIsMandatory(
       false, aLoadInfo ? aLoadInfo->GetOriginAttributes().mUserContextId : 0,
       contexts);
+}
+
+bool StealthTRRProxyAnswerRefused(nsIProxyInfo* aProxyInfo) {
+  if (!aProxyInfo) {
+    return true;
+  }
+  nsAutoCString type;
+  return NS_FAILED(aProxyInfo->GetType(type)) || type.EqualsLiteral("direct");
+}
+
+nsresult StealthTRRProxyAnswer(nsresult aStatus, nsIProxyInfo* aProxyInfo,
+                               bool aIsTRRServiceChannel) {
+  if (NS_SUCCEEDED(aStatus) && aIsTRRServiceChannel &&
+      StealthTRRProxyAnswerRefused(aProxyInfo)) {
+    return NS_ERROR_PROXY_CONNECTION_REFUSED;
+  }
+  return aStatus;
 }
 
 }  // namespace mozilla::net

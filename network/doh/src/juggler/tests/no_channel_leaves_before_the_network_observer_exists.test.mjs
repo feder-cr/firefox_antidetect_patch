@@ -119,7 +119,7 @@ function browser({ flag = true, failFirstRegistration = false } = {}) {
 
   const { TargetRegistry: RealRegistry } = load('TargetRegistry.js', {
     Ci, Cc: {}, Components: { results: Cr },
-    ChromeUtils: { importESModule: () => ({ Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {} }) },
+    ChromeUtils: { importESModule: () => ({ Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {}, GoneContexts: { recordFor: () => null } }) },
     Services: {}, NetUtil: {}, dump: noDump,
   }, ['TargetRegistry']);
   // The registry as the constructor leaves it (the constructor is checked in

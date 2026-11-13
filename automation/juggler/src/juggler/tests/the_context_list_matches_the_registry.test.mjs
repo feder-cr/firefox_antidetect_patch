@@ -97,6 +97,7 @@ function session() {
   let nextUserContextId = 10;
   const modules = {
     Helper, syncTrrPrefs,
+    GoneContexts: load('GoneContexts.js', {}, ['GoneContexts']).GoneContexts,
     ContextualIdentityService: {
       create: () => ({ userContextId: nextUserContextId++ }),
       remove() {},
@@ -377,7 +378,7 @@ test('every event that changes a proxy is wired to the one sync, and nothing els
   assert.match(present, /userContextId: bc\.userContextId, proxy: bc\._proxy/);
   assert.match(present, /browserProxy: this\._browserProxy/);
   const filter = between('  proxyRecordFor(userContextId) {', '  defaultContext() {');
-  assert.match(filter, /browserContext\._proxy\) \|\| this\._browserProxy/);
+  assert.match(filter, /browserContext\._proxy\) \|\| GoneContexts\.recordFor\(userContextId\) \|\| this\._browserProxy/);
 });
 
 test('nothing in the Juggler writes network.trr.mode', () => {

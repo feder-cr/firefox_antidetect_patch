@@ -101,6 +101,7 @@ function session({ declared = true } = {}) {
   let nextUserContextId = 10;
   const modules = {
     Helper, syncTrrPrefs,
+    GoneContexts: load('GoneContexts.js', {}, ['GoneContexts']).GoneContexts,
     ContextualIdentityService: {
       create: () => ({ userContextId: nextUserContextId++ }),
       remove() {},

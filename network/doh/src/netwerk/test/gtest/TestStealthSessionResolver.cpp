@@ -19,7 +19,11 @@
 #include "nsIContentPolicy.h"
 #include "nsIDNSService.h"
 #include "nsILoadInfo.h"
+#include "nsIProtocolProxyService.h"
+#include "nsIProxyInfo.h"
 #include "nsIRequest.h"
+#include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
 
 using namespace mozilla::net;
@@ -240,4 +244,51 @@ TEST(TestStealthSessionResolver, TheContextAndTheListAreReadFromTheLoadInfoAndTh
   } else {
     Preferences::ClearUser("network.trr.stealth.contexts");
   }
+}
+
+// A DoH request exists only because a context has a proxy: an answer of the proxy lookup that leaves it DIRECT (no
+// proxy info, or a "direct" one) ends the request instead of connecting it.
+static already_AddRefed<nsIProxyInfo> ProxyInfoOfType(const nsACString& aType) {
+  nsCOMPtr<nsIProtocolProxyService> pps = do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID);
+  nsCOMPtr<nsIProxyInfo> info;
+  if (!pps || NS_FAILED(pps->NewProxyInfoWithAuth(aType, "192.0.2.7"_ns, 1080, ""_ns, ""_ns, ""_ns, ""_ns, 0, UINT32_MAX,
+                                                  nullptr, getter_AddRefs(info)))) {
+    return nullptr;
+  }
+  return info.forget();
+}
+
+TEST(TestStealthSessionResolver, AnAnswerWithNoProxyInfoIsRefusedForADoHRequest)
+{
+  EXPECT_TRUE(StealthTRRProxyAnswerRefused(nullptr));
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, nullptr, true), NS_ERROR_PROXY_CONNECTION_REFUSED);
+}
+
+TEST(TestStealthSessionResolver, ADirectProxyInfoIsRefusedForADoHRequest)
+{
+  nsCOMPtr<nsIProxyInfo> direct = ProxyInfoOfType("direct"_ns);
+  ASSERT_TRUE(direct);
+  EXPECT_TRUE(StealthTRRProxyAnswerRefused(direct));
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, direct, true), NS_ERROR_PROXY_CONNECTION_REFUSED);
+}
+
+TEST(TestStealthSessionResolver, AProxyAnswerThatIsAProxyIsLeftAlone)
+{
+  nsCOMPtr<nsIProxyInfo> socks = ProxyInfoOfType("socks"_ns);
+  ASSERT_TRUE(socks);
+  EXPECT_FALSE(StealthTRRProxyAnswerRefused(socks));
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, socks, true), NS_OK);
+  nsCOMPtr<nsIProxyInfo> http = ProxyInfoOfType("http"_ns);
+  ASSERT_TRUE(http);
+  EXPECT_FALSE(StealthTRRProxyAnswerRefused(http));
+}
+
+TEST(TestStealthSessionResolver, OnlyADoHRequestIsRefusedAndAFailureKeepsItsStatus)
+{
+  // A page channel answered DIRECT (a bypass list matched its host) goes DIRECT: the rule is for the DoH request.
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, nullptr, false), NS_OK);
+  // The status of a failed lookup is the one the fail-closed rule already reads, whatever the answer.
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_ERROR_FAILURE, nullptr, true), NS_ERROR_FAILURE);
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_BINDING_ABORTED, nullptr, true), NS_BINDING_ABORTED);
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_ERROR_ABORT, nullptr, true), NS_ERROR_ABORT);
 }
