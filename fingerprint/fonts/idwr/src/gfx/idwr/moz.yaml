@@ -5,7 +5,7 @@ bugzilla: {}
 origin:
   name: idwr
   description: DirectWrite 10.0.26100.9711 text rasterizer, reimplemented in portable C
-  url: https://github.com/feder-cr/invisible_DWriteCore
+  url: https://github.com/oss-invisible/DWriteCore
   release: 33a8de72907ff23d2f0838eded04cea63c2d0ecc
   revision: 33a8de72907ff23d2f0838eded04cea63c2d0ecc
   license: MPL-2.0

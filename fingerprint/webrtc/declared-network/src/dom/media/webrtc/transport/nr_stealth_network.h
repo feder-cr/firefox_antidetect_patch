@@ -82,6 +82,7 @@ int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
 // NSPR's address union. Not <prnetdb.h>: this header is included by nICEr's C++ files, which are compiled without the NSPR
 // include path (run 43161344648: "prnetdb.h file not found" in ice_ctx.o and addrs.o); a file that uses the type includes it.
 union PRNetAddr;
+struct PRFileDesc;
 
 namespace mozilla {
 
@@ -162,6 +163,13 @@ bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, un
  * host socket is registered as one of ours (R3). A create that fails there must leave nothing in the set of our ports. */
 void StealthFailNextSocketAttachForTests(bool aFail);
 bool StealthTakeFailNextSocketAttachForTests();
+
+/* The bind of NrSocket::create (R3: the wildcard of the candidate's family, on the candidate's port): PR_Bind, true when it bound. Tests
+ * only: StealthFailNextBindForTests(aError) makes the next one (once) fail with the NSPR error aError (e.g. PR_NO_ACCESS_RIGHTS_ERROR, which
+ * Windows answers for the ranges of the dynamic range it reserves and Linux for a privileged port), so the mapping of that answer is
+ * asserted on every machine, not only on one that happens to refuse a port. 0 = none. */
+bool StealthBind(struct PRFileDesc* aFd, const union PRNetAddr* aAddr);
+void StealthFailNextBindForTests(int32_t aError);
 
 }  // namespace mozilla
 

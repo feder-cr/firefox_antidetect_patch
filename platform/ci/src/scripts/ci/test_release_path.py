@@ -169,6 +169,8 @@ def group_gtest(doc) -> list:
     for suite in ("StealthFrameCrash", "StealthJugglerEventId"):
         out.append(("gtests: the suite %s has tests and the default filter runs it" % suite,
                     ("TEST(%s," % suite) in sources and (suite + ".*") in inputs["gtest_filter"]["default"].split(":")))
+    # four readers: the two gtest jobs, the build job's own gtest step, and the step that records the filter in `source-commit` for the reuse
+    # (a run that reuses these bytes must have run the gtests it would run: scripts/ci/reuse_run.py). None of them falls back on `*`.
     values = []
     build_steps = {s.get("name", ""): s for s in jobs["build"]["steps"]}
     for job, steps in (("gtest-cross", jobs["gtest-cross"]["steps"]), ("gtest-linux", jobs["gtest-linux"]["steps"]),
@@ -178,7 +180,7 @@ def group_gtest(doc) -> list:
                 if key.startswith("GTEST_FILTER"):
                     values.append((job, str(value)))
     out.append(("gtests: an empty filter never turns into *: no job falls back on its own (%d read it)" % len(values),
-                len(values) == 3 and all(e.render(v, context(gtest_filter="")) == "" for _, v in values)
+                len(values) == 4 and all(e.render(v, context(gtest_filter="")) == "" for _, v in values)
                 and all(e.render(v, context()) == GREEN_FILTER for _, v in values)))
     linux = jobs["gtest-linux"]
     steps = {s.get("name", ""): s for s in linux["steps"]}

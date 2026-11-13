@@ -37,14 +37,14 @@ index 7929fcdeb59c47dbd2bee9e8d8bfd7ef2e8db87b..c61be68e5dcde4eff74a6e57d14199c7
    } else {
      status = aWidget->DispatchEvent(&mouseOrPointerEvent);
 diff --git a/dom/base/test/gtest/moz.build b/dom/base/test/gtest/moz.build
-index aaf31169b44149bd6042cea4eb2e08c87c1378e7..ab32696b38cfff1d394abd62f85407ef79a3f280 100644
+index aaf31169b44149bd6042cea4eb2e08c87c1378e7..54bfdfdd9e428489e8eab19e11eee8b5367e9f6f 100644
 --- a/dom/base/test/gtest/moz.build
 +++ b/dom/base/test/gtest/moz.build
 @@ -13,6 +13,7 @@ UNIFIED_SOURCES += [
      "TestXMLSerializerNoBreakLink.cpp",
      "TestXPathGenerator.cpp",
  ]
-+UNIFIED_SOURCES += ["TestStealthInputEventBirth.cpp"]  # STEALTH-HOOK(fingerprint/input/event-birth)
++UNIFIED_SOURCES += ["TestStealthDocumentLanguage.cpp", "TestStealthInputEventBirth.cpp"]  # STEALTH-HOOK(fingerprint/input/event-birth)
  
  LOCAL_INCLUDES += ["/dom/base"]
  

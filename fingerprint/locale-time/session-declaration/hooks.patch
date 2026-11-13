@@ -18,3 +18,44 @@ index f94e5a88fcbd5d22d9cbce9d308c01bfadaa10f3..05224ba537b07c12f3b1b1fe5c1ad98e
  
  if CONFIG["FUZZING"]:
      UNIFIED_SOURCES += [
+diff --git a/intl/locale/OSPreferences.cpp b/intl/locale/OSPreferences.cpp
+index b185d97c87a71fec3d9736d429d9bd1c2d73760e..2cab441c61dbd68cda237e1a304c90789f36b61b 100644
+--- a/intl/locale/OSPreferences.cpp
++++ b/intl/locale/OSPreferences.cpp
+@@ -16,6 +16,7 @@
+ #include "mozilla/intl/LocaleService.h"
+ #include "mozilla/Preferences.h"
+ #include "mozilla/Services.h"
++#include "mozilla/intl/StealthSessionPrefs.h"  // STEALTH-HOOK(fingerprint/locale-time/session-declaration)
+ #include "nsIObserverService.h"
+ 
+ using namespace mozilla::intl;
+@@ -410,6 +411,8 @@ bool OSPreferences::GetDateTimeConnectorPattern(const nsACString& aLocale,
+  */
+ NS_IMETHODIMP
+ OSPreferences::GetSystemLocales(nsTArray<nsCString>& aRetVal) {
++  // STEALTH-HOOK(fingerprint/locale-time/session-declaration): why here, StealthSessionPrefs.h
++  if (SessionSystemLocales(aRetVal)) return NS_OK;
+   if (!mSystemLocales.IsEmpty()) {
+     aRetVal = mSystemLocales.Clone();
+     return NS_OK;
+@@ -429,6 +432,8 @@ OSPreferences::GetSystemLocales(nsTArray<nsCString>& aRetVal) {
+ 
+ NS_IMETHODIMP
+ OSPreferences::GetSystemLocale(nsACString& aRetVal) {
++  // STEALTH-HOOK(fingerprint/locale-time/session-declaration): the same
++  if (SessionSystemLocale(aRetVal)) return NS_OK;
+   if (!mSystemLocales.IsEmpty()) {
+     aRetVal = mSystemLocales[0];
+   } else {
+diff --git a/intl/locale/tests/gtest/moz.build b/intl/locale/tests/gtest/moz.build
+index 65c43ebab8704671225f9a29f9b12f6445450b4e..45285cd67ed2d85718fda26e70ff7108580d554e 100644
+--- a/intl/locale/tests/gtest/moz.build
++++ b/intl/locale/tests/gtest/moz.build
+@@ -8,5 +8,6 @@ UNIFIED_SOURCES += [
+     "TestLocaleServiceNegotiate.cpp",
+     "TestOSPreferences.cpp",
+ ]
++UNIFIED_SOURCES += ["TestStealthSystemLocales.cpp"]  # STEALTH-HOOK(fingerprint/locale-time/session-declaration)
+ 
+ FINAL_LIBRARY = "xul-gtest"

@@ -44,7 +44,7 @@ jobs:
       - name: Checkout wrapper (for scripts/gen_release_notes.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: feder-cr/invisible_playwright
+          repository: oss-invisible/playwright
           # ⛔ NOT hardcoded to main. The gate validates the BINARY, and the
           # wrapper is only the instrument it is driven with: unfinished work
           # on the wrapper's main must not be able to block a binary release.

@@ -5,9 +5,12 @@
 
 #include "mozilla/intl/StealthSessionPrefs.h"
 
+#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_juggler.h"
+#include "mozilla/ThreadLocal.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "nsAtom.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -63,6 +66,90 @@ nsresult MachineRegionalPrefsLocales(nsTArray<nsCString>& aRetVal) {
     return NS_OK;
   }
   return OSPreferences::GetInstance()->GetRegionalPrefsLocales(aRetVal);
+}
+
+bool SystemLocalesFromDeclared(const nsACString& aDeclared,
+                               nsTArray<nsCString>& aLocales) {
+  aLocales.Clear();
+  nsTArray<nsCString> tags;
+  nsCCharSeparatedTokenizer tokens(aDeclared, ',');
+  while (tokens.hasMoreTokens()) {
+    nsAutoCString tag(tokens.nextToken());
+    int32_t q = tag.FindChar(';');
+    if (q >= 0) {
+      tag.Truncate(q);
+    }
+    tag.Trim(" \t");
+    if (!tag.IsEmpty()) {
+      tags.AppendElement(tag);
+    }
+  }
+  for (const auto& tag : tags) {
+    bool stoodForByARegionalTag = false;
+    if (tag.FindChar('-') < 0) {
+      for (const auto& other : tags) {
+        stoodForByARegionalTag |= other.Length() > tag.Length() &&
+                                  other.CharAt(tag.Length()) == '-' &&
+                                  StringBeginsWith(other, tag);
+      }
+    }
+    if (!stoodForByARegionalTag && !aLocales.Contains(tag)) {
+      aLocales.AppendElement(tag);
+    }
+  }
+  return !aLocales.IsEmpty();
+}
+
+bool SessionSystemLocales(nsTArray<nsCString>& aLocales) {
+  nsAutoCString declared;
+  OrSessionLanguage(declared);
+  return SystemLocalesFromDeclared(declared, aLocales);
+}
+
+bool SessionSystemLocale(nsACString& aLocale) {
+  nsTArray<nsCString> locales;
+  if (!SessionSystemLocales(locales)) {
+    return false;
+  }
+  aLocale = locales[0];
+  return true;
+}
+
+static MOZ_THREAD_LOCAL(nsAtom*) sWorkerLanguage;
+
+static bool EnsureWorkerLanguageSlot() {
+  static const bool sInitialized = sWorkerLanguage.init();
+  return sInitialized;
+}
+
+void SetWorkerLocaleLanguage(const nsACString& aDeclared) {
+  if (!EnsureWorkerLanguageSlot()) {
+    return;
+  }
+  nsAutoCString tag;
+  PrimaryLanguageTag(aDeclared, tag);
+  if (tag.IsEmpty()) {
+    sWorkerLanguage.set(nullptr);  // nothing declared: the thread has no language of its own
+    return;
+  }
+  ToLowerCase(tag);  // use lowercase for all language atoms
+  // Kept for the life of the process: the slot holds a bare pointer, and the
+  // thread that wrote it may outlive any one reference. A handful of tags at
+  // most (one per language a session declares). Reachable, never freed.
+  static StaticMutex sMutex MOZ_UNANNOTATED;
+  static nsTArray<RefPtr<nsAtom>>* sKept = new nsTArray<RefPtr<nsAtom>>();
+  RefPtr<nsAtom> atom = NS_Atomize(tag);
+  {
+    StaticMutexAutoLock lock(sMutex);
+    if (!sKept->Contains(atom)) {
+      sKept->AppendElement(atom);
+    }
+  }
+  sWorkerLanguage.set(atom);
+}
+
+nsAtom* WorkerLocaleLanguage() {
+  return EnsureWorkerLanguageSlot() ? sWorkerLanguage.get() : nullptr;
 }
 
 void PrimaryLanguageTag(const nsACString& aList, nsACString& aTag) {

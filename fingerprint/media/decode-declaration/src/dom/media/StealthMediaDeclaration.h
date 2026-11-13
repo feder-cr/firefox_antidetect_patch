@@ -12,6 +12,8 @@
 #include "mozilla/RefPtr.h"
 #include "nsStringFwd.h"
 
+#include <stdint.h>
+
 namespace mozilla {
 
 class EncoderConfig;
@@ -156,10 +158,35 @@ Maybe<media::DecodeSupportSet> StealthDeclaredDecodeSupportSet(
  * hardware check has no compositor to ask. Measuring the judge in the mode our
  * product runs in rather than the mode our users' machines run in would have
  * pinned the wrong three values.
+ *
+ * THE THIRD BIT IS "HARDWARE DECODE", NOT powerEfficient. Retail decides
+ * powerEfficient = hardware decode || width * height <= 640 * 480, for ANY codec
+ * (MediaCapabilities.cpp, CreateVideoDecodingInfo), and the size half is not a
+ * property of the codec: it is the same on every machine. The table carries the
+ * hardware half, one value per (container, codec family); the size half is
+ * StealthPowerEfficientFor, applied by StealthDeclaredDecodingInfoFor over this
+ * bit, because only that function knows the size of the configuration.
  */
 bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
                                  const nsACString& aCodec, bool& aSupported,
                                  bool& aSmooth, bool& aPowerEfficient);
+
+/**
+ * The largest picture retail calls "low resolution": 640 * 480 pixels, compared
+ * by the total (720x360 = 259200 is low, 641x480 is not).
+ * MediaCapabilities.cpp kLowResolutionPixelCount.
+ */
+constexpr uint32_t kStealthLowResolutionPixelCount = 640 * 480;
+
+/**
+ * powerEfficient as retail's CreateVideoDecodingInfo computes it for a supported
+ * video: the declared hardware-decode bit, or a picture of 640x480 pixels or
+ * fewer, whatever the codec. The sizes are taken the way retail takes them
+ * (clamped to int32 first, then multiplied as uint32, an overflow is not low
+ * resolution). Pure: the same answer on every machine, no pref, no host read.
+ */
+bool StealthPowerEfficientFor(bool aDeclaredHardware, uint32_t aWidth,
+                              uint32_t aHeight);
 
 /**
  * Declared WebRTC ENCODE support for a track mime type, read from
@@ -267,7 +294,10 @@ struct MediaDecodingConfiguration;
  *
  * Declared here rather than at PDMFactory::Supports because powerEfficient is
  * not a property of the track mime type: vp09 in mp4 reports true and a bare
- * vp9 in webm reports false, and both are video/vp9.
+ * vp9 in webm reports false, and both are video/vp9. Nor is it a property of
+ * the codec alone: it also depends on the size of the configuration
+ * (StealthPowerEfficientFor), which is why this function takes the whole
+ * configuration.
  */
 Maybe<MediaCapabilitiesDecodingInfo> StealthDeclaredDecodingInfoFor(
     const MediaDecodingConfiguration& aConfiguration);

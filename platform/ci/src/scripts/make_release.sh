@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Package Win + Linux Firefox binaries into archives, validate them, and
-# create a GitHub release on feder-cr/invisible_playwright.
+# create a GitHub release on oss-invisible/playwright.
 #
 # Usage:
 #   ./scripts/make_release.sh <tag> "<release-name>" "<release-body>"
@@ -16,7 +16,7 @@
 #     validate_release.py both require that. Zipping the firefox/ DIRECTORY (the
 #     old bug) nested the binary under firefox/ and the wrapper couldn't find it.
 #   - Linux build (WSL): ~/ff-build/firefox-150/obj-x86_64-pc-linux-gnu/dist/bin/
-#   - GITHUB_TOKEN env var with repo:write on feder-cr/invisible_playwright
+#   - GITHUB_TOKEN env var with repo:write on oss-invisible/playwright
 #
 # This script REFUSES to upload if scripts/validate_release.py fails on
 # either archive. That's the gate that was missing when firefox-3 and
@@ -29,7 +29,7 @@ TAG="${1:?Usage: $0 <tag> <release-name> <release-body>}"
 NAME="${2:?missing release name}"
 BODY="${3:?missing release body}"
 TOKEN="${GITHUB_TOKEN:?GITHUB_TOKEN env var required}"
-REPO="feder-cr/invisible_playwright"
+REPO="oss-invisible/playwright"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$REPO_ROOT/release-out/$TAG"

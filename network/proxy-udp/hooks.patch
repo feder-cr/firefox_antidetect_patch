@@ -184,7 +184,7 @@ index 47332372f34482172ce0801dd8e16520d365e64d..d7954045e92de94dc1f8fe09dcffd50d
    // dom::ProxyConfig includes stuff that conflicts with nICEr includes.
    // Make it possible to include this header file without tripping over this
 diff --git a/dom/media/webrtc/transport/nr_socket_prsock.cpp b/dom/media/webrtc/transport/nr_socket_prsock.cpp
-index f15df437c8b6bbe76fb701ad62dbb6308b07456a..5d6000ebf27f0846963977cb568c4c80c8330450 100644
+index f15df437c8b6bbe76fb701ad62dbb6308b07456a..c5a67bbc39eab765d1a3f9ea0b47aa48bdc5a2be 100644
 --- a/dom/media/webrtc/transport/nr_socket_prsock.cpp
 +++ b/dom/media/webrtc/transport/nr_socket_prsock.cpp
 @@ -155,6 +155,8 @@ nrappkit copyright:
@@ -235,7 +235,7 @@ index f15df437c8b6bbe76fb701ad62dbb6308b07456a..5d6000ebf27f0846963977cb568c4c80
 +        ABORT(R_INTERNAL);
 +      }
 +    }
-+    status = PR_Bind(fd_, &bindaddr);
++    status = StealthBind(fd_, &bindaddr) ? PR_SUCCESS : PR_FAILURE;
 +  }
    if (status != PR_SUCCESS) {
 +    // A port that is not available: another socket holds it, or the system keeps it (Windows reserves ranges of the dynamic

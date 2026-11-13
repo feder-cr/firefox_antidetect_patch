@@ -2,7 +2,7 @@
 
 Questo branch (`stealth/150`) sul fork `feder-cr/invisible_firefox` di `mozilla-firefox/firefox` è la **single source of truth** per gli stealth patches applicati a Firefox 150.0.1.
 
-> Storia: questo repo si chiamava `feder-cr/firefox` fino al 2026-05-19, e c'era un companion repo `feder-cr/firefox-stealth` con i .patch numerati. Entrambi consolidati qui (rename + delete). Vedi commit `ce71f1f...` su `feder-cr/invisible_playwright` per il rename trail.
+> Storia: questo repo si chiamava `feder-cr/firefox` fino al 2026-05-19, e c'era un companion repo `feder-cr/firefox-stealth` con i .patch numerati. Entrambi consolidati qui (rename + delete). Vedi commit `ce71f1f...` su `oss-invisible/playwright` per il rename trail.
 
 ## Stato (2026-05-19)
 
@@ -101,7 +101,7 @@ Richiede patch a `third_party/libwebrtc` per i tipi `VideoCaptureModuleEx` + `Ra
 
 ## firefox-2 SHIPPED resta canonical
 
-Per gli utenti, `firefox-2` (https://github.com/feder-cr/invisible_playwright/releases/tag/firefox-2) è il binario stable:
+Per gli utenti, `firefox-2` (https://github.com/oss-invisible/playwright/releases/tag/firefox-2) è il binario stable:
 - Built May 3 2026 sul working tree locale che aveva tutte le modifiche
 - Suo `xul.dll` (sha256 `97b38e1bc3a6cdfd...`) contiene 3 simboli C++ extra rispetto a una build da clean fork
 - Test mouse suite: 8/12 PASS (4 fail sono flakiness Playwright/timing, non stealth/build)
@@ -129,7 +129,7 @@ Per gli utenti, `firefox-2` (https://github.com/feder-cr/invisible_playwright/re
 
 ## Aggiornare a una nuova versione di Firefox
 
-Il repository (`main` di feder-cr/firefox_antidetect_patch) contiene solo la serie
+Il repository (`main` di oss-invisible/firefox_antidetect_patch) contiene solo la serie
 di patch; il port si fa con i suoi strumenti, non con un rebase di questo albero:
 
 ```bash
@@ -144,4 +144,4 @@ Solo dal tag della release stabile, mai da una beta. Il flusso completo è in
 
 - Schema completo input/output: `c:/tmp/firefox_stealth_schema.md` (workspace privato)
 - Memory analytics: `project_patch_series_gaps.md`, `project_clean_fork_workflow.md` (workspace privato)
-- Python wrapper + binary releases: https://github.com/feder-cr/invisible_playwright
+- Python wrapper + binary releases: https://github.com/oss-invisible/playwright

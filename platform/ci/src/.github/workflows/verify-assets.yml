@@ -58,7 +58,7 @@ jobs:
       - name: Checkout wrapper (for scripts/ci_drive_gate.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: feder-cr/invisible_playwright
+          repository: oss-invisible/playwright
           ref: main
           fetch-depth: 1
       - name: Download the release asset (draft releases included)

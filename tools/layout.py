@@ -278,6 +278,8 @@ OWN_FILES = [
     (r"^gfx/tests/gtest/TestStealthBundledCollection\.cpp$", "fingerprint/fonts/font-list"),
     (r"^toolkit/xre/dllservices/tests/gtest/TestStealthOwnBinaries\.cpp$", "platform/untrusted-modules"),
     (r"^dom/base/StealthSessionDeclaration\.", "fingerprint/locale-time/session-declaration"),
+    (r"^dom/base/test/gtest/TestStealthDocumentLanguage\.cpp$", "fingerprint/locale-time/session-declaration"),
+    (r"^intl/locale/tests/gtest/TestStealthSystemLocales\.cpp$", "fingerprint/locale-time/session-declaration"),
     (r"^dom/base/StealthShadowRoot\.", "automation/shadow-root"),
     (r"^intl/locale/StealthSessionPrefs\.", "fingerprint/locale-time/session-declaration"),
     (r"^js/xpconnect/src/StealthSandbox\.", "automation/hybrid-xrays"),

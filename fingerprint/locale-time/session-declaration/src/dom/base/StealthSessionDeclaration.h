@@ -145,6 +145,45 @@ void SetRealmDeclaredLocale(JS::Realm* aRealm, const nsACString& aLanguage);
 void ExplodeLocalTime(PRTime aTime, const Document* aDocument,
                       PRExplodedTime* aExploded);
 
+/**
+ * STEALTHFOX: the language of a document's text that declares none is the
+ * language of ITS CONTEXT, not of the process.
+ *
+ * Document::mLanguageFromCharset is EncodingToLang's answer, which for every
+ * encoding without a language of its own (UTF-8 above all) is the process's
+ * locale language, the session's. That atom is the language group of the
+ * document's text with no `lang`, so a browser launched en-US whose context
+ * declares ja-JP chose its CJK and Cyrillic fonts as an en-US one.
+ *
+ * The atom is a cache that every thread reads (the style threads too), so it
+ * stays a cache, refreshed on the main thread where the context is known:
+ * when it is computed (a charset change; the constructor, where there is no
+ * context yet and the session's language stands), when the document gets its
+ * container (Document::SetContainer: the context exists from then), and when
+ * the context's language changes while the document lives
+ * (SetRealmDeclaredLocale, from BrowsingContext::DidSet(LanguageOverride)).
+ *
+ * DocumentCharsetLanguage gives, for the atom EncodingToLang answered, the
+ * context's language (the top BrowsingContext's LanguageOverride, or the
+ * session's) as an atom interned for the life of the process (a Document
+ * holds the pointer without owning it) when the encoding has no language of
+ * its own; an encoding that has one keeps it, and so does a session that
+ * declares nothing. ChooseCharsetLanguage is the decision as a function of
+ * three atoms; InternedLanguage turns a declared Accept-Language list into
+ * the atom of its primary tag in lower case, null when the list is empty.
+ * Main thread only.
+ */
+nsAtom* ChooseCharsetLanguage(nsAtom* aFromCharset, nsAtom* aProcessLanguage,
+                              nsAtom* aDeclared);
+nsAtom* InternedLanguage(const nsACString& aDeclared);
+nsAtom* DocumentCharsetLanguage(const Document* aDocument,
+                                nsAtom* aFromCharset);
+
+// Computes the document's language again; when it changed and the document is
+// already styled, flushes its font cache and restyles it, as a change of
+// charset does (nsPresContext::DocumentCharSetChanged). Main thread only.
+void RefreshDocumentLanguage(Document* aDocument);
+
 }  // namespace mozilla::dom
 
 #endif  // mozilla_dom_StealthSessionDeclaration_h

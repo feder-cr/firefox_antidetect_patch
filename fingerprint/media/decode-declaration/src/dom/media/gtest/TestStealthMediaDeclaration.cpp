@@ -25,8 +25,11 @@
 #include "gtest/gtest.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/dom/MediaCapabilitiesBinding.h"
 #include "mozilla/gtest/WaitFor.h"
 #include "nsThreadUtils.h"
+
+#include <iterator>
 
 #ifdef MOZ_WEBRTC
 #  include "EncoderConfig.h"
@@ -55,6 +58,7 @@ namespace {
 constexpr char kDeclarationPref[] = "zoom.stealth.media.decode_support";
 constexpr char kEncodeDeclarationPref[] = "zoom.stealth.media.encode_support";
 constexpr char kCoresPref[] = "zoom.stealth.hw_concurrency";
+constexpr char kDecodingInfoPref[] = "zoom.stealth.media.decoding_info";
 
 // Newline separated "mime|flags" entries, see the pref's comment.
 constexpr char kDeclaration[] =
@@ -149,6 +153,199 @@ TEST(StealthMediaDeclaration, UndeclaredTypeFallsThrough)
 {
   DecodeSupportPref pref(kDeclaration);
   EXPECT_EQ(AsyncSupport("video/x-stealth-undeclared"), DecodeSupportSet{});
+}
+
+// --- powerEfficient: the retail rule over the declared hardware bit -------
+
+// Retail (MediaCapabilities.cpp, CreateVideoDecodingInfo): powerEfficient =
+// hardware decode || width * height <= 640 * 480, for ANY codec, and smooth is
+// always true for a supported file. The declared table carries the hardware
+// half; the size half is StealthPowerEfficientFor.
+namespace {
+
+struct DecodingSize {
+  uint32_t mWidth;
+  uint32_t mHeight;
+};
+
+// The sizes of the grid: at most 640x480 (the boundary itself, a pixel count
+// that is below although a side is above 640, a pixel past the boundary), then
+// 480p, 720p, 1080p.
+constexpr DecodingSize kSizes[] = {
+    {320, 240}, {640, 480}, {720, 360}, {641, 480},
+    {854, 480}, {1280, 720}, {1920, 1080},
+};
+
+bool IsAtMost640x480(DecodingSize aSize) {
+  return uint64_t(aSize.mWidth) * aSize.mHeight <= 307200;
+}
+
+// Newline separated "container|family|supported smooth hardware", the rows of
+// the table invisible_core declares (prefs.py _WIN_DECODING_INFO).
+constexpr char kCoreTable[] =
+    "video/mp4|avc1|111\n"
+    "video/mp4|avc3|111\n"
+    "video/mp4|hev1|111\n"
+    "video/mp4|hvc1|111\n"
+    "video/mp4|av01|111\n"
+    "video/mp4|vp09|111\n"
+    "video/webm|av01|111\n"
+    "video/webm|vp09|111\n"
+    "video/webm|vp8|110\n"
+    "video/webm|vp9|110";
+
+// The types Gecko's own gate (CanHandleContainerType) lets through on any host
+// when the track mime types are declared: the table below declares them.
+constexpr char kTrackTypes[] =
+    "video/avc|sw\n"
+    "video/hevc|sw\n"
+    "video/vp8|sw\n"
+    "video/vp9|sw\n"
+    "video/av1|sw";
+
+struct DecodingRow {
+  const char* mContentType;
+  bool mHardware;
+  // hev1/hvc1 also depend on Gecko's own HEVC switch, which the declaration of
+  // the track types does not open on every build: a row that Gecko's gate turns
+  // away (Nothing) is not an answer to check, for these two only.
+  bool mGeckoMayRefuse;
+};
+
+constexpr DecodingRow kRows[] = {
+    {"video/mp4; codecs=\"avc1.640028\"", true, false},
+    {"video/mp4; codecs=\"avc3.640028\"", true, false},
+    {"video/mp4; codecs=\"hev1.1.6.L93.B0\"", true, true},
+    {"video/mp4; codecs=\"hvc1.1.6.L93.B0\"", true, true},
+    {"video/mp4; codecs=\"av01.0.05M.08\"", true, false},
+    {"video/mp4; codecs=\"vp09.00.10.08\"", true, false},
+    {"video/webm; codecs=\"av01.0.05M.08\"", true, false},
+    {"video/webm; codecs=\"vp09.00.10.08\"", true, false},
+    {"video/webm; codecs=\"vp8\"", false, false},
+    {"video/webm; codecs=\"vp9\"", false, false},
+};
+
+class ScopedBoolPref {
+ public:
+  ScopedBoolPref(const char* aName, bool aValue) : mName(aName) {
+    Preferences::SetBool(mName, aValue);
+  }
+  ~ScopedBoolPref() { Preferences::ClearUser(mName); }
+
+ private:
+  const char* mName;
+};
+
+// decodingInfo({type: "file", video}) as MediaCapabilities hands it to the
+// declaration.
+dom::MediaDecodingConfiguration FileConfig(const char* aContentType,
+                                           DecodingSize aSize) {
+  dom::MediaDecodingConfiguration config;
+  config.mType = dom::MediaDecodingType::File;
+  dom::VideoConfiguration& video = config.mVideo.Construct();
+  video.mContentType = NS_ConvertUTF8toUTF16(nsDependentCString(aContentType));
+  video.mWidth = aSize.mWidth;
+  video.mHeight = aSize.mHeight;
+  video.mBitrate = 1'000'000;
+  video.mFramerate = 30.0;
+  return config;
+}
+
+}  // namespace
+
+// The rule itself, with no pref and no host: the declared hardware bit wins at
+// any size; without it a picture is power efficient only up to 640x480 pixels
+// in total. 65536x65536 overflows 32 bits, which retail does not count as low
+// resolution, and a side above INT32_MAX is clamped first.
+TEST(StealthMediaDeclaration, PowerEfficientIsHardwareOrAtMost640x480)
+{
+  for (const DecodingSize& size : kSizes) {
+    EXPECT_TRUE(StealthPowerEfficientFor(true, size.mWidth, size.mHeight))
+        << size.mWidth << "x" << size.mHeight << " with hardware";
+    EXPECT_EQ(StealthPowerEfficientFor(false, size.mWidth, size.mHeight),
+              IsAtMost640x480(size))
+        << size.mWidth << "x" << size.mHeight << " without hardware";
+  }
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 640, 480));
+  EXPECT_FALSE(StealthPowerEfficientFor(false, 641, 480));
+  // The threshold itself, from both sides and in the shapes a side can take:
+  // 307200 pixels is low, 307201 and 640x481 (307840) are not.
+  EXPECT_FALSE(StealthPowerEfficientFor(false, 640, 481));
+  EXPECT_FALSE(StealthPowerEfficientFor(false, 1, 307201));
+  EXPECT_FALSE(StealthPowerEfficientFor(false, 307201, 1));
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 1, 307200));
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 307200, 1));
+  // A zero side is zero pixels, as in retail: low resolution.
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 0, 0));
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 0, 1080));
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 1920, 0));
+  EXPECT_TRUE(StealthPowerEfficientFor(false, 720, 360)) << "259200 pixels";
+  EXPECT_FALSE(StealthPowerEfficientFor(false, 65536, 65536)) << "overflow";
+  EXPECT_FALSE(StealthPowerEfficientFor(false, UINT32_MAX, UINT32_MAX));
+  EXPECT_FALSE(StealthPowerEfficientFor(false, UINT32_MAX, 1));
+  EXPECT_TRUE(StealthPowerEfficientFor(true, 65536, 65536));
+}
+
+// Through the declaration the page reads: every codec of the table at every
+// size of the grid answers supported, smooth, and the retail powerEfficient.
+// Before the size entered the answer, a vp8 file in webm read the same
+// powerEfficient at 320x240 and at 1080p.
+TEST(StealthMediaDeclaration, DecodingInfoPowerEfficientFollowsTheRetailRule)
+{
+  DeclarationPref table(kDecodingInfoPref, kCoreTable);
+  DecodeSupportPref tracks(kTrackTypes);
+  ScopedBoolPref hevc("media.hevc.enabled", true);
+  size_t checked = 0;
+  size_t refusedRows = 0;
+  for (const DecodingRow& row : kRows) {
+    size_t refusedSizes = 0;
+    for (const DecodingSize& size : kSizes) {
+      const dom::MediaDecodingConfiguration config =
+          FileConfig(row.mContentType, size);
+      const auto info = dom::StealthDeclaredDecodingInfoFor(config);
+      if (!info && row.mGeckoMayRefuse) {
+        ++refusedSizes;
+        continue;
+      }
+      ASSERT_TRUE(info) << row.mContentType << " " << size.mWidth << "x"
+                        << size.mHeight << " is declared";
+      EXPECT_TRUE(info->mSupported) << row.mContentType;
+      EXPECT_TRUE(info->mSmooth) << row.mContentType;
+      EXPECT_EQ(info->mPowerEfficient, row.mHardware || IsAtMost640x480(size))
+          << row.mContentType << " at " << size.mWidth << "x" << size.mHeight;
+      ++checked;
+    }
+    // Gecko's gate looks at the type, never at the size: a row is refused at
+    // every size or at none.
+    EXPECT_TRUE(refusedSizes == 0 || refusedSizes == std::size(kSizes))
+        << row.mContentType << " refused at " << refusedSizes << " sizes";
+    if (refusedSizes == std::size(kSizes)) {
+      ++refusedRows;
+    }
+  }
+  // Every row Gecko did not refuse is checked at every size, and the log says
+  // how many rows (only hev1 and hvc1 can be) were left out.
+  GTEST_LOG_(INFO) << "powerEfficient grid: " << checked << " answers checked, "
+                   << refusedRows << " HEVC row(s) refused by Gecko's own gate";
+  EXPECT_LE(refusedRows, size_t(2));
+  EXPECT_EQ(checked, (std::size(kRows) - refusedRows) * std::size(kSizes));
+}
+
+// A type declared unsupported is false, false, false at every size: the size
+// rule is retail's CreateVideoDecodingInfo, which a rejected file never reaches.
+TEST(StealthMediaDeclaration, AnUnsupportedTypeIsNotPowerEfficientAtAnySize)
+{
+  DeclarationPref table(kDecodingInfoPref, "video/webm|vp8|000");
+  DecodeSupportPref tracks(kTrackTypes);
+  for (const DecodingSize& size : kSizes) {
+    const auto info = dom::StealthDeclaredDecodingInfoFor(
+        FileConfig("video/webm; codecs=\"vp8\"", size));
+    ASSERT_TRUE(info);
+    EXPECT_FALSE(info->mSupported);
+    EXPECT_FALSE(info->mSmooth);
+    EXPECT_FALSE(info->mPowerEfficient)
+        << size.mWidth << "x" << size.mHeight;
+  }
 }
 
 // --- The WebRTC half -------------------------------------------------------

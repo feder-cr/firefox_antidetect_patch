@@ -2,6 +2,7 @@
  "modified": [
   "docshell/base/BrowsingContext.cpp",
   "dom/base/Document.cpp",
+  "dom/base/Document.h",
   "dom/xslt/xslt/txEXSLTFunctions.cpp",
   "js/xpconnect/src/nsXPConnect.cpp"
  ],
@@ -39,9 +40,9 @@
    "category": "spoof",
    "feature": "timezone-declared",
    "prefs": [],
-   "added": 11,
+   "added": 10,
    "removed": 9,
-   "hunks": 5,
+   "hunks": 7,
    "inline_logic_lines": 6,
    "hookable": "already-hook",
    "anchor": "Document::InitCSP; static GetFormattedTimeString (called from Document::GetLastModified and Document::RetrieveRelevantHeaders); Document::ComputeVisibilityState",
@@ -56,6 +57,26 @@
      "notes"
     ],
     "why": "Bug/risk claims checked in source."
+   }
+  },
+  {
+   "file": "dom/base/Document.h",
+   "category": "spoof",
+   "feature": "timezone-declared",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "Document, private section before RecomputeLanguageFromCharset",
+   "evidence": [
+    "+  friend class StealthDocumentAccess;  // STEALTH-HOOK(fingerprint/locale-time/timezone)"
+   ],
+   "notes": "One line: friend declaration so StealthDocumentAccess (dom/base/StealthSessionDeclaration.cpp, ours) can call the private Document::RecomputeLanguageFromCharset. No logic.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff."
    }
   },
   {
