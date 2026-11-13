@@ -60,7 +60,7 @@
    "feature": "proxy-udp-egress",
    "prefs": [],
    "added": 2,
-   "removed": 1,
+   "removed": 0,
    "hunks": 2,
    "inline_logic_lines": 0,
    "hookable": "movable",

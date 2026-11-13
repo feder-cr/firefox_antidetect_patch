@@ -43,7 +43,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 GREEN_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:"
                 "StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:"
                 "StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:"
-                "StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*")
+                "StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*:StealthTcpProxyRoad.*:StealthPcProxyConfig.*")
 GTEST_JOBS = ("gtest-linux", "gtest-cross")
 # configure's files, for which options exist; the ones the tree has at the plan's stage too.
 CONFIGURE_FILES = ("moz.configure", "toolkit/moz.configure", "js/moz.configure", "browser/moz.configure", "build/moz.configure/*.configure")
