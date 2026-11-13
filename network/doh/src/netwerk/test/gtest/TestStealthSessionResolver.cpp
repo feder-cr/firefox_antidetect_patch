@@ -25,7 +25,6 @@
 using namespace mozilla::net;
 using mozilla::OriginAttributes;
 using mozilla::Preferences;
-using mozilla::RefPtr;
 
 namespace {
 
