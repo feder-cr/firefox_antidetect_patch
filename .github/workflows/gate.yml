@@ -361,10 +361,11 @@ jobs:
           - { suite: wrapper.unit.page, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux }
           - { suite: wrapper.unit.page, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
           # nothing of a context leaves but through its proxy: the context road (a context proxy and no browser proxy) and its witness;
-          # Linux as root for the resolver trap, as the DoH suite; the witness suite has no Windows sink yet (Linux only)
+          # Linux as root for the resolver trap, as the DoH suite; on Windows the witness reads the engine's own resolver log (no privileges)
           - { suite: wrapper.e2e.context.egress, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
           - { suite: wrapper.e2e.context.egress, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
           - { suite: wrapper.e2e.context.sink, leg: linux-x86_64, runner: ubuntu-24.04, kind: linux, os: linux, root: true }
+          - { suite: wrapper.e2e.context.sink, leg: win-x86_64, runner: windows-latest, kind: win, os: windows }
     steps:
       - name: Checkout wrapper (its tests, ci/required-suites.json and scripts/ci_verdict.py)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
