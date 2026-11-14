@@ -45,12 +45,12 @@ jobs:
       # step: it means a check did not read the tree.
       # The core is pinned by commit, like the actions: a core change cannot turn
       # this check red with no engine change. A port moves it to the core commit
-      # made for that Firefox (today engine/firefox-159, which carries
+      # made for that Firefox (today release/64.69.0 before its seal: firefox-64 no longer reads the counter pref; it carries
       # STEALTH_FIREFOX_COMMIT and the WebGL lists of 159).
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: feder-cr/invisible_core
-          ref: cc2f0cd47901fdfd8d266baf723e9fefffa46aac
+          repository: oss-invisible/core
+          ref: dc801c298185e45e4081bf9d2fabad642d5f80f7
           path: core
           persist-credentials: false
       - run: pip install -e "./core[dev]"
