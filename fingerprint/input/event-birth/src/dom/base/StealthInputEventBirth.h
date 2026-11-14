@@ -6,8 +6,10 @@
 #ifndef mozilla_StealthInputEventBirth_h
 #define mozilla_StealthInputEventBirth_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/BasicEvents.h"  // WidgetEventTime
 #include "mozilla/TimeStamp.h"
+#include "nsError.h"
 
 namespace mozilla {
 
@@ -51,6 +53,79 @@ inline void StealthSetInputEventBirth(WidgetEventTime& aEvent,
   if (aLatencyMs > 0) {
     aEvent.mTimeStamp = StealthInputEventBirth(aLatencyMs);
   }
+}
+
+/**
+ * Stealthfox [B299]: the birth of a key event the caller sent with a latency,
+ * for nsITextInputProcessor (chrome only; nothing is added to the web-exposed
+ * KeyboardEventInit). A null stamp when no latency was declared (0, less, or
+ * NaN): the event then keeps the stamp it got at its construction.
+ *
+ * The cap of an hour is not a latency a system has: past it the number is a
+ * mistake of the caller, not a birth. It also keeps the conversion of the
+ * milliseconds to the ticks of a TimeDuration (a 64-bit count) far from an
+ * overflow, which an infinite or huge value would reach.
+ */
+inline TimeStamp StealthInputEventBirthOrNull(double aLatencyMs) {
+  return aLatencyMs > 0 && aLatencyMs < 3600000
+             ? StealthInputEventBirth(aLatencyMs)
+             : TimeStamp();
+}
+
+/**
+ * Stealthfox [B299]: the birth of the key that nsITextInputProcessor is
+ * delivering. The caller declares the latency of the NEXT key with
+ * setNextKeyLatency() (stored in the processor, mStealthNextKeyLatencyMs);
+ * keydown(), keyup() and commitCompositionWith() each open this scope, which
+ * takes the declared latency (one use: it is cleared) and holds the birth for
+ * the duration of the call. KeydownInternal() and KeyupInternal() stamp their
+ * copy of the key event through Stamp(); TextEventDispatcher copies the stamp
+ * with AssignKeyEventData, and the keypress events are copies of the keydown,
+ * so every key event of the call carries the birth. With no latency declared the
+ * scope holds no birth and Stamp() does nothing: the event keeps the stamp of
+ * its construction. The scopes nest (a restore on exit); the processor lives
+ * on the main thread only, as the births of the mouse and the wheel do.
+ *
+ * Known limit: on commitCompositionWith() the keydown and keyup carry the
+ * birth, but the composition events and the input event that follow keep the
+ * time of the delivery, as they did with the old timer. They are created by
+ * TextEventDispatcher::CommitComposition(), whose call in
+ * TextInputProcessor.cpp is a line of Mozilla's and takes no stamp from here.
+ */
+class StealthKeyBirthScope {
+ public:
+  explicit StealthKeyBirthScope(double& aNextLatencyMs) : mPrevious(Current()) {
+    Current() = StealthInputEventBirthOrNull(aNextLatencyMs);
+    aNextLatencyMs = 0;
+  }
+  ~StealthKeyBirthScope() { Current() = mPrevious; }
+  StealthKeyBirthScope(const StealthKeyBirthScope&) = delete;
+  StealthKeyBirthScope& operator=(const StealthKeyBirthScope&) = delete;
+
+  static void Stamp(WidgetEventTime& aEvent) {
+    if (!Current().IsNull()) {
+      aEvent.mTimeStamp = Current();
+    }
+  }
+
+ private:
+  static TimeStamp& Current() {
+    static TimeStamp sBorn;
+    return sBorn;
+  }
+  TimeStamp mPrevious;
+};
+
+/**
+ * Stealthfox [B299]: nsITextInputProcessor.setNextKeyLatency(). Chrome only
+ * (as the rest of the interface); stores the latency of the next key in the
+ * processor's field, to be taken by the scope above.
+ */
+inline nsresult StealthSetNextKeyLatency(double& aField, double aLatencyMs,
+                                         bool aIsCallerChrome) {
+  MOZ_RELEASE_ASSERT(aIsCallerChrome);
+  aField = aLatencyMs;
+  return NS_OK;
 }
 
 }  // namespace mozilla

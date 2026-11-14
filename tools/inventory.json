@@ -6566,6 +6566,68 @@
   }
  },
  {
+  "file": "dom/base/TextInputProcessor.cpp",
+  "category": "other",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 7,
+  "removed": 0,
+  "hunks": 6,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "TextInputProcessor::Keydown/Keyup/CommitCompositionWith and KeydownInternal/KeyupInternal",
+  "evidence": [
+   "+#include \"StealthInputEventBirth.h\"  // STEALTH-HOOK(fingerprint/input/event-birth)",
+   "+  StealthKeyBirthScope stealthBirth(mStealthNextKeyLatencyMs);  // STEALTH-HOOK(fingerprint/input/event-birth)",
+   "+NS_IMETHODIMP TextInputProcessor::SetNextKeyLatency(double aLatencyMs) { return StealthSetNextKeyLatency(mStealthNextKeyLatencyMs, aLatencyMs, nsContentUtils::IsCallerChrome()); }  // STEALTH-HOOK(fingerprint/input/event-birth)"
+  ],
+  "notes": "A key is delivered at once and born the declared latency in the past: setNextKeyLatency (chrome only) declares it for the next key; a StealthKeyBirthScope opened right after the IsCallerChrome assert of each key method takes it (and zeroes it in every case); KeydownInternal/KeyupInternal stamp keyEvent.mTimeStamp with it (StealthInputEventBirth.h). It replaces the chrome setTimeout of PageAgent, which under load moved the delivery itself.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/base/TextInputProcessor.h",
+  "category": "other",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "class TextInputProcessor, members",
+  "evidence": [
+   "+  double mStealthNextKeyLatencyMs = 0;  // STEALTH-HOOK(fingerprint/input/event-birth)"
+  ],
+  "notes": "One member: the latency declared for the next key.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/interfaces/base/nsITextInputProcessor.idl",
+  "category": "other",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "nsITextInputProcessor",
+  "evidence": [
+   "+  void setNextKeyLatency(in double aLatencyMs);  // STEALTH-HOOK(fingerprint/input/event-birth)"
+  ],
+  "notes": "One method, setNextKeyLatency(double): the born-in-the-past time of the next key (the interface is chrome-only XPCOM, builtinclass, no WebIDL binding).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
   "file": "dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp",
   "category": "other",
   "feature": "proxy-udp-egress",

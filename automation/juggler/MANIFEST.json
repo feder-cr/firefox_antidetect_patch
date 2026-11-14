@@ -91,6 +91,7 @@
   "juggler/tests/input_review_findings.test.mjs": "100644",
   "juggler/tests/input_waits_are_bounded.test.mjs": "100644",
   "juggler/tests/javascript_disabled_is_the_parents.test.mjs": "100644",
+  "juggler/tests/key_event_is_born_in_the_past_not_delayed.test.mjs": "100644",
   "juggler/tests/keys_go_to_the_focused_root.test.mjs": "100644",
   "juggler/tests/landing_listeners_on_every_root.test.mjs": "100644",
   "juggler/tests/media_feature_refusals_name_the_knob.test.mjs": "100644",
