@@ -47,6 +47,20 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
   request of the lookup of a `stun:` or `turn:` name left in the default user context. The resolver now holds the attributes of the
   PeerConnection, set in `MediaTransportImplNicer::SetProxyConfig` from the load info of its proxy config; `StealthIceResolverAttributes`
   (dom/media/webrtc/transport/StealthIceResolverContext) keeps the user context alone, which is what the proxy depends on.
+  A TURN server given by name over TCP does not go through `NrIceResolver` (in the process that gathers, that path is set only in the parent
+  process): `nsSocketTransport` resolves the name itself, so `WebrtcTCPSocket::OpenWithoutHttpProxy` calls `StealthTcpSocketBorn`
+  (StealthIceResolverContext.cpp, declared in nr_stealth_network.h), whose `StealthTcpNameContext` gives the transport the same
+  `StealthIceResolverAttributes` of the PeerConnection's load info, after `CreateTransport` and before `Bind`, where the transport is born.
+- A request made for the TLS of a page keeps the context of the page. The OCSP request of a certificate is made with the system
+  principal and Mozilla copies to it only the first party domain and the private browsing id, so it left in the default context:
+  outside the proxy and the resolver of the page's context. `StealthKeepRequestContext` (netwerk/ipc/StealthTRRContext) adds the
+  userContextId. The TLS layered over a tunnel (an HTTPS proxy, an HTTP/2 tunnel) was added to its socket with default attributes,
+  so what it asks for had already lost the context: `StealthTransportContext` gives it the attributes of the transport that carries
+  it, as a direct connection has. The default context is unchanged, and the request belongs to no page, so no client route sees it.
+- A channel of a context that has a proxy never goes out DIRECT because its proxy lookup failed. Mozilla fails over to DIRECT; the
+  DoH channel was already ended instead (`StealthTRRFailClosed`), and `StealthProxyIsMandatory` (StealthSessionResolver.cpp) now
+  says the same for every channel whose user context is in the declared list of contexts with a proxy. A context with no proxy
+  keeps Mozilla's behaviour.
 - The DoH prefs follow the proxies present. `juggler/TrrPrefs.js` derives them from the set of proxies the engine received (the
   browser-wide one plus every live context's): with at least one, mode 3, `network.trr.exclude-etc-hosts` false and
   `network.trr.excluded-domains` are set as user values; with none, exactly those three are cleared. The provider
@@ -74,6 +88,22 @@ tells the proxy to resolve the host (the browser resolves the name and connects 
 - `netwerk/protocol/http/nsHttpChannel.cpp`: the same fail-closed rule for a DoH request that runs as an nsHttpChannel.
 - `dom/media/webrtc/transport/nriceresolver.{h,cpp}`, `dom/media/webrtc/jsapi/MediaTransportHandler.cpp`: the resolver's origin attributes (one member, its
   accessors, one line in `resolve`) and the call that sets them; `dom/media/webrtc/transport/common.build` (fingerprint/webrtc/declared-network) lists our source.
+- `dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp` (owned by network/proxy-udp): the origin attributes of the PeerConnection on the
+  transport of a TURN-over-TCP name are set inside `StealthTcpSocketBorn`, the one call at the bind (tagged
+  fingerprint/webrtc/declared-network, which owns the bind address it also answers); its declaration is in
+  `dom/media/webrtc/transport/nr_stealth_network.h`, which that file already includes.
+- `security/manager/ssl/nsNSSCallbacks.cpp`: one include and one call of `StealthKeepRequestContext`, beside Mozilla's two copies.
+- `netwerk/protocol/http/TLSTransportLayer.cpp`: one include, and the origin attributes argument of `AddToSocket` is
+  `StealthTransportContext(mSocketTransport)` (one of Mozilla's lines rewritten: the wrong value is that argument).
+- `netwerk/protocol/http/nsHttpChannel.cpp`: the two existing calls of `StealthTRRFailClosed` take `StealthProxyIsMandatory(...)`.
+- `toolkit/components/url-classifier/`: the Safe Browsing completion (gethash) of a page load is requested in the context of that
+  page. `nsUrlClassifierDBService.cpp` opens a lookup-context scope from the page's principal in `Classify` (helpers in
+  netwerk/ipc/StealthTRRContext) and the completion callback answers it through a new `userContextId` attribute
+  (`nsIUrlClassifierHashCompleter.idl`); `UrlClassifierHashCompleter.sys.mjs` hands a completion of a non-default context to
+  the completer of that context (`StealthHashCompleterContext.sys.mjs`, registered in `moz.build`), whose channel carries that
+  context: contexts never share a request, the default context is Mozilla's code; `tests/unit/xpcshell.toml` lists its test.
+- `toolkit/profile/nsProfileLock.cpp`: two tagged lines compile out the lookup of the machine's own host name in the Unix
+  symlink lock (made at start-up, before any proxy is decided, through the system resolver); the signature keeps 127.0.0.1.
 - `netwerk/dns/nsHostResolver.cpp`: the two calls of `StealthFlagsFollowSession`; `netwerk/dns/moz.build`: our source.
 - `toolkit/components/parentalcontrols/nsParentalControlsService{Win,Default}.cpp`: the declared value before the first OS call
   (the Cocoa and Android files are Mozilla's: those OSes are never the persona).

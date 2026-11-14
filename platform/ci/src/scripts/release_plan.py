@@ -86,7 +86,7 @@ DEFAULT_GTEST_FILTER = ("StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:"
                         "StealthScaleDeclaration.*:StealthWindowGeometry.*:"
                         "StealthGLMultisample.*:StealthFrameCrash.*:"
                         "StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:StealthNrSocketBirth.*:"
-                        "StealthPcUdpProxyKinds.*")
+                        "StealthPcUdpProxyKinds.*:StealthTcpProxyRoad.*:StealthPcProxyConfig.*")
 DEFAULT_REF = "main"
 
 

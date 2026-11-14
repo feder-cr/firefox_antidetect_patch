@@ -14,6 +14,7 @@
 #include "gtest/gtest.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
 
 using namespace mozilla;
@@ -56,6 +57,61 @@ TEST(StealthInputEventBirth, NeverPastThePreviousBirth)
     EXPECT_TRUE(event.mTimeStamp >= last);
     last = event.mTimeStamp;
   }
+}
+
+// The born-in-the-past time of a key ([B299]): nsITextInputProcessor stamps its copy of the key event with
+// StealthInputEventBirthOrNull(latency) before TextEventDispatcher copies it again with AssignKeyEventData. The
+// processor itself needs a window and a widget, which a gtest has none of; what these tests hold is the two pieces
+// it is made of: the birth the latency gives, and a stamp that the copies of a WidgetKeyboardEvent keep.
+TEST(StealthInputEventBirth, KeyNoLatencyIsNoBirth)
+{
+  EXPECT_TRUE(StealthInputEventBirthOrNull(0).IsNull());
+  EXPECT_TRUE(StealthInputEventBirthOrNull(-5).IsNull());
+  EXPECT_TRUE(StealthInputEventBirthOrNull(std::numeric_limits<double>::quiet_NaN()).IsNull());
+  // a latency no system has (past an hour, infinite) is no birth either, and does not reach the tick conversion
+  EXPECT_TRUE(StealthInputEventBirthOrNull(3600000).IsNull());
+  EXPECT_TRUE(StealthInputEventBirthOrNull(std::numeric_limits<double>::infinity()).IsNull());
+}
+
+TEST(StealthInputEventBirth, KeyLatencyIsBornInThePast)
+{
+  const TimeStamp before = TimeStamp::Now();
+  const TimeStamp born = StealthInputEventBirthOrNull(35);
+  ASSERT_FALSE(born.IsNull());
+  EXPECT_TRUE(born <= TimeStamp::Now());
+  EXPECT_TRUE(born >= before - TimeDuration::FromMilliseconds(35));
+}
+
+TEST(StealthInputEventBirth, TheStampOfAKeyEventSurvivesTheCopiesOfTheProcessor)
+{
+  // KeydownInternal copies the event and stamps the copy; TextEventDispatcher builds the event that is dispatched with
+  // AssignKeyEventData (and the keypress is a copy of the copy). The stamp must come through all of them.
+  WidgetKeyboardEvent original(true, eKeyDown, nullptr);
+  const TimeStamp born = original.mTimeStamp - TimeDuration::FromMilliseconds(50);
+
+  WidgetKeyboardEvent copy(original);
+  copy.mTimeStamp = born;
+
+  WidgetKeyboardEvent dispatched(true, eKeyDown, nullptr);
+  dispatched.AssignKeyEventData(copy, false);
+  EXPECT_TRUE(dispatched.mTimeStamp == born);
+
+  WidgetKeyboardEvent keypress(copy);
+  keypress.mMessage = eKeyPress;
+  EXPECT_TRUE(keypress.mTimeStamp == born);
+
+  // the original was not touched: the processor never modifies the event it is given
+  EXPECT_TRUE(original.mTimeStamp != born);
+}
+
+TEST(StealthInputEventBirth, KeysAndMouseShareTheOrderOfBirths)
+{
+  // a key born after a mouse event keeps the order of the system: never before the previous birth, of either kind
+  WidgetEventTime mouse;
+  StealthSetInputEventBirth(mouse, 5);
+  const TimeStamp key = StealthInputEventBirthOrNull(4000);
+  ASSERT_FALSE(key.IsNull());
+  EXPECT_TRUE(key >= mouse.mTimeStamp);
 }
 
 TEST(StealthJugglerEventId, TravelsOnTheMouseEvent)
@@ -113,4 +169,108 @@ TEST(StealthFrameCrash, TheIdIsTheDigits)
   EXPECT_TRUE(nsDependentString(data).EqualsLiteral("9"));
   // char16ptr_t has no unambiguous == with const char16_t* on Windows (clang-cl): compare the plain pointers
   EXPECT_EQ(data, static_cast<const char16_t*>(buffer.get()));
+}
+
+// The scope that nsITextInputProcessor opens around keydown(), keyup() and commitCompositionWith() ([B299]): the latency
+// declared with setNextKeyLatency() is taken once, and the key events stamped inside the scope are born in the past.
+TEST(StealthKeyBirthScope, NothingDeclaredStampsNothing)
+{
+  double declared = 0;
+  StealthKeyBirthScope scope(declared);
+  WidgetKeyboardEvent event(true, eKeyDown, nullptr);
+  const TimeStamp before = event.mTimeStamp;
+  StealthKeyBirthScope::Stamp(event);
+  EXPECT_TRUE(event.mTimeStamp == before);
+}
+
+TEST(StealthKeyBirthScope, OutsideAScopeStampsNothing)
+{
+  WidgetKeyboardEvent event(true, eKeyDown, nullptr);
+  const TimeStamp before = event.mTimeStamp;
+  StealthKeyBirthScope::Stamp(event);
+  EXPECT_TRUE(event.mTimeStamp == before);
+}
+
+TEST(StealthKeyBirthScope, ADeclaredLatencyIsTakenOnceAndStampsTheEventsInside)
+{
+  double declared = 60;
+  WidgetKeyboardEvent down(true, eKeyDown, nullptr);
+  WidgetKeyboardEvent up(true, eKeyUp, nullptr);
+  const TimeStamp now = down.mTimeStamp;
+  {
+    StealthKeyBirthScope scope(declared);
+    EXPECT_EQ(declared, 0.0);  // used once: the next key declares its own
+    StealthKeyBirthScope::Stamp(down);
+    StealthKeyBirthScope::Stamp(up);
+  }
+  EXPECT_TRUE(down.mTimeStamp < now);
+  EXPECT_TRUE(down.mTimeStamp >= now - TimeDuration::FromMilliseconds(61));
+  // both events of the call carry the one birth
+  EXPECT_TRUE(up.mTimeStamp == down.mTimeStamp);
+
+  // the scope is closed: nothing is stamped any more, and a second scope with nothing declared stamps nothing
+  WidgetKeyboardEvent after(true, eKeyDown, nullptr);
+  const TimeStamp stamp = after.mTimeStamp;
+  {
+    StealthKeyBirthScope scope(declared);
+    StealthKeyBirthScope::Stamp(after);
+  }
+  EXPECT_TRUE(after.mTimeStamp == stamp);
+}
+
+TEST(StealthKeyBirthScope, AScopeThatEndsRestoresTheOneAround)
+{
+  double outer = 80, inner = 0;
+  StealthKeyBirthScope scope(outer);
+  WidgetKeyboardEvent first(true, eKeyDown, nullptr);
+  StealthKeyBirthScope::Stamp(first);
+  {
+    StealthKeyBirthScope nested(inner);  // nothing declared inside: no birth inside
+    WidgetKeyboardEvent plain(true, eKeyDown, nullptr);
+    const TimeStamp stamp = plain.mTimeStamp;
+    StealthKeyBirthScope::Stamp(plain);
+    EXPECT_TRUE(plain.mTimeStamp == stamp);
+  }
+  WidgetKeyboardEvent second(true, eKeyDown, nullptr);
+  StealthKeyBirthScope::Stamp(second);
+  EXPECT_TRUE(second.mTimeStamp == first.mTimeStamp);
+}
+
+TEST(StealthKeyBirthScope, ALatencyPastTheCapIsNoBirth)
+{
+  double declared = 3600000;
+  StealthKeyBirthScope scope(declared);
+  WidgetKeyboardEvent event(true, eKeyDown, nullptr);
+  const TimeStamp before = event.mTimeStamp;
+  StealthKeyBirthScope::Stamp(event);
+  EXPECT_TRUE(event.mTimeStamp == before);
+}
+
+// A latency declared with setNextKeyLatency() and never followed by a key (the caller threw) is taken back by
+// setNextKeyLatency(0) of its finally: the next key is not born in the past. The processor itself is not driven
+// here (it needs a window and a widget), so this is the field and the scope it feeds.
+TEST(StealthKeyBirthScope, ALatencyWithNoKeyThenZeroGivesNoBirthToTheNextKey)
+{
+  double field = 0;
+  ASSERT_EQ(StealthSetNextKeyLatency(field, 60, true), NS_OK);
+  EXPECT_EQ(field, 60.0);
+  // no key call follows; the caller takes the latency back
+  ASSERT_EQ(StealthSetNextKeyLatency(field, 0, true), NS_OK);
+  EXPECT_EQ(field, 0.0);
+
+  WidgetKeyboardEvent event(true, eKeyDown, nullptr);
+  const TimeStamp before = event.mTimeStamp;
+  {
+    StealthKeyBirthScope scope(field);  // what keydown() opens
+    StealthKeyBirthScope::Stamp(event);
+  }
+  EXPECT_TRUE(event.mTimeStamp == before);
+}
+
+TEST(StealthKeyBirthScope, TheScopeTakesTheLatencyEvenWhenTheCallEndsEarly)
+{
+  // the scope zeroes the field when it opens, before anything of the call can fail
+  double field = 45;
+  { StealthKeyBirthScope scope(field); }
+  EXPECT_EQ(field, 0.0);
 }

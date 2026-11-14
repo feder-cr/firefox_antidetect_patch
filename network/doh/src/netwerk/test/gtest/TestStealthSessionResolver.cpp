@@ -10,12 +10,25 @@
 // candidate's gtest filter runs.
 
 #include "StealthSessionResolver.h"
+#include "TRRLoadInfo.h"
 #include "gtest/gtest.h"
+#include "mozilla/OriginAttributes.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/net/StealthTRRContext.h"
+#include "nsCOMPtr.h"
+#include "nsIContentPolicy.h"
 #include "nsIDNSService.h"
+#include "nsILoadInfo.h"
+#include "nsIProtocolProxyService.h"
+#include "nsIProxyInfo.h"
 #include "nsIRequest.h"
+#include "nsNetCID.h"
+#include "nsServiceManagerUtils.h"
 #include "nsString.h"
 
 using namespace mozilla::net;
+using mozilla::OriginAttributes;
+using mozilla::Preferences;
 
 namespace {
 
@@ -180,4 +193,102 @@ TEST(TestStealthSessionResolver, TheDoHServerKeepsItsRequest)
                nsIDNSService::RESOLVE_REFRESH_NEGATIVE_CACHE);
   EXPECT_EQ(StealthResolverFlags(flags, true, true), flags);
   EXPECT_EQ(StealthResolverFlags(flags, false, true), flags);
+}
+
+// A channel of a context that has a proxy never goes out DIRECT because the lookup of its proxy failed: nsHttpChannel asks
+// StealthProxyIsMandatory whether a failed lookup must end the channel. A DoH request always; any other channel when its
+// user context is in the declared list; a channel of a context without a proxy keeps upstream's failover.
+TEST(TestStealthSessionResolver, ADoHChannelIsAlwaysMandatory)
+{
+  EXPECT_TRUE(StealthProxyIsMandatory(true, 0, ""_ns));
+  EXPECT_TRUE(StealthProxyIsMandatory(true, 6, "7"_ns));
+}
+
+TEST(TestStealthSessionResolver, AChannelOfAContextWithAProxyIsMandatory)
+{
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 6, "6"_ns)) << "a page of a proxied context failed over to DIRECT";
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 7, "*,6"_ns));
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 0, "*"_ns)) << "the browser-wide proxy covers the default context";
+  EXPECT_TRUE(StealthProxyIsMandatory(false, 0, "0, 6"_ns));
+}
+
+TEST(TestStealthSessionResolver, AChannelOfAContextWithoutAProxyKeepsUpstream)
+{
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 7, "6"_ns));
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 0, "6"_ns));
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 0, ""_ns));
+  EXPECT_FALSE(StealthProxyIsMandatory(false, 6, "garbage, 06"_ns));
+}
+
+TEST(TestStealthSessionResolver, TheContextAndTheListAreReadFromTheLoadInfoAndThePref)
+{
+  nsAutoCString old;
+  const bool hadValue = NS_SUCCEEDED(Preferences::GetCString("network.trr.stealth.contexts", old));
+  RefPtr<TRRLoadInfo> loadInfo = new TRRLoadInfo(nullptr, nsIContentPolicy::TYPE_OTHER);
+  OriginAttributes attrs;
+  attrs.mUserContextId = 7;
+  nsCOMPtr<nsILoadInfo> asLoadInfo = loadInfo.get();
+  ASSERT_EQ(asLoadInfo->SetOriginAttributes(attrs), NS_OK);
+
+  ASSERT_EQ(Preferences::SetCString("network.trr.stealth.contexts", "6,7"_ns), NS_OK);
+  EXPECT_TRUE(StealthProxyIsMandatory(false, asLoadInfo));
+  ASSERT_EQ(Preferences::SetCString("network.trr.stealth.contexts", "6"_ns), NS_OK);
+  EXPECT_FALSE(StealthProxyIsMandatory(false, asLoadInfo));
+  EXPECT_TRUE(StealthProxyIsMandatory(true, asLoadInfo)) << "a DoH request does not depend on the list";
+  ASSERT_EQ(Preferences::SetCString("network.trr.stealth.contexts", "0"_ns), NS_OK);
+  EXPECT_TRUE(StealthProxyIsMandatory(false, nullptr)) << "no load info is the default context";
+  EXPECT_FALSE(StealthProxyIsMandatory(false, asLoadInfo));
+
+  if (hadValue) {
+    Preferences::SetCString("network.trr.stealth.contexts", old);
+  } else {
+    Preferences::ClearUser("network.trr.stealth.contexts");
+  }
+}
+
+// A DoH request exists only because a context has a proxy: an answer of the proxy lookup that leaves it DIRECT (no
+// proxy info, or a "direct" one) ends the request instead of connecting it.
+static already_AddRefed<nsIProxyInfo> ProxyInfoOfType(const nsACString& aType) {
+  nsCOMPtr<nsIProtocolProxyService> pps = do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID);
+  nsCOMPtr<nsIProxyInfo> info;
+  if (!pps || NS_FAILED(pps->NewProxyInfoWithAuth(aType, "192.0.2.7"_ns, 1080, ""_ns, ""_ns, ""_ns, ""_ns, 0, UINT32_MAX,
+                                                  nullptr, getter_AddRefs(info)))) {
+    return nullptr;
+  }
+  return info.forget();
+}
+
+TEST(TestStealthSessionResolver, AnAnswerWithNoProxyInfoIsRefusedForADoHRequest)
+{
+  EXPECT_TRUE(StealthTRRProxyAnswerRefused(nullptr));
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, nullptr, true), NS_ERROR_PROXY_CONNECTION_REFUSED);
+}
+
+TEST(TestStealthSessionResolver, ADirectProxyInfoIsRefusedForADoHRequest)
+{
+  nsCOMPtr<nsIProxyInfo> direct = ProxyInfoOfType("direct"_ns);
+  ASSERT_TRUE(direct);
+  EXPECT_TRUE(StealthTRRProxyAnswerRefused(direct));
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, direct, true), NS_ERROR_PROXY_CONNECTION_REFUSED);
+}
+
+TEST(TestStealthSessionResolver, AProxyAnswerThatIsAProxyIsLeftAlone)
+{
+  nsCOMPtr<nsIProxyInfo> socks = ProxyInfoOfType("socks"_ns);
+  ASSERT_TRUE(socks);
+  EXPECT_FALSE(StealthTRRProxyAnswerRefused(socks));
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, socks, true), NS_OK);
+  nsCOMPtr<nsIProxyInfo> http = ProxyInfoOfType("http"_ns);
+  ASSERT_TRUE(http);
+  EXPECT_FALSE(StealthTRRProxyAnswerRefused(http));
+}
+
+TEST(TestStealthSessionResolver, OnlyADoHRequestIsRefusedAndAFailureKeepsItsStatus)
+{
+  // A page channel answered DIRECT (a bypass list matched its host) goes DIRECT: the rule is for the DoH request.
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_OK, nullptr, false), NS_OK);
+  // The status of a failed lookup is the one the fail-closed rule already reads, whatever the answer.
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_ERROR_FAILURE, nullptr, true), NS_ERROR_FAILURE);
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_BINDING_ABORTED, nullptr, true), NS_BINDING_ABORTED);
+  EXPECT_EQ(StealthTRRProxyAnswer(NS_ERROR_ABORT, nullptr, true), NS_ERROR_ABORT);
 }

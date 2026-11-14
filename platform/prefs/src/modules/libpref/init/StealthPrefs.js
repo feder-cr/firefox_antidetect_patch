@@ -67,19 +67,6 @@ pref("ui.font.-moz-field.size", "12");
 pref("network.proxy.socks_username",        "");
 pref("network.proxy.socks_password",        "");
 
-// STEALTHFOX: anonymous launch counter pref. Default true. The ping fires from
-// browser/components/StealthLaunchCounter.sys.mjs, called by BrowserGlue at
-// startup. To disable per-session: set false via about:config or extra_prefs.
-// To disable permanently: remove that call and rebuild.
-// Full disclosure: README of feder-cr/invisible_playwright.
-pref("invisible_firefox.usage_ping.enabled", true);
-// The counter's address is a PREF, not a constant: it died twice as a
-// repository name compiled into every binary with no way to move it. Now
-// invisible_core repoints it without a rebuild, and this default is the
-// engine's own repository, so the thing that pings and the thing that is
-// counted are the same release series.
-pref("invisible_firefox.usage_ping.url", "https://github.com/feder-cr/firefox_antidetect_patch/releases/download/usage-counter/launch.txt");
-
 // The network geolocation provider is the only one (toolkit/components/geolocation/
 // StealthGeolocation.cpp), and it asks the host's Wi-Fi API for the access points around
 // (wlanapi.dll in the parent) unless this is false. The position a page reads is the

@@ -48,7 +48,7 @@
   "category": "other",
   "feature": "readme-fork-disclosure",
   "prefs": [],
-  "added": 102,
+  "added": 94,
   "removed": 3,
   "hunks": 2,
   "inline_logic_lines": 0,
@@ -529,9 +529,9 @@
   "category": "spoof",
   "feature": "timezone-declared",
   "prefs": [],
-  "added": 11,
+  "added": 10,
   "removed": 9,
-  "hunks": 5,
+  "hunks": 7,
   "inline_logic_lines": 6,
   "hookable": "already-hook",
   "anchor": "Document::InitCSP; static GetFormattedTimeString (called from Document::GetLastModified and Document::RetrieveRelevantHeaders); Document::ComputeVisibilityState",
@@ -546,6 +546,26 @@
     "notes"
    ],
    "why": "Bug/risk claims checked in source."
+  }
+ },
+ {
+  "file": "dom/base/Document.h",
+  "category": "spoof",
+  "feature": "timezone-declared",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "Document, private section before RecomputeLanguageFromCharset",
+  "evidence": [
+   "+  friend class StealthDocumentAccess;  // STEALTH-HOOK(fingerprint/locale-time/timezone)"
+  ],
+  "notes": "One line: friend declaration so StealthDocumentAccess (dom/base/StealthSessionDeclaration.cpp, ours) can call the private Document::RecomputeLanguageFromCharset. No logic.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff."
   }
  },
  {
@@ -2920,9 +2940,9 @@
   "category": "spoof",
   "feature": "session-language-declared",
   "prefs": [],
-  "added": 6,
+  "added": 5,
   "removed": 0,
-  "hunks": 2,
+  "hunks": 3,
   "inline_logic_lines": 6,
   "hookable": "movable",
   "anchor": "nsLanguageAtomService::GetLocaleLanguage (inside the write lock, before the regional-prefs lookup)",
@@ -2938,6 +2958,45 @@
     "notes"
    ],
    "why": "prefs lists only reads in added lines; recount; thread-safety doubt checked."
+  }
+ },
+ {
+  "file": "intl/locale/OSPreferences.cpp",
+  "category": "spoof",
+  "feature": "session-declaration",
+  "prefs": [],
+  "added": 5,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 2,
+  "hookable": "already-hook",
+  "anchor": "include list; OSPreferences::GetSystemLocales and GetSystemLocale, first line of each",
+  "evidence": [
+   "+  if (SessionSystemLocales(aRetVal)) return NS_OK;",
+   "+  if (SessionSystemLocale(aRetVal)) return NS_OK;"
+  ],
+  "notes": "The languages of the machine (what the OS preferences say) are the session declaration: both getters first ask SessionSystemLocales / SessionSystemLocale (intl/locale/StealthSessionPrefs.cpp, ours) and return its answer when a declaration is set. Two calls at the head of two functions plus the include; no logic inline.",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff."
+  }
+ },
+ {
+  "file": "intl/locale/tests/gtest/moz.build",
+  "category": "build",
+  "feature": "session-declaration",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "already-hook",
+  "anchor": "UNIFIED_SOURCES after the list of Mozilla tests",
+  "evidence": [],
+  "notes": "Hook registering our own gtest (TestStealthSystemLocales.cpp).",
+  "verifier": {
+   "changed": [],
+   "why": "Checked against the diff."
   }
  },
  {
@@ -6318,13 +6377,264 @@
   }
  },
  {
+  "file": "dom/media/webrtc/jsapi/PeerConnectionImpl.cpp",
+  "category": "other",
+  "feature": "proxy-udp-egress",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "PeerConnectionImpl::Initialize, where the proxy config of the PeerConnection is handed to its transport handler",
+  "evidence": [
+   "+#include \"transport/StealthIceResolverContext.h\"  // STEALTH-HOOK(network/proxy-udp)",
+   "+  proxyConfig = StealthProxyConfigOf(std::move(proxyConfig), mWindow.get(), mForceProxy);  // STEALTH-HOOK(network/proxy-udp)"
+  ],
+  "notes": "GetProxyConfig returns no config for a window that was torn down (a detached iframe, a closed popup: no BrowserChild, and LoadInfo::Create refuses a document without ClientInfo), and a PeerConnection with no config has plain sockets and a resolver in the default context. StealthProxyConfigOf (StealthIceResolverContext.cpp) keeps upstream's config when there is one and otherwise builds it from the principal of the window, so the sockets stay behind the proxy of the page's context; with no principal the proxy is forced.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "security/manager/ssl/nsNSSCallbacks.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "OCSPRequest::Run, where the origin attributes of the OCSP channel are chosen",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+    mozilla::net::StealthKeepRequestContext(mOriginAttributes, attrs);  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The OCSP request of a certificate is made with the system principal and keeps of the page's origin attributes only the first party domain and the private browsing id, so it left in the default user context: outside the proxy and the resolver of the page's browser context. StealthKeepRequestContext (StealthTRRContext.cpp) adds the userContextId, the one the proxy filter and the resolver answer by; the default context is unchanged.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "netwerk/protocol/http/TLSTransportLayer.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 1,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "TLSTransportLayer::Init, the AddToSocket of the TLS layered over a tunnel",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+      PR_AF_INET, aTLSHost, aTLSPort, nullptr, StealthTransportContext(mSocketTransport), 0, 0, mFD,  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "The TLS layered over a tunnel (an HTTPS proxy, an HTTP/2 tunnel) was added to its socket with default origin attributes, so what that TLS asks for on its own (the OCSP request of its certificate) had already lost the context of the page. StealthTransportContext (StealthTRRContext.cpp) gives it the attributes of the socket transport that carries it, as a direct connection has.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/profile/nsProfileLock.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 2,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "nsProfileLock::LockWithSymlink, the address in the signature of the symlink lock (Unix)",
+  "evidence": [
+   "+#    if 0  // STEALTH-HOOK(network/doh): the host's own name is never looked up; the signature keeps 127.0.0.1",
+   "+#    endif  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Mozilla resolves the machine's own host name with PR_GetHostByName at start-up, before any proxy is decided, through the system resolver, unless MOZ_PROXY_BYPASS_PROTECTION is set. The block is compiled out so the signature keeps 127.0.0.1, as that build does; nothing else of that build is taken. Windows takes another lock and makes no lookup.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 7,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "HashCompleter.complete and openChannel: the completion road of a page's context",
+  "evidence": [
+   "+// STEALTH-HOOK(network/doh)",
+   "+import {",
+   "+  stealthApplyContext,"
+  ],
+  "notes": "complete() hands a completion of a non-default context to the completer of that context (StealthHashCompleterContext.sys.mjs), and openChannel gives the channel that context's origin attributes: the gethash request leaves by the proxy and the resolver of the page's context, and contexts never share a request. The default context takes Mozilla's code unchanged.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/url-classifier/moz.build",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "EXTRA_JS_MODULES of the url-classifier",
+  "evidence": [
+   "+    \"StealthHashCompleterContext.sys.mjs\",  # STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Registers StealthHashCompleterContext.sys.mjs.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "nsIUrlClassifierHashCompleterCallback",
+  "evidence": [
+   "+  readonly attribute uint32_t userContextId;  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "One readonly attribute, userContextId: the context of the lookup a completion callback belongs to.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/url-classifier/nsUrlClassifierDBService.cpp",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 4,
+  "removed": 0,
+  "hunks": 3,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "nsUrlClassifierHashCompleterBase and nsUrlClassifierDBService::Classify",
+  "evidence": [
+   "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+   "+  uint32_t mStealthUserContextId = mozilla::net::StealthCurrentLookupContext();  // STEALTH-HOOK(network/doh)",
+   "+NS_IMETHODIMP nsUrlClassifierHashCompleterBase::GetUserContextId(uint32_t* aId) { return mozilla::net::StealthLookupContextOut(mStealthUserContextId, aId); }  // STEALTH-HOOK(network/doh)"
+  ],
+  "notes": "Classify opens a lookup-context scope from the page's principal; the completion callback made inside it keeps that userContextId and answers it through userContextId (helpers in netwerk/ipc/StealthTRRContext).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "toolkit/components/url-classifier/tests/unit/xpcshell.toml",
+  "category": "other",
+  "feature": "doh-trr-context",
+  "prefs": [],
+  "added": 2,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "the xpcshell manifest of the url-classifier",
+  "evidence": [
+   "+[\"test_stealth_hashcompleter_context.js\"]  # STEALTH-HOOK(network/doh)",
+   "+"
+  ],
+  "notes": "Lists test_stealth_hashcompleter_context.js.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/base/TextInputProcessor.cpp",
+  "category": "other",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 7,
+  "removed": 0,
+  "hunks": 6,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "TextInputProcessor::Keydown/Keyup/CommitCompositionWith and KeydownInternal/KeyupInternal",
+  "evidence": [
+   "+#include \"StealthInputEventBirth.h\"  // STEALTH-HOOK(fingerprint/input/event-birth)",
+   "+  StealthKeyBirthScope stealthBirth(mStealthNextKeyLatencyMs);  // STEALTH-HOOK(fingerprint/input/event-birth)",
+   "+NS_IMETHODIMP TextInputProcessor::SetNextKeyLatency(double aLatencyMs) { return StealthSetNextKeyLatency(mStealthNextKeyLatencyMs, aLatencyMs, nsContentUtils::IsCallerChrome()); }  // STEALTH-HOOK(fingerprint/input/event-birth)"
+  ],
+  "notes": "A key is delivered at once and born the declared latency in the past: setNextKeyLatency (chrome only) declares it for the next key; a StealthKeyBirthScope opened right after the IsCallerChrome assert of each key method takes it (and zeroes it in every case); KeydownInternal/KeyupInternal stamp keyEvent.mTimeStamp with it (StealthInputEventBirth.h). It replaces the chrome setTimeout of PageAgent, which under load moved the delivery itself.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/base/TextInputProcessor.h",
+  "category": "other",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "class TextInputProcessor, members",
+  "evidence": [
+   "+  double mStealthNextKeyLatencyMs = 0;  // STEALTH-HOOK(fingerprint/input/event-birth)"
+  ],
+  "notes": "One member: the latency declared for the next key.",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
+  "file": "dom/interfaces/base/nsITextInputProcessor.idl",
+  "category": "other",
+  "feature": "input-event-birth",
+  "prefs": [],
+  "added": 1,
+  "removed": 0,
+  "hunks": 1,
+  "inline_logic_lines": 0,
+  "hookable": "movable",
+  "anchor": "nsITextInputProcessor",
+  "evidence": [
+   "+  void setNextKeyLatency(in double aLatencyMs);  // STEALTH-HOOK(fingerprint/input/event-birth)"
+  ],
+  "notes": "One method, setNextKeyLatency(double): the born-in-the-past time of the next key (the interface is chrome-only XPCOM, builtinclass, no WebIDL binding).",
+  "verifier": {
+   "changed": [],
+   "why": "Written from the diff against the tag."
+  }
+ },
+ {
   "file": "dom/media/webrtc/transport/ipc/WebrtcTCPSocket.cpp",
   "category": "other",
   "feature": "proxy-udp-egress",
   "prefs": [],
   "added": 17,
   "removed": 42,
-  "hunks": 5,
+  "hunks": 6,
   "inline_logic_lines": 9,
   "hookable": "movable",
   "anchor": "WebrtcTCPSocket::DoProxyConfigLookup and OpenWithHttpProxy (the channel of the proxy lookup and of the HTTP tunnel)",
@@ -6333,7 +6643,7 @@
    "+  // The channel of the lookup carries the load info of the document, as the one of the HTTP proxy tunnel does",
    "+  // (OpenWithHttpProxy): the proxy filters then see the context of the page, not the system principal's (context 0)."
   ],
-  "notes": "The channel of the proxy lookup of a PeerConnection's TCP socket (TURN over TCP) is made by StealthNewChannelOfLoadInfo, with the load info of the document: the proxy filters answer for the context of the page, not for the system principal's. The HTTP tunnel's own channel is made by the same function (the code it had is gone from here).",
+  "notes": "The channel of the proxy lookup of a PeerConnection's TCP socket (TURN over TCP) is made by StealthNewChannelOfLoadInfo, with the load info of the document: the proxy filters answer for the context of the page, not for the system principal's. The HTTP tunnel's own channel is made by the same function (the code it had is gone from here). In OpenWithoutHttpProxy one call of StealthTcpNameContext (network/doh, body in StealthIceResolverContext.cpp) gives the socket transport the origin attributes of the PeerConnection right after CreateTransport, so a TURN name over TCP is resolved in the context of the page.",
   "verifier": {
    "changed": [],
    "why": "Written from the diff against the tag."

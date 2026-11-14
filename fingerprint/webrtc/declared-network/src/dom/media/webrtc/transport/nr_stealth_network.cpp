@@ -14,6 +14,8 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
+#include "prerror.h"
+#include "prio.h"
 #include "prnetdb.h"
 
 // nICEr is C++: its headers are not wrapped in extern "C".
@@ -268,6 +270,20 @@ mozilla::Atomic<bool> sFailNextSocketAttachForTests{false};
 void mozilla::StealthFailNextSocketAttachForTests(bool aFail) { sFailNextSocketAttachForTests = aFail; }
 
 bool mozilla::StealthTakeFailNextSocketAttachForTests() { return sFailNextSocketAttachForTests.exchange(false); }
+
+namespace {
+mozilla::Atomic<int32_t> sFailNextBindForTests{0};
+}  // namespace
+
+void mozilla::StealthFailNextBindForTests(int32_t aError) { sFailNextBindForTests = aError; }
+
+bool mozilla::StealthBind(PRFileDesc* aFd, const PRNetAddr* aAddr) {
+  if (const int32_t injected = sFailNextBindForTests.exchange(0)) {
+    PR_SetError(injected, 0);
+    return false;
+  }
+  return PR_Bind(aFd, aAddr) == PR_SUCCESS;
+}
 
 bool mozilla::StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, PRNetAddr* aOut) {
   static LazyLogModule sLog("WebrtcTCPSocket");

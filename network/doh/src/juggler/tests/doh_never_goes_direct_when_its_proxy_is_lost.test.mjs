@@ -19,7 +19,7 @@ const read = rel => fs.readFileSync(path.join(TREE, rel), 'utf8');
 test('a failed proxy status ends the TRR request, a cancelled one goes on as upstream', () => {
   const text = read('netwerk/protocol/http/TRRServiceChannel.cpp');
   const body = text.slice(text.indexOf('TRRServiceChannel::OnProxyAvailable('));
-  const fail = body.indexOf('if (StealthTRRServiceFailClosed(this, status, mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)');
+  const fail = body.indexOf('if (StealthTRRServiceFailClosed(this, StealthTRRProxyAnswer(status, pi, true), mCanceled)) { return NS_OK; }  // STEALTH-HOOK(network/doh)');
   const used = body.indexOf('if (NS_SUCCEEDED(status)) mProxyInfo = pi;');
   assert.ok(fail > 0, 'no abort on a failed proxy status');
   assert.ok(used > fail, 'the status is used before it is checked');

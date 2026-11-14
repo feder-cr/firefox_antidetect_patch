@@ -8,6 +8,8 @@
 #include "nsDebug.h"
 #include "nsIChannel.h"
 #include "nsILoadInfo.h"
+#include "nsIPrincipal.h"
+#include "nsISocketTransport.h"
 #include "nsString.h"
 
 namespace mozilla::net {
@@ -63,6 +65,19 @@ nsresult StealthApplyTRRContextToChannel(
   return StealthApplyTRRContext(loadInfo, aContext);
 }
 
+void StealthKeepRequestContext(const OriginAttributes& aPage,
+                               OriginAttributes& aRequest) {
+  aRequest.mUserContextId = aPage.mUserContextId;
+}
+
+OriginAttributes StealthTransportContext(nsISocketTransport* aTransport) {
+  OriginAttributes attrs;
+  if (aTransport) {
+    (void)aTransport->GetOriginAttributes(&attrs);
+  }
+  return attrs;
+}
+
 nsresult StealthTRRProxyFailure(nsresult aProxyStatus) {
   if (aProxyStatus == NS_ERROR_ABORT || aProxyStatus == NS_BINDING_ABORTED) {
     return aProxyStatus;
@@ -74,6 +89,33 @@ bool StealthFailClosedOnProxyFailure(nsresult aProxyStatus,
                                      bool aIsTRRServiceChannel,
                                      bool aCanceled) {
   return NS_FAILED(aProxyStatus) && aIsTRRServiceChannel && !aCanceled;
+}
+
+// A plain thread-local: the scope is opened and the lookup callbacks are made
+// on the same (main) thread, and a thread that opened none reads 0.
+static thread_local uint32_t sStealthLookupContext =
+    kStealthDefaultUserContextId;
+
+uint32_t StealthCurrentLookupContext() { return sStealthLookupContext; }
+
+StealthLookupContextScope::StealthLookupContextScope(uint32_t aUserContextId)
+    : mPrevious(sStealthLookupContext) {
+  sStealthLookupContext = aUserContextId;
+}
+
+StealthLookupContextScope::StealthLookupContextScope(nsIPrincipal* aPrincipal)
+    : StealthLookupContextScope(
+          aPrincipal ? aPrincipal->OriginAttributesRef().mUserContextId
+                     : kStealthDefaultUserContextId) {}
+
+StealthLookupContextScope::~StealthLookupContextScope() {
+  sStealthLookupContext = mPrevious;
+}
+
+nsresult StealthLookupContextOut(uint32_t aContext, uint32_t* aOut) {
+  NS_ENSURE_ARG_POINTER(aOut);
+  *aOut = aContext;
+  return NS_OK;
 }
 
 }  // namespace mozilla::net

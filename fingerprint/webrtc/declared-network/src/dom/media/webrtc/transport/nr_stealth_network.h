@@ -82,6 +82,9 @@ int nr_stealth_addr_is_wildcard_ip(const struct nr_transport_addr_* addr);
 // NSPR's address union. Not <prnetdb.h>: this header is included by nICEr's C++ files, which are compiled without the NSPR
 // include path (run 43161344648: "prnetdb.h file not found" in ice_ctx.o and addrs.o); a file that uses the type includes it.
 union PRNetAddr;
+struct PRFileDesc;
+class nsISocketTransport;
+class nsIProxyInfo;
 
 namespace mozilla {
 
@@ -158,10 +161,41 @@ class StealthOwnPorts final {
  * parse as an address. `aNicerPort` is the port nICEr proposed, only logged (WebrtcTCPSocket log module). */
 bool StealthTcpBindAddress(const char* aDeclaredAddress, uint16_t aNicerPort, union PRNetAddr* aOut);
 
+namespace net {
+class WebrtcProxyConfig;
+}
+
+/* network/doh (defined in StealthIceResolverContext.cpp): the transport of a TCP socket of a PeerConnection looks its
+ * host name up in the browser context of that PeerConnection, as NrIceResolver does for the names of the UDP candidates.
+ * A TURN server given by name over TCP does not go through NrIceResolver in the process that gathers: the name reaches
+ * the socket transport, whose default attributes are those of the default context. Called right after the transport is
+ * created and before it is bound (a transport refuses its attributes once its socket exists). `aConfig` is the proxy
+ * config of the socket (it carries the load info of the PeerConnection), null when it has none: nothing is done. */
+void StealthTcpNameContext(nsISocketTransport* aTransport, const net::WebrtcProxyConfig* aConfig);
+
+/* network/proxy-udp (defined in StealthIceResolverContext.cpp): what WebrtcTCPSocket::OnProxyAvailable does when it has neither an HTTP proxy
+ * nor a SOCKS or direct proxy info to open with and would open the socket plain (DIRECT). A socket of a PeerConnection whose context has
+ * a proxy never goes out plain because a lookup failed or answered something it does not know: true = REFUSE (close the socket). The only
+ * answer that opens it plain is "no proxy" (the lookup succeeded and gave no info): that context has none. A socket with no proxy config
+ * is not a PeerConnection's: left as upstream has it. This is the decision UDP takes in PcUdpProxy::KindFor, for TCP. */
+bool StealthTcpDirectRefused(bool aHasProxyConfig, bool aLookupFailed, nsIProxyInfo* aInfo);
+
+/* The two things a plain TCP socket of a PeerConnection is given before it is bound, in one call: the context of its name lookup
+ * (StealthTcpNameContext) and the family of its bind address (StealthTcpBindAddress). False when the declared address does not parse. */
+bool StealthTcpSocketBorn(nsISocketTransport* aTransport, const net::WebrtcProxyConfig* aConfig, const char* aDeclaredAddress,
+                          uint16_t aNicerPort, union PRNetAddr* aOut);
+
 /* Tests only: the next NrSocket::create (once) finds the socket transport service refusing the socket, at the step just before a declared
  * host socket is registered as one of ours (R3). A create that fails there must leave nothing in the set of our ports. */
 void StealthFailNextSocketAttachForTests(bool aFail);
 bool StealthTakeFailNextSocketAttachForTests();
+
+/* The bind of NrSocket::create (R3: the wildcard of the candidate's family, on the candidate's port): PR_Bind, true when it bound. Tests
+ * only: StealthFailNextBindForTests(aError) makes the next one (once) fail with the NSPR error aError (e.g. PR_NO_ACCESS_RIGHTS_ERROR, which
+ * Windows answers for the ranges of the dynamic range it reserves and Linux for a privileged port), so the mapping of that answer is
+ * asserted on every machine, not only on one that happens to refuse a port. 0 = none. */
+bool StealthBind(struct PRFileDesc* aFd, const union PRNetAddr* aAddr);
+void StealthFailNextBindForTests(int32_t aError);
 
 }  // namespace mozilla
 

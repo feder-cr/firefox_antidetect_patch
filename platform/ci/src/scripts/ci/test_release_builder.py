@@ -121,11 +121,26 @@ def live_workflows() -> dict:
             for p in sorted((series_root() / ".github" / "workflows").glob("*.yml"))}
 
 
+def starts_from_pull_request(wf: dict, workflows: dict, seen: tuple = ()) -> bool:
+    """Whether a pull request, a comment or the like can start this workflow. A `workflow_run`
+    only counts when a workflow it names can itself be started that way (or is not one of ours):
+    it runs when that other run ends, and release.yml has no pull-request event."""
+    events = triggers(wf) & PR_EVENTS
+    if "workflow_run" in events:
+        on = wf.get(True, wf.get("on"))
+        named = on["workflow_run"].get("workflows") if isinstance(on, dict) and isinstance(on["workflow_run"], dict) else None
+        by_name = {w.get("name"): (n, w) for n, w in workflows.items()}
+        if named and all(x in by_name and by_name[x][0] not in seen and not starts_from_pull_request(by_name[x][1], workflows, seen + (by_name[x][0],))
+                         for x in named):
+            events = events - {"workflow_run"}
+    return bool(events)
+
+
 def jobs_of_pull_requests(workflows: dict) -> list:
     """Each job a pull request or a comment starts that does not name a hosted runner, literally."""
     found = []
     for name, wf in workflows.items():
-        if triggers(wf) & PR_EVENTS:
+        if starts_from_pull_request(wf, workflows, (name,)):
             for job_name, job in wf["jobs"].items():
                 runs_on = job.get("runs-on", "")
                 if "uses" in job or not isinstance(runs_on, str) or not HOSTED.match(runs_on):
@@ -215,7 +230,7 @@ def group_no_fallback(doc, jobs, build, steps) -> list:
     out.append(("no fallback: a node job that fails fails the run: nothing swallows it, and the build needs it, so the matrix does not run at all",
                 "continue-on-error" not in node and "node" in build["needs"] and "if" not in build))
     out.append(("node: a rerun of failed jobs turns nothing on: it could not run on it",
-                node["if"] == "needs.plan.outputs.attempt == github.run_attempt"))
+                node["if"] == "needs.plan.outputs.attempt == github.run_attempt && needs.plan.outputs.reuse_run_id == ''"))
     out.append(("no fallback: the node job's steps always run", not any("if" in s for s in node["steps"])))
     source = (HERE / "latitude_node.py").read_text(encoding="utf-8")
     out.append(("no fallback: nor does the re-launch ask for one", "builder" not in source.replace("test_release_builder", "")))
@@ -335,15 +350,22 @@ def group_pull_requests(doc, jobs, build, steps) -> list:
     live = live_workflows()
     out.append(("pull requests: the workflows read are those on the branches: series.yml, the only one with pull_request, and not the source tree's pr-handler.yml",
                 "series.yml" in live and "pull_request" in triggers(live["series.yml"]) and "pr-handler.yml" not in live
-                and [n for n, wf in live.items() if triggers(wf) & PR_EVENTS] == ["series.yml"]))
+                and [n for n, wf in live.items() if starts_from_pull_request(wf, live, (n,))] == ["series.yml"]))
     reachable = jobs_of_pull_requests(live)
     out.append(("pull requests: every job those start names a hosted runner, literally (%s)" % reachable, not reachable))
     out.append(("pull requests: the check sees a job on a label of ours",
                 jobs_of_pull_requests({"x.yml": {"on": ["pull_request"], "jobs": {"j": {"runs-on": "latitude-5-1-a"}}}}) == ["x.yml:j:latitude-5-1-a"]))
     out.append(("pull requests: release.yml starts by hand, on a push to main or by schedule (a candidate that keeps the cache warm); the sweeper and the workflows they call by hand or by schedule only",
                 triggers(doc) == {"workflow_dispatch", "push", "schedule"} and doc[True]["push"] == {"branches": ["main"], "paths-ignore": ["**.md"]}
-                and triggers(live["latitude-sweeper.yml"]) == {"schedule", "workflow_dispatch"}
+                and triggers(live["latitude-sweeper.yml"]) == {"schedule", "workflow_dispatch", "workflow_run"}
+                and live["latitude-sweeper.yml"][True]["workflow_run"] == {"workflows": [doc["name"]], "types": ["completed"]}
                 and triggers(live["gate.yml"]) <= {"workflow_call", "workflow_dispatch"} and triggers(live["publish.yml"]) == {"workflow_call"}))
+    # A workflow_run is only as safe as the run it follows: the sweeper after release.yml passes, one after a pull request's workflow (or an unknown one) does not.
+    after = lambda *names: {"on": {"workflow_run": {"workflows": list(names), "types": ["completed"]}}, "jobs": {}}
+    probe = {"r.yml": {"name": "r", "on": ["push"], "jobs": {}}, "p.yml": {"name": "p", "on": ["pull_request"], "jobs": {}}}
+    out.append(("pull requests: a workflow_run of a workflow no pull request starts is not a way in; of one a pull request starts, or of an unknown one, it is",
+                not starts_from_pull_request(after("r"), probe) and starts_from_pull_request(after("p"), probe)
+                and starts_from_pull_request(after("nobody"), probe) and starts_from_pull_request(after("r", "p"), probe)))
     with_label = []
     for name, wf in live.items():
         for job_name, job in wf["jobs"].items():

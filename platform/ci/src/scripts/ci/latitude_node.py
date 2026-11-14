@@ -80,6 +80,26 @@ UP_LIMIT_S = 900
 # Measured from a hosted runner to a node: 1440 and below carry everything. Kept lower, for paths not measured.
 PATH_MTU = 1200
 BOOTSTRAP_LIMIT_S = 1200
+# ONE deadline for provision(), from the create to the last runner online: the node job has 45 minutes (release.yml) and GitHub kills a job past them
+# without letting its script delete anything. wait_up (900), the bootstrap with its retries (900 + one attempt of up to 1200) and the runners (2 x 300) add
+# up to more; each phase gets what is left of these 40 minutes and a phase with nothing left fails, so the node is deleted by this script and the
+# job never reaches the kill.
+PROVISION_DEADLINE_S = 2400
+# When `off` is asked about a run whose node job did not succeed (a cancel or a kill, perhaps in the middle of the create), the first list of the API may be
+# empty a few seconds before a server it was asked to make appears in it: look again once, this long after.
+OFF_RECHECK_S = 45
+# A bootstrap that fails for the network (Ubuntu's archive or GitHub answering 502, 503, 504, a name not resolving, a download that stops) is asked
+# AGAIN on the same server, which is already paid for the hour: the other way is a new server for every run that is started again, and the
+# runs of 2026-11-04 and 2026-11-08 paid seven hours for 502 and 504 answers that ended minutes later. No new attempt starts once this many seconds
+# have gone since the first, and the node is deleted as before. A failure that is not the network (a missing package, a refused sha256 of our own
+# archive, an HTTP 4xx such as a deleted asset) is final at once: node_bootstrap.sh has already asked three times, from two addresses, before it says
+# an archive does not match its sha256, and a wrong pin would otherwise be asked again for fifteen minutes on a server paid by the hour.
+BOOTSTRAP_RETRY_CAP_S = 900
+BOOTSTRAP_RETRY_PAUSE_S = 60
+TRANSIENT = re.compile(r"Failed to fetch|Temporary failure|Could not resolve|Connection (?:reset|timed out|refused)|Operation timed out|Timeout was reached|"
+                       r"error: 5\d\d|returned error: 5\d\d|\b50[0-9] (?:Bad Gateway|Service Unavailable|Gateway Time-?out)|"
+                       r"Bad Gateway|Service Unavailable|Gateway Time-?out|curl: \((?:6|7|28|35|52|56)\)|"
+                       r"Network is unreachable|Undetermined Error", re.I)
 # How long a delete the API accepted may stay in its list before we stop looking.
 GONE_LIMIT_S = 180
 # How long the API may not answer while a node has to go off. A last call can start just
@@ -475,6 +495,16 @@ def script_bytes(name) -> bytes:
     return (HERE / name).read_bytes().replace(b"\r\n", b"\n")
 
 
+def remaining(deadline, clock):
+    """Seconds left until `deadline` (a time of `clock`, or None for no deadline); NodeError when there are none."""
+    if deadline is None:
+        return None
+    left = deadline - clock()
+    if left <= 0:
+        raise NodeError("the node was not ready within %d s of its creation: it is deleted, not waited for until the job is killed" % PROVISION_DEADLINE_S)
+    return left
+
+
 def wait_up(latitude, node_id, make_ssh, clock=time.monotonic, sleep=time.sleep, limit=UP_LIMIT_S):
     start = clock()
     last = "the API gives no address yet"
@@ -499,7 +529,7 @@ def wait_up(latitude, node_id, make_ssh, clock=time.monotonic, sleep=time.sleep,
 
 
 def turn_off(latitude, names, clock=time.monotonic, sleep=time.sleep, limit=GONE_LIMIT_S,
-             answer_limit=OFF_ANSWER_LIMIT_S) -> list:
+             answer_limit=OFF_ANSWER_LIMIT_S, recheck=0) -> list:
     """Delete the nodes of these names and see them gone, each whatever happens to the
     other. By name, so a node whose id nobody kept (a cancel during the create) goes too.
     The API's failures are asked again up to answer_limit, then NodeError naming what may
@@ -508,12 +538,19 @@ def turn_off(latitude, names, clock=time.monotonic, sleep=time.sleep, limit=GONE
     deleted, accepted, left = [], set(), set(names)
     start = clock()
     settled_at = None
+    rechecked = not recheck
     while True:
         problem = None
         try:
             mine = [n for n in latitude.nodes() if n.get("name") in names]
             left = {n.get("name") for n in mine}
             if not mine:
+                if not deleted and not rechecked:
+                    # `recheck` seconds, once: nothing listed yet is not nothing made (a create cut by a cancel can still be answered)
+                    rechecked = True
+                    say("nothing is listed under %s yet: looking again in %d s" % (", ".join(sorted(names)), recheck))
+                    sleep(recheck)
+                    continue
                 return deleted
         except NodeError as exc:
             problem, mine = exc, []
@@ -609,21 +646,45 @@ def prefetch_script(repository, tag, shared=SHARED) -> str:
             % {"shared": shlex.quote(shared), "m": shlex.quote(mirror), "r": shlex.quote(repository), "t": shlex.quote(tag)})
 
 
+def bootstrap(ssh, clock=time.monotonic, sleep=time.sleep, deadline=None):
+    """node_bootstrap.sh on the node, asked again for as long as the failure is the network's and BOOTSTRAP_RETRY_CAP_S has not gone by since the
+    first attempt (the script is made to be run again: it removes what it made and `id runner ||` its user). Returns its output; NodeError with
+    the last failure otherwise, and the caller deletes the node."""
+    start = clock()
+    attempts = 0
+    # no new attempt starts past this time: the cap since the first, or the deadline of provision() when that comes first
+    stop_at = start + BOOTSTRAP_RETRY_CAP_S if deadline is None else min(start + BOOTSTRAP_RETRY_CAP_S, deadline)
+    while True:
+        attempts += 1
+        left = remaining(deadline, clock)
+        code, out, err = ssh("bash -s", stdin=script_bytes("node_bootstrap.sh"), timeout=BOOTSTRAP_LIMIT_S if left is None else max(30, min(BOOTSTRAP_LIMIT_S, left)))
+        if code == 0:
+            if attempts > 1:
+                say("node_bootstrap.sh succeeded at attempt %d, %.0f s in" % (attempts, clock() - start))
+            return out
+        text = (err or out)[-600:]
+        transient = code == 255 or TRANSIENT.search(text) is not None
+        if not transient or clock() + BOOTSTRAP_RETRY_PAUSE_S >= stop_at:
+            raise NodeError("node_bootstrap.sh exited %d: %s%s" % (code, text, (" (after %d attempts in %.0f s)" % (attempts, clock() - start)) if attempts > 1 else ""))
+        say("::warning::node_bootstrap.sh exited %d at attempt %d, %.0f s in, the network's: asked again in %d s on the same node"
+            % (code, attempts, clock() - start, BOOTSTRAP_RETRY_PAUSE_S))
+        sleep(BOOTSTRAP_RETRY_PAUSE_S)
+
+
 def provision(latitude, github, run, attempt, make_ssh, make_key, clock=time.monotonic, sleep=time.sleep, upstream=None):
     """The run's node ready with one runner per leg online, or NodeError with the node off."""
     clear_leftovers(latitude, github, run, attempt)
     name = node_name(run, attempt)
     key = make_key()
     public_key = Path(str(key) + ".pub").read_text(encoding="utf-8").strip()
+    deadline = clock() + PROVISION_DEADLINE_S
     # The create inside the try: a lost answer can mean a node exists, and the
     # delete goes by name.
     try:
         node_id = latitude.create(name, public_key)
-        ssh = wait_up(latitude, node_id, make_ssh, clock, sleep)
+        ssh = wait_up(latitude, node_id, make_ssh, clock, sleep, limit=min(UP_LIMIT_S, remaining(deadline, clock)))
         drop_key_of(latitude, name)
-        code, out, err = ssh("bash -s", stdin=script_bytes("node_bootstrap.sh"), timeout=BOOTSTRAP_LIMIT_S)
-        if code != 0:
-            raise NodeError("node_bootstrap.sh exited %d: %s" % (code, (err or out)[-600:]))
+        out = bootstrap(ssh, clock, sleep, deadline=deadline)
         say(out.strip().splitlines()[-1] if out.strip() else "prepared")
         host_key = HOST_KEY_LINE.search(out)
         if not host_key:
@@ -640,8 +701,8 @@ def provision(latitude, github, run, attempt, make_ssh, make_key, clock=time.mon
         for leg in node_legs():
             start_runner(github, ssh, run, attempt, leg)
         for leg in node_legs():
-            wait_online(github, runner_name(run, attempt, leg), clock, sleep)
-    except Exception:
+            wait_online(github, runner_name(run, attempt, leg), clock, sleep, limit=min(RUNNER_ONLINE_LIMIT_S, remaining(deadline, clock)))
+    except BaseException:
         off_after_failure(latitude, github, run, attempt, clock, sleep)
         raise
 
@@ -1174,7 +1235,8 @@ def run_off(a) -> int:
         if not names:
             print("deleted: nothing, the node stays for the legs still on it")
         else:
-            print("deleted: %s" % (", ".join(names) if turn_off(latitude, names) else "nothing was on"))
+            # a node job that did not succeed (--if-legs-done absent) may have been cut in the middle of the create: look twice before "nothing was on"
+            print("deleted: %s" % (", ".join(names) if turn_off(latitude, names, recheck=0 if a.if_legs_done else OFF_RECHECK_S) else "nothing was on"))
     except NodeError as exc:
         # Red, because it may be billing and only a person reading this can know. Nothing
         # needs this job: the legs, the gate and the publish keep their own results.

@@ -13,8 +13,9 @@
 //     proxy made as the PeerConnection makes it) and looks at where its datagram goes, with the same socket under "no proxy" as the
 //     control (a laboratory in which a direct datagram does not arrive proves nothing).
 //   * the port: a port that another socket holds is R_ALREADY (the caller takes the next one, as the kernel would), never R_INTERNAL
-//     (REVIEW-63 #12). Where the system answers "access denied" for a privileged port (a user that is not root on Linux; Windows
-//     answers it for the ranges it reserves) that answer is the same, and it is asserted when the machine gives it.
+//     (REVIEW-63 #12). The answer "access denied" (a privileged port for a user that is not root on Linux; the ranges Windows
+//     reserves) is the same: it is injected at the bind (StealthFailNextBindForTests), so it is asserted on every machine, and the scan of
+//     the system's own refused port stays as a second test where the machine gives one.
 //
 // Pure behaviour: the NrSocket is the real one, on the socket thread, and the receiver is a plain NSPR socket.
 
@@ -206,6 +207,71 @@ TEST(StealthNrSocketBirth, APortAnotherSocketHoldsIsAlreadyAndTheNextOneIsBorn)
   PR_Close(holder);
 }
 
+// REVIEW-63 #12, on every machine: the system answers a bind with 'access denied' (PR_NO_ACCESS_RIGHTS_ERROR) and the socket is R_ALREADY, so the
+// caller (nr_socket_local_create) takes the next port. The answer is INJECTED at the bind of NrSocket::create (StealthFailNextBindForTests), because
+// a real one needs a machine that refuses a port (a user that is not root on Linux; a Windows with a reserved range): a runner with neither
+// asserted nothing. The scan of real ports below stays as the same check against the system's own answer, where the machine gives one.
+TEST(StealthNrSocketBirth, AnAccessDeniedBindIsAlreadyAndThePortAfterItIsBorn)
+{
+  PRFileDesc* first = PlainSocketOnAnyPort();
+  PRFileDesc* second = PlainSocketOnAnyPort();
+  const uint16_t deniedPort = PortOf(first);
+  const uint16_t nextPort = PortOf(second);
+  PR_Close(first);
+  PR_Close(second);  // two ports the system just gave and nobody holds
+
+  nr_transport_addr denied = UdpAddr("0.0.0.0", deniedPort);
+  nr_transport_addr next = UdpAddr("0.0.0.0", nextPort);
+  RefPtr<NrSocket> refused = new NrSocket();
+  RefPtr<NrSocket> born = new NrSocket();
+  int refusedResult = -1;
+  int bornResult = -1;
+  StealthFailNextBindForTests(PR_NO_ACCESS_RIGHTS_ERROR);
+  OnSocketThread([&] {
+    refusedResult = refused->create(&denied);
+    bornResult = born->create(&next);  // the refusal was for ONE bind: the next create binds for real
+  });
+  StealthFailNextBindForTests(0);
+  EXPECT_EQ(R_ALREADY, refusedResult) << "'access denied' on a bind is R_ALREADY (the caller takes the next port), not R_INTERNAL";
+  EXPECT_EQ(0, bornResult) << "the port after a refused one is taken as the kernel would, and the refusal is not kept for it";
+  if (bornResult == 0) {
+    OnSocketThread([&] { born->close(); });  // the refused one never was born: it is only released
+  }
+}
+
+// The mapping is specific: 'in use' is R_ALREADY too (the caller takes the next one), any other answer of a bind is a failure of the gather.
+TEST(StealthNrSocketBirth, OnlyAPortThatIsNotAvailableIsAlreadyAnyOtherBindFailureIsInternal)
+{
+  PRFileDesc* spare = PlainSocketOnAnyPort();
+  const uint16_t port = PortOf(spare);
+  PR_Close(spare);
+  nr_transport_addr addr = UdpAddr("0.0.0.0", port);
+  struct Case {
+    PRErrorCode error;
+    int expected;
+    const char* why;
+  };
+  const Case cases[] = {{PR_ADDRESS_IN_USE_ERROR, R_ALREADY, "a port another socket holds"},
+                        {PR_NO_ACCESS_RIGHTS_ERROR, R_ALREADY, "a port the system keeps from this user"},
+                        {PR_INVALID_ARGUMENT_ERROR, R_INTERNAL, "an error that is not about the port"}};
+  for (const Case& c : cases) {
+    RefPtr<NrSocket> nrSocket = new NrSocket();
+    int result = -1;
+    StealthFailNextBindForTests(c.error);
+    OnSocketThread([&] { result = nrSocket->create(&addr); });
+    StealthFailNextBindForTests(0);
+    EXPECT_EQ(c.expected, result) << c.why;
+  }
+  // The injection is spent: with none pending the same port binds.
+  RefPtr<NrSocket> control = new NrSocket();
+  int controlResult = -1;
+  OnSocketThread([&] { controlResult = control->create(&addr); });
+  EXPECT_EQ(0, controlResult) << "a bind failure was left pending for a create that asked for none";
+  if (controlResult == 0) {
+    OnSocketThread([&] { control->close(); });
+  }
+}
+
 TEST(StealthNrSocketBirth, APortTheSystemKeepsFromThisUserIsAlreadyToo)
 {
   // 'Access denied' on a bind: a privileged port where the user is not root (Linux), a range the system reserves (Windows keeps some of the
@@ -213,9 +279,11 @@ TEST(StealthNrSocketBirth, APortTheSystemKeepsFromThisUserIsAlreadyToo)
   // a Windows with no reserved range) there is no such answer to map and nothing is asserted.
   const uint16_t kept = PortThePlainBindOfThisUserIsDenied();
   if (kept == 0) {
-    GTEST_LOG_(INFO) << "no port is denied to this user on this machine (root, or no reserved range): nothing to map, nothing asserted";
+    // A fixed line, for the verdict of the candidate to read: whether the mapping of 'access denied' was asserted on this machine.
+    GTEST_LOG_(INFO) << "#12: nothing asserted, no refused port on this machine";
     return;
   }
+  GTEST_LOG_(INFO) << "#12: asserted on port " << kept;
   nr_transport_addr addr = UdpAddr("0.0.0.0", kept);
   RefPtr<NrSocket> nrSocket = new NrSocket();
   int result = -1;

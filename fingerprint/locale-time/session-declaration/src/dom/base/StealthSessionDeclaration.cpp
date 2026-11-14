@@ -6,18 +6,27 @@
 #include "mozilla/dom/StealthSessionDeclaration.h"
 
 #include "MainThreadUtils.h"
+#include "js/Realm.h"
 #include "js/RealmOptions.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/intl/StealthSessionPrefs.h"
 #include "mozilla/intl/TimeZone.h"
+#include "nsAtom.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIGlobalObject.h"
+#include "nsLanguageAtomService.h"
+#include "nsPresContext.h"
 #include "nsPIDOMWindow.h"
 #include "nsString.h"
+#include "nsTArray.h"
+#include "nsUnicharUtils.h"
 #include "nsXULAppAPI.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom {
 
@@ -99,12 +108,40 @@ void SeedDeclaredTimezoneAndLanguage(BrowsingContext* aContext) {
   }
 }
 
+// Document's friend (Document.h): the one door to its private recompute.
+class StealthDocumentAccess {
+ public:
+  static void RecomputeLanguage(Document* aDocument) {
+    nsAtom* before = aDocument->mLanguageFromCharset;
+    aDocument->RecomputeLanguageFromCharset();
+    if (aDocument->mLanguageFromCharset != before) {
+      // As a change of charset does: the fonts chosen for the old language
+      // and the style computed with it are stale. The first container of a
+      // document has no PresContext yet: nothing to flush.
+      if (nsPresContext* presContext = aDocument->GetPresContext()) {
+        presContext->DocumentCharSetChanged(aDocument->mCharacterSet);
+      }
+    }
+  }
+};
+
+void RefreshDocumentLanguage(Document* aDocument) {
+  StealthDocumentAccess::RecomputeLanguage(aDocument);
+}
+
 void SetRealmDeclaredLocale(JS::Realm* aRealm, const nsACString& aLanguage) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!aLanguage.IsEmpty());
   nsAutoCString tag;
   intl::PrimaryLanguageTag(aLanguage, tag);
   JS::SetRealmLocaleOverride(aRealm, tag.get());
+  // The document of this window caches the language of its text with no
+  // `lang`: it follows its context when the context's language changes.
+  if (nsGlobalWindowInner* window = xpc::WindowOrNull(JS::GetRealmGlobalOrNull(aRealm))) {
+    if (Document* document = window->GetExtantDoc()) {
+      RefreshDocumentLanguage(document);
+    }
+  }
 }
 
 void SetDeclaredRealmTimeAndLanguage(JS::RealmOptions& aOptions,
@@ -122,6 +159,15 @@ void SetDeclaredRealmTimeAndLanguage(JS::RealmOptions& aOptions,
     nsAutoCString tag;
     intl::PrimaryLanguageTag(aLanguage, tag);
     aOptions.behaviors().setLocaleOverride(tag.get());
+  }
+  if (!NS_IsMainThread()) {
+    // This worker thread's text; empty clears it, for a thread that is given a
+    // second realm with no declaration (a worklet's).
+    if (aLocaleEnUS) {
+      intl::SetWorkerLocaleLanguage(EmptyCString());
+    } else {
+      intl::SetWorkerLocaleLanguage(aLanguage);
+    }
   }
 }
 
@@ -161,6 +207,52 @@ void ExplodeLocalTime(PRTime aTime, const Document* aDocument,
                  aExploded);
   aExploded->tm_params.tp_gmt_offset = (offsetMs - dstMs) / 1000;
   aExploded->tm_params.tp_dst_offset = dstMs / 1000;
+}
+
+nsAtom* ChooseCharsetLanguage(nsAtom* aFromCharset, nsAtom* aProcessLanguage,
+                              nsAtom* aDeclared) {
+  return aDeclared && aFromCharset == aProcessLanguage ? aDeclared
+                                                       : aFromCharset;
+}
+
+nsAtom* InternedLanguage(const nsACString& aDeclared) {
+  MOZ_ASSERT(NS_IsMainThread());
+  // The last answer: the same list is asked for at every style resolution.
+  static nsCString* sLastDeclared = new nsCString();  // never freed, like the atoms
+  static nsAtom* sLastAtom = nullptr;
+  if (sLastAtom && aDeclared.Equals(*sLastDeclared)) {
+    return sLastAtom;
+  }
+  nsAutoCString tag;
+  intl::PrimaryLanguageTag(aDeclared, tag);
+  if (tag.IsEmpty()) {
+    return nullptr;
+  }
+  ToLowerCase(tag);  // use lowercase for all language atoms
+  // Kept for the life of the process, as the contract says: a Document holds
+  // the pointer without owning it, and one can outlive XPCOM shutdown's
+  // clearing of any static. A handful of tags at most (one per language a
+  // session declares). Reachable, never freed.
+  static nsTArray<RefPtr<nsAtom>>* sKept = new nsTArray<RefPtr<nsAtom>>();
+  RefPtr<nsAtom> atom = NS_Atomize(tag);
+  if (!sKept->Contains(atom)) {
+    sKept->AppendElement(atom);
+  }
+  *sLastDeclared = aDeclared;
+  sLastAtom = atom;
+  return atom;
+}
+
+nsAtom* DocumentCharsetLanguage(const Document* aDocument,
+                                nsAtom* aFromCharset) {
+  nsAtom* process = nsLanguageAtomService::GetService()->GetLocaleLanguage();
+  if (aFromCharset != process) {
+    return aFromCharset;  // an encoding with a language of its own
+  }
+  nsAutoCString declared;
+  GetDeclaredLanguage(aDocument, declared);
+  return ChooseCharsetLanguage(aFromCharset, process,
+                               InternedLanguage(declared));
 }
 
 }  // namespace mozilla::dom

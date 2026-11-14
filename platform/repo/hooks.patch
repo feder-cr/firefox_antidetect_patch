@@ -90,13 +90,13 @@ index 43c994c2d3617f947bcb5adf1933e21dabe46bb5..b7eeef163e7f0b92c5ece27f620f341f
 +**Ogni modifica al sorgente aggiorna quei documenti nello stesso lavoro.** Le
 +regole di comportamento complete stanno in `c:/src/firefox-stealth/CLAUDE.md`.
 diff --git a/README.md b/README.md
-index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf532944611c87c5e 100644
+index 01457dc06666d6bfe4882d75cd4ba093cea7b120..6111be2e7629ebcc683fd2bd65f59a8be2a79524 100644
 --- a/README.md
 +++ b/README.md
-@@ -1,3 +1,102 @@
+@@ -1,3 +1,94 @@
 +# firefox_antidetect_patch
 +
-+[![browser launches](https://raw.githubusercontent.com/feder-cr/invisible_playwright/badges/docs/badges/launches.svg)](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
++[![browser launches](https://raw.githubusercontent.com/oss-invisible/playwright/badges/docs/badges/launches.svg)](https://github.com/oss-invisible/firefox_antidetect_patch/releases/tag/usage-counter)
 +
 +Firefox, patched at the C++ source level so the browser fingerprint is produced by the
 +engine instead of being injected into the page. This repository holds the patched
@@ -105,7 +105,7 @@ index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf5329446
 +It is the engine behind two projects, and most people want one of those instead of
 +this repository:
 +
-+- **[invisible_playwright](https://github.com/feder-cr/invisible_playwright)**, a
++- **[invisible_playwright](https://github.com/oss-invisible/playwright)**, a
 +  Python wrapper that drives it through the standard Playwright API.
 +- **[invisible_firefox](https://github.com/feder-cr/invisible_firefox)**, a profile
 +  manager for running many identities from one desktop app.
@@ -123,18 +123,17 @@ index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf5329446
 +instead of hiding it.
 +
 +The surfaces set from source: navigator and the user agent,
-+[screen geometry](https://github.com/feder-cr/invisible_playwright/blob/main/docs/screen-size-headless-tells.md),
-+[WebGL vendor and renderer strings](https://github.com/feder-cr/invisible_playwright/blob/main/docs/webgl-renderer-strings.md)
-+with [their numeric limits](https://github.com/feder-cr/invisible_playwright/blob/main/docs/webgl-parameters-are-identical.md),
-+canvas pixel output, [the font set](https://github.com/feder-cr/invisible_playwright/blob/main/docs/bundled-fonts-cross-platform.md),
-+[the audio pipeline](https://github.com/feder-cr/invisible_playwright/blob/main/docs/audiocontext-fingerprinting.md),
-+[WebRTC ICE candidates](https://github.com/feder-cr/invisible_playwright/blob/main/docs/webrtc-ice-candidate-spoofing.md),
++[screen geometry](https://github.com/oss-invisible/playwright/blob/main/docs/screen-size-headless-tells.md),
++[WebGL vendor and renderer strings](https://github.com/oss-invisible/playwright/blob/main/docs/webgl-renderer-strings.md)
++with [their numeric limits](https://github.com/oss-invisible/playwright/blob/main/docs/webgl-parameters-are-identical.md),
++canvas pixel output, [the font set](https://github.com/oss-invisible/playwright/blob/main/docs/bundled-fonts-cross-platform.md),
++[the audio pipeline](https://github.com/oss-invisible/playwright/blob/main/docs/audiocontext-fingerprinting.md),
++[WebRTC ICE candidates](https://github.com/oss-invisible/playwright/blob/main/docs/webrtc-ice-candidate-spoofing.md),
 +timezone, locale, and the proxy path.
 +
 +Every value arrives through a preference, so nothing is hardcoded in C++ and one seed
 +reproduces one machine. What each of those surfaces reveals, and what it costs to get
-+right, is written up one at a time at
-+**[feder-cr.github.io/invisible_playwright](https://feder-cr.github.io/invisible_playwright/)**.
++right, is written up one at a time in the pages linked above.
 +
 +## Pointer input and page zoom
 +
@@ -148,7 +147,7 @@ index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf5329446
 +## Anonymous launch counter
 +
 +This build issues a single HTTPS GET to a public asset on
-+[feder-cr/invisible_firefox](https://github.com/feder-cr/invisible_firefox/releases/tag/usage-counter)
++[oss-invisible/firefox_antidetect_patch](https://github.com/oss-invisible/firefox_antidetect_patch/releases/tag/usage-counter)
 +every time the browser process starts. That asset's `download_count` is the global
 +launch counter in the badge above, which also carries the 1,162,836 launches counted
 +before 2026-07-22 (the asset was hosted elsewhere until then, and its count cannot be
@@ -156,7 +155,7 @@ index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf5329446
 +
 +What is sent:
 +
-+- One `GET https://github.com/feder-cr/invisible_firefox/releases/download/usage-counter/launch.txt`
++- One `GET https://github.com/oss-invisible/firefox_antidetect_patch/releases/download/usage-counter/launch.txt`
 +- A standard Firefox User-Agent. No identifiers, no payload, no cookies.
 +
 +When it fires:
@@ -165,16 +164,9 @@ index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf5329446
 +  request from a page context.
 +- Fire and forget. Errors are swallowed and the browser never blocks on the network.
 +
-+How to turn it off:
-+
-+- **Per session**, set `invisible_firefox.usage_ping.enabled` to `false` in
-+  `about:config`, or pass
-+  `extra_prefs={"invisible_firefox.usage_ping.enabled": False}` to
-+  `InvisiblePlaywright()`.
-+- **Permanently**, remove the `STEALTHFOX: anonymous launch counter` block in
-+  [`browser/components/BrowserGlue.sys.mjs`](browser/components/BrowserGlue.sys.mjs)
-+  and the matching preference in
-+  [`browser/app/profile/firefox.js`](browser/app/profile/firefox.js), then rebuild.
++It is not optional: the request is made at every start, to this address, and nothing
++in the package or in a setting skips it or moves it. The address is a constant in
++[`browser/components/StealthLaunchCounter.sys.mjs`](browser/components/StealthLaunchCounter.sys.mjs).
 +
 +Why it exists: the build is given away, and archive download counts both undercount
 +and overcount, because caches and mirrors hide real installs while CI re-pulls inflate
@@ -196,7 +188,7 @@ index 01457dc06666d6bfe4882d75cd4ba093cea7b120..769c8189e4518a58c29ecdeaf5329446
  ![Firefox Browser](./docs/readme/readme-banner.svg)
  
  [Firefox](https://firefox.com/) is a fast, reliable and private web browser from the non-profit [Mozilla organization](https://mozilla.org/).
-@@ -6,12 +105,12 @@
+@@ -6,12 +97,12 @@
  
  To learn how to contribute to Firefox read the [Firefox Contributors' Quick Reference document](https://firefox-source-docs.mozilla.org/contributing/contribution_quickref.html).
  

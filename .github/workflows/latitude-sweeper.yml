@@ -15,6 +15,11 @@ name: latitude-sweeper
 on:
   schedule:
     - cron: '7,37 * * * *'
+  # Right after a release run ends, whichever way (done, failed, cancelled): what its stop-node left on is not left for the next half hour.
+  # The sweeper deletes only nodes no run needs, so a run still going is spared.
+  workflow_run:
+    workflows: [release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:

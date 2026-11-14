@@ -57,7 +57,7 @@ const newProxyInfoFor = proxy => {
 const proxyForHost = (record, host) =>
   !record || record.bypass.some(suffix => host.endsWith(suffix)) ? null : record;
 
-const modules = { Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {} };
+const modules = { Helper, newProxyInfoFor, proxyForHost, syncTrrPrefs() {}, GoneContexts: { recordFor: () => null } };
 
 const { TargetRegistry } = load('TargetRegistry.js', {
   Ci, Cc: {}, Components: { results: Cr },

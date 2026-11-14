@@ -929,30 +929,42 @@ export class PageAgent {
       repeat,
       keyCode
     });
-    // Stealthfox [B299]: the event is born above, and handed over `latency`
-    // ms later, as an input event is born in the system before a page's
-    // handler runs. TextInputProcessor keeps the time the event was born
-    // with (KeydownInternal copies it, TextEventDispatcher assigns it), so
-    // the page reads a `timeStamp` that many ms below its `performance.now()`;
-    // born and handed over in one go they were equal, and a tracker that keeps
-    // only events from the past dropped them. The chrome timer, not the
-    // page's.
-    if (latency > 0)
-      await new Promise(f => setTimeout(f, latency));
-    if (type === 'keydown') {
-      if (text && text !== key) {
-        tip.commitCompositionWith(text, keyEvent);
-      } else {
+    // Stealthfox [B299]: the event is delivered at once and is BORN `latency`
+    // ms in the past, as an input event is born in the system before a
+    // page's handler runs: the page reads a `timeStamp` that many ms below
+    // its `performance.now()` (born and handed over in one go they were
+    // equal, and a tracker that keeps only events from the past dropped
+    // them). The born-in-the-past time is set inside the text input
+    // processor (chrome only: setNextKeyLatency, taken by the next key), not
+    // by a timer: a timer in this process moved the delivery itself, and
+    // under load the page saw gaps and dwells of the timer, not of the
+    // declared timing.
+    const born = latency > 0 ? latency : 0;
+    // The latency is declared for the one key below; the finally takes it
+    // back in every case (a throw before the key reaches the processor, an
+    // unknown type), so no later key is born in the past by a latency it was
+    // never given. No timer, no await.
+    try {
+      if (type === 'keydown') {
+        if (text && text !== key) {
+          tip.setNextKeyLatency(born);
+          tip.commitCompositionWith(text, keyEvent);
+        } else {
+          const flags = 0;
+          tip.setNextKeyLatency(born);
+          tip.keydown(keyEvent, flags);
+        }
+      } else if (type === 'keyup') {
+        if (text)
+          throw new Error(`keyup does not support text option`);
         const flags = 0;
-        tip.keydown(keyEvent, flags);
+        tip.setNextKeyLatency(born);
+        tip.keyup(keyEvent, flags);
+      } else {
+        throw new Error(`Unknown type ${type}`);
       }
-    } else if (type === 'keyup') {
-      if (text)
-        throw new Error(`keyup does not support text option`);
-      const flags = 0;
-      tip.keyup(keyEvent, flags);
-    } else {
-      throw new Error(`Unknown type ${type}`);
+    } finally {
+      tip.setNextKeyLatency(0);
     }
   }
 

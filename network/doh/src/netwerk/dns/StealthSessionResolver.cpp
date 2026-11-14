@@ -7,8 +7,11 @@
 #include "TRRService.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/net/StealthTRRContext.h"
 #include "nsCOMPtr.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsILoadInfo.h"
+#include "nsIProxyInfo.h"
 #include "nsIRequest.h"
 #include "nsIStandardURL.h"
 #include "nsIURIMutator.h"
@@ -114,6 +117,45 @@ nsIDNSService::DNSFlags StealthFlagsFollowSession(
   return StealthResolverFlags(
       aFlags, StealthContextHasProxy(aAttrs.mUserContextId, contexts),
       hostIsTRRServer);
+}
+
+bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, uint32_t aUserContextId,
+                             const nsACString& aContextsWithProxy) {
+  return aIsTRRServiceChannel ||
+         StealthContextHasProxy(aUserContextId, aContextsWithProxy);
+}
+
+bool StealthProxyIsMandatory(bool aIsTRRServiceChannel, nsILoadInfo* aLoadInfo) {
+  if (aIsTRRServiceChannel) {
+    return true;
+  }
+  nsAutoCString contexts;
+  {
+    auto declared = StaticPrefs::network_trr_stealth_contexts();
+    contexts = *declared;
+  }
+  // A load info is always there for a channel; a missing one is the default
+  // context, which the list answers for ("*" or "0").
+  return StealthProxyIsMandatory(
+      false, aLoadInfo ? aLoadInfo->GetOriginAttributes().mUserContextId : 0,
+      contexts);
+}
+
+bool StealthTRRProxyAnswerRefused(nsIProxyInfo* aProxyInfo) {
+  if (!aProxyInfo) {
+    return true;
+  }
+  nsAutoCString type;
+  return NS_FAILED(aProxyInfo->GetType(type)) || type.EqualsLiteral("direct");
+}
+
+nsresult StealthTRRProxyAnswer(nsresult aStatus, nsIProxyInfo* aProxyInfo,
+                               bool aIsTRRServiceChannel) {
+  if (NS_SUCCEEDED(aStatus) && aIsTRRServiceChannel &&
+      StealthTRRProxyAnswerRefused(aProxyInfo)) {
+    return NS_ERROR_PROXY_CONNECTION_REFUSED;
+  }
+  return aStatus;
 }
 
 }  // namespace mozilla::net

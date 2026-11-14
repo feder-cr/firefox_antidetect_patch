@@ -1,12 +1,16 @@
 {
  "modified": [
-  "dom/base/moz.build"
+  "dom/base/moz.build",
+  "intl/locale/OSPreferences.cpp",
+  "intl/locale/tests/gtest/moz.build"
  ],
  "added": {
   "dom/base/StealthSessionDeclaration.cpp": "100644",
   "dom/base/StealthSessionDeclaration.h": "100644",
+  "dom/base/test/gtest/TestStealthDocumentLanguage.cpp": "100644",
   "intl/locale/StealthSessionPrefs.cpp": "100644",
-  "intl/locale/StealthSessionPrefs.h": "100644"
+  "intl/locale/StealthSessionPrefs.h": "100644",
+  "intl/locale/tests/gtest/TestStealthSystemLocales.cpp": "100644"
  },
  "inventory": [
   {
@@ -30,6 +34,45 @@
      "notes"
     ],
     "why": "Unchecked registration of StealthDeclarationGate resolved."
+   }
+  },
+  {
+   "file": "intl/locale/OSPreferences.cpp",
+   "category": "spoof",
+   "feature": "session-declaration",
+   "prefs": [],
+   "added": 5,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 2,
+   "hookable": "already-hook",
+   "anchor": "include list; OSPreferences::GetSystemLocales and GetSystemLocale, first line of each",
+   "evidence": [
+    "+  if (SessionSystemLocales(aRetVal)) return NS_OK;",
+    "+  if (SessionSystemLocale(aRetVal)) return NS_OK;"
+   ],
+   "notes": "The languages of the machine (what the OS preferences say) are the session declaration: both getters first ask SessionSystemLocales / SessionSystemLocale (intl/locale/StealthSessionPrefs.cpp, ours) and return its answer when a declaration is set. Two calls at the head of two functions plus the include; no logic inline.",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff."
+   }
+  },
+  {
+   "file": "intl/locale/tests/gtest/moz.build",
+   "category": "build",
+   "feature": "session-declaration",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "already-hook",
+   "anchor": "UNIFIED_SOURCES after the list of Mozilla tests",
+   "evidence": [],
+   "notes": "Hook registering our own gtest (TestStealthSystemLocales.cpp).",
+   "verifier": {
+    "changed": [],
+    "why": "Checked against the diff."
    }
   }
  ]

@@ -518,7 +518,7 @@ def run_off_with(answers, if_legs_done=True, nodes=t.NODE_MARK, api=None, runner
     real_turn_off = t.turn_off
     t.from_env = lambda: t.Latitude(PROJECT, KEY, api, clock.sleep)
     t.github_from_env = lambda: t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
-    t.turn_off = lambda latitude, names: real_turn_off(latitude, names, clock, clock.sleep)
+    t.turn_off = lambda latitude, names, recheck=0: real_turn_off(latitude, names, clock, clock.sleep, recheck=recheck)
     before = os.environ.get("RUNNER_ADMIN_TOKEN")
     os.environ["RUNNER_ADMIN_TOKEN"] = "ADMIN"
     printed = io.StringIO()
@@ -1264,7 +1264,7 @@ def group_node_deps():
     sha = re.search(r"^NODE_DEPS_SHA256=([0-9a-f]{64})$", bootstrap, re.M)
     out.append(("node deps: the archive is named and pinned by sha256, and its URL is this repository's release asset, through the API",
                 bool(name and sha) and re.search(r"^NODE_DEPS_ASSET=[0-9]+$", bootstrap, re.M) is not None
-                and "https://api.github.com/repos/feder-cr/firefox_antidetect_patch/releases/assets/$NODE_DEPS_ASSET" in bootstrap))
+                and "https://api.github.com/repos/oss-invisible/firefox_antidetect_patch/releases/assets/$NODE_DEPS_ASSET" in bootstrap))
     fetch = bootstrap.split("fetch() {", 1)[1].split(chr(10) + "}", 1)[0]
     out.append(("node deps: every GitHub release file comes through the API by asset id first, asked for its bytes, and the direct address second, in rounds (2026-11-08: releases/download answered 504 for hours, the API now and then, two candidates lost their node)",
                 re.search(r"^RUNNER_ASSET=[0-9]+$", bootstrap, re.M) is not None
@@ -1646,7 +1646,7 @@ def run_step(step, answers, nodes=t.NODE_MARK, answering=False, wrap_provision=N
     t.watch = lambda *args, **kwargs: real_watch(*args, probe=lambda h, p: answering, clock=lambda: NOW + clock.now, sleep=clock.sleep, **kwargs)
     t.from_env = lambda: fast(real_latitude())
     t.github_from_env = lambda: fast(real_github())
-    t.turn_off = lambda latitude, names, *rest: real_turn_off(latitude, names, clock, clock.sleep) if not rest else real_turn_off(latitude, names, *rest)
+    t.turn_off = lambda latitude, names, *rest, recheck=0: real_turn_off(latitude, names, clock, clock.sleep, recheck=recheck) if not rest else real_turn_off(latitude, names, *rest, recheck=recheck)
     t.urllib.request.urlopen = urlopen
     if wrap_provision:
         t.provision = wrap_provision
@@ -2133,11 +2133,207 @@ def host_key_section(serves):
             victim.wait()
 
 
+class BootstrapSsh(FakeSsh):
+    """A node whose bootstrap answers from a script, one answer per attempt (the last one stays), and counts them."""
+
+    def __init__(self, answers):
+        super().__init__()
+        self.script = list(answers)
+        self.bootstraps = 0
+
+    def __call__(self, command, stdin=None, timeout=60):
+        if command == "bash -s" and stdin and b"node_bootstrap" in stdin:
+            self.calls.append((command, stdin))
+            answer = self.script[min(self.bootstraps, len(self.script) - 1)]
+            self.bootstraps += 1
+            return answer
+        return super().__call__(command, stdin, timeout)
+
+
+def provisioned_timed(api, gh, ssh):
+    """provision() of the run's node: (error text or '', the simulated seconds it took)."""
+    clock = Clock()
+    latitude = t.Latitude(PROJECT, KEY, api, clock.sleep)
+    github = t.GitHub("o/r", "TOKEN", "ADMIN", gh, clock.sleep)
+    with tempfile.TemporaryDirectory() as tmp:
+        key = Path(tmp) / "node_key"
+        key.write_text("private", encoding="utf-8")
+        Path(str(key) + ".pub").write_text("ssh-ed25519 AAAA ci-node\n", encoding="utf-8")
+        before = clock.now
+        try:
+            quiet(t.provision, latitude, github, 5, 1, lambda host, port: ssh, lambda: key, clock, clock.sleep)
+            return "", clock.now - before
+        except t.NodeError as exc:
+            return str(exc), clock.now - before
+
+
+def group_bootstrap_retry():
+    """A bootstrap that fails for the network is asked again on the SAME server (the hour is paid), up to BOOTSTRAP_RETRY_CAP_S; any other
+    failure is final at once. Runs of 2026-11-04 and 2026-11-08 deleted a server and paid a new hour for each 502 or 504."""
+    out = []
+    bad_gateway = (100, "", "E: Failed to fetch http://snapshot.ubuntu.com/ubuntu/dists/noble/InRelease  502  Bad Gateway [IP: 185.125.189.37 443]")
+    unavailable = (100, "", "E: Failed to fetch http://snapshot.ubuntu.com/ubuntu/x/Packages  503  Service Unavailable")
+    gateway_504 = (22, "", "curl: (22) The requested URL returned error: 504")
+    good = (0, BOOTSTRAPPED, "")
+
+    api, gh = FakeLatitude(), FakeGitHub()
+    ssh = BootstrapSsh([bad_gateway, unavailable, gateway_504, good])
+    error, seconds = provisioned_timed(api, gh, ssh)
+    out.append(("retry: three answers of the network and then the bootstrap goes through: the node is NOT deleted and no second one is ordered",
+                error == "" and ssh.bootstraps == 4 and api.deleted == [] and len(api.created) == 1 and len(gh.jits) == len(t.node_legs())))
+    out.append(("retry: it waits between attempts, one pause each", seconds >= 3 * t.BOOTSTRAP_RETRY_PAUSE_S))
+    out.append(("retry: the host key is read from the attempt that went through",
+                any(call == ("pin", HOST_KEY) for call in ssh.calls)))
+
+    api, gh = FakeLatitude(), FakeGitHub()
+    ssh = BootstrapSsh([(1, "", "node_bootstrap: ERROR: missing: git")])
+    error, seconds = provisioned_timed(api, gh, ssh)
+    out.append(("retry: a failure that is not the network's is final at the first attempt: deleted, one attempt, no waiting",
+                "missing: git" in error and ssh.bootstraps == 1 and api.deleted == ["dpl_x"] and "attempts" not in error
+                and seconds < t.BOOTSTRAP_RETRY_PAUSE_S))
+
+    api, gh = FakeLatitude(), FakeGitHub()
+    ssh = BootstrapSsh([bad_gateway])
+    error, seconds = provisioned_timed(api, gh, ssh)
+    attempts = ssh.bootstraps
+    out.append(("retry: the network never comes back: it stops at the cap, with the last failure and the number of attempts, and the node is deleted",
+                api.deleted == ["dpl_x"] and "502" in error and ("after %d attempts" % attempts) in error and gh.jits == []))
+    out.append(("retry: no new attempt starts once the cap has gone by",
+                (attempts - 1) * t.BOOTSTRAP_RETRY_PAUSE_S < t.BOOTSTRAP_RETRY_CAP_S <= attempts * t.BOOTSTRAP_RETRY_PAUSE_S
+                and t.BOOTSTRAP_RETRY_CAP_S == 900))
+
+    api, gh = FakeLatitude(), FakeGitHub()
+    ssh = BootstrapSsh([(255, "", "ssh: connect to host x port 22: Connection reset by peer"), good])
+    error, seconds = provisioned_timed(api, gh, ssh)
+    out.append(("retry: a lost ssh connection (255) is asked again", error == "" and ssh.bootstraps == 2 and api.deleted == []))
+
+    texts = ["E: Failed to fetch http://x  502  Bad Gateway", "curl: (22) The requested URL returned error: 504", "Temporary failure in name resolution",
+             "Could not resolve host: api.github.com", "E: Failed to fetch  503  Service Unavailable", "curl: (28) Operation timed out after 30001 ms",
+             "curl: (28) Connection timed out after 30000 milliseconds", "curl: (56) Recv failure: Connection reset by peer"]
+    out.append(("retry: what is the network's", all(t.TRANSIENT.search(x) for x in texts)))
+    texts = ["node_bootstrap: x does not match its sha256, from any address, in 3 rounds", "curl: (22) The requested URL returned error: 404",
+             "node_bootstrap: x failed or did not match its sha256 (round 3)", "the build step timed out waiting for a lock"]
+    out.append(("retry: a refused sha256 (asked 3 times from 2 addresses already), an HTTP 404 and a bare 'timed out' of ours are final, not the network's",
+                not any(t.TRANSIENT.search(x) for x in texts)))
+    bootstrap = (HERE / "node_bootstrap.sh").read_text(encoding="utf-8")
+    out.append(("retry: the bootstrap takes a lock on the node, so a second run (after a lost ssh) waits for the first instead of running over it",
+                "exec 9>/run/node_bootstrap.lock" in bootstrap and "flock -w 1500 9" in bootstrap and bootstrap.index("flock") < bootstrap.index("NODE_DEPS=")))
+    texts = ["node_bootstrap: ERROR: missing: git", "node_bootstrap: ERROR: run it as root", "E: Unable to locate package nothere", "syntax error near unexpected token"]
+    out.append(("retry: what is not", not any(t.TRANSIENT.search(x) for x in texts)))
+    return out
+
+
+def group_node_hardening():
+    """Three things that keep a node from staying on when a run is cut: a second look in `off` for a node job that did not succeed, a deadline
+    of provision() shorter than the node job's own, and a sweeper that runs when a release run ends."""
+    out = []
+
+    class Listing:
+        """A latitude whose list shows the node only from the Nth look on (a create cut by a cancel, answered a few seconds later)."""
+
+        def __init__(self, shows_from):
+            self.shows_from, self.looks, self.deleted = shows_from, 0, []
+
+        def nodes(self):
+            self.looks += 1
+            return [{"id": "dpl_late", "name": "ci5a1x"}] if self.looks >= self.shows_from and not self.deleted else []
+
+        def delete(self, node_id):
+            self.deleted.append(node_id)
+
+    clock = Clock()
+    late = Listing(2)
+    gone = quiet(t.turn_off, late, {"ci5a1x"}, clock, clock.sleep, recheck=t.OFF_RECHECK_S)[0]
+    out.append(("off: a node job that did not succeed looks a second time before it says nothing was on: a server listed a moment later is deleted",
+                gone == ["dpl_late"] and late.deleted == ["dpl_late"] and clock.now >= t.OFF_RECHECK_S))
+    clock = Clock()
+    late = Listing(2)
+    gone = quiet(t.turn_off, late, {"ci5a1x"}, clock, clock.sleep)[0]
+    out.append(("off: the ordinary call (the legs finished) looks once, as before: nothing listed is nothing on, no waiting",
+                gone == [] and late.looks == 1 and clock.now == 0))
+    clock = Clock()
+    never = Listing(10 ** 6)
+    gone = quiet(t.turn_off, never, {"ci5a1x"}, clock, clock.sleep, recheck=t.OFF_RECHECK_S)[0]
+    out.append(("off: nothing the second time either: it ends after ONE extra look and one pause, not a loop",
+                gone == [] and never.looks == 2 and t.OFF_RECHECK_S <= clock.now < 2 * t.OFF_RECHECK_S))
+    import inspect
+    out.append(("off: run_off asks for the second look exactly when `--if-legs-done` is absent (the node job did not succeed)",
+                "recheck=0 if a.if_legs_done else OFF_RECHECK_S" in inspect.getsource(t.run_off)))
+
+    # --- one deadline for provision() ---------------------------------------------------------------------------------------------------------------
+    out.append(("deadline: provision() has 40 minutes in all, inside the node job's 45 (release.yml), with room for the delete",
+                t.PROVISION_DEADLINE_S == 2400 and t.PROVISION_DEADLINE_S + 5 * 60 <= 45 * 60))
+    clock = Clock()
+    try:
+        t.remaining(clock() - 1, clock)
+        left_error = ""
+    except t.NodeError as exc:
+        left_error = str(exc)
+    out.append(("deadline: a phase with nothing left fails by itself, saying so (the node is then deleted by the script, not by the kill)",
+                "within 2400 s" in left_error and t.remaining(None, clock) is None and t.remaining(clock() + 5, clock) == 5))
+
+    bad_gateway = (100, "", "E: Failed to fetch http://x/InRelease  502  Bad Gateway")
+    clock = Clock()
+    timeouts = []
+
+    class Watching(BootstrapSsh):
+        def __call__(self, command, stdin=None, timeout=60):
+            if command == "bash -s":
+                timeouts.append(timeout)
+            return super().__call__(command, stdin, timeout)
+
+    watching = Watching([bad_gateway])
+    deadline = clock() + 200
+    try:
+        quiet(t.bootstrap, watching, clock, clock.sleep, deadline)
+        ended = ""
+    except t.NodeError as exc:
+        ended = str(exc)
+    out.append(("deadline: the bootstrap's retries stop at the deadline when it comes before the cap, with the last failure",
+                "502" in ended and clock.now <= 200 and watching.bootstraps >= 2 and watching.bootstraps * t.BOOTSTRAP_RETRY_PAUSE_S <= 200 + t.BOOTSTRAP_RETRY_PAUSE_S))
+    out.append(("deadline: an attempt is never given more time than is left (and at least 30 s)", timeouts and max(timeouts) <= 200 and min(timeouts) >= 30))
+    clock = Clock()
+    stuck = BootstrapSsh([bad_gateway])
+    try:
+        quiet(t.bootstrap, stuck, clock, clock.sleep, clock() - 1)
+        late_error = ""
+    except t.NodeError as exc:
+        late_error = str(exc)
+    out.append(("deadline: a bootstrap that starts past the deadline is not run at all", "within 2400 s" in late_error and stuck.bootstraps == 0))
+
+    class SlowUp:
+        """A node whose address never comes: wait_up gives up at what is left of the deadline, not at its own 900 s."""
+
+        def address(self, node_id):
+            return None
+
+    clock = Clock()
+    before = clock.now
+    try:
+        quiet(t.wait_up, SlowUp(), "dpl_x", lambda *a: None, clock, clock.sleep, min(t.UP_LIMIT_S, 100))
+    except t.NodeError:
+        pass
+    out.append(("deadline: wait_up takes the limit it is given (provision() hands it what is left)", 100 <= clock.now - before < 110))
+    source = inspect.getsource(t.provision)
+    out.append(("deadline: provision() hands every phase what is left, and cleans up on ANY exit (a cancel is a KeyboardInterrupt)",
+                "limit=min(UP_LIMIT_S, remaining(deadline, clock))" in source and "bootstrap(ssh, clock, sleep, deadline=deadline)" in source
+                and "limit=min(RUNNER_ONLINE_LIMIT_S, remaining(deadline, clock))" in source and "except BaseException:" in source))
+
+    # --- the sweeper runs when a release run ends ---------------------------------------------------------------------------------------------------
+    import yaml
+    sweeper = yaml.safe_load((HERE.parent.parent / ".github" / "workflows" / "latitude-sweeper.yml").read_text(encoding="utf-8"))
+    release = yaml.safe_load((HERE.parent.parent / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    triggers = sweeper.get("on") or sweeper.get(True)
+    out.append(("sweeper: it also runs when a run of release.yml ends, whichever way (a stop-node cut short leaves nothing for half an hour)",
+                triggers.get("workflow_run") == {"workflows": [release["name"]], "types": ["completed"]} and "schedule" in triggers and "workflow_dispatch" in triggers))
+    return out
+
+
 GROUPS = [group_prefetch, group_node_deps, group_runner_isolated, group_turning_on, group_no_fallback, group_two_runs, group_off, group_stop_node, group_bootstrap, group_github_blip, group_false_lost,
           group_lost_either_order, group_two_legs, group_relaunch, group_stuck, group_watch_stages, group_sweep, group_secrets,
           group_probe, group_runner, group_cancelled_by_hand, group_runner_clock, group_same_code,
           group_workflow_steps, group_any_shape, group_clear_verdicts, group_dispatch_once, group_lingering_and_silence,
-          group_refused_job, group_address, group_host_key, group_deployment_id]
+          group_refused_job, group_address, group_host_key, group_deployment_id, group_bootstrap_retry, group_node_hardening]
 
 
 def cases() -> list:

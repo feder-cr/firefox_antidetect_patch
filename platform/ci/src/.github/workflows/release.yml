@@ -98,7 +98,7 @@ on:
         # What the last green gtests ran (run 41402916724), and the suites of the Juggler's input and crash hooks added
         # since (StealthFrameCrash, StealthJugglerEventId: their sources are in dom/base/test/gtest). * has never gone green here.
         description: "gtests=true only: which, as mach gtest takes them; * is all, and unproven"
-        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*'
+        default: 'StealthGfxFeatureStatus.*:StealthWebGPUAdapter.*:StealthWebGPUDeclaration.*:StealthWebGPUBundledVulkan.*:StealthWebGPUInstanceEnv.*:StealthFullscreen.*:StealthScaleDeclaration.*:StealthWindowGeometry.*:StealthGLMultisample.*:StealthFrameCrash.*:StealthJugglerEventId.*:StealthSessionUdpProxy.*:StealthDeclaredNetwork.*:StealthSocksUdpPool.*:TestStealthTRRContext.*:TestStealthSocksCredentials.*:TestStealthSessionResolver.*:StealthIceResolverContext.*:StealthUdpProxyBirth.*:StealthNrSocketBirth.*:StealthPcUdpProxyKinds.*:StealthTcpProxyRoad.*:StealthPcProxyConfig.*'
       relaunch_of:
         description: >
           Set by the watch of a run whose machine was lost, to that run's id: this run
@@ -107,6 +107,14 @@ on:
 
 # Each job asks for what it needs.
 permissions: { contents: read }
+
+# «Un nuovo push annulla la prova vecchia»: a CANDIDATE (a push, the weekly run, a dispatch of a candidate) shares one group with the other
+# candidates of its branch, and a newer one cancels the older that is still running, node and all (`stop-node` turns it off). A RELEASE and a
+# RE-LAUNCH have a group of their own, per run: no push cancels a release, and a re-launch does not cancel the run it replaces, which is still
+# reporting. republish.yml is another workflow and has no group.
+concurrency:
+  group: ${{ (inputs.kind == 'release' && format('release-{0}', github.run_id)) || (inputs.relaunch_of && format('relaunch-{0}', github.run_id)) || format('candidate-{0}', github.ref) }}
+  cancel-in-progress: ${{ inputs.kind != 'release' && !inputs.relaunch_of }}
 
 # What gets built: this repository holds the patch series only. Every job that
 # needs the engine's source rebuilds it with tools/engine.py materialize: the
@@ -119,6 +127,8 @@ jobs:
   # candidate never reaches the seal at all.
   plan:
     runs-on: ubuntu-24.04
+    # `actions: read` to look at the runs and the artifacts of the repository (scripts/ci/reuse_run.py).
+    permissions: { actions: read, contents: read }
     outputs:
       kind: ${{ steps.plan.outputs.kind }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -132,6 +142,8 @@ jobs:
       core_ref: ${{ steps.plan.outputs.core_ref }}
       wrapper_ref: ${{ steps.plan.outputs.wrapper_ref }}
       build_date: ${{ steps.build_date.outputs.build_date }}
+      # The green run whose build is this tree, when there is one (scripts/ci/reuse_run.py): empty, the run builds.
+      reuse_run_id: ${{ steps.reuse.outputs.reuse_run_id }}
       matrix: ${{ steps.matrix.outputs.matrix }}
       # What a leg's runs-on needs, known here so that it reads no matrix job's output, which
       # overwrite each other. A rerun of failed jobs reuses it: it no longer matches.
@@ -180,6 +192,23 @@ jobs:
             --last-release "$LAST_RELEASE" > plan.txt
           cat plan.txt
           cat plan.txt >> "$GITHUB_OUTPUT"
+      # A push to main whose tree a green run has already compiled does not compile it again: the gate runs again, on those bytes, with today's refs
+      # (the `gate-reuse` job below, as republish.yml does by hand). Only that case: scripts/ci/reuse_run.py says what else it needs (artifacts alive,
+      # gtests done, never the weekly run, never a release). It reads the tree object of what plan has just materialized.
+      - name: A green run built this tree already (a push to main only)
+        id: reuse
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          KIND: ${{ steps.plan.outputs.kind }}
+          GTESTS: ${{ steps.plan.outputs.gtests }}
+          GTEST_FILTER: ${{ steps.plan.outputs.gtest_filter }}
+        run: |
+          python3 scripts/ci/reuse_run.py --event "$EVENT" --ref "$REF" --kind "$KIND" --gtests "$GTESTS" --gtest-filter "$GTEST_FILTER" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --tree "$(git rev-parse 'HEAD^{tree}')" --commit "$(git rev-parse HEAD)" | tee -a "$GITHUB_OUTPUT"
       # ONE BuildID for the whole run, as a retail release has one on every
       # platform: the build graph generates buildid.h more than once per build
       # from 157, and without MOZ_BUILD_DATE each generation takes the clock
@@ -198,6 +227,93 @@ jobs:
           python3 scripts/ci/test_stealth_download_watchdog.py
           echo "matrix=$(python3 scripts/ci matrix)" | tee -a "$GITHUB_OUTPUT"
 
+  # Everything that does not depend on the binary, BEFORE a node is turned on: a server is an hour paid whatever it does, and a run whose
+  # asset names disagree, whose Juggler's tests are red or whose release scripts do not refuse what they must, used to learn it on the node,
+  # minutes after it had been ordered (run 43156862361: «Juggler's tests without a browser», in the build, 7.9 minutes of a paid hour). The
+  # source tree is materialized here again, in parallel with `plan` (the node waits for both, and plan is as long): the cost is a GitHub runner's
+  # minutes and no later start. The last step is the guard that a newer push has not replaced this run (scripts/ci/still_head.py).
+  checks:
+    name: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # `actions: write` to cancel this very run, and nothing else; no secret.
+    permissions: { actions: write, contents: read }
+    steps:
+      - name: The series (this repository, this commit)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with: { path: .series, fetch-depth: 1 }
+      - name: The source tree, the Mozilla tag with our series applied (tools/engine.py)
+        shell: bash
+        run: python3 .series/tools/engine.py materialize --into .
+      # Cheapest gate in the pipeline, guarding the most expensive failure: the asset
+      # basename is hand-written in every matrix entry below and derived independently
+      # on the client side. When the two disagree CI publishes one name while the
+      # wrapper fetches another, so every download 404s while the build is green, the
+      # archives are valid and the release page looks correct (issue #14). Fail here in
+      # seconds instead of after five multi-hour builds.
+      - name: Check asset names match the version this tree builds
+        shell: bash
+        run: python3 scripts/check_release_naming.py
+
+      # The source the official build states (browser/config/upstream_source.txt,
+      # read by the .mozconfig) must be the retail's of the version this tree
+      # builds; a port that moves the base and leaves the file behind would
+      # write the previous release's changeset into application.ini. Seconds,
+      # here, before the build; --online also asks Mozilla's build record.
+      - name: Check the declared upstream source matches the version this tree builds
+        shell: bash
+        run: python3 scripts/check_upstream_source.py --online
+
+      # Juggler tested without a browser, seconds here before hours of build.
+      # The channel between its two halves: a request answered from another
+      # channel end's kept answers is never dispatched and nothing says so (a
+      # page's "main world created" was lost that way, B286). And where it loads
+      # from: never a chrome package, which a page probes by name, and every
+      # resource URL a file the build installs (invisible_playwright #336).
+      - name: Juggler's tests without a browser
+        shell: bash
+        # The files, expanded by the shell: from Node 21 the arguments of
+        # --test are file patterns, and a directory is loaded as a module.
+        run: node --test juggler/tests/*.test.mjs
+
+      # The release scripts' own known-bad inputs: validate_release.py's
+      # retail-updater and no-juggler-name checks, and make_seal.py's refusals. A
+      # check that has only ever printed its OK line is not a gate.
+      - name: The release scripts refuse what they must
+        shell: bash
+        run: |
+          python3 scripts/validate_release.py --selftest
+          python3 scripts/test_make_seal.py
+          python3 scripts/test_check_upstream_source.py
+          python3 scripts/test_toolchain_parity.py
+          python3 scripts/test_upstream_toolchain.py
+          python3 scripts/test_memory_watch.py
+          python3 scripts/test_cpu_watch.py
+          python3 scripts/test_workflow_cache_rules.py
+      # A newer push to the branch has replaced this candidate (the rule is «un nuovo push annulla la prova vecchia»; the `concurrency` above
+      # cancels a run that a newer one finds in progress, this catches the one that was queued behind it). Cancelled HERE, before `node` starts:
+      # the sleep keeps this job running until the cancel has landed, because a job that ended would let the node start. Exit 2 (the head could
+      # not be read) goes on.
+      - name: Still the head of the branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          KIND: ${{ inputs.kind }}
+          RELAUNCH_OF: ${{ inputs.relaunch_of }}
+        run: |
+          set +e
+          python3 scripts/ci/still_head.py --event "$EVENT" --ref "$REF" --sha "$SHA" --kind "$KIND" --relaunch-of "$RELAUNCH_OF" --repository "$GITHUB_REPOSITORY"
+          CODE=$?
+          if [ "$CODE" = 1 ]; then
+            gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
+            sleep 240
+            exit 1
+          fi
+          exit 0
+
   # Turns each leg's node on, on its own machine (scripts/ci/latitude_node.py). If either
   # cannot, the run fails: nothing else compiles a leg, the build is skipped, and
   # stop-node turns off what did come up. fail-fast is off so that
@@ -205,9 +321,9 @@ jobs:
   # to hold to scripts/ci/legs.py.
   node:
     name: node
-    needs: plan
+    needs: [plan, checks]
     # A rerun of failed jobs has no watch and no label to run on: nothing to turn on for it.
-    if: needs.plan.outputs.attempt == github.run_attempt
+    if: needs.plan.outputs.attempt == github.run_attempt && needs.plan.outputs.reuse_run_id == ''
     runs-on: ubuntu-24.04
     environment: latitude-builder
     timeout-minutes: 45
@@ -394,56 +510,6 @@ jobs:
         if: matrix.node
         run: python3 .series/platform/ci/src/scripts/ci/background.py wait materialize
 
-      # Cheapest gate in the pipeline, guarding the most expensive failure: the asset
-      # basename is hand-written in every matrix entry below and derived independently
-      # on the client side. When the two disagree CI publishes one name while the
-      # wrapper fetches another, so every download 404s while the build is green, the
-      # archives are valid and the release page looks correct (issue #14). Fail here in
-      # seconds instead of after five multi-hour builds.
-      - name: Check asset names match the version this tree builds
-        if: matrix.leg == 'linux-x86_64'
-        shell: bash
-        run: python3 scripts/check_release_naming.py
-
-      # The source the official build states (browser/config/upstream_source.txt,
-      # read by the .mozconfig) must be the retail's of the version this tree
-      # builds; a port that moves the base and leaves the file behind would
-      # write the previous release's changeset into application.ini. Seconds,
-      # here, before the build; --online also asks Mozilla's build record.
-      - name: Check the declared upstream source matches the version this tree builds
-        if: matrix.leg == 'linux-x86_64'
-        shell: bash
-        run: python3 scripts/check_upstream_source.py --online
-
-      # Juggler tested without a browser, seconds here before hours of build.
-      # The channel between its two halves: a request answered from another
-      # channel end's kept answers is never dispatched and nothing says so (a
-      # page's "main world created" was lost that way, B286). And where it loads
-      # from: never a chrome package, which a page probes by name, and every
-      # resource URL a file the build installs (invisible_playwright #336).
-      - name: Juggler's tests without a browser
-        if: matrix.leg == 'linux-x86_64'
-        shell: bash
-        # The files, expanded by the shell: from Node 21 the arguments of
-        # --test are file patterns, and a directory is loaded as a module.
-        run: node --test juggler/tests/*.test.mjs
-
-      # The release scripts' own known-bad inputs: validate_release.py's
-      # retail-updater and no-juggler-name checks, and make_seal.py's refusals. A
-      # check that has only ever printed its OK line is not a gate.
-      - name: The release scripts refuse what they must
-        if: matrix.leg == 'linux-x86_64'
-        shell: bash
-        run: |
-          python3 scripts/validate_release.py --selftest
-          python3 scripts/test_make_seal.py
-          python3 scripts/test_check_upstream_source.py
-          python3 scripts/test_toolchain_parity.py
-          python3 scripts/test_upstream_toolchain.py
-          python3 scripts/test_memory_watch.py
-          python3 scripts/test_cpu_watch.py
-          python3 scripts/test_workflow_cache_rules.py
-
       # Record what this build came from: source-commit.txt is the engine commit (the
       # tag plus the series applied, reproducible with tools/engine.py apply) that the
       # seal names; series-commit.txt is the commit of this repository, the series.
@@ -454,8 +520,16 @@ jobs:
       - name: Record source commit (for auto release notes)
         if: matrix.leg == 'linux-x86_64'
         shell: bash
+        env:
+          GTESTS: ${{ needs.plan.outputs.gtests }}
+          GTEST_FILTER: ${{ needs.plan.outputs.gtest_filter }}
         run: |
           git rev-parse HEAD > source-commit.txt && cat source-commit.txt
+          # Which gtests this run runs, as `mach gtest` takes them (empty: none): a later run reuses these bytes only for gtests this filter contains.
+          if [ "$GTESTS" = "true" ]; then printf '%s\n' "$GTEST_FILTER" > gtest-filter.txt; else : > gtest-filter.txt; fi
+          cat gtest-filter.txt
+          # The tree object is what the build is of: a later run on the same tree reuses these bytes (scripts/ci/reuse_run.py).
+          git rev-parse 'HEAD^{tree}' > source-tree.txt && cat source-tree.txt
           git -C .series rev-parse HEAD > series-commit.txt && cat series-commit.txt
       - name: Upload source-commit artifact
         if: matrix.leg == 'linux-x86_64'
@@ -464,6 +538,8 @@ jobs:
           name: source-commit
           path: |
             source-commit.txt
+            source-tree.txt
+            gtest-filter.txt
             series-commit.txt
           if-no-files-found: error
           retention-days: 7
@@ -495,7 +571,7 @@ jobs:
           CORE_REF: ${{ needs.plan.outputs.core_ref }}
         run: |
           python3 -m pip install --quiet \
-            "git+https://github.com/feder-cr/invisible_core@$CORE_REF"
+            "git+https://github.com/oss-invisible/core@$CORE_REF"
           python3 -c "from importlib.metadata import version; print('core asked for the branding:', version('invisible-core'))"
           ( cd scripts && python3 -c "import validate_release; print('branding it declares:', validate_release.declared_branding())" )
 
@@ -1337,7 +1413,7 @@ jobs:
   # so a failed or cancelled run says which leg stopped where, and why.
   report:
     needs: [plan, build]
-    if: always()
+    if: always() && needs.build.result != 'skipped'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -1366,6 +1442,19 @@ jobs:
     uses: ./.github/workflows/gate.yml
     with:
       build_run_id: ${{ github.run_id }}
+      seal_tag: ${{ needs.plan.outputs.seal_tag }}
+      wrapper_ref: ${{ needs.plan.outputs.wrapper_ref }}
+      core_ref: ${{ needs.plan.outputs.core_ref }}
+
+  # The same gate on the archives of the run `plan` found (reuse_run_id): the refs are today's, the bytes are that run's, as republish.yml. It
+  # is the only verdict of a run that reused; the gtests of that tree are the gtests of that run (reuse_run.py asked for their artifacts).
+  gate-reuse:
+    needs: plan
+    if: needs.plan.outputs.reuse_run_id != ''
+    permissions: { actions: read, contents: read }
+    uses: ./.github/workflows/gate.yml
+    with:
+      build_run_id: ${{ needs.plan.outputs.reuse_run_id }}
       seal_tag: ${{ needs.plan.outputs.seal_tag }}
       wrapper_ref: ${{ needs.plan.outputs.wrapper_ref }}
       core_ref: ${{ needs.plan.outputs.core_ref }}

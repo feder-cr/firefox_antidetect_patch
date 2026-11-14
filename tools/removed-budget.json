@@ -112,6 +112,7 @@
  "netwerk/protocol/http/DnsAndConnectSocket.cpp": 2,
  "netwerk/protocol/http/Http3Session.cpp": 1,
  "netwerk/protocol/http/HttpBaseChannel.cpp": 1,
+ "netwerk/protocol/http/TLSTransportLayer.cpp": 1,
  "netwerk/protocol/http/TRRServiceChannel.cpp": 4,
  "netwerk/protocol/http/nsHttpChannel.cpp": 1,
  "netwerk/protocol/http/nsHttpHandler.cpp": 3,

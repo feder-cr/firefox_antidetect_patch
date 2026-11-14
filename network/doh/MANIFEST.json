@@ -6,10 +6,18 @@
   "netwerk/dns/TRR.cpp",
   "netwerk/dns/moz.build",
   "netwerk/dns/nsHostResolver.cpp",
+  "netwerk/protocol/http/TLSTransportLayer.cpp",
   "netwerk/protocol/http/TRRServiceChannel.cpp",
   "netwerk/protocol/http/nsHttpChannel.cpp",
+  "security/manager/ssl/nsNSSCallbacks.cpp",
   "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
-  "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp"
+  "toolkit/components/parentalcontrols/nsParentalControlsServiceWin.cpp",
+  "toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs",
+  "toolkit/components/url-classifier/moz.build",
+  "toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl",
+  "toolkit/components/url-classifier/nsUrlClassifierDBService.cpp",
+  "toolkit/components/url-classifier/tests/unit/xpcshell.toml",
+  "toolkit/profile/nsProfileLock.cpp"
  ],
  "added": {
   "dom/media/webrtc/transport/StealthIceResolverContext.cpp": "100644",
@@ -40,7 +48,9 @@
   "netwerk/ipc/StealthTRRContext.h": "100644",
   "netwerk/test/gtest/TestStealthSessionResolver.cpp": "100644",
   "netwerk/test/gtest/TestStealthTRRContext.cpp": "100644",
-  "toolkit/components/parentalcontrols/StealthParentalControls.h": "100644"
+  "toolkit/components/parentalcontrols/StealthParentalControls.h": "100644",
+  "toolkit/components/url-classifier/StealthHashCompleterContext.sys.mjs": "100644",
+  "toolkit/components/url-classifier/tests/unit/test_stealth_hashcompleter_context.js": "100644"
  },
  "inventory": [
   {
@@ -171,6 +181,27 @@
    }
   },
   {
+   "file": "netwerk/protocol/http/TLSTransportLayer.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 1,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "TLSTransportLayer::Init, the AddToSocket of the TLS layered over a tunnel",
+   "evidence": [
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+      PR_AF_INET, aTLSHost, aTLSPort, nullptr, StealthTransportContext(mSocketTransport), 0, 0, mFD,  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "The TLS layered over a tunnel (an HTTPS proxy, an HTTP/2 tunnel) was added to its socket with default origin attributes, so what that TLS asks for on its own (the OCSP request of its certificate) had already lost the context of the page. StealthTransportContext (StealthTRRContext.cpp) gives it the attributes of the socket transport that carries it, as a direct connection has.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
    "file": "netwerk/protocol/http/TRRServiceChannel.cpp",
    "category": "other",
    "feature": "doh-trr-context",
@@ -215,6 +246,27 @@
    }
   },
   {
+   "file": "security/manager/ssl/nsNSSCallbacks.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "OCSPRequest::Run, where the origin attributes of the OCSP channel are chosen",
+   "evidence": [
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+    mozilla::net::StealthKeepRequestContext(mOriginAttributes, attrs);  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "The OCSP request of a certificate is made with the system principal and keeps of the page's origin attributes only the first party domain and the private browsing id, so it left in the default user context: outside the proxy and the resolver of the page's browser context. StealthKeepRequestContext (StealthTRRContext.cpp) adds the userContextId, the one the proxy filter and the resolver answer by; the default context is unchanged.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
    "file": "toolkit/components/parentalcontrols/nsParentalControlsServiceDefault.cpp",
    "category": "other",
    "feature": "doh-trr-context",
@@ -253,6 +305,132 @@
     "+  if (StealthParentalControlsDeclared(&mEnabled)) {"
    ],
    "notes": "The constructor takes the declared value (off) and returns before its first OS call, so the Windows parental controls provider is never asked; every reader (nsHttpHandler, the DoH heuristics, downloads, CanonicalBrowsingContext) goes through the service and sees the same value.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/UrlClassifierHashCompleter.sys.mjs",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 7,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "HashCompleter.complete and openChannel: the completion road of a page's context",
+   "evidence": [
+    "+// STEALTH-HOOK(network/doh)",
+    "+import {",
+    "+  stealthApplyContext,"
+   ],
+   "notes": "complete() hands a completion of a non-default context to the completer of that context (StealthHashCompleterContext.sys.mjs), and openChannel gives the channel that context's origin attributes: the gethash request leaves by the proxy and the resolver of the page's context, and contexts never share a request. The default context takes Mozilla's code unchanged.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/moz.build",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "EXTRA_JS_MODULES of the url-classifier",
+   "evidence": [
+    "+    \"StealthHashCompleterContext.sys.mjs\",  # STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Registers StealthHashCompleterContext.sys.mjs.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/nsIUrlClassifierHashCompleter.idl",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 1,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "nsIUrlClassifierHashCompleterCallback",
+   "evidence": [
+    "+  readonly attribute uint32_t userContextId;  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "One readonly attribute, userContextId: the context of the lookup a completion callback belongs to.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/nsUrlClassifierDBService.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 4,
+   "removed": 0,
+   "hunks": 3,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "nsUrlClassifierHashCompleterBase and nsUrlClassifierDBService::Classify",
+   "evidence": [
+    "+#include \"mozilla/net/StealthTRRContext.h\"  // STEALTH-HOOK(network/doh)",
+    "+  uint32_t mStealthUserContextId = mozilla::net::StealthCurrentLookupContext();  // STEALTH-HOOK(network/doh)",
+    "+NS_IMETHODIMP nsUrlClassifierHashCompleterBase::GetUserContextId(uint32_t* aId) { return mozilla::net::StealthLookupContextOut(mStealthUserContextId, aId); }  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Classify opens a lookup-context scope from the page's principal; the completion callback made inside it keeps that userContextId and answers it through userContextId (helpers in netwerk/ipc/StealthTRRContext).",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/components/url-classifier/tests/unit/xpcshell.toml",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 1,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "the xpcshell manifest of the url-classifier",
+   "evidence": [
+    "+[\"test_stealth_hashcompleter_context.js\"]  # STEALTH-HOOK(network/doh)",
+    "+"
+   ],
+   "notes": "Lists test_stealth_hashcompleter_context.js.",
+   "verifier": {
+    "changed": [],
+    "why": "Written from the diff against the tag."
+   }
+  },
+  {
+   "file": "toolkit/profile/nsProfileLock.cpp",
+   "category": "other",
+   "feature": "doh-trr-context",
+   "prefs": [],
+   "added": 2,
+   "removed": 0,
+   "hunks": 2,
+   "inline_logic_lines": 0,
+   "hookable": "movable",
+   "anchor": "nsProfileLock::LockWithSymlink, the address in the signature of the symlink lock (Unix)",
+   "evidence": [
+    "+#    if 0  // STEALTH-HOOK(network/doh): the host's own name is never looked up; the signature keeps 127.0.0.1",
+    "+#    endif  // STEALTH-HOOK(network/doh)"
+   ],
+   "notes": "Mozilla resolves the machine's own host name with PR_GetHostByName at start-up, before any proxy is decided, through the system resolver, unless MOZ_PROXY_BYPASS_PROTECTION is set. The block is compiled out so the signature keeps 127.0.0.1, as that build does; nothing else of that build is taken. Windows takes another lock and makes no lookup.",
    "verifier": {
     "changed": [],
     "why": "Written from the diff against the tag."

@@ -20,6 +20,11 @@
 # here, by name, not an hour into a build.
 set -euo pipefail
 
+# ONE bootstrap at a time on the node. A client that lost its ssh (exit 255) asks again while the first run, orphaned, still goes on: both would
+# `rm -rf /opt/node-deps` and `ssh-keygen -A` under each other. The second waits for the first, then runs over a node that is prepared.
+exec 9>/run/node_bootstrap.lock
+flock -w 1500 9 || { echo "node_bootstrap: ERROR: another bootstrap on this node did not end in 1500 s" >&2; exit 1; }
+
 # Every version in one place.
 # The node's apt packages and glslang, every .deb at the version its MANIFEST lists.
 # Until 2026-11-04 the packages came from Ubuntu's snapshot service at every start: it
@@ -32,8 +37,8 @@ set -euo pipefail
 NODE_DEPS=node-deps-20261104-aeaa295d91a7
 NODE_DEPS_SHA256=96b646085471d7b50e26b9756f462b22565513873f5687277db3f7cdb238f059
 NODE_DEPS_ASSET=709796661
-NODE_DEPS_URL="${NODE_DEPS_URL:-https://api.github.com/repos/feder-cr/firefox_antidetect_patch/releases/assets/$NODE_DEPS_ASSET}"
-NODE_DEPS_WEB_URL="https://github.com/feder-cr/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar"
+NODE_DEPS_URL="${NODE_DEPS_URL:-https://api.github.com/repos/oss-invisible/firefox_antidetect_patch/releases/assets/$NODE_DEPS_ASSET}"
+NODE_DEPS_WEB_URL="https://github.com/oss-invisible/firefox_antidetect_patch/releases/download/$NODE_DEPS/$NODE_DEPS.tar"
 RUNNER_VERSION=2.338.2
 RUNNER_ASSET=678460500
 RUNNER_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40

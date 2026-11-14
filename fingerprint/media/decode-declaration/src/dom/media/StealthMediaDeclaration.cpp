@@ -9,6 +9,7 @@
 #include "MediaContainerType.h"
 #include "MediaMIMETypes.h"
 #include "PlatformEncoderModule.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/dom/MediaCapabilitiesBinding.h"
@@ -17,6 +18,8 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 
+#include <algorithm>
+#include <limits>
 #include <type_traits>
 
 namespace mozilla {
@@ -234,6 +237,23 @@ bool StealthDeclaredDecodingInfo(const nsACString& aContainerMimeType,
 
 }  // namespace mozilla
 
+namespace mozilla {
+
+bool StealthPowerEfficientFor(bool aDeclaredHardware, uint32_t aWidth,
+                              uint32_t aHeight) {
+  // As retail: the size is clamped to int32 (MediaCapabilities.cpp
+  // ClampedIntSize), the pixels are width * height as uint32, and a product
+  // that overflows is not a low resolution.
+  constexpr uint32_t kMax = std::numeric_limits<int32_t>::max();
+  const CheckedInt<uint32_t> pixels =
+      CheckedInt<uint32_t>(std::min(aWidth, kMax)) * std::min(aHeight, kMax);
+  const bool lowResolution =
+      pixels.isValid() && pixels.value() <= kStealthLowResolutionPixelCount;
+  return aDeclaredHardware || lowResolution;
+}
+
+}  // namespace mozilla
+
 namespace mozilla::dom {
 
 // The declared decodingInfo answer is logged under MediaCapabilities' own
@@ -268,22 +288,29 @@ Maybe<MediaCapabilitiesDecodingInfo> StealthDeclaredDecodingInfoFor(
   if (codecs.IsEmpty()) {
     return Nothing();
   }
-  bool supported = true, smooth = true, powerEfficient = true;
+  // The third bit of the table is the hardware decode of the codec; retail's
+  // powerEfficient is that OR a picture of 640x480 pixels or fewer, and only
+  // for a supported file (an unsupported one is false, false, false).
+  bool supported = true, smooth = true, hardware = true;
   bool sawOne = false;
   for (const auto& codec : codecs.Range()) {
-    bool s = false, m = false, p = false;
+    bool s = false, m = false, h = false;
     if (!StealthDeclaredDecodingInfo(container->Type().AsString(),
-                                     NS_ConvertUTF16toUTF8(codec), s, m, p)) {
+                                     NS_ConvertUTF16toUTF8(codec), s, m, h)) {
       return Nothing();
     }
     sawOne = true;
     supported &= s;
     smooth &= m;
-    powerEfficient &= p;
+    hardware &= h;
   }
   if (!sawOne) {
     return Nothing();
   }
+  const VideoConfiguration& video = aConfiguration.mVideo.Value();
+  const bool powerEfficient =
+      supported &&
+      StealthPowerEfficientFor(hardware, video.mWidth, video.mHeight);
   MOZ_LOG(sStealthMediaCapabilitiesLog, LogLevel::Debug,
           ("[MediaCapabilities] %s -> DECLARED supported=%d smooth=%d "
            "powerEfficient=%d",
