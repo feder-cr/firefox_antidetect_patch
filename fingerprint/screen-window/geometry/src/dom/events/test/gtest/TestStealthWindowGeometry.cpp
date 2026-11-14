@@ -100,3 +100,95 @@ TEST(StealthWindowGeometry, AnyOtherRealOuterSizeIsStillDeclared)
   EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(0, 600)));
   EXPECT_TRUE(gfx::StealthOuterSizeIsDeclared(LayoutDeviceIntSize(800, 0)));
 }
+
+// window.outerWidth/outerHeight of the MAIN window around its content area
+// (gfx::StealthMainWindowOuterSize). Page.setViewportSize makes the content
+// area smaller than the maximized window's; until 2026-11-14 the window stayed
+// the maximized one, so a 390x844 content area read outer 1936x1048 at 100%:
+// outerWidth - innerWidth 1546 where every Windows Firefox answers 16.
+
+namespace {
+
+// The maximized window of a work area, as StealthDeclaredMaximizedWindow
+// builds it: a border off the screen on every side.
+LayoutDeviceIntRect Maximized(int32_t aAvailWidth, int32_t aAvailHeight,
+                              const gfx::StealthWindowFrame& aFrame) {
+  const int32_t b = aFrame.mBorder;
+  return LayoutDeviceIntRect(-b, -b, aAvailWidth + 2 * b, aAvailHeight + 2 * b);
+}
+
+// The content area the page reads in that maximized window, in CSS pixels,
+// rounded as Gecko rounds (and as invisible_core declares the viewport).
+CSSIntSize MaximizedContent(int32_t aAvailWidth, int32_t aAvailHeight,
+                            const gfx::StealthWindowFrame& aFrame,
+                            float aScale) {
+  return CSSIntSize(
+      int32_t(float(aAvailWidth) / aScale + 0.5f),
+      int32_t(float(aAvailHeight - aFrame.mMaximizedUi) / aScale + 0.5f));
+}
+
+// Retail Windows 11 frames, per scale (invisible_core WINDOW_FRAME_BY_DPR),
+// with a 1920x1080 panel and its 48 CSS taskbar at each scale.
+struct Scale {
+  float mScale;
+  gfx::StealthWindowFrame mFrame;
+  int32_t mAvailHeight;
+};
+const Scale kScales[] = {
+    {1.0f, {8, 85, 72, 4}, 1080 - 48},
+    {1.25f, {9, 107, 90, 4}, 1080 - 60},
+    {1.5f, {11, 127, 106, 4}, 1080 - 72},
+    {2.0f, {13, 169, 139, 4}, 1080 - 96},
+};
+
+}  // namespace
+
+TEST(StealthWindowGeometry, TheMaximizedContentAreaIsTheMaximizedWindow)
+{
+  const gfx::StealthWindowFrame frame{8, 85, 72, 4};
+  EXPECT_EQ(gfx::StealthMainWindowOuterSize(Maximized(1920, 1032, frame), frame,
+                                            1.0f, CSSIntSize(1920, 947)),
+            CSSIntSize(1936, 1048));
+}
+
+TEST(StealthWindowGeometry, AWindowWithNoContentSizeYetIsTheMaximizedOne)
+{
+  // The synced inner size is 0x0 until the first layout: a window that has
+  // not been sized must not read 16x101.
+  const gfx::StealthWindowFrame frame{8, 85, 72, 4};
+  EXPECT_EQ(gfx::StealthMainWindowOuterSize(Maximized(1920, 1032, frame), frame,
+                                            1.0f, CSSIntSize(0, 0)),
+            CSSIntSize(1936, 1048));
+}
+
+TEST(StealthWindowGeometry, ASmallerContentAreaKeepsTheMaximizedFrame)
+{
+  // 100%: the 390x844 check that read 1936x1048 reads 406x945.
+  const gfx::StealthWindowFrame frame{8, 85, 72, 4};
+  EXPECT_EQ(gfx::StealthMainWindowOuterSize(Maximized(1920, 1032, frame), frame,
+                                            1.0f, CSSIntSize(390, 844)),
+            CSSIntSize(390 + 16, 844 + 101));
+
+  // At every measured scale, any content area reads outer - inner exactly as
+  // the maximized window does.
+  const CSSIntSize sizes[] = {{390, 844}, {1024, 768}, {1440, 700},
+                              {200, 200}, {1, 1}};
+  for (const Scale& s : kScales) {
+    const LayoutDeviceIntRect maximized =
+        Maximized(1920, s.mAvailHeight, s.mFrame);
+    const CSSIntSize content =
+        MaximizedContent(1920, s.mAvailHeight, s.mFrame, s.mScale);
+    const CSSIntSize frameOfMaximized =
+        gfx::StealthMainWindowOuterSize(maximized, s.mFrame, s.mScale,
+                                        content) -
+        content;
+    for (const CSSIntSize& inner : sizes) {
+      EXPECT_EQ(gfx::StealthMainWindowOuterSize(maximized, s.mFrame, s.mScale,
+                                                inner) -
+                    inner,
+                frameOfMaximized)
+          << "scale " << s.mScale << ", content " << inner.width << "x"
+          << inner.height;
+    }
+  }
+}

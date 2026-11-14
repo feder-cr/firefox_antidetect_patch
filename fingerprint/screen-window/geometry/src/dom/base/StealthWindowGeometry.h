@@ -70,7 +70,9 @@ inline Maybe<nsPoint> StealthShiftOf(nsGlobalWindowOuter& aWindow) {
 // Stealth: the outer size from the declared window, in device pixels,
 // converted below with the window's own scale exactly like the real size.
 //
-// The MAIN window is maximized: the work area plus Windows' invisible resize
+// The MAIN window is maximized (unless Page.setViewportSize made its content
+// area smaller; then it is restored around it with the same frame, see
+// gfx::StealthMainWindowOuterSize): the work area plus Windows' invisible resize
 // border on each side (retail 151, 100%: outerWidth - availWidth = 16). Until
 // firefox-38 this answered the work area itself, a window that does not
 // exist maximized on Windows (B261). A POPUP is its real inner size plus its
@@ -128,7 +130,17 @@ inline bool StealthOuterSize(nsGlobalWindowOuter& aWindow, CSSIntSize& aSize,
       return true;
     }
   } else if (const auto maximized = gfx::StealthDeclaredMaximizedWindow()) {
-    aSize = gfx::RoundedToInt(maximized->Size() / scale);
+    // The maximized window, or a restored one around a content area that
+    // Page.setViewportSize made smaller: outer - inner stays the maximized
+    // window's either way (gfx::StealthMainWindowOuterSize).
+    const auto frame = gfx::StealthDeclaredWindowFrame();
+    BrowsingContext* bc = aWindow.GetBrowsingContext();
+    if (frame && bc) {
+      aSize = gfx::StealthMainWindowOuterSize(*maximized, *frame, scale.scale,
+                                              bc->TopInnerSizeSpoofedForRFP());
+    } else {
+      aSize = gfx::RoundedToInt(maximized->Size() / scale);
+    }
     return true;
   }
   // Unreachable: the gate refuses at launch without the declaration.

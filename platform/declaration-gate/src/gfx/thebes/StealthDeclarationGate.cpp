@@ -388,6 +388,21 @@ Maybe<LayoutDeviceIntRect> StealthDeclaredMaximizedWindow() {
   return Some(LayoutDeviceIntRect(-b, -b, w + 2 * b, h + 2 * b));
 }
 
+CSSIntSize StealthMainWindowOuterSize(const LayoutDeviceIntRect& aMaximized,
+                                      const StealthWindowFrame& aFrame,
+                                      float aScale, const CSSIntSize& aInner) {
+  const CSSToLayoutDeviceScale scale(aScale);
+  const CSSIntSize outer = RoundedToInt(aMaximized.Size() / scale);
+  const LayoutDeviceIntSize contentDevice(
+      aMaximized.width - 2 * aFrame.mBorder,
+      aMaximized.height - 2 * aFrame.mBorder - aFrame.mMaximizedUi);
+  const CSSIntSize content = RoundedToInt(contentDevice / scale);
+  if (aInner.width <= 0 || aInner.height <= 0 || aInner == content) {
+    return outer;
+  }
+  return aInner + (outer - content);
+}
+
 bool StealthOuterSizeIsDeclared(const LayoutDeviceIntSize& aRealOuter) {
   return aRealOuter.width != 0 || aRealOuter.height != 0;
 }
