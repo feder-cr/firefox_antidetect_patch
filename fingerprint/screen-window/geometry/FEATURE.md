@@ -2,7 +2,7 @@
 
 Category: spoof
 Prefs: zoom.stealth.screen.width, zoom.stealth.screen.height (the fullscreen rectangle, through gfx::StealthDeclaredScreenRect); the window frame through StealthDeclarationGate
-Test: dom/events/test/gtest/TestStealthWindowGeometry.cpp (StealthWindowGeometry.FullscreenContentStartsAtTheScreenOrigin, StealthWindowGeometry.OutsideFullscreenNothingChanges); widget/tests/gtest/TestStealthFullscreen.cpp (StealthFullscreen.TheDeclaredScreenAtTheDeclaredScale, StealthFullscreen.PlacedOnTheScreenTheWindowIsOn, StealthFullscreen.NothingWithoutADeclaredScreenOrAScale); juggler/tests/fullscreen_releases_the_viewport.test.mjs; the fullscreen state of the host gate in the wrapper (scripts/ci_host_gate.py: geometry after a real click on requestFullscreen() and after exitFullscreen(), with its invariants) on every CI host, Linux under Xvfb without a window manager included; the g.fullscreen key of headless_probe.py. widget/tests/gtest/TestStealthFullscreen.cpp also holds StealthFullscreen.AFullscreenMoveAndResizeLandsOnTheDeclaredRect and StealthFullscreen.TheLargestSizeGrowsToTheDeclaredScreenInFullscreen (the Windows rules); the host gate invariant fullscreen_is_the_screen on win-x86_64 is their end-to-end proof.
+Test: dom/events/test/gtest/TestStealthWindowGeometry.cpp (StealthWindowGeometry.FullscreenContentStartsAtTheScreenOrigin, StealthWindowGeometry.OutsideFullscreenNothingChanges, StealthWindowGeometry.TheMaximizedContentAreaIsTheMaximizedWindow, StealthWindowGeometry.AWindowWithNoContentSizeYetIsTheMaximizedOne, StealthWindowGeometry.ASmallerContentAreaKeepsTheMaximizedFrame); widget/tests/gtest/TestStealthFullscreen.cpp (StealthFullscreen.TheDeclaredScreenAtTheDeclaredScale, StealthFullscreen.PlacedOnTheScreenTheWindowIsOn, StealthFullscreen.NothingWithoutADeclaredScreenOrAScale); juggler/tests/fullscreen_releases_the_viewport.test.mjs; the fullscreen state of the host gate in the wrapper (scripts/ci_host_gate.py: geometry after a real click on requestFullscreen() and after exitFullscreen(), with its invariants) on every CI host, Linux under Xvfb without a window manager included; the g.fullscreen key of headless_probe.py. widget/tests/gtest/TestStealthFullscreen.cpp also holds StealthFullscreen.AFullscreenMoveAndResizeLandsOnTheDeclaredRect and StealthFullscreen.TheLargestSizeGrowsToTheDeclaredScreenInFullscreen (the Windows rules); the host gate invariant fullscreen_is_the_screen on win-x86_64 is their end-to-end proof.
 
 ## What it does
 
@@ -24,6 +24,28 @@ listener; leaving restores both). It is a member of nsWindow, defined in our
 file, because the size mode and the client area are private state that only
 OnWindowStateEvent sets; the hook is one call at the head of MakeFullScreen.
 Juggler's viewport pin lets go in fullscreen and comes back on leaving.
+
+## A resized content area keeps the frame (2026-11-14)
+
+Page.setViewportSize makes the main window's content area smaller than the
+maximized window's (a responsive check at 390x844). The outer size used to stay
+the declared maximized window, so at 100% a page read outerWidth 1936 around
+innerWidth 390: outerWidth - innerWidth 1546 where every Windows Firefox
+answers 16, and outerHeight - innerHeight 204 where it answers 101.
+gfx::StealthMainWindowOuterSize (platform/declaration-gate) now answers the
+maximized window only for the maximized content area (or a content area with
+no size yet), and otherwise a restored window around the content with the
+maximized window's own outer - inner, taken in CSS pixels from the two CSS
+sizes the page reads unresized so it holds at every scale (16x101 at 100%,
+14x100 at 125%, 15x100 at 150%, 13x97 at 200%). Position and content origin are
+unchanged (screenX/Y, mozInnerScreenX/Y, event screenX - clientX): the window is
+anchored at the top left of the work area. Popups and fullscreen are unchanged.
+The inner size is the synced top-level one (TopInnerSizeSpoofedForRFP, the same
+the popup frame reads), so an out-of-process iframe answers the same outer size.
+
+Not measured: retail's restored-window UI height. The vertical difference here
+is the maximized window's; if a restored retail window's tab strip sits lower,
+that is a measured `restored_ui` declaration to add, like maximized_ui.
 
 ## Windows fullscreen (2026-11-02)
 

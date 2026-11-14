@@ -152,6 +152,32 @@ Maybe<StealthWindowFrame> StealthDeclaredWindowFrame();
 Maybe<LayoutDeviceIntRect> StealthDeclaredMaximizedWindow();
 
 /**
+ * The main window's outer size in CSS pixels, for a content area of aInner
+ * CSS pixels (the top-level inner size, BrowsingContext::
+ * TopInnerSizeSpoofedForRFP). aMaximized is StealthDeclaredMaximizedWindow(),
+ * aFrame StealthDeclaredWindowFrame(), aScale the window's own device pixels
+ * per CSS pixel.
+ *
+ * A content area that is the maximized window's (or that has no size yet)
+ * answers the maximized window, as before. Any other size is a content area
+ * that Page.setViewportSize made smaller than the maximized window's, and the
+ * window is then a restored one around it: outerWidth - innerWidth and
+ * outerHeight - innerHeight stay what the maximized window answers (16 and 101
+ * at 100%), instead of the maximized window's 1936x1048 around a 390-wide
+ * content area, a window no Windows Firefox shows. The window keeps the
+ * maximized window's position and content origin (screenX/Y, mozInnerScreenX/Y
+ * and every event's screenX - clientX are unchanged): it is anchored at the
+ * top left of the work area.
+ *
+ * The difference is taken in CSS pixels from the two CSS sizes the page reads
+ * unresized, each rounded as Gecko rounds, so it is the same number at every
+ * scale, not one off at 125% from rounding the frame on its own.
+ */
+CSSIntSize StealthMainWindowOuterSize(const LayoutDeviceIntRect& aMaximized,
+                                      const StealthWindowFrame& aFrame,
+                                      float aScale, const CSSIntSize& aInner);
+
+/**
  * Does a window answer the DECLARED outer size, or its own real one?
  *
  * The declaration stands in for a real window that exists. In a content
